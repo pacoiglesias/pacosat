@@ -14,7 +14,7 @@ if not exist "node_modules\pdfjs-dist\package.json" goto instalar
 goto iniciar
 :instalar
 echo Instalando componentes del SAT y correo. Este paso requiere internet.
-call npm.cmd install --omit=dev --ignore-scripts --no-audit --no-fund --fetch-retries=1 --fetch-timeout=20000
+call npm.cmd ci --omit=dev --ignore-scripts --no-audit --no-fund --fetch-retries=1 --fetch-timeout=20000
 if errorlevel 1 echo No se instalaron todos los componentes. Podras usar el expediente local y reintentar al reiniciar.
 :iniciar
 node local-server.mjs --open

@@ -61,6 +61,15 @@ function announce(message = '', error = false) {
   $('status').hidden = !message;
   $('status').dataset.error = error;
 }
+async function logEvent(text) {
+  if (!ready) return;
+  const entry = { id: crypto.randomUUID(), name: String(text).slice(0, 180), date: new Date().toISOString(),
+    added: 0, duplicates: 0, review: 0, issues: [], event: String(text).slice(0, 320) };
+  try {
+    await writeBatch({ activity: [entry] });
+    activity = [entry, ...activity.filter(row => row.id !== entry.id)];
+  } catch { /* La bitácora es informativa: nunca debe interrumpir la operación principal. */ }
+}
 function panel(title) {
   const wrap = n('section', undefined, 'panel');
   if (title) {
@@ -149,6 +158,13 @@ function render() {
   $('crumb').textContent = page === 'home' ? 'Resumen' : title;
   $('subtitle').textContent = description;
   $('eyebrow').textContent = scope || 'ESPACIO FISCAL';
+  const headerCounts = $('counters');
+  if (headerCounts) {
+    const selectedCount = invoices.filter(matches).length;
+    const docsCount = documents.filter(doc => !scope || doc.rfc === scope).length;
+    headerCounts.textContent = people.length ?
+      number.format(selectedCount) + ' CFDI · ' + number.format(docsCount) + ' PDF · ' + people.length + ' RFC' : '';
+  }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
   const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen })[page]();
@@ -196,11 +212,27 @@ function home() {
       action('Abrir expediente', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('docs'); })
     ])));
   }
-  const history = panel('Importaciones recientes');
-  if (!activity.length) history.append(empty('Sin importaciones', 'Aquí aparecerá el resultado de cada lote.'));
-  else history.append(grid(['Lote', 'Nuevos', 'Duplicados', 'Por revisar'], activity.slice(0, 5).map(row => [
-    cell(row.name, dateLabel(row.date)), row.added, row.duplicates, row.review ? action(row.review + ' · Ver revisión', () => reviewDetail(row)) : '0'
-  ])));
+  const history = panel('Actividad reciente');
+  if (!activity.length) history.append(empty('Sin actividad todavía', 'Aquí verás importaciones, descargas del SAT, respaldos, documentos archivados y cancelaciones detectadas.'));
+  else {
+    const list = n('div', undefined, 'activity-list');
+    for (const row of activity.slice(0, 8)) {
+      const item = n('div', undefined, 'activity-item');
+      const kind = row.event ? (row.event.startsWith('Cancelación') ? 'alert' : 'event') : (row.name.startsWith('SAT') ? 'sat' : 'import');
+      const badge = n('span', kind === 'alert' ? 'Alerta' : kind === 'sat' ? 'SAT' : kind === 'event' ? 'Evento' : 'Lote', 'activity-kind');
+      badge.dataset.kind = kind;
+      const body = n('div', undefined, 'activity-body');
+      if (row.event) body.append(n('strong', row.event), n('small', localDateTime(Date.parse(row.date))));
+      else {
+        body.append(n('strong', row.name),
+          n('small', dateLabel(row.date) + ' · ' + row.added + ' nuevos · ' + row.duplicates + ' duplicados' + (row.review ? ' · ' + row.review + ' por revisar' : '')));
+        if (row.review) body.append(action('Ver revisión', () => reviewDetail(row), 'metric-link', 'arrow'));
+      }
+      item.append(badge, body);
+      list.append(item);
+    }
+    history.append(list);
+  }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
   return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks];

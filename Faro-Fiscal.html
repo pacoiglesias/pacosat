@@ -7,6 +7,7 @@
 
 .nav-caption{display:block;color:#9fb2ca;font-size:10px;font-weight:750;letter-spacing:.13em;padding:3px 10px 4px}.nav-divider{margin-top:13px}.sidebar{gap:24px}.dashboard-hero{position:relative;overflow:hidden;min-height:134px;isolation:isolate}.dashboard-hero::after{content:"";z-index:-1;position:absolute;width:285px;height:285px;right:-20px;top:-120px;border-radius:50%;border:1px solid #98c9ce50;box-shadow:0 0 0 25px #a5cbdd16,0 0 0 51px #a5cbdd15,0 0 0 80px #a5cbdd0b}.metric{grid-template-columns:1fr auto;align-items:center;min-height:105px}.metric-label{grid-column:1/-1}.metric-link{background:#f5f8fc;border:1px solid #e2eaf2;color:#34536d;padding:6px 8px;font-size:12px}.metric-link svg{width:14px;height:14px}.period-chip{display:inline-block;max-width:100%;padding:5px 8px;border:1px solid #dde8f1;border-radius:7px;background:#f3f7fb;color:#375977;font-size:12px;font-weight:700}.activity-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding:4px 17px 17px}.activity-day{display:grid;gap:5px;min-width:0;color:#53647b;font-size:12px;font-variant-numeric:tabular-nums}.activity-day strong{color:#213b59;font-size:14px}.activity-day meter{width:100%;height:12px}.activity-day meter::-webkit-meter-bar{background:#e8eff6;border:none;border-radius:8px}.activity-day meter::-webkit-meter-optimum-value{background:linear-gradient(90deg,#237570,#478e9e);border-radius:8px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:#f4f8fc;border:1px solid #dce7f1;padding:15px;border-radius:12px;overflow-wrap:anywhere}.invoice-summary h3{font-size:27px;letter-spacing:-.04em;margin-top:5px}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div{display:grid;gap:3px;padding:10px;background:#fff;border:1px solid #e1e8f0;border-radius:9px;min-width:0}.invoice-parties small{font-size:10px;color:#53647b;letter-spacing:.1em;font-weight:700}.invoice-parties span,.invoice-summary small{color:#53647b}.invoice-concepts{padding:11px 13px;border:1px solid #e1e8f0;border-radius:9px}.invoice-concepts ul{padding-left:21px;margin:6px 0 0}.invoice-concepts li{overflow-wrap:anywhere}.table-wrap td:last-child .actions{gap:5px}@media(max-width:780px){.nav-caption{width:100%;padding:3px 5px}.nav-divider{margin-top:5px}.metric{min-height:0}.dashboard-hero{min-height:0}.activity-bars{gap:6px}}@media(max-width:390px){.invoice-parties{grid-template-columns:1fr}.activity-bars{padding-inline:9px;gap:4px}.activity-day{font-size:10px}}
 .fiscal-state{display:grid;gap:2px;justify-items:start}.fiscal-badge{display:inline-block;padding:3px 8px;border-radius:100px;color:#435b74;background:#e8eef5;font-size:12px;font-weight:700;white-space:nowrap}.fiscal-badge[data-state=Vigente]{color:#125d44;background:#dcf2e7}.fiscal-badge[data-state=Cancelado]{color:#922b31;background:#fae5e5}.fiscal-badge[data-state="No encontrado"]{color:#755015;background:#fff0d7}.fiscal-state small{font-size:11px}
+body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button{transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.metric{transition:box-shadow .18s ease,transform .18s ease}.metric:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.top-side{display:inline-flex;align-items:center;gap:12px;min-width:0}.header-counters{color:var(--muted);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.activity-list{display:grid;padding:6px 15px 10px}.activity-item{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border)}.activity-item:first-child{border-top:none}.activity-kind{flex:none;margin-top:1px;padding:3px 8px;border-radius:100px;font-size:11px;font-weight:750;letter-spacing:.02em;background:#e8eef5;color:#435b74}.activity-kind[data-kind=sat]{background:#e0f0ee;color:#14524c}.activity-kind[data-kind=import]{background:#e5ecfa;color:#2c4a7c}.activity-kind[data-kind=alert]{background:#fae5e5;color:#922b31}.activity-body{display:grid;gap:2px;min-width:0}.activity-body strong{font-size:13.5px;overflow-wrap:anywhere}.activity-body small{color:var(--muted);font-size:12px}.activity-body .metric-link{justify-self:start;margin-top:3px}.table-wrap::-webkit-scrollbar,.xml-view::-webkit-scrollbar{height:10px;width:10px}.table-wrap::-webkit-scrollbar-thumb,.xml-view::-webkit-scrollbar-thumb{background:#c3d2e0;border-radius:8px}::selection{background:#bfe3d2}@media(max-width:780px){.header-counters{display:none}}@media print{.sidebar,.top,.heading .actions,.hero-actions{display:none!important}.frame{display:block}.page{padding:0;max-width:none}}@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -42,7 +43,7 @@
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
 </aside>
 <main>
-  <header class="top"><span>Faro Fiscal <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></header>
+  <header class="top"><span>Faro Fiscal <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><span id="counters" class="header-counters"></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
   <div class="page">
     <header class="heading">
       <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
@@ -327,6 +328,15 @@ function announce(message = '', error = false) {
   $('status').hidden = !message;
   $('status').dataset.error = error;
 }
+async function logEvent(text) {
+  if (!ready) return;
+  const entry = { id: crypto.randomUUID(), name: String(text).slice(0, 180), date: new Date().toISOString(),
+    added: 0, duplicates: 0, review: 0, issues: [], event: String(text).slice(0, 320) };
+  try {
+    await writeBatch({ activity: [entry] });
+    activity = [entry, ...activity.filter(row => row.id !== entry.id)];
+  } catch { /* La bitácora es informativa: nunca debe interrumpir la operación principal. */ }
+}
 function panel(title) {
   const wrap = n('section', undefined, 'panel');
   if (title) {
@@ -415,6 +425,13 @@ function render() {
   $('crumb').textContent = page === 'home' ? 'Resumen' : title;
   $('subtitle').textContent = description;
   $('eyebrow').textContent = scope || 'ESPACIO FISCAL';
+  const headerCounts = $('counters');
+  if (headerCounts) {
+    const selectedCount = invoices.filter(matches).length;
+    const docsCount = documents.filter(doc => !scope || doc.rfc === scope).length;
+    headerCounts.textContent = people.length ?
+      number.format(selectedCount) + ' CFDI · ' + number.format(docsCount) + ' PDF · ' + people.length + ' RFC' : '';
+  }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
   const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen })[page]();
@@ -462,11 +479,27 @@ function home() {
       action('Abrir expediente', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('docs'); })
     ])));
   }
-  const history = panel('Importaciones recientes');
-  if (!activity.length) history.append(empty('Sin importaciones', 'Aquí aparecerá el resultado de cada lote.'));
-  else history.append(grid(['Lote', 'Nuevos', 'Duplicados', 'Por revisar'], activity.slice(0, 5).map(row => [
-    cell(row.name, dateLabel(row.date)), row.added, row.duplicates, row.review ? action(row.review + ' · Ver revisión', () => reviewDetail(row)) : '0'
-  ])));
+  const history = panel('Actividad reciente');
+  if (!activity.length) history.append(empty('Sin actividad todavía', 'Aquí verás importaciones, descargas del SAT, respaldos, documentos archivados y cancelaciones detectadas.'));
+  else {
+    const list = n('div', undefined, 'activity-list');
+    for (const row of activity.slice(0, 8)) {
+      const item = n('div', undefined, 'activity-item');
+      const kind = row.event ? (row.event.startsWith('Cancelación') ? 'alert' : 'event') : (row.name.startsWith('SAT') ? 'sat' : 'import');
+      const badge = n('span', kind === 'alert' ? 'Alerta' : kind === 'sat' ? 'SAT' : kind === 'event' ? 'Evento' : 'Lote', 'activity-kind');
+      badge.dataset.kind = kind;
+      const body = n('div', undefined, 'activity-body');
+      if (row.event) body.append(n('strong', row.event), n('small', localDateTime(Date.parse(row.date))));
+      else {
+        body.append(n('strong', row.name),
+          n('small', dateLabel(row.date) + ' · ' + row.added + ' nuevos · ' + row.duplicates + ' duplicados' + (row.review ? ' · ' + row.review + ' por revisar' : '')));
+        if (row.review) body.append(action('Ver revisión', () => reviewDetail(row), 'metric-link', 'arrow'));
+      }
+      item.append(badge, body);
+      list.append(item);
+    }
+    history.append(list);
+  }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
   return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks];
@@ -753,7 +786,9 @@ function linkPdfDialog(doc) {
     check([row.from.rfc,row.to.rfc].includes(doc.rfc), 'El XML corresponde a otro RFC.');
     check(!documents.some(d => d.id !== doc.id && d.rfc === doc.rfc && d.uuid === id && d.kind === 'Factura PDF'), 'Ese CFDI ya tiene un PDF vinculado.');
     await writeBatch({ documents: [{ ...doc, uuid: id }] });
-    await refresh(); announce('PDF vinculado al XML.');
+    await refresh();
+    await logEvent('PDF vinculado al CFDI ' + id);
+    announce('PDF vinculado al XML.');
   });
 }
 
@@ -874,7 +909,9 @@ function addDocument() {
       files: [{ id, blob: new Blob([file], { type: 'application/pdf' }) }] });
     docFilter = '';
     if (scope && scope !== taxpayer.value) scope = taxpayer.value;
-    await refresh(); announce('PDF archivado en ' + taxpayer.value + '.');
+    await refresh();
+    await logEvent('PDF archivado · ' + kind.value + ' · ' + taxpayer.value);
+    announce('PDF archivado en ' + taxpayer.value + '.');
   });
 }
 function invoiceDetail(row) {
@@ -1021,7 +1058,9 @@ async function validateBackup(data) {
     const issues = Array.isArray(entry.issues) ? entry.issues.slice(0, 20)
       .filter(item => validText(item?.name, 180) && validText(item.reason, 320))
       .map(item => ({ name: item.name, reason: item.reason })) : [];
-    output.activity.push({ id, name, date, added, duplicates, review, issues });
+    const restored = { id, name, date, added, duplicates, review, issues };
+    if (validText(entry.event, 320)) restored.event = entry.event;
+    output.activity.push(restored);
   }
   check(contents.size === 0, 'El respaldo contiene archivos sin expediente.');
   return output;
@@ -1033,6 +1072,7 @@ function backupDialog() {
   dialog('Crear respaldo cifrado', [field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
     check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
     download(await encryptBackup(await snapshot(), password.value), 'Faro-' + new Date().toISOString().slice(0, 10) + '.faro');
+    await logEvent('Respaldo cifrado creado');
     announce('Respaldo cifrado generado.');
   });
 }
@@ -1045,7 +1085,9 @@ function restoreDialog(file) {
     check(confirmation.checked, 'Confirma el reemplazo de los datos.');
     const contents = await validateBackup(await decryptBackup(file, password.value));
     await writeBatch(contents, true);
-    await refresh(); announce('Respaldo restaurado.');
+    await refresh();
+    await logEvent('Respaldo restaurado desde un archivo cifrado');
+    announce('Respaldo restaurado.');
   });
 }
 const handle = work => () => Promise.resolve().then(work).catch(error => announce(error.message, true));
@@ -1327,6 +1369,14 @@ async function pollMonitor() {
     const result = await satApi('monitor', { records, ids: candidates.map(row => row.id) });
     for (const row of records) watched.add(row.id);
     for (const entry of result.results) fiscalResults.set(entry.id, entry);
+    let cancellationsLogged = 0;
+    for (const entry of result.results) {
+      if (cancellationsLogged >= 5 || entry.sat?.state !== 'Cancelado') continue;
+      const text = 'Cancelación detectada · ' + entry.id;
+      if (activity.some(row => row.event === text)) continue;
+      await logEvent(text);
+      cancellationsLogged++;
+    }
     if (page !== 'invoices') monitorCursor += 500;
     monitorData = result;
     monitorError = '';

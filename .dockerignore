@@ -1,5 +1,6 @@
 *
 !package.json
+!package-lock.json
 !local-server.mjs
 !sat-direct.mjs
 !sat-monitor.mjs

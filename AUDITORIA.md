@@ -1,6 +1,6 @@
 # Revisión técnica interna — 2026-11-08
 
-Versión 1.2.0. Alcance: lectura del código, configuración y ejecución de pruebas con dependencias SAT/SMTP simuladas. No es certificación, pentest externo ni validación fiscal.
+Versión 1.3.0 (revisión original sobre la 1.2.0; al final se añade la actualización 1.3.0). Alcance: lectura del código, configuración y ejecución de pruebas con dependencias SAT/SMTP simuladas. No es certificación, pentest externo ni validación fiscal.
 
 ## Corregido
 
@@ -32,3 +32,16 @@ Versión 1.2.0. Alcance: lectura del código, configuración y ejecución de pru
 - Falta una bitácora histórica inmutable y políticas de retención. La interfaz muestra solicitudes recientes, no una auditoría completa de acciones.
 
 Resultado: apto para iniciar pruebas controladas del prototipo; no declarado listo para producción.
+
+## Actualización 1.3.0 — 2026-11-08
+
+Cambios aplicados y verificados en local (`npm run check` en verde, 4 suites + verificación de interfaz):
+
+- **Lockfile generado e instalación verificada**: `npm install` real (26 paquetes) produjo `package-lock.json`; la resolución de dependencias que el intento anterior no pudo comprobar por DNS queda verificada. `Dockerfile`, `Iniciar-Faro.cmd` y el CI instalan con `npm ci`.
+- **`.gitignore` protege `config.json` por nombre** (también `*config*.local.json` y `servidor-config.json`): la configuración con la contraseña de la e.firma y la de SMTP ya no depende solo de vivir dentro de `faro-secrets/`.
+- **Custodia de la e.firma, verificada en el código**: las contraseñas no se guardan en SQLite (la tabla de perfiles solo conserva RFC, intervalo, días, dirección y próxima revisión); viven en memoria del servicio y en el `config.json` protegido. Los búferes de certificado y llave recibidos al autorizar se ponen a cero tras crear el conector. SERVIDOR.md ahora indica permisos concretos (700/600) para `faro-secrets`.
+- **Bitácora visible**: el Resumen muestra «Actividad reciente» con importaciones, descargas SAT, respaldos creados o restaurados, PDF archivados o vinculados y cancelaciones detectadas, con fecha y hora. Sigue sin ser una bitácora inmutable con políticas de retención: ese pendiente se mantiene.
+- **Mejora visual**: cabecera con totales del espacio (CFDI · PDF · RFC), lista de actividad con insignias por tipo, tarjetas con realce al pasar el cursor, estilos de impresión y respeto a `prefers-reduced-motion`.
+- **Orden**: unificado el `.dockerignore` (se elimina el duplicado `Dockerfile.dockerignore`), LEEME remite al README para la instalación y se añade `LICENSE`.
+
+Pendientes que NO cambian con esta actualización: conexión real con el SAT, SMTP real, CSP sin scripts inline, usuarios/roles/MFA y validación exhaustiva de esquemas antes de un uso multiusuario.

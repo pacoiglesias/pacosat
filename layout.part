@@ -35,7 +35,7 @@
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
 </aside>
 <main>
-  <header class="top"><span>Faro Fiscal <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></header>
+  <header class="top"><span>Faro Fiscal <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><span id="counters" class="header-counters"></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
   <div class="page">
     <header class="heading">
       <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
