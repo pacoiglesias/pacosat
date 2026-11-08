@@ -64,7 +64,7 @@ async function productionConnector(credentials) {
   return { connector, parser: dom.DOMParser };
 }
 
-export function createFaroService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
+export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
   analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {} }) {
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
@@ -90,7 +90,7 @@ export function createFaroService({ dbFile, html, origin, proxyKey = '', makeCon
     await mail.transport.sendMail({ from: mail.from, to: mail.recipient,
       subject: 'PacoSAT · CFDI cancelado detectado',
       text: 'El SAT reportó como cancelado el folio ' + item.id + '. Emisor: ' + item.emitter + '. Receptor: ' + item.receiver + '.',
-      messageId: '<faro-cancelado-' + item.id.toLowerCase() + '@faro.local>' });
+      messageId: '<pacosat-cancelado-' + item.id.toLowerCase() + '@pacosat.local>' });
     return true;
   }, ...monitorOptions });
   const host = new URL(origin).host;
@@ -237,7 +237,7 @@ export function createFaroService({ dbFile, html, origin, proxyKey = '', makeCon
           from: active.from, to: item.recipient,
           subject: 'PacoSAT · Nuevos CFDI recibidos',
           text: 'PacoSAT detectó ' + item.count + ' comprobante(s) nuevo(s) para el RFC ' + item.rfc + '. Abre PacoSAT para revisar el expediente.',
-          messageId: '<faro-' + item.id + '-' + active.instance + '@faro.local>'
+          messageId: '<pacosat-' + item.id + '-' + active.instance + '@pacosat.local>'
         });
         db.prepare('UPDATE notices SET sent=?,error=? WHERE id=?').run(now(), '', item.id);
       } catch { db.prepare('UPDATE notices SET error=? WHERE id=?').run('El servidor SMTP no aceptó el envío. Revisa la configuración y las credenciales.', item.id); }
@@ -265,15 +265,15 @@ export function createFaroService({ dbFile, html, origin, proxyKey = '', makeCon
     res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; frame-src blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     try {
       need(req.headers.host === host, 'Host inválido.', 403);
-      if (cloud) need(req.headers['x-faro-proxy'] === proxyKey, 'Acceso reservado al proxy HTTPS.', 403);
+      if (cloud) need(req.headers['x-pacosat-proxy'] === proxyKey, 'Acceso reservado al proxy HTTPS.', 403);
       need(!req.headers['sec-fetch-site'] || ['same-origin','none'].includes(req.headers['sec-fetch-site']), 'Origen inválido.', 403);
       const url = new URL(req.url, origin);
       if (req.method === 'GET' && url.pathname === '/') {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        return res.end(html.replace('<!--FARO_TOKEN-->', '<meta name="faro-token" content="' + token + '">' +
-          (cloud ? '<meta name="faro-cloud" content="1">' : '')));
+        return res.end(html.replace('<!--PACOSAT_TOKEN-->', '<meta name="pacosat-token" content="' + token + '">' +
+          (cloud ? '<meta name="pacosat-cloud" content="1">' : '')));
       }
-      need(req.headers['x-faro-token'] === token, 'Sesión local inválida.', 403);
+      need(req.headers['x-pacosat-token'] === token, 'Sesión local inválida.', 403);
       if (req.method === 'POST') need(req.headers.origin === origin, 'Origen inválido.', 403);
       if (req.method === 'GET' && url.pathname === '/api/status') return json(res, overview());
       if (req.method === 'POST' && url.pathname === '/api/monitor') {
@@ -398,13 +398,13 @@ export function createFaroService({ dbFile, html, origin, proxyKey = '', makeCon
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const path = process.env.PACOSAT_DATA_DIR || join(process.env.LOCALAPPDATA || homedir(), 'FaroFiscalLocal');
+  const path = process.env.PACOSAT_DATA_DIR || join(process.env.LOCALAPPDATA || homedir(), 'PacoSATLocal');
   mkdirSync(path, { recursive: true });
   const proxyKey = process.env.PACOSAT_PROXY_KEY || '';
   const origin = process.env.PACOSAT_ORIGIN || 'http://127.0.0.1:43729';
   need(origin === new URL(origin).origin && (!proxyKey || (proxyKey.length >= 32 && origin.startsWith('https://'))) &&
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
-  const service = createFaroService({ dbFile: join(path, 'faro-sat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey });
+  const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey });
   const server = createServer(service.handle);
   server.requestTimeout = 90000;
   server.on('error', error => {

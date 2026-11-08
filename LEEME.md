@@ -14,7 +14,7 @@ PacoSAT archiva PDF de constancias, cédulas, opiniones, declaraciones y acuses.
 
 ## Datos
 
-El servicio local escucha solo en 127.0.0.1. Los expedientes y XML importados se guardan en el perfil de Chrome o Edge. La cola SAT y los paquetes pendientes quedan en %LOCALAPPDATA%\FaroFiscalLocal. Las copias cifradas exportadas desde la sección Respaldos contienen expedientes y archivos, sin e.firma, SMTP ni cola SAT. Para migrar desde Faro HTML, exporta un respaldo en esa edición y restáuralo en esta. Abre Faro siempre con el mismo navegador y perfil. Los avisos incluyen el RFC y conteo, sin adjuntar archivos.
+El servicio local escucha solo en 127.0.0.1. Los expedientes y XML importados se guardan en el perfil de Chrome o Edge. La cola SAT y los paquetes pendientes quedan en %LOCALAPPDATA%\PacoSATLocal. Las copias cifradas exportadas desde la sección Respaldos contienen expedientes y archivos, sin e.firma, SMTP ni cola SAT. Para migrar desde la edición HTML anterior, exporta un respaldo en esa edición y restáuralo en esta. Abre Faro siempre con el mismo navegador y perfil. Los avisos incluyen el RFC y conteo, sin adjuntar archivos.
 
 ## Validación
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { createFaroService } from './local-server.mjs';
+import { createPacoSATService } from './local-server.mjs';
 import { crc32, parseXml } from './xml-core.mjs';
 
 const rfc = 'XAXX010101000';
@@ -40,8 +40,8 @@ const calls = [], sent = [];
 const valid = archive('<fixture/>'), mismatch = archive('<mismatch/>');
 assert.equal(parseXml(Buffer.from('<fixture/>'), FixtureParser).to.rfc, rfc);
 const origin = 'http://127.0.0.1:43729';
-const service = createFaroService({
-  dbFile: ':memory:', html: '<!--FARO_TOKEN-->', origin, now: () => time,
+const service = createPacoSATService({
+  dbFile: ':memory:', html: '<!--PACOSAT_TOKEN-->', origin, now: () => time,
   makeConnector: async credentials => {
     assert.equal(credentials.rfc, rfc);
     assert.equal(credentials.password, 'simulated');
@@ -58,7 +58,7 @@ const service = createFaroService({
 });
 let token;
 async function call(path, data, options = {}) {
-  const headers = { host: new URL(origin).host, origin, 'x-faro-token': token, ...options };
+  const headers = { host: new URL(origin).host, origin, 'x-pacosat-token': token, ...options };
   const req = Object.assign(Readable.from(data === undefined ? [] : [Buffer.from(JSON.stringify(data))]), {
     url: path, method: data === undefined ? 'GET' : 'POST', headers
   });
@@ -70,7 +70,7 @@ async function call(path, data, options = {}) {
 }
 try {
   token = (await (await call('/')).text()).match(/content="([^"]+)"/)[1];
-  assert.equal((await call('/api/status', undefined, { 'x-faro-token': 'bad' })).status, 403);
+  assert.equal((await call('/api/status', undefined, { 'x-pacosat-token': 'bad' })).status, 403);
   assert.equal((await call('/api/status', undefined, { 'sec-fetch-site': 'cross-site' })).status, 403);
   assert.equal((await call('/api/lock', { rfc }, { origin: 'http://example.com' })).status, 403);
   assert.equal((await call('/api/mail', { host: 'smtp.example.com', port: 587, from: 'from@example.com',
