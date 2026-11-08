@@ -1,10 +1,10 @@
-{$FARO_DOMAIN} {
+{$PACOSAT_DOMAIN} {
   basic_auth {
-    {$FARO_LOGIN} {$FARO_PASSWORD_HASH}
+    {$PACOSAT_LOGIN} {$PACOSAT_PASSWORD_HASH}
   }
   header Strict-Transport-Security "max-age=31536000"
-  reverse_proxy faro:43729 {
+  reverse_proxy pacosat:43729 {
     header_up -Authorization
-    header_up X-Faro-Proxy {$FARO_PROXY_KEY}
+    header_up X-PacoSAT-Proxy {$PACOSAT_PROXY_KEY}
   }
 }

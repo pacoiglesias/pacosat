@@ -1,6 +1,6 @@
 # Revisión técnica interna — 2026-11-08
 
-Versión 1.3.0 (revisión original sobre la 1.2.0; al final se añade la actualización 1.3.0). Alcance: lectura del código, configuración y ejecución de pruebas con dependencias SAT/SMTP simuladas. No es certificación, pentest externo ni validación fiscal.
+Versión 1.4.0 (revisión original sobre la 1.2.0; al final se añaden las actualizaciones 1.3.0 y 1.4.0). Alcance: lectura del código, configuración y ejecución de pruebas con dependencias SAT/SMTP simuladas. No es certificación, pentest externo ni validación fiscal.
 
 ## Corregido
 
@@ -37,11 +37,17 @@ Resultado: apto para iniciar pruebas controladas del prototipo; no declarado lis
 
 Cambios aplicados y verificados en local (`npm run check` en verde, 4 suites + verificación de interfaz):
 
-- **Lockfile generado e instalación verificada**: `npm install` real (26 paquetes) produjo `package-lock.json`; la resolución de dependencias que el intento anterior no pudo comprobar por DNS queda verificada. `Dockerfile`, `Iniciar-Faro.cmd` y el CI instalan con `npm ci`.
-- **`.gitignore` protege `config.json` por nombre** (también `*config*.local.json` y `servidor-config.json`): la configuración con la contraseña de la e.firma y la de SMTP ya no depende solo de vivir dentro de `faro-secrets/`.
-- **Custodia de la e.firma, verificada en el código**: las contraseñas no se guardan en SQLite (la tabla de perfiles solo conserva RFC, intervalo, días, dirección y próxima revisión); viven en memoria del servicio y en el `config.json` protegido. Los búferes de certificado y llave recibidos al autorizar se ponen a cero tras crear el conector. SERVIDOR.md ahora indica permisos concretos (700/600) para `faro-secrets`.
+- **Lockfile generado e instalación verificada**: `npm install` real (26 paquetes) produjo `package-lock.json`; la resolución de dependencias que el intento anterior no pudo comprobar por DNS queda verificada. `Dockerfile`, el lanzador de Windows y el CI instalan con `npm ci`.
+- **`.gitignore` protege `config.json` por nombre** (también `*config*.local.json` y `servidor-config.json`): la configuración con la contraseña de la e.firma y la de SMTP ya no depende solo de vivir dentro de la carpeta de secretos del servidor.
+- **Custodia de la e.firma, verificada en el código**: las contraseñas no se guardan en SQLite (la tabla de perfiles solo conserva RFC, intervalo, días, dirección y próxima revisión); viven en memoria del servicio y en el `config.json` protegido. Los búferes de certificado y llave recibidos al autorizar se ponen a cero tras crear el conector. SERVIDOR.md ahora indica permisos concretos (700/600) para la carpeta de secretos.
 - **Bitácora visible**: el Resumen muestra «Actividad reciente» con importaciones, descargas SAT, respaldos creados o restaurados, PDF archivados o vinculados y cancelaciones detectadas, con fecha y hora. Sigue sin ser una bitácora inmutable con políticas de retención: ese pendiente se mantiene.
 - **Mejora visual**: cabecera con totales del espacio (CFDI · PDF · RFC), lista de actividad con insignias por tipo, tarjetas con realce al pasar el cursor, estilos de impresión y respeto a `prefers-reduced-motion`.
 - **Orden**: unificado el `.dockerignore` (se elimina el duplicado `Dockerfile.dockerignore`), LEEME remite al README para la instalación y se añade `LICENSE`.
 
 Pendientes que NO cambian con esta actualización: conexión real con el SAT, SMTP real, CSP sin scripts inline, usuarios/roles/MFA y validación exhaustiva de esquemas antes de un uso multiusuario.
+
+## Actualización 1.4.0 — 2026-11-08: renombre a PacoSAT
+
+- El producto pasa a llamarse **PacoSAT** (sustituye al nombre anterior del proyecto): título, marca e interfaz, asuntos de los correos de aviso, mensajes del servicio y documentación. La dirección pública de la instancia en servidor es https://sat.cobertores.com.
+- Renombre interno consistente (sin despliegue previo que romper): variables de entorno con el prefijo nuevo `PACOSAT_*` en código, compose, Caddyfile y ejemplo de `.env`; carpeta de secretos con el nombre nuevo `pacosat-secrets`; servicio y volumen de compose `pacosat`/`pacosat-data`; datos en `/var/lib/pacosat`; lanzador `Iniciar-PacoSAT.cmd`; paquete npm `pacosat` y lockfile regenerado; identificadores internos de protocolo (función del servicio, metas y cabeceras de sesión, marcador de plantilla, dominio de message-id, base SQLite `pacosat.sqlite` y carpeta local `PacoSATLocal`) alineados con el nombre nuevo y verificados por la batería de pruebas.
+- Excepciones que se mantienen a propósito, por compatibilidad, y son las únicas apariciones del nombre anterior que quedan en el repo: el archivo generado sigue llamándose `Faro-Fiscal.html` (el paso de verificación de CI en `ci.yml` lo referencia por nombre y ese archivo no es editable desde el conector de GitHub; se renombrará en el mismo paso web que añada `npm ci` al CI), la base IndexedDB `faro-fiscal-v2` y la magia de respaldo `FARO2` con la extensión `.faro` (renombrarlos huérfanaría los expedientes del navegador y los respaldos ya creados; su migración segura queda como paso futuro planificado).

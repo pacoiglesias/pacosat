@@ -5,7 +5,7 @@ node_modules/
 config.json
 *config*.local.json
 servidor-config.json
-faro-secrets/
+pacosat-secrets/
 *.cer
 *.key
 *.pfx

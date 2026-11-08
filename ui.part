@@ -342,7 +342,7 @@ function satScreen() {
   if (typeof satToken !== 'undefined' && satToken) return connectedSatScreen();
   const guide = n('section', undefined, 'guide');
   const info = n('div');
-  info.append(n('h2', 'Descarga en el SAT e importa en Faro'), n('p', 'Descarga el ZIP en el portal e impórtalo aquí. Faro asigna los XML a los RFC registrados y omite los UUID repetidos. La descarga automática desde el SAT aún no está habilitada.'));
+  info.append(n('h2', 'Descarga en el SAT e importa en PacoSAT'), n('p', 'Descarga el ZIP en el portal e impórtalo aquí. PacoSAT asigna los XML a los RFC registrados y omite los UUID repetidos. La descarga automática desde el SAT aún no está habilitada.'));
   const options = n('div', undefined, 'actions');
   options.append(action('Elegir ZIP o XML', chooseImport, 'primary', 'up'), action('Importar carpeta', () => {
     check(people.length, 'Agrega primero un RFC.'); $('folder').click();
@@ -360,7 +360,7 @@ function satScreen() {
 function backupScreen() {
   const help = n('section', undefined, 'guide');
   const desc = n('div');
-  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', 'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de Faro, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
+  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', 'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de PacoSAT, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
   const options = n('div', undefined, 'actions');
   options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
   help.append(desc, options);

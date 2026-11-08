@@ -1,11 +1,11 @@
-const satToken = document.querySelector('meta[name="faro-token"]')?.content;
+const satToken = document.querySelector('meta[name="pacosat-token"]')?.content;
 let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
 let satError = '', satPolling = false, cloudRevision;
 const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada' };
 const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
 
 async function satApi(route, data) {
-  const headers = { 'X-Faro-Token': satToken };
+  const headers = { 'X-PacoSAT-Token': satToken };
   if (data !== undefined) headers['Content-Type'] = 'application/json';
   const response = await fetch('/api/' + route, {
     method: data === undefined ? 'GET' : 'POST', headers,
@@ -27,7 +27,7 @@ function connectedSatScreen() {
   const guide = n('section', undefined, 'guide');
   const info = n('div');
   info.append(n('h2', 'Sincronización directa con el SAT'),
-    n('p', 'Autoriza la e.firma por RFC. Faro solicita CFDI, descarga los paquetes y los incorpora al expediente. El servicio puede seguir abierto aunque cierres la pestaña.'));
+    n('p', 'Autoriza la e.firma por RFC. PacoSAT solicita CFDI, descarga los paquetes y los incorpora al expediente. El servicio puede seguir abierto aunque cierres la pestaña.'));
   const controls = n('div', undefined, 'actions');
   controls.append(action('Configurar RFC', () => unlockDialog(), 'primary', 'lock'),
     action('Solicitar un periodo', requestDialog, undefined, 'sync'));
@@ -61,7 +61,7 @@ function fillSat(target = $('sat-live')) {
     cell(satStatus[row.status] || row.status, row.error || (row.status === 'pending' ? 'Próxima consulta ' + localDateTime(row.due) : '')),
     row.status === 'pending' ? action('Reintentar consulta', async () => { satData = await satApi('retry', { id: row.id }); fillSat(); announce('Consulta programada para el siguiente ciclo del servicio.'); }) : n('span', 'Creada ' + localDateTime(row.created))
   ])));
-  else queue.append(empty('Todavía no hay solicitudes', 'Al activar un RFC, Faro iniciará la revisión en segundo plano.'));
+  else queue.append(empty('Todavía no hay solicitudes', 'Al activar un RFC, PacoSAT iniciará la revisión en segundo plano.'));
   const alerts = panel('Avisos por correo');
   const bar = n('div', undefined, 'panel-head');
   const notice = cell(satData.mail.enabled ? 'Activados · ' + satData.mail.recipient : 'Correo desactivado',
@@ -106,7 +106,7 @@ function requestDialog() {
   dialog('Solicitar un periodo al SAT', [field('Contribuyente', person), field('Comprobantes', direction),
     field('Fecha inicial', start), field('Fecha final', end)], async () => {
     satData = await satApi('request', { rfc: person.value, direction: direction.value, start: start.value, end: end.value });
-    fillSat(); announce('Solicitud enviada. Faro revisará cuándo libera el paquete el SAT.');
+    fillSat(); announce('Solicitud enviada. PacoSAT revisará cuándo libera el paquete el SAT.');
   });
 }
 function mailDialog() {
@@ -116,7 +116,7 @@ function mailDialog() {
   const port = select([['465', '465 · TLS'], ['587', '587 · STARTTLS']], '587');
   const user = input('text', { autocomplete: 'off', maxLength: 200 });
   const password = input('password', { autocomplete: 'off', maxLength: 512 });
-  dialog('Avisos por correo', [n('p', 'Usa los datos SMTP de tu proveedor. Faro verifica la conexión antes de activar los avisos. Vuelve a configurarlos al reiniciar el servicio.'),
+  dialog('Avisos por correo', [n('p', 'Usa los datos SMTP de tu proveedor. PacoSAT verifica la conexión antes de activar los avisos. Vuelve a configurarlos al reiniciar el servicio.'),
     field('Correo que recibe los avisos', recipient), field('Dirección del remitente', from), field('Servidor SMTP', host),
     field('Puerto', port), field('Usuario SMTP', user), field('Contraseña SMTP o de aplicación', password)], async () => {
     satData = await satApi('mail', { enabled: true, recipient: recipient.value.trim(), from: from.value.trim(),
@@ -147,7 +147,7 @@ async function pollSat() {
       }
     };
     if (!$('dialog').open) {
-      if (navigator.locks) await navigator.locks.request('faro-sat-import', { ifAvailable: true }, lock => lock ? drain() : undefined);
+      if (navigator.locks) await navigator.locks.request('pacosat-sat-import', { ifAvailable: true }, lock => lock ? drain() : undefined);
       else await drain();
     }
   } catch (error) {

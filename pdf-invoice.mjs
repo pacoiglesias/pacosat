@@ -15,7 +15,7 @@ export async function analyzeInvoicePdf(raw) {
     throw Object.assign(new Error('Selecciona un PDF válido de hasta 15 MB.'), { status: 400 });
   }
   const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs').catch(() => {
-    throw Object.assign(new Error('Falta el lector PDF. Vuelve a iniciar Faro con internet para instalarlo.'), { status: 503 });
+    throw Object.assign(new Error('Falta el lector PDF. Vuelve a iniciar PacoSAT con internet para instalarlo.'), { status: 503 });
   });
   const task = getDocument({ data: Uint8Array.from(raw), isEvalSupported: false,
     useSystemFonts: false, disableFontFace: true, enableXfa: false, stopAtErrors: true });

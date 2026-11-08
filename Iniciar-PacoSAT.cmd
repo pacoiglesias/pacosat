@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 node -e "process.exit(Number(process.versions.node.split('.')[0])<24?1:0)" >nul 2>nul
 if errorlevel 1 (
-  echo Faro necesita Node.js 24 o superior.
+  echo PacoSAT necesita Node.js 24 o superior.
   pause
   exit /b 1
 )

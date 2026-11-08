@@ -1,6 +1,6 @@
 {
-  "name": "faro-fiscal-sat",
-  "version": "1.3.0",
+  "name": "pacosat",
+  "version": "1.4.0",
   "description": "Expediente fiscal privado con importación CFDI y seguimiento SAT",
   "scripts": {
     "build": "node build.mjs",

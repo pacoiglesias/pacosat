@@ -1,23 +1,23 @@
 services:
-  faro:
+  pacosat:
     build: .
     restart: unless-stopped
     environment:
-      FARO_ORIGIN: https://${FARO_DOMAIN:?Configura FARO_DOMAIN}
-      FARO_PROXY_KEY: ${FARO_PROXY_KEY:?Configura FARO_PROXY_KEY}
-      FARO_DATA_DIR: /var/lib/faro
-      FARO_STARTUP_CONFIG: /run/faro-secrets/config.json
+      PACOSAT_ORIGIN: https://${PACOSAT_DOMAIN:?Configura PACOSAT_DOMAIN}
+      PACOSAT_PROXY_KEY: ${PACOSAT_PROXY_KEY:?Configura PACOSAT_PROXY_KEY}
+      PACOSAT_DATA_DIR: /var/lib/pacosat
+      PACOSAT_STARTUP_CONFIG: /run/pacosat-secrets/config.json
     volumes:
-      - faro-data:/var/lib/faro
-      - ./faro-secrets:/run/faro-secrets:ro
+      - pacosat-data:/var/lib/pacosat
+      - ./pacosat-secrets:/run/pacosat-secrets:ro
   proxy:
     image: caddy:2.11-alpine
     restart: unless-stopped
     environment:
-      FARO_DOMAIN: ${FARO_DOMAIN:?Configura FARO_DOMAIN}
-      FARO_PROXY_KEY: ${FARO_PROXY_KEY:?Configura FARO_PROXY_KEY}
-      FARO_LOGIN: ${FARO_LOGIN:?Configura FARO_LOGIN}
-      FARO_PASSWORD_HASH: ${FARO_PASSWORD_HASH:?Configura FARO_PASSWORD_HASH}
+      PACOSAT_DOMAIN: ${PACOSAT_DOMAIN:?Configura PACOSAT_DOMAIN}
+      PACOSAT_PROXY_KEY: ${PACOSAT_PROXY_KEY:?Configura PACOSAT_PROXY_KEY}
+      PACOSAT_LOGIN: ${PACOSAT_LOGIN:?Configura PACOSAT_LOGIN}
+      PACOSAT_PASSWORD_HASH: ${PACOSAT_PASSWORD_HASH:?Configura PACOSAT_PASSWORD_HASH}
     ports:
       - "80:80"
       - "443:443"
@@ -26,6 +26,6 @@ services:
       - caddy-data:/data
       - caddy-config:/config
 volumes:
-  faro-data:
+  pacosat-data:
   caddy-data:
   caddy-config:

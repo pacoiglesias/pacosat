@@ -1,4 +1,4 @@
-const cloudStorage = Boolean(document.querySelector('meta[name="faro-cloud"]'));
+const cloudStorage = Boolean(document.querySelector('meta[name="pacosat-cloud"]'));
 let previewUrl;
 async function cloudRead(store, id) {
   const query = new URLSearchParams({ store });
