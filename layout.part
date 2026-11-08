@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>Faro Fiscal</title>
+<style>/*STYLES*/</style></head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 19 12 4l8 15M8 14h8m-5 5h2"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4M9 12h6m-6 4h6"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5m-4-3a8 8 0 0 1 13-3l2 3M4 15l2 3a8 8 0 0 0 13-3"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M3 5h18v5H3zm2 5v10h14V10m-9 4h4"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12m-5-5 5 5 5-5M4 17v3h16v-3"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+</svg>
+<div class="frame">
+<aside class="sidebar">
+  <div class="brand"><span class="logo"><svg><use href="#i-logo"/></svg></span><span>Faro Fiscal<small>ESPACIO DE TRABAJO</small></span></div>
+  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"><option value="">Todos los RFC</option></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
+  <nav aria-label="Navegación principal">
+    <span class="nav-caption">OPERACIÓN FISCAL</span>
+    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen</button>
+    <button data-view="operations"><svg><use href="#i-sync"/></svg> Operaciones y alertas</button>
+    <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
+    <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
+    <span class="nav-caption nav-divider">ADMINISTRACIÓN</span>
+    <button data-view="sat"><svg><use href="#i-sync"/></svg> Centro SAT</button>
+    <button data-view="monitor"><svg><use href="#i-search"/></svg> Vigilancia SAT</button>
+    <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
+  </nav>
+  <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
+</aside>
+<main>
+  <header class="top"><span>Faro Fiscal <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></header>
+  <div class="page">
+    <header class="heading">
+      <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
+      <div class="actions"><button id="inspect"><svg><use href="#i-file"/></svg> Abrir XML</button><button id="pdf-import"><svg><use href="#i-file"/></svg> Factura PDF</button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
+    </header>
+    <p id="status" role="status" hidden></p>
+    <section id="body" aria-label="Contenido"></section>
+  </div>
+</main>
+</div>
+<input id="incoming" type="file" accept=".xml,.zip" multiple hidden>
+<input id="inspectFile" type="file" accept=".xml,text/xml,application/xml" hidden>
+<input id="invoice-pdf" type="file" accept=".pdf,application/pdf" hidden>
+<input id="folder" type="file" webkitdirectory multiple hidden>
+<input id="restore" type="file" accept=".faro,application/json" hidden>
+<dialog id="dialog" aria-labelledby="dialogTitle">
+  <form id="form"><div class="modal-head"><h2 id="dialogTitle"></h2><button type="button" class="icon-button" id="close" aria-label="Cerrar"><svg><use href="#i-close"/></svg></button></div>
+  <div id="fields"></div><p id="formError" role="alert" hidden></p>
+  <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
+</dialog>
+<script>/*SCRIPT*/</script>
+</body></html>

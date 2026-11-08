@@ -1,0 +1,337 @@
+const screens = {
+  operations: ['Centro de operaciones', 'Pendientes, conciliación y estado por contribuyente.', 'Actualizar estado'],
+  home: ['Resumen fiscal', 'Facturas y documentos de tus contribuyentes en un solo lugar.', 'Importar XML / ZIP'],
+  invoices: ['Facturas CFDI', 'Busca por nombre, RFC o UUID y abre el comprobante sin perder tus filtros.', 'Importar XML / ZIP'],
+  docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
+  sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
+  monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
+  backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo']
+};
+const portals = [
+  ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
+  ['Constancia y CIF', 'Obtén la constancia de situación fiscal con cédula de identificación.', 'https://www.sat.gob.mx/portal/public/tramites/constancia-de-situacion-fiscal'],
+  ['Opinión de cumplimiento', 'Consulta y guarda el PDF de la opinión.', 'https://wwwmat.sat.gob.mx/consultas/20777/consulta-tu-opinion-de-cumplimiento-de-obligaciones-fiscales'],
+  ['Declaraciones y acuses', 'Recupera acuses de declaraciones presentadas.', 'https://wwwmatnp.sat.gob.mx/aplicacion/77792/reimprime-tus-acuses-de-declaraciones-presentadas']
+];
+let people = [], invoices = [], documents = [], activity = [];
+let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
+let invoiceKind = '', invoiceOrder = 'recent';
+let submit, importing = false, ready = false;
+const number = new Intl.NumberFormat('es-MX');
+const scopes = () => new Map(people.map(person => [person.id, person.name]));
+const matches = invoice => {
+  const known = scopes();
+  return (scope ? [scope] : [...known.keys()]).some(id => id === invoice.from.rfc || id === invoice.to.rfc);
+};
+const roles = row => {
+  const known = scopes();
+  return { issued: scope ? row.from.rfc === scope : known.has(row.from.rfc), received: scope ? row.to.rfc === scope : known.has(row.to.rfc) };
+};
+function dateLabel(date) {
+  if (date.length < 10) return date;
+  return date.slice(8, 10) + '/' + date.slice(5, 7) + '/' + date.slice(0, 4);
+}
+function amount(row) {
+  const [integer, decimals] = row.total.split('.');
+  return number.format(BigInt(integer)) + (decimals ? '.' + decimals : '.00') + (row.currency ? ' ' + row.currency : '');
+}
+function n(tag, text, cls) {
+  const el = document.createElement(tag);
+  if (text !== undefined) el.textContent = text;
+  if (cls) el.className = cls;
+  return el;
+}
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(svg.namespaceURI, 'use');
+  use.setAttribute('href', '#i-' + name);
+  svg.append(use);
+  return svg;
+}
+function action(label, work, cls, glyph) {
+  const button = n('button', label, cls);
+  button.type = 'button';
+  if (glyph) button.prepend(icon(glyph));
+  button.onclick = () => Promise.resolve().then(work).catch(error => announce(error.message, true));
+  return button;
+}
+function announce(message = '', error = false) {
+  $('status').textContent = message;
+  $('status').hidden = !message;
+  $('status').dataset.error = error;
+}
+function panel(title) {
+  const wrap = n('section', undefined, 'panel');
+  if (title) {
+    const header = n('div', undefined, 'panel-head');
+    header.append(n('h2', title));
+    wrap.append(header);
+  }
+  return wrap;
+}
+function grid(headers, rows) {
+  const wrap = n('div', undefined, 'table-wrap');
+  const table = n('table'), head = n('thead'), body = n('tbody'), header = n('tr');
+  for (const heading of headers) header.append(n('th', heading));
+  head.append(header);
+  for (const row of rows) {
+    const tr = n('tr');
+    for (const cell of row) {
+      const td = n('td');
+      if (cell instanceof Node) td.append(cell);
+      else td.textContent = cell;
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  table.append(head, body); wrap.append(table);
+  return wrap;
+}
+function cell(title, note) {
+  const wrap = n('div', title);
+  if (note) wrap.append(n('small', note));
+  return wrap;
+}
+function empty(title, message, button) {
+  const el = n('div', undefined, 'empty');
+  el.append(n('h3', title), n('p', message));
+  if (button) el.append(button);
+  return el;
+}
+function select(items, value, label) {
+  const input = n('select');
+  for (const [id, name] of items) input.append(new Option(name, id));
+  input.value = value;
+  if (label) input.setAttribute('aria-label', label);
+  return input;
+}
+function field(label, input) {
+  const el = n('label', label); el.append(input); return el;
+}
+function input(type, props) { return Object.assign(n('input'), { type }, props); }
+function dialog(title, controls, work) {
+  $('dialogTitle').textContent = title;
+  $('fields').replaceChildren(...controls);
+  $('formError').hidden = true;
+  $('save').hidden = !work;
+  submit = work;
+  $('dialog').showModal();
+}
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = n('a'); link.href = url; link.download = name;
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
+}
+async function refresh(skipRender = false) {
+  [people, invoices, documents, activity] = await Promise.all(['people', 'invoices', 'documents', 'activity'].map(store => readStore(store)));
+  people.sort((a, b) => a.name.localeCompare(b.name, 'es-MX'));
+  invoices.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  documents.sort((a, b) => b.date.localeCompare(a.date));
+  activity.sort((a, b) => b.date.localeCompare(a.date));
+  if (!people.some(person => person.id === scope)) scope = '';
+  $('scope').replaceChildren(new Option('Todos los RFC', ''), ...people.map(p => new Option(p.name + ' · ' + p.id, p.id)));
+  $('scope').value = scope;
+  if (!skipRender) render();
+}
+function navigate(view) {
+  page = view;
+  for (const button of document.querySelectorAll('[data-view]')) {
+    if (button.dataset.view === page) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  render();
+}
+function render() {
+  const [title, description, button] = screens[page];
+  $('title').textContent = title;
+  $('crumb').textContent = page === 'home' ? 'Resumen' : title;
+  $('subtitle').textContent = description;
+  $('eyebrow').textContent = scope || 'ESPACIO FISCAL';
+  $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : 'up'), n('span', button));
+  $('primary').disabled = !ready || importing;
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen })[page]();
+  $('body').replaceChildren(...content);
+}
+function home() {
+  const selection = invoices.filter(matches);
+  const pdfs = documents.filter(doc => !scope || doc.rfc === scope);
+  const banner = n('section', undefined, 'dashboard-hero');
+  const copy = n('div');
+  copy.append(n('div', 'MESA DE TRABAJO', 'hero-kicker'), n('h2', scope ? scopes().get(scope) : 'Control fiscal por contribuyente'),
+    n('p', scope ? scope : people.length ? people.length + (people.length === 1 ? ' contribuyente en tu cartera' : ' contribuyentes en tu cartera') : 'Agrega tu primer RFC para abrir un expediente.'));
+  const shortcuts = n('div', undefined, 'hero-actions');
+  shortcuts.append(people.length ? action('Ver facturas', () => navigate('invoices'), undefined, 'file') : action('Agregar contribuyente', addPerson, undefined, 'plus'),
+    action('Centro SAT', () => navigate('sat'), undefined, 'sync'));
+  banner.append(copy, shortcuts);
+  const metrics = n('div', undefined, 'cards');
+  for (const [label, value, glyph, open] of [
+    ['CFDI recibidos', selection.filter(row => roles(row).received).length, 'down', () => { direction = 'Recibidos'; invoicePage = 0; navigate('invoices'); }],
+    ['CFDI emitidos', selection.filter(row => roles(row).issued).length, 'up', () => { direction = 'Emitidos'; invoicePage = 0; navigate('invoices'); }],
+    ['Documentos archivados', pdfs.length, 'folder', () => { docFilter = ''; navigate('docs'); }]
+  ]) {
+    const card = n('div', undefined, 'metric');
+    const name = n('div', label, 'metric-label'); name.prepend(icon(glyph));
+    card.append(name, n('strong', number.format(value)), action('Abrir', open, 'metric-link', 'arrow')); metrics.append(card);
+  }
+  const recent = panel('Últimos comprobantes');
+  const latest = selection.slice(0, 5);
+  if (latest.length) recent.append(grid(['Emisor', 'Fecha', 'Total', ''], latest.map(row => [
+    cell(row.from.name || row.from.rfc, rowRole(row)), dateLabel(row.date), amount(row), action('Ver detalle', () => invoiceDetail(row))
+  ])));
+  else recent.append(empty('Sin movimientos todavía', 'Las facturas importadas o sincronizadas aparecerán aquí.'));
+  const tasks = panel('Contribuyentes');
+  const visiblePeople = people.filter(row => !scope || row.id === scope);
+  if (!visiblePeople.length) tasks.append(empty('Crea tu primer expediente', 'Agrega un RFC y arrastra aquí los archivos XML o ZIP que ya tengas.', action('Agregar RFC', addPerson, 'primary', 'plus')));
+  else {
+    const counts = new Map(visiblePeople.map(p => [p.id, [0, 0, 0]]));
+    for (const row of invoices) {
+      if (counts.has(row.to.rfc)) counts.get(row.to.rfc)[0]++;
+      if (counts.has(row.from.rfc)) counts.get(row.from.rfc)[1]++;
+    }
+    for (const doc of documents) if (counts.has(doc.rfc)) counts.get(doc.rfc)[2]++;
+    tasks.append(grid(['Contribuyente', 'Recibidos', 'Emitidos', 'PDF', 'Acción'], visiblePeople.map(p => [
+      cell(p.name, p.id), ...counts.get(p.id).map(value => number.format(value)),
+      action('Abrir expediente', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('docs'); })
+    ])));
+  }
+  const history = panel('Importaciones recientes');
+  if (!activity.length) history.append(empty('Sin importaciones', 'Aquí aparecerá el resultado de cada lote.'));
+  else history.append(grid(['Lote', 'Nuevos', 'Duplicados', 'Por revisar'], activity.slice(0, 5).map(row => [
+    cell(row.name, dateLabel(row.date)), row.added, row.duplicates, row.review ? action(row.review + ' · Ver revisión', () => reviewDetail(row)) : '0'
+  ])));
+  const secondary = n('div', undefined, 'dashboard-grid');
+  secondary.append(recent, history);
+  return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks];
+}
+
+function weeklyActivity(rows) {
+  const chart = panel();
+  const header = n('div', undefined, 'panel-head');
+  const heading = n('div');
+  heading.append(n('h2', 'Actividad de comprobantes'), n('p', 'Siete días hasta la última fecha de emisión registrada.'));
+  const end = Date.parse(rows[0].date.slice(0, 10) + 'T00:00:00Z');
+  if (!Number.isFinite(end)) return chart;
+  const dates = Array.from({ length: 7 }, (_, index) => new Date(end - (6 - index) * 86400000).toISOString().slice(0, 10));
+  const counts = new Map(dates.map(date => [date, 0]));
+  for (const row of rows) {
+    const key = row.date.slice(0, 10);
+    if (counts.has(key)) counts.set(key, counts.get(key) + 1);
+  }
+  const maximum = Math.max(1, ...counts.values());
+  header.append(heading, n('span', dateLabel(dates[0]) + ' – ' + dateLabel(dates.at(-1)), 'period-chip'));
+  const bars = n('div', undefined, 'activity-bars');
+  bars.setAttribute('aria-label', 'Comprobantes por día');
+  for (const [date, count] of counts) {
+    const column = n('div', undefined, 'activity-day');
+    const meter = n('meter');
+    meter.min = 0; meter.max = maximum; meter.value = count;
+    meter.setAttribute('aria-label', dateLabel(date) + ', ' + count + ' comprobantes');
+    column.append(n('strong', number.format(count)), meter, n('span', dateLabel(date).slice(0, 5)));
+    bars.append(column);
+  }
+  chart.append(header, bars);
+  return chart;
+}
+function invoiceRows() {
+  const needle = term.trim().toLocaleLowerCase('es-MX');
+  const known = scopes();
+  const matchScope = row => scope ? row.from.rfc === scope || row.to.rfc === scope : known.has(row.from.rfc) || known.has(row.to.rfc);
+  const filtered = invoices.filter(row => matchScope(row) && (!month || row.date.startsWith(month)) && (!invoiceKind || row.kind === invoiceKind) &&
+    (direction === 'Todos' || (direction === 'Recibidos' ? (scope ? row.to.rfc === scope : known.has(row.to.rfc)) : (scope ? row.from.rfc === scope : known.has(row.from.rfc)))) &&
+    [row.id, row.from.rfc, row.to.rfc, row.from.name, row.to.name].some(text => text.toLocaleLowerCase('es-MX').includes(needle)));
+  return invoiceOrder === 'oldest' ? filtered.reverse() : filtered;
+}
+function rowRole(row) {
+  const result = roles(row);
+  return result.issued && result.received ? 'Entre mis RFC' : result.issued ? 'Emitido' : 'Recibido';
+}
+function invoiceScreen() {
+  const list = panel();
+  const tabs = n('div', undefined, 'tabs');
+  for (const title of ['Todos', 'Recibidos', 'Emitidos']) {
+    const button = action(title, () => { direction = title; invoicePage = 0; render(); });
+    button.setAttribute('aria-pressed', direction === title);
+    tabs.append(button);
+  }
+  const controls = n('div', undefined, 'filters');
+  const search = input('search', { value: term, placeholder: 'Buscar nombre, RFC o UUID' });
+  search.setAttribute('aria-label', 'Buscar comprobantes');
+  const period = input('month', { value: month }); period.setAttribute('aria-label', 'Mes de emisión');
+  const type = select([['', 'Todos los tipos'], ...Object.entries(KINDS)], invoiceKind, 'Tipo de CFDI');
+  const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
+  const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
+  const result = n('div');
+  const update = () => {
+    const rows = invoiceRows();
+    exportButton.disabled = !rows.length;
+    invoicePage = Math.min(invoicePage, Math.max(0, Math.ceil(rows.length / 35) - 1));
+    const sliced = rows.slice(invoicePage * 35, (invoicePage + 1) * 35);
+    const foot = n('div', undefined, 'table-foot');
+    foot.setAttribute('aria-live', 'polite');
+    foot.append(n('span', number.format(rows.length) + ' comprobantes'));
+    if (rows.length > 35) {
+      const options = n('div', undefined, 'actions');
+      const prev = action('Anterior', () => { invoicePage--; update(); });
+      const next = action('Siguiente', () => { invoicePage++; update(); });
+      prev.disabled = invoicePage === 0; next.disabled = (invoicePage + 1) * 35 >= rows.length;
+      options.append(prev, n('span', String(invoicePage + 1)), next); foot.append(options);
+    }
+    const content = sliced.length ? grid(['Emisor → receptor', 'Fecha', 'Tipo', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => [
+      cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
+      dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)
+    ])) : empty('Sin coincidencias', 'Importa un lote o cambia los filtros.');
+    result.replaceChildren(content, foot);
+  };
+  search.oninput = () => { term = search.value; invoicePage = 0; update(); };
+  period.onchange = () => { month = period.value; invoicePage = 0; update(); };
+  type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
+  order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
+  controls.append(search, period, type, order, exportButton);
+  list.append(tabs, controls, result);
+  update();
+  return [list];
+}
+function documentScreen() {
+  const list = panel('Documentos del expediente');
+  const filters = n('div', undefined, 'filters');
+  const choice = select([['', 'Todos los documentos'], ...DOCUMENTS.map(x => [x, x])], docFilter, 'Tipo de documento');
+  choice.onchange = () => { docFilter = choice.value; render(); };
+  filters.append(choice); list.append(filters);
+  const rows = documents.filter(doc => (!scope || doc.rfc === scope) && (!docFilter || doc.kind === docFilter));
+  if (rows.length) list.append(grid(['Documento', 'RFC', 'Fecha', 'Periodo', 'Acción'], rows.map(doc => [
+    cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', action('Ver PDF', () => viewPdf(doc))
+  ])));
+  else list.append(empty('Sin documentos', 'Archiva un PDF o consulta los trámites en el Centro SAT.'));
+  return [list];
+}
+function satScreen() {
+  if (typeof satToken !== 'undefined' && satToken) return connectedSatScreen();
+  const guide = n('section', undefined, 'guide');
+  const info = n('div');
+  info.append(n('h2', 'Descarga en el SAT e importa en Faro'), n('p', 'Descarga el ZIP en el portal e impórtalo aquí. Faro asigna los XML a los RFC registrados y omite los UUID repetidos. La descarga automática desde el SAT aún no está habilitada.'));
+  const options = n('div', undefined, 'actions');
+  options.append(action('Elegir ZIP o XML', chooseImport, 'primary', 'up'), action('Importar carpeta', () => {
+    check(people.length, 'Agrega primero un RFC.'); $('folder').click();
+  }, undefined, 'folder'));
+  guide.append(info, options);
+  const links = panel('Trámites oficiales');
+  for (const [title, summary, url] of portals) {
+    const item = n('div', undefined, 'portal');
+    const link = n('a', title + ' ↗');
+    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    item.append(link, n('p', summary)); links.append(item);
+  }
+  return [guide, links];
+}
+function backupScreen() {
+  const help = n('section', undefined, 'guide');
+  const desc = n('div');
+  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', 'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de Faro, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
+  const options = n('div', undefined, 'actions');
+  options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
+  help.append(desc, options);
+  return [help];
+}
+

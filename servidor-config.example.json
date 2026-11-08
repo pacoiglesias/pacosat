@@ -1,0 +1,22 @@
+{
+  "profiles": [
+    {
+      "rfc": "XAXX010101000",
+      "name": "Ejemplo ficticio",
+      "minutes": 240,
+      "days": 7,
+      "direction": "received",
+      "certificatePath": "/run/faro-secrets/contribuyente.cer",
+      "keyPath": "/run/faro-secrets/contribuyente.key",
+      "password": "CONFIGURA_LOCALMENTE"
+    }
+  ],
+  "mail": {
+    "host": "smtp.example.com",
+    "port": 587,
+    "from": "remitente@example.com",
+    "recipient": "destino@example.com",
+    "user": "remitente@example.com",
+    "password": "CONFIGURA_LOCALMENTE"
+  }
+}

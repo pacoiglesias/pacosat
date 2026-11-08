@@ -1,0 +1,110 @@
+const cloudStorage = Boolean(document.querySelector('meta[name="faro-cloud"]'));
+let previewUrl;
+async function cloudRead(store, id) {
+  const query = new URLSearchParams({ store });
+  if (id !== undefined) query.set('id', id);
+  const value = await satApi('storage?' + query);
+  const decode = item => item && store === 'files' ? { id: item.id,
+    blob: new Blob([decode64(item.content)], { type: item.mime }) } : item;
+  return Array.isArray(value) ? value.map(decode) : decode(value);
+}
+async function cloudWrite(batch, replace) {
+  const data = { ...batch };
+  if (batch.files) data.files = await Promise.all(batch.files.map(async file => ({
+    id: file.id, mime: file.blob.type, content: encode64(bytes(await file.blob.arrayBuffer()))
+  })));
+  await satApi('storage', { batch: data, replace });
+}
+function pdfLinks(doc, blob) {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(blob);
+  const link = n('a', 'Abrir PDF en otra pestaña ↗');
+  link.href = previewUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
+  const buttons = n('div', undefined, 'actions');
+  buttons.append(link, action('Descargar original', () => download(blob, doc.name), undefined, 'down'));
+  return buttons;
+}
+async function viewPdf(doc) {
+  const item = await readStore('files', doc.id);
+  check(item, 'Archivo no encontrado.');
+  const controls = [cell(doc.name, doc.kind + ' · ' + doc.rfc), pdfLinks(doc, item.blob)];
+  const view = n('iframe', undefined, 'pdf-preview');
+  view.title = 'Vista previa de ' + doc.name;
+  view.src = previewUrl;
+  controls.push(view);
+  dialog('Visor de documentos', controls);
+  $('dialog').classList.add('wide-dialog');
+}
+$('dialog').addEventListener('close', () => {
+  $('dialog').classList.remove('wide-dialog', 'invoice-dialog');
+  if (previewUrl) {
+    const url = previewUrl;
+    previewUrl = undefined;
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+});
+
+async function importInvoicePdf(file) {
+  check(ready && people.length, 'Agrega un contribuyente antes de importar una factura PDF.');
+  check(await pdfOk(file), 'Elige un PDF válido de hasta 15 MB.');
+  let result = { uuids: [], rfcs: [], hasText: false }, failure = '';
+  if (satToken) {
+    announce('Leyendo folios fiscales en el PDF…');
+    try { result = await satApi('pdf-analyze', { data: encode64(bytes(await file.arrayBuffer())) }); }
+    catch (error) { failure = error.message; }
+  }
+  const candidates = Array.isArray(result.uuids) ? result.uuids : [];
+  const known = Array.isArray(result.rfcs) ? result.rfcs : [];
+  const automatic = candidates.length === 1 ? candidates[0] : '';
+  const match = invoices.find(row => row.id === automatic);
+  const belongs = candidate => !match || [match.from.rfc, match.to.rfc].includes(candidate);
+  const applicable = people.filter(person => belongs(person.id));
+  check(applicable.length, 'El XML vinculado pertenece a otro expediente.');
+  const suitable = applicable.filter(p => known.includes(p.id));
+  const options = [['', 'Selecciona un RFC'], ...applicable.map(p => [p.id, p.name + ' · ' + p.id])];
+  const taxpayer = select(options, scope && applicable.some(p => p.id === scope) ? scope :
+    suitable.length === 1 ? suitable[0].id : applicable.length === 1 ? applicable[0].id : '');
+  taxpayer.required = true;
+  const issueDate = input('date', { value: match?.date.slice(0, 10) || '', required: true });
+  const folio = input('text', { value: automatic, maxLength: 36, placeholder: 'UUID del CFDI, si está disponible' });
+  if (scope && ((match && !belongs(scope)) || (!match && known.length && !known.includes(scope)))) {
+    announce('El PDF no corresponde al RFC seleccionado ' + scope + '. RFC detectados: ' + (known.join(', ') || [match.from.rfc, match.to.rfc].join(', ')), true);
+    return viewPdfFile(file);
+  }
+  const note = failure || (automatic ? match ? 'Encontré el XML del mismo UUID. Revisa los datos para vincular la representación impresa.' :
+    'Detecté un UUID. El PDF se vinculará cuando exista el XML correspondiente.' :
+    candidates.length ? 'El PDF contiene varios UUID. Escribe el folio correcto para vincularlo.' :
+    'No pude identificar un UUID. Si es un escaneo, captura el folio manualmente o guarda el PDF sin vincular.');
+  reportPdfState(note);
+  dialog('Archivar factura PDF', [cell(file.name, note), field('Expediente', taxpayer),
+    field('Fecha del comprobante', issueDate), field('UUID (opcional)', folio)], async () => {
+    const uuid = folio.value.trim().toUpperCase();
+    check(!uuid || UUID.test(uuid), 'El UUID debe tener 36 caracteres en formato de folio fiscal.');
+    const linked = invoices.find(row => row.id === uuid);
+    check(!linked || [linked.from.rfc, linked.to.rfc].includes(taxpayer.value), 'El XML de ese UUID corresponde a otro RFC.');
+    check(!known.length || linked || known.includes(taxpayer.value), 'El RFC seleccionado no aparece en el PDF.');
+    check(!uuid || !documents.some(doc => doc.kind === 'Factura PDF' && doc.rfc === taxpayer.value && doc.uuid === uuid),
+      'Ese UUID ya tiene una factura PDF en este expediente.');
+    const id = 'pdf:' + crypto.randomUUID();
+    const row = { id, rfc: taxpayer.value, kind: 'Factura PDF', date: issueDate.value,
+      period: '', name: file.name.slice(0, 180), uuid };
+    await writeBatch({ documents: [row], files: [{ id, blob: new Blob([file], { type: 'application/pdf' }) }] });
+    docFilter = 'Factura PDF';
+    if (scope && scope !== taxpayer.value) scope = taxpayer.value;
+    await refresh(); navigate('docs');
+    announce(linked ? 'PDF archivado y vinculado al XML.' : 'Factura PDF archivada.');
+  });
+}
+function reportPdfState() { announce(); }
+function viewPdfFile(file) {
+  dialog('Visor de PDF', [n('p', file.name), pdfLinks({ name: file.name }, new Blob([file], { type: 'application/pdf' }))]);
+}
+if (cloudStorage) {
+  $('mode').textContent = 'Servidor privado';
+  $('storage-mode').replaceChildren(n('span', 'Datos en servidor'), n('small', 'Acceso privado por HTTPS'));
+}
+$('pdf-import').onclick = () => $('invoice-pdf').click();
+$('invoice-pdf').onchange = () => {
+  const file = $('invoice-pdf').files[0]; $('invoice-pdf').value = '';
+  if (file) importInvoicePdf(file).catch(error => announce(error.message, true));
+};

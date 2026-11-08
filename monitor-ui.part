@@ -1,0 +1,80 @@
+const watched = new Set();
+const fiscalResults = new Map();
+let monitorData = { fetched: null, error: '' }, monitorError = '', monitoring = false;
+let monitorFilter = 'attention', monitorCursor = 0;
+const monitorRow = row => ({
+  id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
+  seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal || '') ? row.seal : ''
+});
+function statusCell(id) {
+  const item = fiscalResults.get(id);
+  const wrap = n('div', undefined, 'fiscal-state');
+  const state = item?.sat?.state || 'Sin consulta';
+  const badge = n('span', state, 'fiscal-badge');
+  badge.dataset.state = state;
+  wrap.append(badge);
+  if (item?.checked) wrap.append(n('small', 'Consultado ' + localDateTime(item.checked)));
+  if (item?.sat?.cancellation) wrap.append(n('small', item.sat.cancellation));
+  if (item?.efos.length) wrap.append(n('small', '69-B · ' + item.efos.join(' / ')));
+  else if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS.'));
+  if (item?.error) wrap.append(n('small', 'Consulta pendiente de reintento.'));
+  return wrap;
+}
+function monitorScreen() {
+  const overview = panel('Seguimiento fiscal');
+  const header = n('div', undefined, 'panel-head');
+  const source = n('div');
+  source.append(n('h3', 'Fuente oficial · SAT'),
+    n('p', monitorData.fetched ? 'Listado 69-B descargado ' + localDateTime(monitorData.fetched) : 'Listado 69-B pendiente de descarga.'));
+  if (monitorData.error || monitorError) source.append(n('p', monitorError || monitorData.error));
+  const link = n('a', 'Listado oficial 69-B ↗');
+  link.href = 'https://www.sat.gob.mx/minisitio/DatosAbiertos/contribuyentes_publicados.html';
+  link.target = '_blank'; link.rel = 'noopener noreferrer';
+  header.append(source, link);
+  overview.append(header);
+  const selection = invoices.filter(matches);
+  const selected = selection.filter(row => {
+    const item = fiscalResults.get(row.id);
+    if (monitorFilter === 'all') return true;
+    if (monitorFilter === 'cancelled') return item?.sat?.state === 'Cancelado';
+    if (monitorFilter === 'efos') return Boolean(item?.efos.length || item?.sat?.efos === '100');
+    return Boolean(item?.error || (item?.sat && item.sat.state !== 'Vigente') ||
+      item?.efos.some(x => x === 'Presunto' || x === 'Definitivo') || item?.sat?.efos === '100');
+  });
+  const filters = n('div', undefined, 'filters');
+  const picker = select([['attention','Requieren atención'],['cancelled','Cancelados'],['efos','Coincidencias 69-B'],['all','Todos los CFDI']], monitorFilter, 'Filtrar vigilancia');
+  picker.onchange = () => { monitorFilter = picker.value; render(); };
+  filters.append(picker, n('span', selected.length + ' de ' + selection.length + ' comprobantes', 'period-chip'));
+  overview.append(filters);
+  if (!selected.length) overview.append(empty('Sin resultados en este filtro', 'El servicio revisa los CFDI en lotes y conserva la fecha de la última consulta.'));
+  else overview.append(grid(['Emisor', 'Folio fiscal', 'Estado y artículo 69-B', 'Detalle'], selected.slice(0, 100).map(row => [
+    cell(row.from.name || row.from.rfc, row.from.rfc), row.id, statusCell(row.id), action('Abrir', () => invoiceDetail(row))
+  ])));
+  if (selected.length > 100) overview.append(n('div', 'Se muestran los primeros 100 del filtro actual. Selecciona un RFC para acotar la lista.', 'table-foot'));
+  return [overview];
+}
+async function pollMonitor() {
+  if (!satToken || !ready || monitoring) return;
+  monitoring = true;
+  try {
+    const records = invoices.filter(row => !watched.has(row.id)).slice(0, 125).map(monitorRow);
+    const all = invoices.filter(matches);
+    if (monitorCursor >= all.length) monitorCursor = 0;
+    const candidates = page === 'invoices' ? invoiceRows().slice(invoicePage * 35, (invoicePage + 1) * 35) : all.slice(monitorCursor, monitorCursor + 500);
+    const result = await satApi('monitor', { records, ids: candidates.map(row => row.id) });
+    for (const row of records) watched.add(row.id);
+    for (const entry of result.results) fiscalResults.set(entry.id, entry);
+    if (page !== 'invoices') monitorCursor += 500;
+    monitorData = result;
+    monitorError = '';
+  } catch (error) { monitorError = error.message; }
+  finally {
+    monitoring = false;
+    if (page === 'monitor' && !$('dialog').open && !document.activeElement?.matches('input,select,textarea')) render();
+    if (page === 'invoices' && !$('dialog').open && !document.activeElement?.closest('button,input,select,textarea')) render();
+  }
+}
+if (satToken) {
+  startup.then(pollMonitor);
+  setInterval(pollMonitor, 30000);
+}

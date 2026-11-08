@@ -1,0 +1,8 @@
+*
+!package.json
+!local-server.mjs
+!sat-direct.mjs
+!sat-monitor.mjs
+!xml-core.mjs
+!pdf-invoice.mjs
+!Faro-Fiscal.html

@@ -1,0 +1,21 @@
+{
+  "name": "faro-fiscal-sat",
+  "version": "1.2.0",
+  "description": "Expediente fiscal privado con importación CFDI y seguimiento SAT",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node local-server.mjs",
+    "test": "node --test sat-direct.test.mjs service.test.mjs cloud.test.mjs monitor.test.mjs && node verify.cjs",
+    "check": "npm run build && npm test"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@nodecfdi/sat-ws-descarga-masiva": "2.0.0",
+    "@xmldom/xmldom": "0.9.12",
+    "nodemailer": "10.4.0",
+    "pdfjs-dist": "6.5.438"
+  }
+}

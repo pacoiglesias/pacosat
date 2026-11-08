@@ -1,0 +1,6 @@
+* text=auto
+*.mjs text eol=lf
+*.part text eol=lf
+*.html text eol=lf
+*.yml text eol=lf
+*.cmd text eol=crlf

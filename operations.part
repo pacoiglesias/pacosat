@@ -1,0 +1,43 @@
+function operationsScreen() {
+  const selected = invoices.filter(matches);
+  const docs = documents.filter(d => d.kind === 'Factura PDF' && (!scope || d.rfc === scope));
+  const alerts = panel('Bandeja de atención por RFC');
+  const pending = selected.filter(row => {
+    const state = fiscalResults.get(row.id);
+    return !state || state.error || state.sat?.state !== 'Vigente' || state.efos?.length;
+  });
+  alerts.append(n('p', 'Sin consulta no significa vigente. Las coincidencias 69-B conservan su categoría y requieren revisión.'));
+  if (pending.length) alerts.append(grid(['RFC emisor', 'Comprobante', 'Resultado', 'Acción'], pending.slice(0,100).map(row => [row.from.rfc, row.id, statusCell(row.id), action('Revisar CFDI', () => invoiceDetail(row))])));
+  else alerts.append(empty('Sin pendientes en los resultados cargados', 'Consulta Vigilancia SAT para actualizar el seguimiento.'));
+  alerts.append(n('p', pending.length + ' pendientes; se muestran hasta 100. Usa el selector de contribuyente para acotar.'));
+  const reconcile = panel('Conciliación XML y PDF');
+  const unlinked = docs.filter(d => !d.uuid || !invoices.some(row => row.id === d.uuid && [row.from.rfc,row.to.rfc].includes(d.rfc)));
+  const noPdf = selected.filter(row => !docs.some(d => d.uuid === row.id && [row.from.rfc,row.to.rfc].includes(d.rfc)));
+  reconcile.append(n('p', unlinked.length + ' PDF pendientes de vincular · ' + noPdf.length + ' XML sin representación PDF. La ausencia de PDF no invalida un CFDI.'));
+  if (unlinked.length) reconcile.append(grid(['PDF', 'RFC', 'Acción'], unlinked.slice(0,100).map(doc => [doc.name, doc.rfc, action('Vincular UUID', () => linkPdfDialog(doc))])));
+  reconcile.append(action('Ver facturas', () => navigate('invoices')));
+  const health = panel('Estado de operación');
+  health.append(grid(['Componente', 'Estado'], [
+    ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : 'No disponible'],
+    ['Servicio SAT', !satToken ? 'Abre Iniciar-Faro.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
+    ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
+    ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
+    ['Respaldo', 'Exporta una copia cifrada antes de actualizar. No incluye e.firma, SMTP ni cola SAT.']
+  ]));
+  const buttons = n('div', undefined, 'actions');
+  buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
+  health.append(buttons);
+  return [health, alerts, reconcile];
+}
+function linkPdfDialog(doc) {
+  const uuid = input('text', { required: true, maxLength: 36, value: doc.uuid || '', placeholder: 'UUID del XML importado' });
+  dialog('Vincular PDF a su CFDI', [n('p', doc.name + ' · ' + doc.rfc), field('Folio fiscal', uuid)], async () => {
+    const id = uuid.value.trim().toUpperCase();
+    const row = invoices.find(item => item.id === id);
+    check(UUID.test(id) && row, 'Importa primero el XML de ese UUID.');
+    check([row.from.rfc,row.to.rfc].includes(doc.rfc), 'El XML corresponde a otro RFC.');
+    check(!documents.some(d => d.id !== doc.id && d.rfc === doc.rfc && d.uuid === id && d.kind === 'Factura PDF'), 'Ese CFDI ya tiene un PDF vinculado.');
+    await writeBatch({ documents: [{ ...doc, uuid: id }] });
+    await refresh(); announce('PDF vinculado al XML.');
+  });
+}

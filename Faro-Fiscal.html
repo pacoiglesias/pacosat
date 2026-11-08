@@ -1,0 +1,1345 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>Faro Fiscal</title><!--FARO_TOKEN-->
+<style>:root{--ink:#182c2c;--muted:#516461;--border:#dce7e1;--surface:#fff;--bg:#f3f7f3;--green:#145c48;--green-hover:#104a3b;--tint:#e5f2e9;--nav:#142b29;--nav-text:#d6e9e2;--focus:#368b73;font:15px/1.48 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--bg)}*{box-sizing:border-box}body{margin:0}svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:none}.symbols,[hidden]{display:none!important}button,input,select,textarea{font:inherit}button,a,input,select{border-radius:8px}button{color:var(--ink);border:1px solid var(--border);background:white;padding:9px 12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-align:left}button:hover{background:#f1f7f3}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);border-color:var(--green);color:white}button.primary:hover:not(:disabled){background:var(--green-hover)}a{color:var(--green);font-weight:600;text-underline-offset:3px}input,select,textarea{border:1px solid #c8d8d1;background:#fff;color:var(--ink);padding:9px 11px;min-width:0;max-width:100%}:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.frame{min-height:100vh;display:grid;grid-template-columns:244px minmax(0,1fr)}.sidebar{padding:24px 17px;background:var(--nav);color:var(--nav-text);display:flex;flex-direction:column;gap:27px}.brand{display:flex;align-items:center;gap:10px;color:white;font-weight:720;font-size:20px;letter-spacing:-.025em}.brand small,.local small{display:block;color:#a8c1b7;font-size:10px;font-weight:650;letter-spacing:.11em}.logo{width:42px;height:42px;display:grid;place-items:center;color:#173831;background:#aee6c2;border-radius:12px}.logo svg{width:25px;height:25px}.switcher{display:grid;gap:7px}.switcher label{color:#b8cfc4;font-size:10px;letter-spacing:.12em;font-weight:700}.switcher select{background:#213b37;border-color:#49655d;color:white;width:100%}.sidebar nav{display:grid;gap:4px}.sidebar button{background:transparent;border-color:transparent;color:var(--nav-text);justify-content:flex-start}.sidebar button:hover{background:#223f3a}.sidebar .quiet{font-size:13px;padding:6px 4px}.sidebar nav button[aria-current]{background:#244740;border-color:#41675c;color:#b6f0cb}.local{display:flex;gap:10px;align-items:center;color:#cee6dc;font-size:13px;margin-top:auto}.local small{letter-spacing:0;font-size:11px;font-weight:400}.top{background:#fff;border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);gap:10px;font-size:13px}.top strong{color:var(--ink)}.slash{margin:0 7px;color:#849991}.badge,.tag{font-size:12px;color:#235b45;background:var(--tint);display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:100px;font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:#2e805e}.page{max-width:1340px;margin:auto;padding:29px 28px 36px}.heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:23px}.eyebrow{font-weight:750;font-size:11px;letter-spacing:.14em;color:var(--green);overflow-wrap:anywhere}h1{font-size:clamp(29px,4.1vw,46px);letter-spacing:-.052em;line-height:1.12;margin:6px 0}h2{font-size:20px;letter-spacing:-.025em;margin:0}h3{font-size:16px;margin:0}p{margin:0;color:var(--muted)}.heading .primary{padding:11px 15px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:15px}.metric,.panel,.guide{background:#fff;border:1px solid var(--border);border-radius:13px}.metric{padding:15px;display:grid;gap:5px;min-width:0}.metric-label{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:13px}.metric-label svg{color:var(--green)}.metric strong{font-size:28px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.panel{min-width:0;overflow:hidden;margin-bottom:14px}.panel-head,.filters,.table-foot,.guide{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;flex-wrap:wrap}.filters{justify-content:flex-start}.filters input[type=search]{flex:1 1 200px}.table-foot{color:var(--muted);font-size:13px}.guide{margin-bottom:14px;background:#e6f0e8;justify-content:space-between}.guide p{margin-top:4px}.guide ul{margin:8px 0 0;padding-left:20px}.guide .actions,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:11px 13px;border-top:1px solid var(--border);overflow-wrap:anywhere}th{font-size:12px;color:var(--muted);background:#f5f8f5}td small{display:block;color:var(--muted);margin-top:3px}td.num{white-space:nowrap;font-variant-numeric:tabular-nums}td button{font-size:13px;padding:5px 8px;white-space:nowrap}.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--border)}.tabs button{border-color:transparent}.tabs button[aria-pressed=true]{background:var(--tint);color:#164e3c}.empty{padding:30px 15px;text-align:center}.empty p{margin:6px 0 12px}#status{margin:0 0 12px;padding:11px 13px;border-radius:8px;background:var(--tint);white-space:pre-line;overflow-wrap:anywhere;color:var(--ink)}#status[data-error=true]{background:#fae7df;color:#802b1f}dialog{width:min(520px,calc(100% - 26px));border:1px solid var(--border);border-radius:14px;padding:20px;color:var(--ink);box-shadow:0 18px 55px #12251d40}dialog::backdrop{background:#10282077}.modal-head,.modal-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}.modal-actions{justify-content:flex-end;margin-top:16px}.icon-button{padding:6px}#fields{display:grid;gap:12px;margin-top:14px}#fields label{display:grid;gap:5px;font-weight:600}#fields p{overflow-wrap:anywhere}#formError{color:#952f21;margin-top:9px}.portal{display:grid;gap:8px;padding:14px 15px}.portal a{display:inline-block;width:max-content;max-width:100%}.import-history td:first-child{max-width:250px}.drag-active{outline:3px dashed var(--focus);outline-offset:-5px}@media(max-width:780px){.frame{grid-template-columns:1fr}.sidebar{padding:14px;gap:12px}.switcher{grid-template-columns:minmax(0,1fr) auto}.switcher label{grid-column:1/-1}.sidebar nav{display:flex;flex-wrap:wrap}.local{display:none}.top,.page{padding:14px}}@media(max-width:460px){.cards{grid-template-columns:1fr}.metric{grid-template-columns:1fr auto;align-items:center}.badge{font-size:10px}.heading .primary{width:100%}.filters input,.filters select{flex:1 1 140px}.top{gap:4px}.sidebar nav button{padding:7px 8px}}
+.xml-view{margin:0;padding:12px;max-height:45vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border);border-radius:8px;background:#f5f8f5;font:13px/1.55 Consolas,monospace;color:var(--ink)}
+
+:root{--ink:#142338;--muted:#53647b;--border:#e1e8f0;--surface:#fff;--bg:#edf2f8;--green:#17635f;--green-hover:#114b48;--tint:#e4f2ef;--nav:#101d31;--nav-text:#dce8f6;--focus:#257879}body{background:radial-gradient(ellipse at 85% 0%,#e2ecf7 0,transparent 52%),var(--bg)}.sidebar{background:linear-gradient(165deg,#182b47 0,#101d31 62%,#14243a 100%);border-right:1px solid #304565;padding:26px 18px}.logo{background:linear-gradient(140deg,#e4f7ee,#8adbc3);color:#143643;box-shadow:0 8px 22px #0003}.brand{font-size:22px}.brand small{color:#a9bdcf}.switcher select,.sidebar nav button[aria-current]{background:#223a55;border-color:#3f5c7a;color:#ddf5ef}.sidebar nav button{padding:11px 10px}.sidebar nav button:hover,.sidebar .quiet:hover{background:#23384f}.top{min-height:60px;border-color:#e5ebf4;background:#ffffffeb}.badge{border:1px solid #cce7df;color:#154d47}.heading{align-items:center}.heading h1{font-size:clamp(30px,4vw,48px)}.heading p{font-size:14px}.dashboard-hero{display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;margin-bottom:18px;padding:23px 27px;border-radius:17px;background:radial-gradient(ellipse at 92% 7%,#236a78 0,transparent 54%),linear-gradient(122deg,#162a47,#1f4660);color:#fff;box-shadow:0 12px 30px #1c3d632b}.dashboard-hero h2{font-size:clamp(23px,3.1vw,34px);line-height:1.13;margin:5px 0 6px;overflow-wrap:anywhere}.dashboard-hero p{color:#d4e8ef}.hero-kicker{font-size:11px;letter-spacing:.16em;font-weight:700;color:#a7edda}.hero-actions{display:flex;flex-wrap:wrap;gap:8px}.hero-actions button{border-color:#7196a6;color:#f1fbff;background:#294d65}.hero-actions button:hover{background:#356680}.metric,.panel{border-radius:13px;box-shadow:0 2px 5px #2742640b}.metric{padding:17px}.metric strong{font-size:30px}.metric-label svg{box-sizing:content-box;padding:6px;border-radius:8px;background:#e9f2f9;color:#29597a}.metric:nth-child(2) .metric-label svg{background:#e5f4ed;color:#236c54}.metric:nth-child(3) .metric-label svg{background:#eef0fa;color:#514c83}.dashboard-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;align-items:start}.panel-head{padding:16px 17px}.panel-head h2{font-size:18px}.panel th{background:#f5f8fc}.panel tbody tr:hover{background:#f8fbfe}.panel td:first-child{min-width:120px}.guide{background:#e9f3f6;border-color:#ccdee6}.filters{background:#fbfcff}.filters button{margin-left:auto}.wide-dialog{width:min(990px,calc(100% - 24px));max-height:94vh}.pdf-preview{display:block;width:100%;height:min(62vh,650px);background:#eef2f7;border:1px solid #d7e1eb;border-radius:9px}.xml-view{background:#f2f6fb}.actions{flex-wrap:wrap}#form{max-height:inherit}.dialog-actions{position:sticky;bottom:0;background:#fff;padding-top:6px}@media(max-width:1080px){.dashboard-grid{grid-template-columns:1fr}}@media(max-width:780px){.sidebar{padding:15px}.dashboard-hero{padding:18px}.heading .actions{width:100%}.heading .actions button{flex:0 1 auto}.heading .actions .primary{width:auto}.filters button{margin-left:0}}
+
+.nav-caption{display:block;color:#9fb2ca;font-size:10px;font-weight:750;letter-spacing:.13em;padding:3px 10px 4px}.nav-divider{margin-top:13px}.sidebar{gap:24px}.dashboard-hero{position:relative;overflow:hidden;min-height:134px;isolation:isolate}.dashboard-hero::after{content:"";z-index:-1;position:absolute;width:285px;height:285px;right:-20px;top:-120px;border-radius:50%;border:1px solid #98c9ce50;box-shadow:0 0 0 25px #a5cbdd16,0 0 0 51px #a5cbdd15,0 0 0 80px #a5cbdd0b}.metric{grid-template-columns:1fr auto;align-items:center;min-height:105px}.metric-label{grid-column:1/-1}.metric-link{background:#f5f8fc;border:1px solid #e2eaf2;color:#34536d;padding:6px 8px;font-size:12px}.metric-link svg{width:14px;height:14px}.period-chip{display:inline-block;max-width:100%;padding:5px 8px;border:1px solid #dde8f1;border-radius:7px;background:#f3f7fb;color:#375977;font-size:12px;font-weight:700}.activity-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding:4px 17px 17px}.activity-day{display:grid;gap:5px;min-width:0;color:#53647b;font-size:12px;font-variant-numeric:tabular-nums}.activity-day strong{color:#213b59;font-size:14px}.activity-day meter{width:100%;height:12px}.activity-day meter::-webkit-meter-bar{background:#e8eff6;border:none;border-radius:8px}.activity-day meter::-webkit-meter-optimum-value{background:linear-gradient(90deg,#237570,#478e9e);border-radius:8px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:#f4f8fc;border:1px solid #dce7f1;padding:15px;border-radius:12px;overflow-wrap:anywhere}.invoice-summary h3{font-size:27px;letter-spacing:-.04em;margin-top:5px}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div{display:grid;gap:3px;padding:10px;background:#fff;border:1px solid #e1e8f0;border-radius:9px;min-width:0}.invoice-parties small{font-size:10px;color:#53647b;letter-spacing:.1em;font-weight:700}.invoice-parties span,.invoice-summary small{color:#53647b}.invoice-concepts{padding:11px 13px;border:1px solid #e1e8f0;border-radius:9px}.invoice-concepts ul{padding-left:21px;margin:6px 0 0}.invoice-concepts li{overflow-wrap:anywhere}.table-wrap td:last-child .actions{gap:5px}@media(max-width:780px){.nav-caption{width:100%;padding:3px 5px}.nav-divider{margin-top:5px}.metric{min-height:0}.dashboard-hero{min-height:0}.activity-bars{gap:6px}}@media(max-width:390px){.invoice-parties{grid-template-columns:1fr}.activity-bars{padding-inline:9px;gap:4px}.activity-day{font-size:10px}}
+.fiscal-state{display:grid;gap:2px;justify-items:start}.fiscal-badge{display:inline-block;padding:3px 8px;border-radius:100px;color:#435b74;background:#e8eef5;font-size:12px;font-weight:700;white-space:nowrap}.fiscal-badge[data-state=Vigente]{color:#125d44;background:#dcf2e7}.fiscal-badge[data-state=Cancelado]{color:#922b31;background:#fae5e5}.fiscal-badge[data-state="No encontrado"]{color:#755015;background:#fff0d7}.fiscal-state small{font-size:11px}
+</style></head>
+<body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+<symbol id="i-logo" viewBox="0 0 24 24"><path d="M4 19 12 4l8 15M8 14h8m-5 5h2"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+<symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4M9 12h6m-6 4h6"/></symbol>
+<symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5m-4-3a8 8 0 0 1 13-3l2 3M4 15l2 3a8 8 0 0 0 13-3"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M3 5h18v5H3zm2 5v10h14V10m-9 4h4"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M12 16V4m-5 5 5-5 5 5M4 16v4h16v-4"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4v12m-5-5 5 5 5-5M4 17v3h16v-3"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4 4"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+</svg>
+<div class="frame">
+<aside class="sidebar">
+  <div class="brand"><span class="logo"><svg><use href="#i-logo"/></svg></span><span>Faro Fiscal<small>ESPACIO DE TRABAJO</small></span></div>
+  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"><option value="">Todos los RFC</option></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
+  <nav aria-label="Navegación principal">
+    <span class="nav-caption">OPERACIÓN FISCAL</span>
+    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen</button>
+    <button data-view="operations"><svg><use href="#i-sync"/></svg> Operaciones y alertas</button>
+    <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
+    <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
+    <span class="nav-caption nav-divider">ADMINISTRACIÓN</span>
+    <button data-view="sat"><svg><use href="#i-sync"/></svg> Centro SAT</button>
+    <button data-view="monitor"><svg><use href="#i-search"/></svg> Vigilancia SAT</button>
+    <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
+  </nav>
+  <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
+</aside>
+<main>
+  <header class="top"><span>Faro Fiscal <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></header>
+  <div class="page">
+    <header class="heading">
+      <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
+      <div class="actions"><button id="inspect"><svg><use href="#i-file"/></svg> Abrir XML</button><button id="pdf-import"><svg><use href="#i-file"/></svg> Factura PDF</button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
+    </header>
+    <p id="status" role="status" hidden></p>
+    <section id="body" aria-label="Contenido"></section>
+  </div>
+</main>
+</div>
+<input id="incoming" type="file" accept=".xml,.zip" multiple hidden>
+<input id="inspectFile" type="file" accept=".xml,text/xml,application/xml" hidden>
+<input id="invoice-pdf" type="file" accept=".pdf,application/pdf" hidden>
+<input id="folder" type="file" webkitdirectory multiple hidden>
+<input id="restore" type="file" accept=".faro,application/json" hidden>
+<dialog id="dialog" aria-labelledby="dialogTitle">
+  <form id="form"><div class="modal-head"><h2 id="dialogTitle"></h2><button type="button" class="icon-button" id="close" aria-label="Cerrar"><svg><use href="#i-close"/></svg></button></div>
+  <div id="fields"></div><p id="formError" role="alert" hidden></p>
+  <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
+</dialog>
+<script>'use strict';
+const $ = id => document.getElementById(id);
+const KB = 1024;
+const MB = KB * KB;
+const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/u;
+const UUID = /^[A-F0-9]{8}(?:-[A-F0-9]{4}){3}-[A-F0-9]{12}$/;
+const KINDS = { I: 'Ingreso', E: 'Egreso', P: 'Pago', N: 'Nómina', T: 'Traslado' };
+const DOCUMENTS = ['Factura PDF', 'Constancia / CIF', 'Opinión de cumplimiento', 'Declaración', 'Acuse', 'Otro documento'];
+const STORES = ['people', 'invoices', 'documents', 'files', 'activity'];
+let db;
+
+function check(condition, message) { if (!condition) throw new Error(message); }
+function bytes(value) { return new Uint8Array(value); }
+function openDatabase(name = 'faro-fiscal-v2') {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(name, 1);
+    request.onupgradeneeded = () => {
+      for (const store of STORES) request.result.createObjectStore(store, { keyPath: 'id' });
+    };
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('Cierra otras ventanas de Faro y vuelve a abrirlo.'));
+  });
+}
+function readStore(store, key) {
+  if (typeof cloudStorage !== 'undefined' && cloudStorage) return cloudRead(store, key);
+  return new Promise((resolve, reject) => {
+    const table = db.transaction(store).objectStore(store);
+    const req = key === undefined ? table.getAll() : table.get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function writeBatch(batch, replace = false) {
+  if (typeof cloudStorage !== 'undefined' && cloudStorage) return cloudWrite(batch, replace);
+  return new Promise((resolve, reject) => {
+    const names = Object.keys(batch);
+    const tx = db.transaction(names, 'readwrite');
+    tx.oncomplete = resolve;
+    tx.onabort = () => reject(tx.error || new Error('La operación se canceló.'));
+    try {
+      for (const name of names) {
+        const table = tx.objectStore(name);
+        if (replace) table.clear();
+        for (const item of batch[name]) table.add(item);
+      }
+    } catch (error) {
+      tx.abort();
+      reject(error);
+    }
+  });
+}
+function decodeXml(raw) {
+  const lead = new TextDecoder('windows-1252').decode(raw.subarray(0, 256));
+  const declaration = lead.match(/^\s*<\?xml[^>]*encoding\s*=\s*["']([^"']+)/i);
+  const encoding = raw[0] === 255 && raw[1] === 254 ? 'utf-16le' :
+    raw[0] === 254 && raw[1] === 255 ? 'utf-16be' :
+    raw[0] === 60 && raw[1] === 0 ? 'utf-16le' :
+    raw[0] === 0 && raw[1] === 60 ? 'utf-16be' : declaration?.[1] || 'utf-8';
+  return new TextDecoder(encoding, { fatal: true }).decode(raw);
+}
+function parseXml(raw, Parser = DOMParser) {
+  check(raw.length && raw.length <= 8 * MB, 'XML vacío o mayor de 8 MB.');
+  const xml = decodeXml(raw);
+  check(!/<!DOCTYPE|<!ENTITY/i.test(xml), 'El XML contiene declaraciones no admitidas.');
+  const doc = new Parser().parseFromString(xml, 'application/xml');
+  const root = doc.documentElement;
+  check(root.localName === 'Comprobante' && /^http:\/\/www\.sat\.gob\.mx\/cfd\/[34]$/.test(root.namespaceURI) &&
+    !doc.getElementsByTagName('parsererror').length, 'No es un CFDI 3.x o 4.0 con estructura XML válida.');
+  const elements = node => Array.from(node?.children || node?.childNodes || []).filter(item => item.nodeType === 1);
+  const child = (node, name) => elements(node).find(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const attr = (node, key, fallback = key) => node?.getAttribute(key) || node?.getAttribute(fallback) || '';
+  const party = item => ({ rfc: attr(item, 'Rfc', 'rfc').toUpperCase(), name: attr(item, 'Nombre', 'nombre').slice(0, 300) });
+  const from = party(child(root, 'Emisor'));
+  const to = party(child(root, 'Receptor'));
+  const stamp = child(root, 'Complemento')?.getElementsByTagNameNS('http://www.sat.gob.mx/TimbreFiscalDigital', 'TimbreFiscalDigital')[0];
+  const uuid = attr(stamp, 'UUID').toUpperCase();
+  const date = attr(root, 'Fecha', 'fecha');
+  const total = attr(root, 'Total', 'total');
+  const currency = attr(root, 'Moneda', 'moneda').toUpperCase();
+  const legacy = { INGRESO: 'I', EGRESO: 'E', TRASLADO: 'T', PAGO: 'P', NÓMINA: 'N', NOMINA: 'N' };
+  const rawKind = attr(root, 'TipoDeComprobante', 'tipoDeComprobante').toUpperCase();
+  const kind = legacy[rawKind] || rawKind;
+  check(RFC.test(from.rfc), 'Falta el RFC del emisor o su formato es inválido.');
+  check(RFC.test(to.rfc), 'Falta el RFC del receptor o su formato es inválido.');
+  check(UUID.test(uuid), 'Falta un UUID válido en el Timbre Fiscal Digital.');
+  check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(date), 'La fecha de emisión no tiene el formato esperado.');
+  check(Object.hasOwn(KINDS, kind), 'El tipo de comprobante no es compatible con este importador.');
+  check(/^\d{1,18}(?:\.\d{1,6})?$/.test(total), 'El total del comprobante no tiene el formato esperado.');
+  check(!currency || /^[A-Z]{3}$/.test(currency), 'La moneda no tiene el formato esperado.');
+  const concepts = elements(child(root, 'Conceptos')).filter(item => item.localName === 'Concepto' && item.namespaceURI === root.namespaceURI).slice(0, 20)
+    .map(item => attr(item, 'Descripcion', 'descripcion').slice(0, 220));
+  const seal = (attr(root, 'Sello', 'sello') || attr(stamp, 'SelloCFD', 'selloCFD')).slice(-8);
+  return { id: uuid, from, to, date, kind, total, currency, concepts, seal };
+}
+const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+  return value;
+});
+function crc32(raw) {
+  let crc = 0xffffffff;
+  for (const octet of raw) crc = (crc >>> 8) ^ crcTable[(crc ^ octet) & 255];
+  return (crc ^ 0xffffffff) >>> 0;
+}
+async function inflate(raw, size) {
+  const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const reader = stream.getReader();
+  const out = new Uint8Array(size);
+  let offset = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      check(offset + part.value.length <= size, 'Tamaño ZIP expandido inválido.');
+      out.set(part.value, offset);
+      offset += part.value.length;
+    }
+    check(offset === size, 'Archivo ZIP truncado.');
+    return out;
+  } finally { await reader.cancel().catch(() => {}); }
+}
+async function* zipXml(raw) {
+  check(raw.length >= 22 && raw.length <= 80 * MB, 'ZIP vacío o mayor de 80 MB.');
+  const d = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  const u16 = p => d.getUint16(p, true);
+  const u32 = p => d.getUint32(p, true);
+  let end = raw.length - 22;
+  while (end >= Math.max(0, raw.length - 65557)) {
+    if (u32(end) === 0x06054b50 && end + 22 + u16(end + 20) === raw.length) break;
+    end--;
+  }
+  check(end >= Math.max(0, raw.length - 65557), 'El ZIP no contiene un directorio válido.');
+  const count = u16(end + 10);
+  let p = u32(end + 16);
+  const centralStart = p;
+  const limit = p + u32(end + 12);
+  check(u16(end + 4) === 0 && u16(end + 6) === 0 && u16(end + 8) === count && count <= 12000 &&
+    p <= end && limit <= end, 'ZIP segmentado, ZIP64 o con demasiadas entradas.');
+  let expanded = 0;
+  for (let i = 0; i < count; i++) {
+    check(p + 46 <= limit && u32(p) === 0x02014b50, 'Directorio ZIP dañado.');
+    const flags = u16(p + 8);
+    const method = u16(p + 10);
+    const checksum = u32(p + 16);
+    const compressed = u32(p + 20);
+    const size = u32(p + 24);
+    const len = u16(p + 28);
+    const start = u32(p + 42);
+    const next = p + 46 + len + u16(p + 30) + u16(p + 32);
+    check(next <= limit, 'Directorio ZIP truncado.');
+    const name = new TextDecoder().decode(raw.subarray(p + 46, p + 46 + len)).split(/[\\/]/).at(-1);
+    p = next;
+    if (!/\.xml$/i.test(name)) continue;
+    expanded += size;
+    check(!(flags & 1) && (method === 0 || method === 8) && size <= 8 * MB && expanded <= 180 * MB &&
+      start + 30 <= centralStart && u32(start) === 0x04034b50 && u16(start + 8) === method,
+      'Entrada ZIP cifrada, no compatible o fuera del límite de tamaño.');
+    const offset = start + 30 + u16(start + 26) + u16(start + 28);
+    check(offset + compressed <= centralStart, 'Archivo ZIP truncado.');
+    const data = raw.subarray(offset, offset + compressed);
+    const xml = method === 8 ? await inflate(data, size) : data;
+    check(xml.length === size && crc32(xml) === checksum, 'La verificación de integridad del ZIP falló.');
+    yield { name, xml };
+  }
+}
+async function pdfOk(blob) {
+  return blob instanceof Blob && blob.size <= 15 * MB && await blob.slice(0, 5).text() === '%PDF-';
+}
+function encode64(raw) {
+  let binary = '';
+  for (let i = 0; i < raw.length; i += 8192) binary += String.fromCharCode(...raw.subarray(i, i + 8192));
+  return btoa(binary);
+}
+function decode64(value) { return Uint8Array.from(atob(value), letter => letter.charCodeAt(0)); }
+async function keyFor(password, salt) {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
+    material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+const backupMagic = 'FARO2\n';
+async function encryptBackup(data, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await keyFor(password, salt);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(data)));
+  return new Blob([backupMagic, salt, iv, cipher], { type: 'application/octet-stream' });
+}
+async function decryptBackup(file, password) {
+  check(file.size >= 50 && file.size <= 180 * MB && await file.slice(0, 6).text() === backupMagic, 'El archivo no es un respaldo Faro válido.');
+  const raw = bytes(await file.arrayBuffer());
+  const key = await keyFor(password, raw.subarray(6, 22));
+  let plain;
+  try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(22, 34) }, key, raw.subarray(34)); }
+  catch { throw new Error('Contraseña incorrecta o respaldo dañado.'); }
+  return JSON.parse(new TextDecoder().decode(plain));
+}
+
+const screens = {
+  operations: ['Centro de operaciones', 'Pendientes, conciliación y estado por contribuyente.', 'Actualizar estado'],
+  home: ['Resumen fiscal', 'Facturas y documentos de tus contribuyentes en un solo lugar.', 'Importar XML / ZIP'],
+  invoices: ['Facturas CFDI', 'Busca por nombre, RFC o UUID y abre el comprobante sin perder tus filtros.', 'Importar XML / ZIP'],
+  docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
+  sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
+  monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
+  backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo']
+};
+const portals = [
+  ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
+  ['Constancia y CIF', 'Obtén la constancia de situación fiscal con cédula de identificación.', 'https://www.sat.gob.mx/portal/public/tramites/constancia-de-situacion-fiscal'],
+  ['Opinión de cumplimiento', 'Consulta y guarda el PDF de la opinión.', 'https://wwwmat.sat.gob.mx/consultas/20777/consulta-tu-opinion-de-cumplimiento-de-obligaciones-fiscales'],
+  ['Declaraciones y acuses', 'Recupera acuses de declaraciones presentadas.', 'https://wwwmatnp.sat.gob.mx/aplicacion/77792/reimprime-tus-acuses-de-declaraciones-presentadas']
+];
+let people = [], invoices = [], documents = [], activity = [];
+let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
+let invoiceKind = '', invoiceOrder = 'recent';
+let submit, importing = false, ready = false;
+const number = new Intl.NumberFormat('es-MX');
+const scopes = () => new Map(people.map(person => [person.id, person.name]));
+const matches = invoice => {
+  const known = scopes();
+  return (scope ? [scope] : [...known.keys()]).some(id => id === invoice.from.rfc || id === invoice.to.rfc);
+};
+const roles = row => {
+  const known = scopes();
+  return { issued: scope ? row.from.rfc === scope : known.has(row.from.rfc), received: scope ? row.to.rfc === scope : known.has(row.to.rfc) };
+};
+function dateLabel(date) {
+  if (date.length < 10) return date;
+  return date.slice(8, 10) + '/' + date.slice(5, 7) + '/' + date.slice(0, 4);
+}
+function amount(row) {
+  const [integer, decimals] = row.total.split('.');
+  return number.format(BigInt(integer)) + (decimals ? '.' + decimals : '.00') + (row.currency ? ' ' + row.currency : '');
+}
+function n(tag, text, cls) {
+  const el = document.createElement(tag);
+  if (text !== undefined) el.textContent = text;
+  if (cls) el.className = cls;
+  return el;
+}
+function icon(name) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('aria-hidden', 'true');
+  const use = document.createElementNS(svg.namespaceURI, 'use');
+  use.setAttribute('href', '#i-' + name);
+  svg.append(use);
+  return svg;
+}
+function action(label, work, cls, glyph) {
+  const button = n('button', label, cls);
+  button.type = 'button';
+  if (glyph) button.prepend(icon(glyph));
+  button.onclick = () => Promise.resolve().then(work).catch(error => announce(error.message, true));
+  return button;
+}
+function announce(message = '', error = false) {
+  $('status').textContent = message;
+  $('status').hidden = !message;
+  $('status').dataset.error = error;
+}
+function panel(title) {
+  const wrap = n('section', undefined, 'panel');
+  if (title) {
+    const header = n('div', undefined, 'panel-head');
+    header.append(n('h2', title));
+    wrap.append(header);
+  }
+  return wrap;
+}
+function grid(headers, rows) {
+  const wrap = n('div', undefined, 'table-wrap');
+  const table = n('table'), head = n('thead'), body = n('tbody'), header = n('tr');
+  for (const heading of headers) header.append(n('th', heading));
+  head.append(header);
+  for (const row of rows) {
+    const tr = n('tr');
+    for (const cell of row) {
+      const td = n('td');
+      if (cell instanceof Node) td.append(cell);
+      else td.textContent = cell;
+      tr.append(td);
+    }
+    body.append(tr);
+  }
+  table.append(head, body); wrap.append(table);
+  return wrap;
+}
+function cell(title, note) {
+  const wrap = n('div', title);
+  if (note) wrap.append(n('small', note));
+  return wrap;
+}
+function empty(title, message, button) {
+  const el = n('div', undefined, 'empty');
+  el.append(n('h3', title), n('p', message));
+  if (button) el.append(button);
+  return el;
+}
+function select(items, value, label) {
+  const input = n('select');
+  for (const [id, name] of items) input.append(new Option(name, id));
+  input.value = value;
+  if (label) input.setAttribute('aria-label', label);
+  return input;
+}
+function field(label, input) {
+  const el = n('label', label); el.append(input); return el;
+}
+function input(type, props) { return Object.assign(n('input'), { type }, props); }
+function dialog(title, controls, work) {
+  $('dialogTitle').textContent = title;
+  $('fields').replaceChildren(...controls);
+  $('formError').hidden = true;
+  $('save').hidden = !work;
+  submit = work;
+  $('dialog').showModal();
+}
+function download(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const link = n('a'); link.href = url; link.download = name;
+  document.body.append(link); link.click(); link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 15000);
+}
+async function refresh(skipRender = false) {
+  [people, invoices, documents, activity] = await Promise.all(['people', 'invoices', 'documents', 'activity'].map(store => readStore(store)));
+  people.sort((a, b) => a.name.localeCompare(b.name, 'es-MX'));
+  invoices.sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
+  documents.sort((a, b) => b.date.localeCompare(a.date));
+  activity.sort((a, b) => b.date.localeCompare(a.date));
+  if (!people.some(person => person.id === scope)) scope = '';
+  $('scope').replaceChildren(new Option('Todos los RFC', ''), ...people.map(p => new Option(p.name + ' · ' + p.id, p.id)));
+  $('scope').value = scope;
+  if (!skipRender) render();
+}
+function navigate(view) {
+  page = view;
+  for (const button of document.querySelectorAll('[data-view]')) {
+    if (button.dataset.view === page) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  render();
+}
+function render() {
+  const [title, description, button] = screens[page];
+  $('title').textContent = title;
+  $('crumb').textContent = page === 'home' ? 'Resumen' : title;
+  $('subtitle').textContent = description;
+  $('eyebrow').textContent = scope || 'ESPACIO FISCAL';
+  $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : 'up'), n('span', button));
+  $('primary').disabled = !ready || importing;
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen })[page]();
+  $('body').replaceChildren(...content);
+}
+function home() {
+  const selection = invoices.filter(matches);
+  const pdfs = documents.filter(doc => !scope || doc.rfc === scope);
+  const banner = n('section', undefined, 'dashboard-hero');
+  const copy = n('div');
+  copy.append(n('div', 'MESA DE TRABAJO', 'hero-kicker'), n('h2', scope ? scopes().get(scope) : 'Control fiscal por contribuyente'),
+    n('p', scope ? scope : people.length ? people.length + (people.length === 1 ? ' contribuyente en tu cartera' : ' contribuyentes en tu cartera') : 'Agrega tu primer RFC para abrir un expediente.'));
+  const shortcuts = n('div', undefined, 'hero-actions');
+  shortcuts.append(people.length ? action('Ver facturas', () => navigate('invoices'), undefined, 'file') : action('Agregar contribuyente', addPerson, undefined, 'plus'),
+    action('Centro SAT', () => navigate('sat'), undefined, 'sync'));
+  banner.append(copy, shortcuts);
+  const metrics = n('div', undefined, 'cards');
+  for (const [label, value, glyph, open] of [
+    ['CFDI recibidos', selection.filter(row => roles(row).received).length, 'down', () => { direction = 'Recibidos'; invoicePage = 0; navigate('invoices'); }],
+    ['CFDI emitidos', selection.filter(row => roles(row).issued).length, 'up', () => { direction = 'Emitidos'; invoicePage = 0; navigate('invoices'); }],
+    ['Documentos archivados', pdfs.length, 'folder', () => { docFilter = ''; navigate('docs'); }]
+  ]) {
+    const card = n('div', undefined, 'metric');
+    const name = n('div', label, 'metric-label'); name.prepend(icon(glyph));
+    card.append(name, n('strong', number.format(value)), action('Abrir', open, 'metric-link', 'arrow')); metrics.append(card);
+  }
+  const recent = panel('Últimos comprobantes');
+  const latest = selection.slice(0, 5);
+  if (latest.length) recent.append(grid(['Emisor', 'Fecha', 'Total', ''], latest.map(row => [
+    cell(row.from.name || row.from.rfc, rowRole(row)), dateLabel(row.date), amount(row), action('Ver detalle', () => invoiceDetail(row))
+  ])));
+  else recent.append(empty('Sin movimientos todavía', 'Las facturas importadas o sincronizadas aparecerán aquí.'));
+  const tasks = panel('Contribuyentes');
+  const visiblePeople = people.filter(row => !scope || row.id === scope);
+  if (!visiblePeople.length) tasks.append(empty('Crea tu primer expediente', 'Agrega un RFC y arrastra aquí los archivos XML o ZIP que ya tengas.', action('Agregar RFC', addPerson, 'primary', 'plus')));
+  else {
+    const counts = new Map(visiblePeople.map(p => [p.id, [0, 0, 0]]));
+    for (const row of invoices) {
+      if (counts.has(row.to.rfc)) counts.get(row.to.rfc)[0]++;
+      if (counts.has(row.from.rfc)) counts.get(row.from.rfc)[1]++;
+    }
+    for (const doc of documents) if (counts.has(doc.rfc)) counts.get(doc.rfc)[2]++;
+    tasks.append(grid(['Contribuyente', 'Recibidos', 'Emitidos', 'PDF', 'Acción'], visiblePeople.map(p => [
+      cell(p.name, p.id), ...counts.get(p.id).map(value => number.format(value)),
+      action('Abrir expediente', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('docs'); })
+    ])));
+  }
+  const history = panel('Importaciones recientes');
+  if (!activity.length) history.append(empty('Sin importaciones', 'Aquí aparecerá el resultado de cada lote.'));
+  else history.append(grid(['Lote', 'Nuevos', 'Duplicados', 'Por revisar'], activity.slice(0, 5).map(row => [
+    cell(row.name, dateLabel(row.date)), row.added, row.duplicates, row.review ? action(row.review + ' · Ver revisión', () => reviewDetail(row)) : '0'
+  ])));
+  const secondary = n('div', undefined, 'dashboard-grid');
+  secondary.append(recent, history);
+  return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks];
+}
+
+function weeklyActivity(rows) {
+  const chart = panel();
+  const header = n('div', undefined, 'panel-head');
+  const heading = n('div');
+  heading.append(n('h2', 'Actividad de comprobantes'), n('p', 'Siete días hasta la última fecha de emisión registrada.'));
+  const end = Date.parse(rows[0].date.slice(0, 10) + 'T00:00:00Z');
+  if (!Number.isFinite(end)) return chart;
+  const dates = Array.from({ length: 7 }, (_, index) => new Date(end - (6 - index) * 86400000).toISOString().slice(0, 10));
+  const counts = new Map(dates.map(date => [date, 0]));
+  for (const row of rows) {
+    const key = row.date.slice(0, 10);
+    if (counts.has(key)) counts.set(key, counts.get(key) + 1);
+  }
+  const maximum = Math.max(1, ...counts.values());
+  header.append(heading, n('span', dateLabel(dates[0]) + ' – ' + dateLabel(dates.at(-1)), 'period-chip'));
+  const bars = n('div', undefined, 'activity-bars');
+  bars.setAttribute('aria-label', 'Comprobantes por día');
+  for (const [date, count] of counts) {
+    const column = n('div', undefined, 'activity-day');
+    const meter = n('meter');
+    meter.min = 0; meter.max = maximum; meter.value = count;
+    meter.setAttribute('aria-label', dateLabel(date) + ', ' + count + ' comprobantes');
+    column.append(n('strong', number.format(count)), meter, n('span', dateLabel(date).slice(0, 5)));
+    bars.append(column);
+  }
+  chart.append(header, bars);
+  return chart;
+}
+function invoiceRows() {
+  const needle = term.trim().toLocaleLowerCase('es-MX');
+  const known = scopes();
+  const matchScope = row => scope ? row.from.rfc === scope || row.to.rfc === scope : known.has(row.from.rfc) || known.has(row.to.rfc);
+  const filtered = invoices.filter(row => matchScope(row) && (!month || row.date.startsWith(month)) && (!invoiceKind || row.kind === invoiceKind) &&
+    (direction === 'Todos' || (direction === 'Recibidos' ? (scope ? row.to.rfc === scope : known.has(row.to.rfc)) : (scope ? row.from.rfc === scope : known.has(row.from.rfc)))) &&
+    [row.id, row.from.rfc, row.to.rfc, row.from.name, row.to.name].some(text => text.toLocaleLowerCase('es-MX').includes(needle)));
+  return invoiceOrder === 'oldest' ? filtered.reverse() : filtered;
+}
+function rowRole(row) {
+  const result = roles(row);
+  return result.issued && result.received ? 'Entre mis RFC' : result.issued ? 'Emitido' : 'Recibido';
+}
+function invoiceScreen() {
+  const list = panel();
+  const tabs = n('div', undefined, 'tabs');
+  for (const title of ['Todos', 'Recibidos', 'Emitidos']) {
+    const button = action(title, () => { direction = title; invoicePage = 0; render(); });
+    button.setAttribute('aria-pressed', direction === title);
+    tabs.append(button);
+  }
+  const controls = n('div', undefined, 'filters');
+  const search = input('search', { value: term, placeholder: 'Buscar nombre, RFC o UUID' });
+  search.setAttribute('aria-label', 'Buscar comprobantes');
+  const period = input('month', { value: month }); period.setAttribute('aria-label', 'Mes de emisión');
+  const type = select([['', 'Todos los tipos'], ...Object.entries(KINDS)], invoiceKind, 'Tipo de CFDI');
+  const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
+  const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
+  const result = n('div');
+  const update = () => {
+    const rows = invoiceRows();
+    exportButton.disabled = !rows.length;
+    invoicePage = Math.min(invoicePage, Math.max(0, Math.ceil(rows.length / 35) - 1));
+    const sliced = rows.slice(invoicePage * 35, (invoicePage + 1) * 35);
+    const foot = n('div', undefined, 'table-foot');
+    foot.setAttribute('aria-live', 'polite');
+    foot.append(n('span', number.format(rows.length) + ' comprobantes'));
+    if (rows.length > 35) {
+      const options = n('div', undefined, 'actions');
+      const prev = action('Anterior', () => { invoicePage--; update(); });
+      const next = action('Siguiente', () => { invoicePage++; update(); });
+      prev.disabled = invoicePage === 0; next.disabled = (invoicePage + 1) * 35 >= rows.length;
+      options.append(prev, n('span', String(invoicePage + 1)), next); foot.append(options);
+    }
+    const content = sliced.length ? grid(['Emisor → receptor', 'Fecha', 'Tipo', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => [
+      cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
+      dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)
+    ])) : empty('Sin coincidencias', 'Importa un lote o cambia los filtros.');
+    result.replaceChildren(content, foot);
+  };
+  search.oninput = () => { term = search.value; invoicePage = 0; update(); };
+  period.onchange = () => { month = period.value; invoicePage = 0; update(); };
+  type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
+  order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
+  controls.append(search, period, type, order, exportButton);
+  list.append(tabs, controls, result);
+  update();
+  return [list];
+}
+function documentScreen() {
+  const list = panel('Documentos del expediente');
+  const filters = n('div', undefined, 'filters');
+  const choice = select([['', 'Todos los documentos'], ...DOCUMENTS.map(x => [x, x])], docFilter, 'Tipo de documento');
+  choice.onchange = () => { docFilter = choice.value; render(); };
+  filters.append(choice); list.append(filters);
+  const rows = documents.filter(doc => (!scope || doc.rfc === scope) && (!docFilter || doc.kind === docFilter));
+  if (rows.length) list.append(grid(['Documento', 'RFC', 'Fecha', 'Periodo', 'Acción'], rows.map(doc => [
+    cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', action('Ver PDF', () => viewPdf(doc))
+  ])));
+  else list.append(empty('Sin documentos', 'Archiva un PDF o consulta los trámites en el Centro SAT.'));
+  return [list];
+}
+function satScreen() {
+  if (typeof satToken !== 'undefined' && satToken) return connectedSatScreen();
+  const guide = n('section', undefined, 'guide');
+  const info = n('div');
+  info.append(n('h2', 'Descarga en el SAT e importa en Faro'), n('p', 'Descarga el ZIP en el portal e impórtalo aquí. Faro asigna los XML a los RFC registrados y omite los UUID repetidos. La descarga automática desde el SAT aún no está habilitada.'));
+  const options = n('div', undefined, 'actions');
+  options.append(action('Elegir ZIP o XML', chooseImport, 'primary', 'up'), action('Importar carpeta', () => {
+    check(people.length, 'Agrega primero un RFC.'); $('folder').click();
+  }, undefined, 'folder'));
+  guide.append(info, options);
+  const links = panel('Trámites oficiales');
+  for (const [title, summary, url] of portals) {
+    const item = n('div', undefined, 'portal');
+    const link = n('a', title + ' ↗');
+    link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    item.append(link, n('p', summary)); links.append(item);
+  }
+  return [guide, links];
+}
+function backupScreen() {
+  const help = n('section', undefined, 'guide');
+  const desc = n('div');
+  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', 'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de Faro, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
+  const options = n('div', undefined, 'actions');
+  options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
+  help.append(desc, options);
+  return [help];
+}
+
+
+const cloudStorage = Boolean(document.querySelector('meta[name="faro-cloud"]'));
+let previewUrl;
+async function cloudRead(store, id) {
+  const query = new URLSearchParams({ store });
+  if (id !== undefined) query.set('id', id);
+  const value = await satApi('storage?' + query);
+  const decode = item => item && store === 'files' ? { id: item.id,
+    blob: new Blob([decode64(item.content)], { type: item.mime }) } : item;
+  return Array.isArray(value) ? value.map(decode) : decode(value);
+}
+async function cloudWrite(batch, replace) {
+  const data = { ...batch };
+  if (batch.files) data.files = await Promise.all(batch.files.map(async file => ({
+    id: file.id, mime: file.blob.type, content: encode64(bytes(await file.blob.arrayBuffer()))
+  })));
+  await satApi('storage', { batch: data, replace });
+}
+function pdfLinks(doc, blob) {
+  if (previewUrl) URL.revokeObjectURL(previewUrl);
+  previewUrl = URL.createObjectURL(blob);
+  const link = n('a', 'Abrir PDF en otra pestaña ↗');
+  link.href = previewUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
+  const buttons = n('div', undefined, 'actions');
+  buttons.append(link, action('Descargar original', () => download(blob, doc.name), undefined, 'down'));
+  return buttons;
+}
+async function viewPdf(doc) {
+  const item = await readStore('files', doc.id);
+  check(item, 'Archivo no encontrado.');
+  const controls = [cell(doc.name, doc.kind + ' · ' + doc.rfc), pdfLinks(doc, item.blob)];
+  const view = n('iframe', undefined, 'pdf-preview');
+  view.title = 'Vista previa de ' + doc.name;
+  view.src = previewUrl;
+  controls.push(view);
+  dialog('Visor de documentos', controls);
+  $('dialog').classList.add('wide-dialog');
+}
+$('dialog').addEventListener('close', () => {
+  $('dialog').classList.remove('wide-dialog', 'invoice-dialog');
+  if (previewUrl) {
+    const url = previewUrl;
+    previewUrl = undefined;
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  }
+});
+
+async function importInvoicePdf(file) {
+  check(ready && people.length, 'Agrega un contribuyente antes de importar una factura PDF.');
+  check(await pdfOk(file), 'Elige un PDF válido de hasta 15 MB.');
+  let result = { uuids: [], rfcs: [], hasText: false }, failure = '';
+  if (satToken) {
+    announce('Leyendo folios fiscales en el PDF…');
+    try { result = await satApi('pdf-analyze', { data: encode64(bytes(await file.arrayBuffer())) }); }
+    catch (error) { failure = error.message; }
+  }
+  const candidates = Array.isArray(result.uuids) ? result.uuids : [];
+  const known = Array.isArray(result.rfcs) ? result.rfcs : [];
+  const automatic = candidates.length === 1 ? candidates[0] : '';
+  const match = invoices.find(row => row.id === automatic);
+  const belongs = candidate => !match || [match.from.rfc, match.to.rfc].includes(candidate);
+  const applicable = people.filter(person => belongs(person.id));
+  check(applicable.length, 'El XML vinculado pertenece a otro expediente.');
+  const suitable = applicable.filter(p => known.includes(p.id));
+  const options = [['', 'Selecciona un RFC'], ...applicable.map(p => [p.id, p.name + ' · ' + p.id])];
+  const taxpayer = select(options, scope && applicable.some(p => p.id === scope) ? scope :
+    suitable.length === 1 ? suitable[0].id : applicable.length === 1 ? applicable[0].id : '');
+  taxpayer.required = true;
+  const issueDate = input('date', { value: match?.date.slice(0, 10) || '', required: true });
+  const folio = input('text', { value: automatic, maxLength: 36, placeholder: 'UUID del CFDI, si está disponible' });
+  if (scope && ((match && !belongs(scope)) || (!match && known.length && !known.includes(scope)))) {
+    announce('El PDF no corresponde al RFC seleccionado ' + scope + '. RFC detectados: ' + (known.join(', ') || [match.from.rfc, match.to.rfc].join(', ')), true);
+    return viewPdfFile(file);
+  }
+  const note = failure || (automatic ? match ? 'Encontré el XML del mismo UUID. Revisa los datos para vincular la representación impresa.' :
+    'Detecté un UUID. El PDF se vinculará cuando exista el XML correspondiente.' :
+    candidates.length ? 'El PDF contiene varios UUID. Escribe el folio correcto para vincularlo.' :
+    'No pude identificar un UUID. Si es un escaneo, captura el folio manualmente o guarda el PDF sin vincular.');
+  reportPdfState(note);
+  dialog('Archivar factura PDF', [cell(file.name, note), field('Expediente', taxpayer),
+    field('Fecha del comprobante', issueDate), field('UUID (opcional)', folio)], async () => {
+    const uuid = folio.value.trim().toUpperCase();
+    check(!uuid || UUID.test(uuid), 'El UUID debe tener 36 caracteres en formato de folio fiscal.');
+    const linked = invoices.find(row => row.id === uuid);
+    check(!linked || [linked.from.rfc, linked.to.rfc].includes(taxpayer.value), 'El XML de ese UUID corresponde a otro RFC.');
+    check(!known.length || linked || known.includes(taxpayer.value), 'El RFC seleccionado no aparece en el PDF.');
+    check(!uuid || !documents.some(doc => doc.kind === 'Factura PDF' && doc.rfc === taxpayer.value && doc.uuid === uuid),
+      'Ese UUID ya tiene una factura PDF en este expediente.');
+    const id = 'pdf:' + crypto.randomUUID();
+    const row = { id, rfc: taxpayer.value, kind: 'Factura PDF', date: issueDate.value,
+      period: '', name: file.name.slice(0, 180), uuid };
+    await writeBatch({ documents: [row], files: [{ id, blob: new Blob([file], { type: 'application/pdf' }) }] });
+    docFilter = 'Factura PDF';
+    if (scope && scope !== taxpayer.value) scope = taxpayer.value;
+    await refresh(); navigate('docs');
+    announce(linked ? 'PDF archivado y vinculado al XML.' : 'Factura PDF archivada.');
+  });
+}
+function reportPdfState() { announce(); }
+function viewPdfFile(file) {
+  dialog('Visor de PDF', [n('p', file.name), pdfLinks({ name: file.name }, new Blob([file], { type: 'application/pdf' }))]);
+}
+if (cloudStorage) {
+  $('mode').textContent = 'Servidor privado';
+  $('storage-mode').replaceChildren(n('span', 'Datos en servidor'), n('small', 'Acceso privado por HTTPS'));
+}
+$('pdf-import').onclick = () => $('invoice-pdf').click();
+$('invoice-pdf').onchange = () => {
+  const file = $('invoice-pdf').files[0]; $('invoice-pdf').value = '';
+  if (file) importInvoicePdf(file).catch(error => announce(error.message, true));
+};
+
+function operationsScreen() {
+  const selected = invoices.filter(matches);
+  const docs = documents.filter(d => d.kind === 'Factura PDF' && (!scope || d.rfc === scope));
+  const alerts = panel('Bandeja de atención por RFC');
+  const pending = selected.filter(row => {
+    const state = fiscalResults.get(row.id);
+    return !state || state.error || state.sat?.state !== 'Vigente' || state.efos?.length;
+  });
+  alerts.append(n('p', 'Sin consulta no significa vigente. Las coincidencias 69-B conservan su categoría y requieren revisión.'));
+  if (pending.length) alerts.append(grid(['RFC emisor', 'Comprobante', 'Resultado', 'Acción'], pending.slice(0,100).map(row => [row.from.rfc, row.id, statusCell(row.id), action('Revisar CFDI', () => invoiceDetail(row))])));
+  else alerts.append(empty('Sin pendientes en los resultados cargados', 'Consulta Vigilancia SAT para actualizar el seguimiento.'));
+  alerts.append(n('p', pending.length + ' pendientes; se muestran hasta 100. Usa el selector de contribuyente para acotar.'));
+  const reconcile = panel('Conciliación XML y PDF');
+  const unlinked = docs.filter(d => !d.uuid || !invoices.some(row => row.id === d.uuid && [row.from.rfc,row.to.rfc].includes(d.rfc)));
+  const noPdf = selected.filter(row => !docs.some(d => d.uuid === row.id && [row.from.rfc,row.to.rfc].includes(d.rfc)));
+  reconcile.append(n('p', unlinked.length + ' PDF pendientes de vincular · ' + noPdf.length + ' XML sin representación PDF. La ausencia de PDF no invalida un CFDI.'));
+  if (unlinked.length) reconcile.append(grid(['PDF', 'RFC', 'Acción'], unlinked.slice(0,100).map(doc => [doc.name, doc.rfc, action('Vincular UUID', () => linkPdfDialog(doc))])));
+  reconcile.append(action('Ver facturas', () => navigate('invoices')));
+  const health = panel('Estado de operación');
+  health.append(grid(['Componente', 'Estado'], [
+    ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : 'No disponible'],
+    ['Servicio SAT', !satToken ? 'Abre Iniciar-Faro.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
+    ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
+    ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
+    ['Respaldo', 'Exporta una copia cifrada antes de actualizar. No incluye e.firma, SMTP ni cola SAT.']
+  ]));
+  const buttons = n('div', undefined, 'actions');
+  buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
+  health.append(buttons);
+  return [health, alerts, reconcile];
+}
+function linkPdfDialog(doc) {
+  const uuid = input('text', { required: true, maxLength: 36, value: doc.uuid || '', placeholder: 'UUID del XML importado' });
+  dialog('Vincular PDF a su CFDI', [n('p', doc.name + ' · ' + doc.rfc), field('Folio fiscal', uuid)], async () => {
+    const id = uuid.value.trim().toUpperCase();
+    const row = invoices.find(item => item.id === id);
+    check(UUID.test(id) && row, 'Importa primero el XML de ese UUID.');
+    check([row.from.rfc,row.to.rfc].includes(doc.rfc), 'El XML corresponde a otro RFC.');
+    check(!documents.some(d => d.id !== doc.id && d.rfc === doc.rfc && d.uuid === id && d.kind === 'Factura PDF'), 'Ese CFDI ya tiene un PDF vinculado.');
+    await writeBatch({ documents: [{ ...doc, uuid: id }] });
+    await refresh(); announce('PDF vinculado al XML.');
+  });
+}
+
+function addPerson() {
+  check(ready, 'El almacenamiento todavía no está disponible.');
+  const name = input('text', { required: true, maxLength: 120, placeholder: 'Nombre o razón social' });
+  const id = input('text', { required: true, maxLength: 13, placeholder: 'RFC de 12 o 13 caracteres' });
+  dialog('Agregar contribuyente', [field('Nombre o razón social', name), field('RFC', id)], async () => {
+    const rfc = id.value.trim().toUpperCase(), label = name.value.trim();
+    check(RFC.test(rfc) && label, 'Escribe un nombre y un RFC con formato válido.');
+    check(!await readStore('people', rfc), 'Ese RFC ya está en tu cartera.');
+    await writeBatch({ people: [{ id: rfc, name: label }] });
+    scope = rfc;
+    await refresh(); announce('Expediente creado para ' + rfc + '.');
+  });
+}
+function chooseImport() {
+  check(ready && people.length, 'Agrega un RFC antes de importar.');
+  if (!importing) $('incoming').click();
+}
+async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) {
+  if (!ready || importing) return;
+  const files = [...source].filter(file => /\.(xml|zip)$/i.test(file.name));
+  if (!files.length) return announce('Elige archivos .xml o .zip con CFDI.', true);
+  if (!people.length) return announce('Agrega primero los RFC que quieres importar.', true);
+  importing = true;
+  $('primary').disabled = true;
+  let added = 0, duplicates = 0, review = 0;
+  const issues = [];
+  const pending = new Map();
+  const known = scopes();
+  const seen = new Set((await readStore('invoices').catch(() => invoices)).map(row => row.id));
+  let pendingSize = 0;
+  const issue = (name, error) => {
+    review++;
+    if (issues.length < 20) issues.push({ name: name.slice(0, 180), reason: error.message.slice(0, 320) });
+  };
+  async function flush() {
+    if (!pending.size) return;
+    await writeBatch({ invoices: [...pending.values()].map(item => item.row), files: [...pending.values()].map(item => item.file) });
+    added += pending.size;
+    pending.clear();
+    pendingSize = 0;
+  }
+  async function accept(name, xml) {
+    let row;
+    try {
+      row = parseXml(xml);
+      check(!requiredRfc || row.from.rfc === requiredRfc || row.to.rfc === requiredRfc,
+        'No corresponde a ' + requiredRfc + '. Emisor ' + row.from.rfc + ' · Receptor ' + row.to.rfc + '.');
+      check(known.has(row.from.rfc) || known.has(row.to.rfc), 'Los RFC del comprobante no están registrados.');
+    } catch (error) { issue(name, error); return; }
+    if (seen.has(row.id)) { duplicates++; return; }
+    seen.add(row.id);
+    pending.set(row.id, { row, file: { id: 'xml:' + row.id, blob: new Blob([xml], { type: 'application/xml' }) } });
+    pendingSize += xml.length;
+    if (pending.size >= 100 || pendingSize >= 12 * MB) await flush();
+  }
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!quiet) announce('Importando ' + (i + 1) + ' de ' + files.length + ' · ' + file.name);
+      if (/\.xml$/i.test(file.name)) {
+        if (file.size > 8 * MB) { issue(file.name, new Error('El XML supera 8 MB.')); continue; }
+        let xml;
+        try { xml = bytes(await file.arrayBuffer()); }
+        catch (error) { issue(file.name, error); continue; }
+        await accept(file.name, xml);
+      } else {
+        if (file.size > 80 * MB) { issue(file.name, new Error('El ZIP supera 80 MB.')); continue; }
+        let zip;
+        try { zip = zipXml(bytes(await file.arrayBuffer())); }
+        catch (error) { issue(file.name, error); continue; }
+        let count = 0;
+        while (true) {
+          let entry;
+          try { entry = await zip.next(); }
+          catch (error) { issue(file.name, error); break; }
+          if (entry.done) {
+            if (!count) issue(file.name, new Error('El ZIP no contiene CFDI XML.'));
+            break;
+          }
+          count++;
+          await accept(entry.value.name, entry.value.xml);
+        }
+      }
+    }
+    await flush();
+    await writeBatch({ activity: [{
+      id: crypto.randomUUID(), name: files.length === 1 ? files[0].name.slice(0, 180) : files.length + ' archivos',
+      date: new Date().toISOString(), added, duplicates, review, issues
+    }] });
+    if (!quiet) announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
+      (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
+    return { added, duplicates, review };
+  } catch (error) {
+    announce(added + ' comprobantes guardados antes de interrumpir el lote. ' + error.message, true);
+    if (quiet) throw error;
+  } finally {
+    importing = false;
+    $('primary').disabled = !ready;
+    try { await refresh(quiet && page === 'sat'); } catch (error) { announce(error.message, true); }
+  }
+}
+function addDocument() {
+  check(ready && people.length, 'Agrega un RFC antes de archivar documentos.');
+  const taxpayer = select(people.map(p => [p.id, p.name + ' · ' + p.id]), scope || people[0].id);
+  const kind = select(DOCUMENTS.map(x => [x, x]), DOCUMENTS[0]);
+  const date = input('date', { required: true });
+  const period = input('text', { maxLength: 40, placeholder: 'Ej. Octubre 2026' });
+  const picker = input('file', { required: true, accept: '.pdf' });
+  dialog('Archivar PDF', [field('Contribuyente', taxpayer), field('Tipo de documento', kind), field('Fecha', date),
+    field('Periodo, si aplica', period), field('Archivo', picker)], async () => {
+    const file = picker.files[0];
+    check(await pdfOk(file), 'Elige un PDF de hasta 15 MB.');
+    const id = 'pdf:' + crypto.randomUUID();
+    await writeBatch({ documents: [{ id, rfc: taxpayer.value, kind: kind.value, date: date.value, period: period.value.trim(), name: file.name.slice(0, 180) }],
+      files: [{ id, blob: new Blob([file], { type: 'application/pdf' }) }] });
+    docFilter = '';
+    if (scope && scope !== taxpayer.value) scope = taxpayer.value;
+    await refresh(); announce('PDF archivado en ' + taxpayer.value + '.');
+  });
+}
+function invoiceDetail(row) {
+  const descriptions = n('ul');
+  for (const item of row.concepts) descriptions.append(n('li', item));
+  const summary = n('div', undefined, 'invoice-summary');
+  const headline = n('div');
+  headline.append(n('span', rowRole(row), 'period-chip'), n('h3', amount(row)), n('p', KINDS[row.kind] + ' · ' + dateLabel(row.date)));
+  const parties = n('div', undefined, 'invoice-parties');
+  for (const [label, party] of [['EMISOR', row.from], ['RECEPTOR', row.to]]) {
+    const box = n('div');
+    box.append(n('small', label), n('strong', party.name || party.rfc), n('span', party.rfc));
+    parties.append(box);
+  }
+  summary.append(headline, parties, cell(row.id, 'Folio fiscal'));
+  summary.append(statusCell(row.id));
+  const contents = [summary];
+  if (row.concepts.length) {
+    const section = n('section', undefined, 'invoice-concepts');
+    section.append(n('h3', 'Conceptos del comprobante'), descriptions);
+    contents.push(section);
+  }
+  const linked = documents.filter(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id && (!scope || doc.rfc === scope));
+  for (const doc of linked) contents.push(action('Ver PDF · ' + doc.rfc, () => {
+    $('dialog').addEventListener('close', () => viewPdf(doc).catch(error => announce(error.message, true)), { once: true });
+    $('dialog').close();
+  }, undefined, 'file'));
+  contents.push(action('Descargar XML original', async () => {
+    const file = await readStore('files', 'xml:' + row.id);
+    check(file, 'Archivo no encontrado.');
+    download(file.blob, row.id + '.xml');
+  }, undefined, 'down'));
+  dialog('Detalle del CFDI', contents);
+  $('dialog').classList.add('invoice-dialog');
+}
+function invoiceActions(row) {
+  const wrap = n('div', undefined, 'actions');
+  wrap.append(action('Ver CFDI', () => invoiceDetail(row)), action('Ver XML', async () => {
+    const file = await readStore('files', 'xml:' + row.id);
+    check(file, 'Archivo no encontrado.');
+    await viewXml(file.blob, row.id + '.xml');
+  }));
+  return wrap;
+}
+async function viewXml(file, name) {
+  check(file.size && file.size <= 8 * MB, 'El visor admite XML de hasta 8 MB.');
+  const raw = bytes(await file.arrayBuffer());
+  let text, encodingError;
+  try { text = decodeXml(raw); }
+  catch { text = new TextDecoder().decode(raw); encodingError = 'No se pudo leer la codificación declarada. Se muestra una lectura aproximada.'; }
+  const fields = [n('p', name)];
+  if (encodingError) fields.push(n('p', encodingError));
+  else {
+    try {
+      const row = parseXml(raw);
+      fields.push(cell(row.from.name || row.from.rfc, 'Emisor · ' + row.from.rfc),
+        cell(row.to.name || row.to.rfc, 'Receptor · ' + row.to.rfc), cell(row.id, 'UUID · ' + amount(row)));
+      const known = scopes();
+      if (!known.has(row.from.rfc) && !known.has(row.to.rfc)) fields.push(n('p', 'Para importarlo, agrega el RFC del emisor o del receptor que corresponda a tu expediente.'));
+    } catch (error) { fields.push(n('p', 'Revisión del importador · ' + error.message)); }
+  }
+  const viewer = n('pre', text, 'xml-view');
+  viewer.tabIndex = 0;
+  viewer.setAttribute('aria-label', 'Código XML original');
+  fields.push(viewer);
+  dialog('Visor XML', fields);
+}
+function reviewDetail(row) {
+  const fields = [n('p', row.name + ' · ' + row.review + ' por revisar')];
+  if (row.issues?.length) {
+    const list = n('ul');
+    for (const item of row.issues) list.append(n('li', item.name + ' · ' + item.reason));
+    fields.push(list);
+    if (row.issues.length < row.review) fields.push(n('p', 'Se muestran los primeros ' + row.issues.length + ' motivos del lote.'));
+  } else fields.push(n('p', 'Este lote se registró antes de que Faro guardara los motivos. Abre el XML original para revisarlo.'));
+  dialog('Revisión de importación', fields);
+}
+function csvText(rows) {
+  const escape = value => {
+    const text = String(value);
+    const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  return [['UUID', 'Emisor', 'RFC emisor', 'Receptor', 'RFC receptor', 'Fecha', 'Tipo', 'Total', 'Moneda'],
+    ...rows.map(x => [x.id, x.from.name, x.from.rfc, x.to.name, x.to.rfc, x.date, KINDS[x.kind], x.total, x.currency])]
+    .map(row => row.map(escape).join(',')).join('\r\n');
+}
+function exportCsv() {
+  download(new Blob(['\uFEFF', csvText(invoiceRows())], { type: 'text/csv;charset=utf-8' }), 'CFDI-' + (scope || 'todos') + '.csv');
+}
+async function snapshot() {
+  const data = { version: 2 };
+  const records = cloudStorage ? await Promise.all(STORES.map(name => readStore(name))) : await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES, 'readonly');
+    const results = STORES.map(name => tx.objectStore(name).getAll());
+    tx.oncomplete = () => resolve(results.map(request => request.result));
+    tx.onabort = () => reject(tx.error || new Error('No se pudo crear el respaldo.'));
+  });
+  for (let i = 0; i < STORES.length; i++) data[STORES[i]] = records[i];
+  check(data.files.reduce((sum, file) => sum + file.blob.size, 0) <= 100 * MB, 'Este formato admite hasta 100 MB de archivos por respaldo.');
+  data.files = await Promise.all(data.files.map(async item => ({ id: item.id, content: encode64(bytes(await item.blob.arrayBuffer())) })));
+  return data;
+}
+async function validateBackup(data) {
+  check(data?.version === 2 && STORES.every(key => Array.isArray(data[key])), 'El contenido del respaldo no es compatible.');
+  const validText = (value, max) => typeof value === 'string' && value.length <= max;
+  const registry = new Map();
+  for (const p of data.people) {
+    check(RFC.test(p?.id) && validText(p.name, 120) && p.name.trim() && !registry.has(p.id), 'El respaldo contiene un RFC inválido.');
+    registry.set(p.id, { id: p.id, name: p.name });
+  }
+  const contents = new Map();
+  for (const item of data.files) {
+    check(validText(item?.id, 70) && validText(item.content, 21 * MB) && !contents.has(item.id), 'El respaldo contiene un archivo inválido.');
+    contents.set(item.id, item.content);
+  }
+  const output = { people: [...registry.values()], invoices: [], documents: [], activity: [], files: [] };
+  for (const entry of data.invoices) {
+    const id = 'xml:' + entry.id;
+    check(UUID.test(entry.id) && contents.has(id), 'Falta un XML en el respaldo.');
+    const raw = decode64(contents.get(id));
+    const row = parseXml(raw);
+    check(entry.id === row.id && (registry.has(row.from.rfc) || registry.has(row.to.rfc)), 'El XML del respaldo no coincide.');
+    output.invoices.push(row);
+    output.files.push({ id, blob: new Blob([raw], { type: 'application/xml' }) });
+    contents.delete(id);
+  }
+  for (const entry of data.documents) {
+    check(typeof entry.id === 'string' && /^pdf:[a-f0-9-]{36}$/.test(entry.id) && contents.has(entry.id) &&
+      registry.has(entry.rfc) && DOCUMENTS.includes(entry.kind) && /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
+      validText(entry.period, 40) && validText(entry.name, 180), 'El respaldo contiene un documento inválido.');
+    const blob = new Blob([decode64(contents.get(entry.id))], { type: 'application/pdf' });
+    check(await pdfOk(blob), 'El respaldo contiene un PDF dañado.');
+    const { id, rfc, kind, date, period, name, uuid } = entry;
+    check(uuid === undefined || uuid === '' || (typeof uuid === 'string' && UUID.test(uuid)), 'El respaldo contiene un UUID de PDF inválido.');
+    output.documents.push({ id, rfc, kind, date, period, name, uuid });
+    output.files.push({ id, blob });
+    contents.delete(id);
+  }
+  for (const entry of data.activity) {
+    check(validText(entry.id, 70) && validText(entry.name, 180) && validText(entry.date, 40) &&
+      ['added', 'duplicates', 'review'].every(key => Number.isSafeInteger(entry[key]) && entry[key] >= 0), 'El historial del respaldo es inválido.');
+    const { id, name, date, added, duplicates, review } = entry;
+    const issues = Array.isArray(entry.issues) ? entry.issues.slice(0, 20)
+      .filter(item => validText(item?.name, 180) && validText(item.reason, 320))
+      .map(item => ({ name: item.name, reason: item.reason })) : [];
+    output.activity.push({ id, name, date, added, duplicates, review, issues });
+  }
+  check(contents.size === 0, 'El respaldo contiene archivos sin expediente.');
+  return output;
+}
+function backupDialog() {
+  check(ready && !importing && crypto.subtle, 'El respaldo no está disponible en este navegador o hay una importación activa.');
+  const password = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
+  const repeat = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
+  dialog('Crear respaldo cifrado', [field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
+    check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
+    download(await encryptBackup(await snapshot(), password.value), 'Faro-' + new Date().toISOString().slice(0, 10) + '.faro');
+    announce('Respaldo cifrado generado.');
+  });
+}
+function restoreDialog(file) {
+  check(ready && !importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
+  const password = input('password', { required: true, autocomplete: 'off' });
+  const confirmation = input('checkbox', { required: true });
+  dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de Faro se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
+    field('Confirmo que quiero reemplazar los datos actuales', confirmation)], async () => {
+    check(confirmation.checked, 'Confirma el reemplazo de los datos.');
+    const contents = await validateBackup(await decryptBackup(file, password.value));
+    await writeBatch(contents, true);
+    await refresh(); announce('Respaldo restaurado.');
+  });
+}
+const handle = work => () => Promise.resolve().then(work).catch(error => announce(error.message, true));
+$('add').onclick = handle(addPerson);
+$('inspect').onclick = () => $('inspectFile').click();
+$('inspectFile').onchange = handle(async () => {
+  const file = $('inspectFile').files[0];
+  $('inspectFile').value = '';
+  if (file) await viewXml(file, file.name);
+});
+$('primary').onclick = handle(async () => {
+  if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
+  return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() : chooseImport();
+});
+for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
+$('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
+for (const id of ['incoming', 'folder']) {
+  $(id).onchange = () => { const files = [...$(id).files]; $(id).value = ''; importBatch(files).catch(error => announce(error.message, true)); };
+}
+$('restore').onchange = handle(() => {
+  const file = $('restore').files[0]; $('restore').value = ''; if (file) restoreDialog(file);
+});
+$('close').onclick = $('cancel').onclick = () => $('dialog').close();
+$('dialog').addEventListener('cancel', event => { if ($('save').disabled) event.preventDefault(); });
+$('dialog').addEventListener('close', () => { $('fields').replaceChildren(); submit = null; });
+$('form').onsubmit = async event => {
+  event.preventDefault();
+  if (!submit || $('save').disabled) return;
+  $('save').disabled = $('cancel').disabled = $('close').disabled = true;
+  $('formError').hidden = true;
+  try { await submit(); $('dialog').close(); }
+  catch (error) { $('formError').textContent = error.message; $('formError').hidden = false; }
+  finally { $('save').disabled = $('cancel').disabled = $('close').disabled = false; }
+};
+window.addEventListener('dragover', event => {
+  if (event.dataTransfer.types.includes('Files')) {
+    event.preventDefault();
+    if (!$('dialog').open) $('body').classList.add('drag-active');
+  }
+});
+window.addEventListener('dragleave', event => { if (!event.relatedTarget) $('body').classList.remove('drag-active'); });
+window.addEventListener('drop', event => {
+  if (!event.dataTransfer.files.length) return;
+  if ($('dialog').open && event.target instanceof HTMLInputElement && event.target.type === 'file') return;
+  event.preventDefault(); $('body').classList.remove('drag-active');
+  if (!$('dialog').open) importBatch(event.dataTransfer.files).catch(error => announce(error.message, true));
+});
+render();
+const startup = (cloudStorage ? Promise.resolve(null) : openDatabase()).then(async result => { db = result; ready = true; await refresh(); })
+  .catch(() => { announce('El navegador bloqueó el almacenamiento local. Abre el archivo en Edge o Chrome con un perfil normal.', true); });
+
+const satToken = document.querySelector('meta[name="faro-token"]')?.content;
+let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
+let satError = '', satPolling = false, cloudRevision;
+const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada' };
+const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
+
+async function satApi(route, data) {
+  const headers = { 'X-Faro-Token': satToken };
+  if (data !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch('/api/' + route, {
+    method: data === undefined ? 'GET' : 'POST', headers,
+    body: data === undefined ? undefined : JSON.stringify(data)
+  });
+  if (!response.ok) throw new Error((await response.json()).error || 'El servicio local no respondió.');
+  return response.headers.get('Content-Type') === 'application/zip' ? response.blob() : response.json();
+}
+
+function localDateTime(value) {
+  if (!value) return 'Al activar';
+  return new Intl.DateTimeFormat('es-MX', { dateStyle: 'short', timeStyle: 'short' }).format(value);
+}
+function selectPerson() {
+  check(people.length, 'Agrega un contribuyente antes de configurar el SAT.');
+  return select(people.map(person => [person.id, person.name + ' · ' + person.id]), scope || people[0].id);
+}
+function connectedSatScreen() {
+  const guide = n('section', undefined, 'guide');
+  const info = n('div');
+  info.append(n('h2', 'Sincronización directa con el SAT'),
+    n('p', 'Autoriza la e.firma por RFC. Faro solicita CFDI, descarga los paquetes y los incorpora al expediente. El servicio puede seguir abierto aunque cierres la pestaña.'));
+  const controls = n('div', undefined, 'actions');
+  controls.append(action('Configurar RFC', () => unlockDialog(), 'primary', 'lock'),
+    action('Solicitar un periodo', requestDialog, undefined, 'sync'));
+  guide.append(info, controls);
+  const container = n('div'); container.id = 'sat-live';
+  fillSat(container);
+  const extras = panel('Otros trámites fiscales');
+  extras.append(empty('Disponibles en el expediente', 'Puedes archivar constancias, cédulas, opiniones y declaraciones en PDF. La conexión automática de esta edición cubre CFDI.',
+    action('Abrir expedientes', () => navigate('docs'))));
+  return [guide, container, extras];
+}
+function fillSat(target = $('sat-live')) {
+  if (!target) return;
+  const schedules = panel('Revisión automática por RFC');
+  if (satError) schedules.append(empty('No se pudo leer el estado', satError, action('Actualizar', pollSat)));
+  else {
+    const profiles = satData.profiles.filter(row => !scope || row.rfc === scope);
+    if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Agrega o selecciona un RFC y autoriza su e.firma para activar la revisión.'));
+    else schedules.append(grid(['RFC', 'Frecuencia', 'Próxima revisión', 'Acción'], profiles.map(row => [
+      cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma')),
+      (row.minutes / 60) + ' h · últimos ' + row.days + ' días',
+      row.unlocked ? localDateTime(row.nextRun) : 'En pausa',
+      row.unlocked ? action('Pausar', async () => { satData = await satApi('lock', { rfc: row.rfc }); fillSat(); }) :
+        action('Desbloquear', () => unlockDialog(row.rfc))
+    ])));
+  }
+  const queue = panel('Solicitudes recientes');
+  const jobs = satData.jobs.filter(row => !scope || row.rfc === scope);
+  if (jobs.length) queue.append(grid(['RFC', 'Periodo', 'Estado', 'Acción'], jobs.map(row => [
+    cell(row.rfc, directions[row.direction]), dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
+    cell(satStatus[row.status] || row.status, row.error || (row.status === 'pending' ? 'Próxima consulta ' + localDateTime(row.due) : '')),
+    row.status === 'pending' ? action('Reintentar consulta', async () => { satData = await satApi('retry', { id: row.id }); fillSat(); announce('Consulta programada para el siguiente ciclo del servicio.'); }) : n('span', 'Creada ' + localDateTime(row.created))
+  ])));
+  else queue.append(empty('Todavía no hay solicitudes', 'Al activar un RFC, Faro iniciará la revisión en segundo plano.'));
+  const alerts = panel('Avisos por correo');
+  const bar = n('div', undefined, 'panel-head');
+  const notice = cell(satData.mail.enabled ? 'Activados · ' + satData.mail.recipient : 'Correo desactivado',
+    satData.mail.error || 'Avisos de CFDI recibidos nuevos. El correo lleva el conteo, sin adjuntar los XML.');
+  const buttons = n('div', undefined, 'actions');
+  buttons.append(action('Configurar SMTP', mailDialog, undefined, 'lock'));
+  if (satData.mail.enabled) buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSat(); }));
+  bar.append(notice, buttons); alerts.append(bar);
+  target.replaceChildren(schedules, queue, alerts);
+}
+function unlockDialog(rfc) {
+  const person = selectPerson();
+  if (rfc && people.some(row => row.id === rfc)) person.value = rfc;
+  const defaults = satData.profiles.find(row => row.rfc === person.value);
+  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults?.minutes || 240));
+  const days = input('number', { min: 1, max: 31, value: defaults?.days || 7, required: true });
+  const direction = select(Object.entries(directions), defaults?.direction || 'received');
+  const certificate = input('file', { required: true, accept: '.cer' });
+  const key = input('file', { required: true, accept: '.key' });
+  const password = input('password', { required: true, maxLength: 256, autocomplete: 'off' });
+  dialog('Autorizar sincronización', [
+    n('p', 'La contraseña y la llave se usan en este equipo. Al reiniciar el servicio, vuelve a autorizar cada RFC.'),
+    field('Contribuyente', person), field('Qué revisar', direction), field('Frecuencia', interval), field('Días de búsqueda', days),
+    field('Certificado .cer', certificate), field('Llave privada .key', key), field('Contraseña de la e.firma', password)
+  ], async () => {
+    const fileData = async file => {
+      check(file && file.size <= 32 * KB, 'Selecciona un archivo de e.firma válido.');
+      return encode64(bytes(await file.arrayBuffer()));
+    };
+    satData = await satApi('unlock', { rfc: person.value, minutes: Number(interval.value), days: Number(days.value),
+      direction: direction.value, certificate: await fileData(certificate.files[0]), key: await fileData(key.files[0]), password: password.value });
+    password.value = '';
+    fillSat(); announce('Sincronización autorizada para ' + person.value + '.');
+  });
+}
+function requestDialog() {
+  const person = selectPerson();
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
+  const start = input('date', { max: today, value: today.slice(0, 8) + '01', required: true });
+  const end = input('date', { max: today, value: today, required: true });
+  const direction = select([['received', 'Recibidos'], ['issued', 'Emitidos']], 'received');
+  dialog('Solicitar un periodo al SAT', [field('Contribuyente', person), field('Comprobantes', direction),
+    field('Fecha inicial', start), field('Fecha final', end)], async () => {
+    satData = await satApi('request', { rfc: person.value, direction: direction.value, start: start.value, end: end.value });
+    fillSat(); announce('Solicitud enviada. Faro revisará cuándo libera el paquete el SAT.');
+  });
+}
+function mailDialog() {
+  const recipient = input('email', { required: true, value: satData.mail.recipient || '', maxLength: 200 });
+  const from = input('email', { required: true, maxLength: 200 });
+  const host = input('text', { required: true, maxLength: 253, placeholder: 'smtp.tu-proveedor.com' });
+  const port = select([['465', '465 · TLS'], ['587', '587 · STARTTLS']], '587');
+  const user = input('text', { autocomplete: 'off', maxLength: 200 });
+  const password = input('password', { autocomplete: 'off', maxLength: 512 });
+  dialog('Avisos por correo', [n('p', 'Usa los datos SMTP de tu proveedor. Faro verifica la conexión antes de activar los avisos. Vuelve a configurarlos al reiniciar el servicio.'),
+    field('Correo que recibe los avisos', recipient), field('Dirección del remitente', from), field('Servidor SMTP', host),
+    field('Puerto', port), field('Usuario SMTP', user), field('Contraseña SMTP o de aplicación', password)], async () => {
+    satData = await satApi('mail', { enabled: true, recipient: recipient.value.trim(), from: from.value.trim(),
+      host: host.value.trim(), port: Number(port.value), user: user.value, password: password.value });
+    password.value = '';
+    fillSat(); announce('Avisos activados. Se enviarán al detectar nuevos CFDI recibidos.');
+  });
+}
+
+async function pollSat() {
+  if (!satToken || !ready || satPolling) return;
+  satPolling = true;
+  try {
+    satData = await satApi('status');
+    satError = '';
+    if (cloudStorage && satData.cloudRevision !== cloudRevision && !$('dialog').open && !importing &&
+        !document.activeElement?.matches('input,select,textarea')) {
+      await refresh(page === 'sat');
+      cloudRevision = satData.cloudRevision;
+    }
+    const drain = async () => {
+      for (const packet of satData.inbox) {
+        if (importing || !people.some(person => person.id === packet.rfc)) continue;
+        const archive = await satApi('packages/' + packet.id);
+        if (importing || $('dialog').open) break;
+        const result = await importBatch([new File([archive], 'SAT-' + packet.rfc + '-' + packet.id + '.zip')], packet.rfc, { quiet: true });
+        if (result) await satApi('packages/' + packet.id, { imported: result.added });
+      }
+    };
+    if (!$('dialog').open) {
+      if (navigator.locks) await navigator.locks.request('faro-sat-import', { ifAvailable: true }, lock => lock ? drain() : undefined);
+      else await drain();
+    }
+  } catch (error) {
+    satError = error.message;
+  } finally {
+    satPolling = false;
+    if (page === 'sat' && !$('dialog').open && !document.activeElement?.closest('#sat-live')) fillSat();
+  }
+}
+if (satToken) {
+  startup.then(pollSat);
+  setInterval(pollSat, 15000);
+}
+
+const watched = new Set();
+const fiscalResults = new Map();
+let monitorData = { fetched: null, error: '' }, monitorError = '', monitoring = false;
+let monitorFilter = 'attention', monitorCursor = 0;
+const monitorRow = row => ({
+  id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
+  seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal || '') ? row.seal : ''
+});
+function statusCell(id) {
+  const item = fiscalResults.get(id);
+  const wrap = n('div', undefined, 'fiscal-state');
+  const state = item?.sat?.state || 'Sin consulta';
+  const badge = n('span', state, 'fiscal-badge');
+  badge.dataset.state = state;
+  wrap.append(badge);
+  if (item?.checked) wrap.append(n('small', 'Consultado ' + localDateTime(item.checked)));
+  if (item?.sat?.cancellation) wrap.append(n('small', item.sat.cancellation));
+  if (item?.efos.length) wrap.append(n('small', '69-B · ' + item.efos.join(' / ')));
+  else if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS.'));
+  if (item?.error) wrap.append(n('small', 'Consulta pendiente de reintento.'));
+  return wrap;
+}
+function monitorScreen() {
+  const overview = panel('Seguimiento fiscal');
+  const header = n('div', undefined, 'panel-head');
+  const source = n('div');
+  source.append(n('h3', 'Fuente oficial · SAT'),
+    n('p', monitorData.fetched ? 'Listado 69-B descargado ' + localDateTime(monitorData.fetched) : 'Listado 69-B pendiente de descarga.'));
+  if (monitorData.error || monitorError) source.append(n('p', monitorError || monitorData.error));
+  const link = n('a', 'Listado oficial 69-B ↗');
+  link.href = 'https://www.sat.gob.mx/minisitio/DatosAbiertos/contribuyentes_publicados.html';
+  link.target = '_blank'; link.rel = 'noopener noreferrer';
+  header.append(source, link);
+  overview.append(header);
+  const selection = invoices.filter(matches);
+  const selected = selection.filter(row => {
+    const item = fiscalResults.get(row.id);
+    if (monitorFilter === 'all') return true;
+    if (monitorFilter === 'cancelled') return item?.sat?.state === 'Cancelado';
+    if (monitorFilter === 'efos') return Boolean(item?.efos.length || item?.sat?.efos === '100');
+    return Boolean(item?.error || (item?.sat && item.sat.state !== 'Vigente') ||
+      item?.efos.some(x => x === 'Presunto' || x === 'Definitivo') || item?.sat?.efos === '100');
+  });
+  const filters = n('div', undefined, 'filters');
+  const picker = select([['attention','Requieren atención'],['cancelled','Cancelados'],['efos','Coincidencias 69-B'],['all','Todos los CFDI']], monitorFilter, 'Filtrar vigilancia');
+  picker.onchange = () => { monitorFilter = picker.value; render(); };
+  filters.append(picker, n('span', selected.length + ' de ' + selection.length + ' comprobantes', 'period-chip'));
+  overview.append(filters);
+  if (!selected.length) overview.append(empty('Sin resultados en este filtro', 'El servicio revisa los CFDI en lotes y conserva la fecha de la última consulta.'));
+  else overview.append(grid(['Emisor', 'Folio fiscal', 'Estado y artículo 69-B', 'Detalle'], selected.slice(0, 100).map(row => [
+    cell(row.from.name || row.from.rfc, row.from.rfc), row.id, statusCell(row.id), action('Abrir', () => invoiceDetail(row))
+  ])));
+  if (selected.length > 100) overview.append(n('div', 'Se muestran los primeros 100 del filtro actual. Selecciona un RFC para acotar la lista.', 'table-foot'));
+  return [overview];
+}
+async function pollMonitor() {
+  if (!satToken || !ready || monitoring) return;
+  monitoring = true;
+  try {
+    const records = invoices.filter(row => !watched.has(row.id)).slice(0, 125).map(monitorRow);
+    const all = invoices.filter(matches);
+    if (monitorCursor >= all.length) monitorCursor = 0;
+    const candidates = page === 'invoices' ? invoiceRows().slice(invoicePage * 35, (invoicePage + 1) * 35) : all.slice(monitorCursor, monitorCursor + 500);
+    const result = await satApi('monitor', { records, ids: candidates.map(row => row.id) });
+    for (const row of records) watched.add(row.id);
+    for (const entry of result.results) fiscalResults.set(entry.id, entry);
+    if (page !== 'invoices') monitorCursor += 500;
+    monitorData = result;
+    monitorError = '';
+  } catch (error) { monitorError = error.message; }
+  finally {
+    monitoring = false;
+    if (page === 'monitor' && !$('dialog').open && !document.activeElement?.matches('input,select,textarea')) render();
+    if (page === 'invoices' && !$('dialog').open && !document.activeElement?.closest('button,input,select,textarea')) render();
+  }
+}
+if (satToken) {
+  startup.then(pollMonitor);
+  setInterval(pollMonitor, 30000);
+}
+</script>
+</body></html>

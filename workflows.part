@@ -1,0 +1,339 @@
+function addPerson() {
+  check(ready, 'El almacenamiento todavía no está disponible.');
+  const name = input('text', { required: true, maxLength: 120, placeholder: 'Nombre o razón social' });
+  const id = input('text', { required: true, maxLength: 13, placeholder: 'RFC de 12 o 13 caracteres' });
+  dialog('Agregar contribuyente', [field('Nombre o razón social', name), field('RFC', id)], async () => {
+    const rfc = id.value.trim().toUpperCase(), label = name.value.trim();
+    check(RFC.test(rfc) && label, 'Escribe un nombre y un RFC con formato válido.');
+    check(!await readStore('people', rfc), 'Ese RFC ya está en tu cartera.');
+    await writeBatch({ people: [{ id: rfc, name: label }] });
+    scope = rfc;
+    await refresh(); announce('Expediente creado para ' + rfc + '.');
+  });
+}
+function chooseImport() {
+  check(ready && people.length, 'Agrega un RFC antes de importar.');
+  if (!importing) $('incoming').click();
+}
+async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) {
+  if (!ready || importing) return;
+  const files = [...source].filter(file => /\.(xml|zip)$/i.test(file.name));
+  if (!files.length) return announce('Elige archivos .xml o .zip con CFDI.', true);
+  if (!people.length) return announce('Agrega primero los RFC que quieres importar.', true);
+  importing = true;
+  $('primary').disabled = true;
+  let added = 0, duplicates = 0, review = 0;
+  const issues = [];
+  const pending = new Map();
+  const known = scopes();
+  const seen = new Set((await readStore('invoices').catch(() => invoices)).map(row => row.id));
+  let pendingSize = 0;
+  const issue = (name, error) => {
+    review++;
+    if (issues.length < 20) issues.push({ name: name.slice(0, 180), reason: error.message.slice(0, 320) });
+  };
+  async function flush() {
+    if (!pending.size) return;
+    await writeBatch({ invoices: [...pending.values()].map(item => item.row), files: [...pending.values()].map(item => item.file) });
+    added += pending.size;
+    pending.clear();
+    pendingSize = 0;
+  }
+  async function accept(name, xml) {
+    let row;
+    try {
+      row = parseXml(xml);
+      check(!requiredRfc || row.from.rfc === requiredRfc || row.to.rfc === requiredRfc,
+        'No corresponde a ' + requiredRfc + '. Emisor ' + row.from.rfc + ' · Receptor ' + row.to.rfc + '.');
+      check(known.has(row.from.rfc) || known.has(row.to.rfc), 'Los RFC del comprobante no están registrados.');
+    } catch (error) { issue(name, error); return; }
+    if (seen.has(row.id)) { duplicates++; return; }
+    seen.add(row.id);
+    pending.set(row.id, { row, file: { id: 'xml:' + row.id, blob: new Blob([xml], { type: 'application/xml' }) } });
+    pendingSize += xml.length;
+    if (pending.size >= 100 || pendingSize >= 12 * MB) await flush();
+  }
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (!quiet) announce('Importando ' + (i + 1) + ' de ' + files.length + ' · ' + file.name);
+      if (/\.xml$/i.test(file.name)) {
+        if (file.size > 8 * MB) { issue(file.name, new Error('El XML supera 8 MB.')); continue; }
+        let xml;
+        try { xml = bytes(await file.arrayBuffer()); }
+        catch (error) { issue(file.name, error); continue; }
+        await accept(file.name, xml);
+      } else {
+        if (file.size > 80 * MB) { issue(file.name, new Error('El ZIP supera 80 MB.')); continue; }
+        let zip;
+        try { zip = zipXml(bytes(await file.arrayBuffer())); }
+        catch (error) { issue(file.name, error); continue; }
+        let count = 0;
+        while (true) {
+          let entry;
+          try { entry = await zip.next(); }
+          catch (error) { issue(file.name, error); break; }
+          if (entry.done) {
+            if (!count) issue(file.name, new Error('El ZIP no contiene CFDI XML.'));
+            break;
+          }
+          count++;
+          await accept(entry.value.name, entry.value.xml);
+        }
+      }
+    }
+    await flush();
+    await writeBatch({ activity: [{
+      id: crypto.randomUUID(), name: files.length === 1 ? files[0].name.slice(0, 180) : files.length + ' archivos',
+      date: new Date().toISOString(), added, duplicates, review, issues
+    }] });
+    if (!quiet) announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
+      (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
+    return { added, duplicates, review };
+  } catch (error) {
+    announce(added + ' comprobantes guardados antes de interrumpir el lote. ' + error.message, true);
+    if (quiet) throw error;
+  } finally {
+    importing = false;
+    $('primary').disabled = !ready;
+    try { await refresh(quiet && page === 'sat'); } catch (error) { announce(error.message, true); }
+  }
+}
+function addDocument() {
+  check(ready && people.length, 'Agrega un RFC antes de archivar documentos.');
+  const taxpayer = select(people.map(p => [p.id, p.name + ' · ' + p.id]), scope || people[0].id);
+  const kind = select(DOCUMENTS.map(x => [x, x]), DOCUMENTS[0]);
+  const date = input('date', { required: true });
+  const period = input('text', { maxLength: 40, placeholder: 'Ej. Octubre 2026' });
+  const picker = input('file', { required: true, accept: '.pdf' });
+  dialog('Archivar PDF', [field('Contribuyente', taxpayer), field('Tipo de documento', kind), field('Fecha', date),
+    field('Periodo, si aplica', period), field('Archivo', picker)], async () => {
+    const file = picker.files[0];
+    check(await pdfOk(file), 'Elige un PDF de hasta 15 MB.');
+    const id = 'pdf:' + crypto.randomUUID();
+    await writeBatch({ documents: [{ id, rfc: taxpayer.value, kind: kind.value, date: date.value, period: period.value.trim(), name: file.name.slice(0, 180) }],
+      files: [{ id, blob: new Blob([file], { type: 'application/pdf' }) }] });
+    docFilter = '';
+    if (scope && scope !== taxpayer.value) scope = taxpayer.value;
+    await refresh(); announce('PDF archivado en ' + taxpayer.value + '.');
+  });
+}
+function invoiceDetail(row) {
+  const descriptions = n('ul');
+  for (const item of row.concepts) descriptions.append(n('li', item));
+  const summary = n('div', undefined, 'invoice-summary');
+  const headline = n('div');
+  headline.append(n('span', rowRole(row), 'period-chip'), n('h3', amount(row)), n('p', KINDS[row.kind] + ' · ' + dateLabel(row.date)));
+  const parties = n('div', undefined, 'invoice-parties');
+  for (const [label, party] of [['EMISOR', row.from], ['RECEPTOR', row.to]]) {
+    const box = n('div');
+    box.append(n('small', label), n('strong', party.name || party.rfc), n('span', party.rfc));
+    parties.append(box);
+  }
+  summary.append(headline, parties, cell(row.id, 'Folio fiscal'));
+  summary.append(statusCell(row.id));
+  const contents = [summary];
+  if (row.concepts.length) {
+    const section = n('section', undefined, 'invoice-concepts');
+    section.append(n('h3', 'Conceptos del comprobante'), descriptions);
+    contents.push(section);
+  }
+  const linked = documents.filter(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id && (!scope || doc.rfc === scope));
+  for (const doc of linked) contents.push(action('Ver PDF · ' + doc.rfc, () => {
+    $('dialog').addEventListener('close', () => viewPdf(doc).catch(error => announce(error.message, true)), { once: true });
+    $('dialog').close();
+  }, undefined, 'file'));
+  contents.push(action('Descargar XML original', async () => {
+    const file = await readStore('files', 'xml:' + row.id);
+    check(file, 'Archivo no encontrado.');
+    download(file.blob, row.id + '.xml');
+  }, undefined, 'down'));
+  dialog('Detalle del CFDI', contents);
+  $('dialog').classList.add('invoice-dialog');
+}
+function invoiceActions(row) {
+  const wrap = n('div', undefined, 'actions');
+  wrap.append(action('Ver CFDI', () => invoiceDetail(row)), action('Ver XML', async () => {
+    const file = await readStore('files', 'xml:' + row.id);
+    check(file, 'Archivo no encontrado.');
+    await viewXml(file.blob, row.id + '.xml');
+  }));
+  return wrap;
+}
+async function viewXml(file, name) {
+  check(file.size && file.size <= 8 * MB, 'El visor admite XML de hasta 8 MB.');
+  const raw = bytes(await file.arrayBuffer());
+  let text, encodingError;
+  try { text = decodeXml(raw); }
+  catch { text = new TextDecoder().decode(raw); encodingError = 'No se pudo leer la codificación declarada. Se muestra una lectura aproximada.'; }
+  const fields = [n('p', name)];
+  if (encodingError) fields.push(n('p', encodingError));
+  else {
+    try {
+      const row = parseXml(raw);
+      fields.push(cell(row.from.name || row.from.rfc, 'Emisor · ' + row.from.rfc),
+        cell(row.to.name || row.to.rfc, 'Receptor · ' + row.to.rfc), cell(row.id, 'UUID · ' + amount(row)));
+      const known = scopes();
+      if (!known.has(row.from.rfc) && !known.has(row.to.rfc)) fields.push(n('p', 'Para importarlo, agrega el RFC del emisor o del receptor que corresponda a tu expediente.'));
+    } catch (error) { fields.push(n('p', 'Revisión del importador · ' + error.message)); }
+  }
+  const viewer = n('pre', text, 'xml-view');
+  viewer.tabIndex = 0;
+  viewer.setAttribute('aria-label', 'Código XML original');
+  fields.push(viewer);
+  dialog('Visor XML', fields);
+}
+function reviewDetail(row) {
+  const fields = [n('p', row.name + ' · ' + row.review + ' por revisar')];
+  if (row.issues?.length) {
+    const list = n('ul');
+    for (const item of row.issues) list.append(n('li', item.name + ' · ' + item.reason));
+    fields.push(list);
+    if (row.issues.length < row.review) fields.push(n('p', 'Se muestran los primeros ' + row.issues.length + ' motivos del lote.'));
+  } else fields.push(n('p', 'Este lote se registró antes de que Faro guardara los motivos. Abre el XML original para revisarlo.'));
+  dialog('Revisión de importación', fields);
+}
+function csvText(rows) {
+  const escape = value => {
+    const text = String(value);
+    const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  return [['UUID', 'Emisor', 'RFC emisor', 'Receptor', 'RFC receptor', 'Fecha', 'Tipo', 'Total', 'Moneda'],
+    ...rows.map(x => [x.id, x.from.name, x.from.rfc, x.to.name, x.to.rfc, x.date, KINDS[x.kind], x.total, x.currency])]
+    .map(row => row.map(escape).join(',')).join('\r\n');
+}
+function exportCsv() {
+  download(new Blob(['\uFEFF', csvText(invoiceRows())], { type: 'text/csv;charset=utf-8' }), 'CFDI-' + (scope || 'todos') + '.csv');
+}
+async function snapshot() {
+  const data = { version: 2 };
+  const records = cloudStorage ? await Promise.all(STORES.map(name => readStore(name))) : await new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES, 'readonly');
+    const results = STORES.map(name => tx.objectStore(name).getAll());
+    tx.oncomplete = () => resolve(results.map(request => request.result));
+    tx.onabort = () => reject(tx.error || new Error('No se pudo crear el respaldo.'));
+  });
+  for (let i = 0; i < STORES.length; i++) data[STORES[i]] = records[i];
+  check(data.files.reduce((sum, file) => sum + file.blob.size, 0) <= 100 * MB, 'Este formato admite hasta 100 MB de archivos por respaldo.');
+  data.files = await Promise.all(data.files.map(async item => ({ id: item.id, content: encode64(bytes(await item.blob.arrayBuffer())) })));
+  return data;
+}
+async function validateBackup(data) {
+  check(data?.version === 2 && STORES.every(key => Array.isArray(data[key])), 'El contenido del respaldo no es compatible.');
+  const validText = (value, max) => typeof value === 'string' && value.length <= max;
+  const registry = new Map();
+  for (const p of data.people) {
+    check(RFC.test(p?.id) && validText(p.name, 120) && p.name.trim() && !registry.has(p.id), 'El respaldo contiene un RFC inválido.');
+    registry.set(p.id, { id: p.id, name: p.name });
+  }
+  const contents = new Map();
+  for (const item of data.files) {
+    check(validText(item?.id, 70) && validText(item.content, 21 * MB) && !contents.has(item.id), 'El respaldo contiene un archivo inválido.');
+    contents.set(item.id, item.content);
+  }
+  const output = { people: [...registry.values()], invoices: [], documents: [], activity: [], files: [] };
+  for (const entry of data.invoices) {
+    const id = 'xml:' + entry.id;
+    check(UUID.test(entry.id) && contents.has(id), 'Falta un XML en el respaldo.');
+    const raw = decode64(contents.get(id));
+    const row = parseXml(raw);
+    check(entry.id === row.id && (registry.has(row.from.rfc) || registry.has(row.to.rfc)), 'El XML del respaldo no coincide.');
+    output.invoices.push(row);
+    output.files.push({ id, blob: new Blob([raw], { type: 'application/xml' }) });
+    contents.delete(id);
+  }
+  for (const entry of data.documents) {
+    check(typeof entry.id === 'string' && /^pdf:[a-f0-9-]{36}$/.test(entry.id) && contents.has(entry.id) &&
+      registry.has(entry.rfc) && DOCUMENTS.includes(entry.kind) && /^\d{4}-\d{2}-\d{2}$/.test(entry.date) &&
+      validText(entry.period, 40) && validText(entry.name, 180), 'El respaldo contiene un documento inválido.');
+    const blob = new Blob([decode64(contents.get(entry.id))], { type: 'application/pdf' });
+    check(await pdfOk(blob), 'El respaldo contiene un PDF dañado.');
+    const { id, rfc, kind, date, period, name, uuid } = entry;
+    check(uuid === undefined || uuid === '' || (typeof uuid === 'string' && UUID.test(uuid)), 'El respaldo contiene un UUID de PDF inválido.');
+    output.documents.push({ id, rfc, kind, date, period, name, uuid });
+    output.files.push({ id, blob });
+    contents.delete(id);
+  }
+  for (const entry of data.activity) {
+    check(validText(entry.id, 70) && validText(entry.name, 180) && validText(entry.date, 40) &&
+      ['added', 'duplicates', 'review'].every(key => Number.isSafeInteger(entry[key]) && entry[key] >= 0), 'El historial del respaldo es inválido.');
+    const { id, name, date, added, duplicates, review } = entry;
+    const issues = Array.isArray(entry.issues) ? entry.issues.slice(0, 20)
+      .filter(item => validText(item?.name, 180) && validText(item.reason, 320))
+      .map(item => ({ name: item.name, reason: item.reason })) : [];
+    output.activity.push({ id, name, date, added, duplicates, review, issues });
+  }
+  check(contents.size === 0, 'El respaldo contiene archivos sin expediente.');
+  return output;
+}
+function backupDialog() {
+  check(ready && !importing && crypto.subtle, 'El respaldo no está disponible en este navegador o hay una importación activa.');
+  const password = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
+  const repeat = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
+  dialog('Crear respaldo cifrado', [field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
+    check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
+    download(await encryptBackup(await snapshot(), password.value), 'Faro-' + new Date().toISOString().slice(0, 10) + '.faro');
+    announce('Respaldo cifrado generado.');
+  });
+}
+function restoreDialog(file) {
+  check(ready && !importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
+  const password = input('password', { required: true, autocomplete: 'off' });
+  const confirmation = input('checkbox', { required: true });
+  dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de Faro se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
+    field('Confirmo que quiero reemplazar los datos actuales', confirmation)], async () => {
+    check(confirmation.checked, 'Confirma el reemplazo de los datos.');
+    const contents = await validateBackup(await decryptBackup(file, password.value));
+    await writeBatch(contents, true);
+    await refresh(); announce('Respaldo restaurado.');
+  });
+}
+const handle = work => () => Promise.resolve().then(work).catch(error => announce(error.message, true));
+$('add').onclick = handle(addPerson);
+$('inspect').onclick = () => $('inspectFile').click();
+$('inspectFile').onchange = handle(async () => {
+  const file = $('inspectFile').files[0];
+  $('inspectFile').value = '';
+  if (file) await viewXml(file, file.name);
+});
+$('primary').onclick = handle(async () => {
+  if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
+  return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() : chooseImport();
+});
+for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
+$('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
+for (const id of ['incoming', 'folder']) {
+  $(id).onchange = () => { const files = [...$(id).files]; $(id).value = ''; importBatch(files).catch(error => announce(error.message, true)); };
+}
+$('restore').onchange = handle(() => {
+  const file = $('restore').files[0]; $('restore').value = ''; if (file) restoreDialog(file);
+});
+$('close').onclick = $('cancel').onclick = () => $('dialog').close();
+$('dialog').addEventListener('cancel', event => { if ($('save').disabled) event.preventDefault(); });
+$('dialog').addEventListener('close', () => { $('fields').replaceChildren(); submit = null; });
+$('form').onsubmit = async event => {
+  event.preventDefault();
+  if (!submit || $('save').disabled) return;
+  $('save').disabled = $('cancel').disabled = $('close').disabled = true;
+  $('formError').hidden = true;
+  try { await submit(); $('dialog').close(); }
+  catch (error) { $('formError').textContent = error.message; $('formError').hidden = false; }
+  finally { $('save').disabled = $('cancel').disabled = $('close').disabled = false; }
+};
+window.addEventListener('dragover', event => {
+  if (event.dataTransfer.types.includes('Files')) {
+    event.preventDefault();
+    if (!$('dialog').open) $('body').classList.add('drag-active');
+  }
+});
+window.addEventListener('dragleave', event => { if (!event.relatedTarget) $('body').classList.remove('drag-active'); });
+window.addEventListener('drop', event => {
+  if (!event.dataTransfer.files.length) return;
+  if ($('dialog').open && event.target instanceof HTMLInputElement && event.target.type === 'file') return;
+  event.preventDefault(); $('body').classList.remove('drag-active');
+  if (!$('dialog').open) importBatch(event.dataTransfer.files).catch(error => announce(error.message, true));
+});
+render();
+const startup = (cloudStorage ? Promise.resolve(null) : openDatabase()).then(async result => { db = result; ready = true; await refresh(); })
+  .catch(() => { announce('El navegador bloqueó el almacenamiento local. Abre el archivo en Edge o Chrome con un perfil normal.', true); });

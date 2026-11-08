@@ -1,0 +1,200 @@
+'use strict';
+const $ = id => document.getElementById(id);
+const KB = 1024;
+const MB = KB * KB;
+const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/u;
+const UUID = /^[A-F0-9]{8}(?:-[A-F0-9]{4}){3}-[A-F0-9]{12}$/;
+const KINDS = { I: 'Ingreso', E: 'Egreso', P: 'Pago', N: 'Nómina', T: 'Traslado' };
+const DOCUMENTS = ['Factura PDF', 'Constancia / CIF', 'Opinión de cumplimiento', 'Declaración', 'Acuse', 'Otro documento'];
+const STORES = ['people', 'invoices', 'documents', 'files', 'activity'];
+let db;
+
+function check(condition, message) { if (!condition) throw new Error(message); }
+function bytes(value) { return new Uint8Array(value); }
+function openDatabase(name = 'faro-fiscal-v2') {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(name, 1);
+    request.onupgradeneeded = () => {
+      for (const store of STORES) request.result.createObjectStore(store, { keyPath: 'id' });
+    };
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error('Cierra otras ventanas de Faro y vuelve a abrirlo.'));
+  });
+}
+function readStore(store, key) {
+  if (typeof cloudStorage !== 'undefined' && cloudStorage) return cloudRead(store, key);
+  return new Promise((resolve, reject) => {
+    const table = db.transaction(store).objectStore(store);
+    const req = key === undefined ? table.getAll() : table.get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+function writeBatch(batch, replace = false) {
+  if (typeof cloudStorage !== 'undefined' && cloudStorage) return cloudWrite(batch, replace);
+  return new Promise((resolve, reject) => {
+    const names = Object.keys(batch);
+    const tx = db.transaction(names, 'readwrite');
+    tx.oncomplete = resolve;
+    tx.onabort = () => reject(tx.error || new Error('La operación se canceló.'));
+    try {
+      for (const name of names) {
+        const table = tx.objectStore(name);
+        if (replace) table.clear();
+        for (const item of batch[name]) table.add(item);
+      }
+    } catch (error) {
+      tx.abort();
+      reject(error);
+    }
+  });
+}
+function decodeXml(raw) {
+  const lead = new TextDecoder('windows-1252').decode(raw.subarray(0, 256));
+  const declaration = lead.match(/^\s*<\?xml[^>]*encoding\s*=\s*["']([^"']+)/i);
+  const encoding = raw[0] === 255 && raw[1] === 254 ? 'utf-16le' :
+    raw[0] === 254 && raw[1] === 255 ? 'utf-16be' :
+    raw[0] === 60 && raw[1] === 0 ? 'utf-16le' :
+    raw[0] === 0 && raw[1] === 60 ? 'utf-16be' : declaration?.[1] || 'utf-8';
+  return new TextDecoder(encoding, { fatal: true }).decode(raw);
+}
+function parseXml(raw, Parser = DOMParser) {
+  check(raw.length && raw.length <= 8 * MB, 'XML vacío o mayor de 8 MB.');
+  const xml = decodeXml(raw);
+  check(!/<!DOCTYPE|<!ENTITY/i.test(xml), 'El XML contiene declaraciones no admitidas.');
+  const doc = new Parser().parseFromString(xml, 'application/xml');
+  const root = doc.documentElement;
+  check(root.localName === 'Comprobante' && /^http:\/\/www\.sat\.gob\.mx\/cfd\/[34]$/.test(root.namespaceURI) &&
+    !doc.getElementsByTagName('parsererror').length, 'No es un CFDI 3.x o 4.0 con estructura XML válida.');
+  const elements = node => Array.from(node?.children || node?.childNodes || []).filter(item => item.nodeType === 1);
+  const child = (node, name) => elements(node).find(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const attr = (node, key, fallback = key) => node?.getAttribute(key) || node?.getAttribute(fallback) || '';
+  const party = item => ({ rfc: attr(item, 'Rfc', 'rfc').toUpperCase(), name: attr(item, 'Nombre', 'nombre').slice(0, 300) });
+  const from = party(child(root, 'Emisor'));
+  const to = party(child(root, 'Receptor'));
+  const stamp = child(root, 'Complemento')?.getElementsByTagNameNS('http://www.sat.gob.mx/TimbreFiscalDigital', 'TimbreFiscalDigital')[0];
+  const uuid = attr(stamp, 'UUID').toUpperCase();
+  const date = attr(root, 'Fecha', 'fecha');
+  const total = attr(root, 'Total', 'total');
+  const currency = attr(root, 'Moneda', 'moneda').toUpperCase();
+  const legacy = { INGRESO: 'I', EGRESO: 'E', TRASLADO: 'T', PAGO: 'P', NÓMINA: 'N', NOMINA: 'N' };
+  const rawKind = attr(root, 'TipoDeComprobante', 'tipoDeComprobante').toUpperCase();
+  const kind = legacy[rawKind] || rawKind;
+  check(RFC.test(from.rfc), 'Falta el RFC del emisor o su formato es inválido.');
+  check(RFC.test(to.rfc), 'Falta el RFC del receptor o su formato es inválido.');
+  check(UUID.test(uuid), 'Falta un UUID válido en el Timbre Fiscal Digital.');
+  check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(date), 'La fecha de emisión no tiene el formato esperado.');
+  check(Object.hasOwn(KINDS, kind), 'El tipo de comprobante no es compatible con este importador.');
+  check(/^\d{1,18}(?:\.\d{1,6})?$/.test(total), 'El total del comprobante no tiene el formato esperado.');
+  check(!currency || /^[A-Z]{3}$/.test(currency), 'La moneda no tiene el formato esperado.');
+  const concepts = elements(child(root, 'Conceptos')).filter(item => item.localName === 'Concepto' && item.namespaceURI === root.namespaceURI).slice(0, 20)
+    .map(item => attr(item, 'Descripcion', 'descripcion').slice(0, 220));
+  const seal = (attr(root, 'Sello', 'sello') || attr(stamp, 'SelloCFD', 'selloCFD')).slice(-8);
+  return { id: uuid, from, to, date, kind, total, currency, concepts, seal };
+}
+const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
+  let value = index;
+  for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
+  return value;
+});
+function crc32(raw) {
+  let crc = 0xffffffff;
+  for (const octet of raw) crc = (crc >>> 8) ^ crcTable[(crc ^ octet) & 255];
+  return (crc ^ 0xffffffff) >>> 0;
+}
+async function inflate(raw, size) {
+  const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  const reader = stream.getReader();
+  const out = new Uint8Array(size);
+  let offset = 0;
+  try {
+    while (true) {
+      const part = await reader.read();
+      if (part.done) break;
+      check(offset + part.value.length <= size, 'Tamaño ZIP expandido inválido.');
+      out.set(part.value, offset);
+      offset += part.value.length;
+    }
+    check(offset === size, 'Archivo ZIP truncado.');
+    return out;
+  } finally { await reader.cancel().catch(() => {}); }
+}
+async function* zipXml(raw) {
+  check(raw.length >= 22 && raw.length <= 80 * MB, 'ZIP vacío o mayor de 80 MB.');
+  const d = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
+  const u16 = p => d.getUint16(p, true);
+  const u32 = p => d.getUint32(p, true);
+  let end = raw.length - 22;
+  while (end >= Math.max(0, raw.length - 65557)) {
+    if (u32(end) === 0x06054b50 && end + 22 + u16(end + 20) === raw.length) break;
+    end--;
+  }
+  check(end >= Math.max(0, raw.length - 65557), 'El ZIP no contiene un directorio válido.');
+  const count = u16(end + 10);
+  let p = u32(end + 16);
+  const centralStart = p;
+  const limit = p + u32(end + 12);
+  check(u16(end + 4) === 0 && u16(end + 6) === 0 && u16(end + 8) === count && count <= 12000 &&
+    p <= end && limit <= end, 'ZIP segmentado, ZIP64 o con demasiadas entradas.');
+  let expanded = 0;
+  for (let i = 0; i < count; i++) {
+    check(p + 46 <= limit && u32(p) === 0x02014b50, 'Directorio ZIP dañado.');
+    const flags = u16(p + 8);
+    const method = u16(p + 10);
+    const checksum = u32(p + 16);
+    const compressed = u32(p + 20);
+    const size = u32(p + 24);
+    const len = u16(p + 28);
+    const start = u32(p + 42);
+    const next = p + 46 + len + u16(p + 30) + u16(p + 32);
+    check(next <= limit, 'Directorio ZIP truncado.');
+    const name = new TextDecoder().decode(raw.subarray(p + 46, p + 46 + len)).split(/[\\/]/).at(-1);
+    p = next;
+    if (!/\.xml$/i.test(name)) continue;
+    expanded += size;
+    check(!(flags & 1) && (method === 0 || method === 8) && size <= 8 * MB && expanded <= 180 * MB &&
+      start + 30 <= centralStart && u32(start) === 0x04034b50 && u16(start + 8) === method,
+      'Entrada ZIP cifrada, no compatible o fuera del límite de tamaño.');
+    const offset = start + 30 + u16(start + 26) + u16(start + 28);
+    check(offset + compressed <= centralStart, 'Archivo ZIP truncado.');
+    const data = raw.subarray(offset, offset + compressed);
+    const xml = method === 8 ? await inflate(data, size) : data;
+    check(xml.length === size && crc32(xml) === checksum, 'La verificación de integridad del ZIP falló.');
+    yield { name, xml };
+  }
+}
+async function pdfOk(blob) {
+  return blob instanceof Blob && blob.size <= 15 * MB && await blob.slice(0, 5).text() === '%PDF-';
+}
+function encode64(raw) {
+  let binary = '';
+  for (let i = 0; i < raw.length; i += 8192) binary += String.fromCharCode(...raw.subarray(i, i + 8192));
+  return btoa(binary);
+}
+function decode64(value) { return Uint8Array.from(atob(value), letter => letter.charCodeAt(0)); }
+async function keyFor(password, salt) {
+  const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({ name: 'PBKDF2', salt, iterations: 600000, hash: 'SHA-256' },
+    material, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+}
+const backupMagic = 'FARO2\n';
+async function encryptBackup(data, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await keyFor(password, salt);
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(data)));
+  return new Blob([backupMagic, salt, iv, cipher], { type: 'application/octet-stream' });
+}
+async function decryptBackup(file, password) {
+  check(file.size >= 50 && file.size <= 180 * MB && await file.slice(0, 6).text() === backupMagic, 'El archivo no es un respaldo Faro válido.');
+  const raw = bytes(await file.arrayBuffer());
+  const key = await keyFor(password, raw.subarray(6, 22));
+  let plain;
+  try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: raw.subarray(22, 34) }, key, raw.subarray(34)); }
+  catch { throw new Error('Contraseña incorrecta o respaldo dañado.'); }
+  return JSON.parse(new TextDecoder().decode(plain));
+}

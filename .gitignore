@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.*
+faro-secrets/
+*.cer
+*.key
+*.pfx
+*.p12
+*.sqlite
+*.sqlite-*
+*.faro
+*.log
+*.xml
+*.pdf
+*.zip
