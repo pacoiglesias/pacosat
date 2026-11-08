@@ -8,6 +8,7 @@
 .nav-caption{display:block;color:#9fb2ca;font-size:10px;font-weight:750;letter-spacing:.13em;padding:3px 10px 4px}.nav-divider{margin-top:13px}.sidebar{gap:24px}.dashboard-hero{position:relative;overflow:hidden;min-height:134px;isolation:isolate}.dashboard-hero::after{content:"";z-index:-1;position:absolute;width:285px;height:285px;right:-20px;top:-120px;border-radius:50%;border:1px solid #98c9ce50;box-shadow:0 0 0 25px #a5cbdd16,0 0 0 51px #a5cbdd15,0 0 0 80px #a5cbdd0b}.metric{grid-template-columns:1fr auto;align-items:center;min-height:105px}.metric-label{grid-column:1/-1}.metric-link{background:#f5f8fc;border:1px solid #e2eaf2;color:#34536d;padding:6px 8px;font-size:12px}.metric-link svg{width:14px;height:14px}.period-chip{display:inline-block;max-width:100%;padding:5px 8px;border:1px solid #dde8f1;border-radius:7px;background:#f3f7fb;color:#375977;font-size:12px;font-weight:700}.activity-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding:4px 17px 17px}.activity-day{display:grid;gap:5px;min-width:0;color:#53647b;font-size:12px;font-variant-numeric:tabular-nums}.activity-day strong{color:#213b59;font-size:14px}.activity-day meter{width:100%;height:12px}.activity-day meter::-webkit-meter-bar{background:#e8eff6;border:none;border-radius:8px}.activity-day meter::-webkit-meter-optimum-value{background:linear-gradient(90deg,#237570,#478e9e);border-radius:8px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:#f4f8fc;border:1px solid #dce7f1;padding:15px;border-radius:12px;overflow-wrap:anywhere}.invoice-summary h3{font-size:27px;letter-spacing:-.04em;margin-top:5px}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div{display:grid;gap:3px;padding:10px;background:#fff;border:1px solid #e1e8f0;border-radius:9px;min-width:0}.invoice-parties small{font-size:10px;color:#53647b;letter-spacing:.1em;font-weight:700}.invoice-parties span,.invoice-summary small{color:#53647b}.invoice-concepts{padding:11px 13px;border:1px solid #e1e8f0;border-radius:9px}.invoice-concepts ul{padding-left:21px;margin:6px 0 0}.invoice-concepts li{overflow-wrap:anywhere}.table-wrap td:last-child .actions{gap:5px}@media(max-width:780px){.nav-caption{width:100%;padding:3px 5px}.nav-divider{margin-top:5px}.metric{min-height:0}.dashboard-hero{min-height:0}.activity-bars{gap:6px}}@media(max-width:390px){.invoice-parties{grid-template-columns:1fr}.activity-bars{padding-inline:9px;gap:4px}.activity-day{font-size:10px}}
 .fiscal-state{display:grid;gap:2px;justify-items:start}.fiscal-badge{display:inline-block;padding:3px 8px;border-radius:100px;color:#435b74;background:#e8eef5;font-size:12px;font-weight:700;white-space:nowrap}.fiscal-badge[data-state=Vigente]{color:#125d44;background:#dcf2e7}.fiscal-badge[data-state=Cancelado]{color:#922b31;background:#fae5e5}.fiscal-badge[data-state="No encontrado"]{color:#755015;background:#fff0d7}.fiscal-state small{font-size:11px}
 body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button{transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.metric{transition:box-shadow .18s ease,transform .18s ease}.metric:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.top-side{display:inline-flex;align-items:center;gap:12px;min-width:0}.header-counters{color:var(--muted);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.activity-list{display:grid;padding:6px 15px 10px}.activity-item{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border)}.activity-item:first-child{border-top:none}.activity-kind{flex:none;margin-top:1px;padding:3px 8px;border-radius:100px;font-size:11px;font-weight:750;letter-spacing:.02em;background:#e8eef5;color:#435b74}.activity-kind[data-kind=sat]{background:#e0f0ee;color:#14524c}.activity-kind[data-kind=import]{background:#e5ecfa;color:#2c4a7c}.activity-kind[data-kind=alert]{background:#fae5e5;color:#922b31}.activity-body{display:grid;gap:2px;min-width:0}.activity-body strong{font-size:13.5px;overflow-wrap:anywhere}.activity-body small{color:var(--muted);font-size:12px}.activity-body .metric-link{justify-self:start;margin-top:3px}.table-wrap::-webkit-scrollbar,.xml-view::-webkit-scrollbar{height:10px;width:10px}.table-wrap::-webkit-scrollbar-thumb,.xml-view::-webkit-scrollbar-thumb{background:#c3d2e0;border-radius:8px}::selection{background:#bfe3d2}@media(max-width:780px){.header-counters{display:none}}@media print{.sidebar,.top,.heading .actions,.hero-actions{display:none!important}.frame{display:block}.page{padding:0;max-width:none}}@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+.news-badge{margin-left:2px;padding:1px 7px;border-radius:100px;background:#d9534f;color:#fff;font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.news-note{margin:10px 17px 0;padding:7px 10px;border:1px solid #f0d9a8;border-radius:8px;background:#fdf6e0;color:#755015;font-size:12.5px;font-weight:700}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -31,7 +32,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"><option value="">Todos los RFC</option></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
   <nav aria-label="Navegación principal">
     <span class="nav-caption">OPERACIÓN FISCAL</span>
-    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen</button>
+    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen <span id="news-badge" class="news-badge" hidden></span></button>
     <button data-view="operations"><svg><use href="#i-sync"/></svg> Operaciones y alertas</button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
@@ -302,6 +303,66 @@ function amount(row) {
   const [integer, decimals] = row.total.split('.');
   return number.format(BigInt(integer)) + (decimals ? '.' + decimals : '.00') + (row.currency ? ' ' + row.currency : '');
 }
+let newsCount = 0;
+function computeNews() {
+  try {
+    const last = Number(localStorage.getItem('pacosat-last-visit') || 0);
+    newsCount = last ? activity.filter(row => Date.parse(row.date) > last).length : 0;
+    localStorage.setItem('pacosat-last-visit', String(Date.now()));
+  } catch { newsCount = 0; }
+  const badge = $('news-badge');
+  if (badge) { badge.hidden = !newsCount; badge.textContent = newsCount ? number.format(newsCount) : ''; }
+}
+function totalCents(row) {
+  const [integer, decimals = ''] = String(row.total).split('.');
+  const padded = (decimals + '000').slice(0, 3);
+  return BigInt(integer) * 100n + BigInt(padded.slice(0, 2)) + (padded[2] >= '5' ? 1n : 0n);
+}
+const centsPlain = cents => (cents / 100n).toString() + '.' + String(cents % 100n).padStart(2, '0');
+function centsLabel(cents) {
+  return number.format(cents / 100n) + '.' + String(cents % 100n).padStart(2, '0');
+}
+function monthlyTotals() {
+  const groups = new Map();
+  for (const person of people) {
+    if (scope && person.id !== scope) continue;
+    const months = new Map();
+    for (const row of invoices) {
+      const received = row.to.rfc === person.id, issued = row.from.rfc === person.id;
+      if (!received && !issued) continue;
+      const key = row.date.slice(0, 7);
+      if (!months.has(key)) months.set(key, { received: 0, receivedCents: 0n, receivedForeign: 0, issued: 0, issuedCents: 0n, issuedForeign: 0 });
+      const group = months.get(key);
+      const foreign = Boolean(row.currency && row.currency !== 'MXN');
+      if (received) { group.received++; if (foreign) group.receivedForeign++; else group.receivedCents += totalCents(row); }
+      if (issued) { group.issued++; if (foreign) group.issuedForeign++; else group.issuedCents += totalCents(row); }
+    }
+    if (months.size) groups.set(person.id, { name: person.name, months: [...months.entries()].sort((a, b) => b[0].localeCompare(a[0])) });
+  }
+  return groups;
+}
+function totalsPanel() {
+  const totals = monthlyTotals();
+  const wrap = panel('Totales por RFC y mes');
+  if (!totals.size) {
+    wrap.append(empty('Sin comprobantes todavía', 'Los totales por contribuyente y mes aparecerán al importar o sincronizar CFDI.'));
+    return wrap;
+  }
+  wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'));
+  const rows = [];
+  let truncated = false;
+  for (const [rfc, group] of totals) {
+    if (group.months.length > 12) truncated = true;
+    for (const [monthKey, g] of group.months.slice(0, 12)) rows.push([
+      cell(group.name, rfc), monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4),
+      number.format(g.received), cell(centsLabel(g.receivedCents), g.receivedForeign ? g.receivedForeign + ' en otra moneda sin sumar' : ''),
+      number.format(g.issued), cell(centsLabel(g.issuedCents), g.issuedForeign ? g.issuedForeign + ' en otra moneda sin sumar' : '')
+    ]);
+  }
+  wrap.append(grid(['Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos', 'Emitidos', 'Importe emitidos'], rows));
+  wrap.append(n('p', 'Importes en MXN sumados al centavo.' + (truncated ? ' Se muestran los últimos 12 meses por RFC; la exportación CSV incluye todos.' : '')));
+  return wrap;
+}
 function n(tag, text, cls) {
   const el = document.createElement(tag);
   if (text !== undefined) el.textContent = text;
@@ -480,6 +541,7 @@ function home() {
     ])));
   }
   const history = panel('Actividad reciente');
+  if (newsCount) history.append(n('p', newsCount === 1 ? '1 novedad desde tu última visita' : number.format(newsCount) + ' novedades desde tu última visita', 'news-note'));
   if (!activity.length) history.append(empty('Sin actividad todavía', 'Aquí verás importaciones, descargas del SAT, respaldos, documentos archivados y cancelaciones detectadas.'));
   else {
     const list = n('div', undefined, 'activity-list');
@@ -502,7 +564,7 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks];
+  return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
 }
 
 function weeklyActivity(rows) {
@@ -1002,6 +1064,22 @@ function csvText(rows) {
 function exportCsv() {
   download(new Blob(['\uFEFF', csvText(invoiceRows())], { type: 'text/csv;charset=utf-8' }), 'CFDI-' + (scope || 'todos') + '.csv');
 }
+function totalsCsv() {
+  const escape = value => {
+    const text = String(value);
+    const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  const rows = [['RFC', 'Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN', 'En otra moneda sin sumar']];
+  for (const [rfc, group] of monthlyTotals()) {
+    for (const [monthKey, g] of group.months) rows.push([rfc, group.name, monthKey, g.received, centsPlain(g.receivedCents),
+      g.issued, centsPlain(g.issuedCents), g.receivedForeign + g.issuedForeign]);
+  }
+  return rows.map(row => row.map(escape).join(',')).join('\r\n');
+}
+function exportTotalsCsv() {
+  download(new Blob(['\uFEFF', totalsCsv()], { type: 'text/csv;charset=utf-8' }), 'Totales-por-RFC-y-mes.csv');
+}
 async function snapshot() {
   const data = { version: 2 };
   const records = cloudStorage ? await Promise.all(STORES.map(name => readStore(name))) : await new Promise((resolve, reject) => {
@@ -1138,6 +1216,7 @@ window.addEventListener('drop', event => {
 render();
 const startup = (cloudStorage ? Promise.resolve(null) : openDatabase()).then(async result => { db = result; ready = true; await refresh(); })
   .catch(() => { announce('El navegador bloqueó el almacenamiento local. Abre el archivo en Edge o Chrome con un perfil normal.', true); });
+startup.then(() => { computeNews(); if (newsCount && page === 'home') render(); });
 
 const satToken = document.querySelector('meta[name="pacosat-token"]')?.content;
 let satData = { profiles: [], jobs: [], inbox: [], mail: {} };

@@ -9,14 +9,16 @@ const efos = parseEfos('Listado 69-B\r\nNo.,RFC,Nombre del Contribuyente,Situaci
 assert.deepEqual([...efos.get(cfdi.emitter)], ['Presunto','Definitivo']);
 assert.throws(() => parseEfos('<html>error</html>'), /columnas/);
 let time = 1700000000000, status = 'Vigente', fail = false, sends = 0;
+let efosData = efos; const efosSends = [];
 const db = new DatabaseSync(':memory:');
 const monitor = createMonitor(db, { now: () => time, refreshEfos: async () => {
   if (fail) throw new Error('Fallo del listado');
-  return efos;
+  return efosData;
 }, checkSat: async () => {
   if (fail) throw new Error('Fallo del SAT');
   return { state: status, code: 'S', efos: '', cancellation: '' };
-}, notifyCancellation: async item => { assert.equal(item.id, cfdi.id); sends++; return true; } });
+}, notifyCancellation: async item => { assert.equal(item.id, cfdi.id); sends++; return true; },
+  notifyEfos: async alert => { efosSends.push(alert); return true; } });
 try {
   monitor.register(cfdi);
   await monitor.tick();
@@ -33,5 +35,18 @@ try {
   time += day;
   await monitor.tick();
   assert.equal(sends, 1);
-  console.log('OK: expresión SAT, CSV 69-B, conservación del resultado, cancelación y aviso sin repetir.');
+  assert.equal(efosSends.length, 0);
+  const efos2 = new Map(efosData);
+  efos2.set(cfdi.receiver, new Set(['Definitivo']));
+  efos2.set('CCC010101CCC', new Set(['Definitivo']));
+  efosData = efos2;
+  time += day + hour;
+  await monitor.tick();
+  assert.equal(efosSends.length, 1);
+  assert.equal(efosSends[0].rfc, cfdi.receiver);
+  assert.deepEqual(efosSends[0].statuses, ['Definitivo']);
+  time += day;
+  await monitor.tick();
+  assert.equal(efosSends.length, 1);
+  console.log('OK: expresión SAT, CSV 69-B, conservación del resultado, cancelación y aviso sin repetir, alta 69-B de un RFC del expediente sin repetir y sin avisar RFC ajenos.');
 } finally { db.close(); }

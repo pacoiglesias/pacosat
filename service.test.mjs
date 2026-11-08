@@ -106,5 +106,57 @@ try {
   time += 60 * 60000;
   await service.tick();
   assert.equal(calls.length, 2);
+  async function alertHarness(connector) {
+    const svc = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TOKEN-->', origin, now: () => time,
+      makeConnector: async () => ({ parser: FixtureParser, connector }),
+      makeMailer: () => ({ verify: async () => true, sendMail: async payload => { sent.push(payload); } }) });
+    const invoke = async (path, data, svcToken) => {
+      const headers = { host: new URL(origin).host, origin, 'x-pacosat-token': svcToken };
+      const req = Object.assign(Readable.from(data === undefined ? [] : [Buffer.from(JSON.stringify(data))]), {
+        url: path, method: data === undefined ? 'GET' : 'POST', headers });
+      let response;
+      const res = { setHeader() {}, writeHead(status) { this.status = status; this.headersSent = true; },
+        end(content) { response = new Response(content, { status: this.status }); } };
+      await svc.handle(req, res);
+      return response;
+    };
+    const svcToken = (await (await invoke('/')).text()).match(/content="([^"]+)"/)[1];
+    assert.equal((await invoke('/api/mail', { host: 'smtp.example.com', port: 587, from: 'from@example.com',
+      recipient: 'to@example.com', user: '', password: '' }, svcToken)).status, 200);
+    assert.equal((await invoke('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received', password: 'simulated',
+      certificate: 'YQ==', key: 'Yg==' }, svcToken)).status, 200);
+    return svc;
+  }
+  const alertsBefore = sent.length;
+  const expiredSvc = await alertHarness({ request: async () => 'request-expired',
+    check: async () => ({ status: 'expired', packages: [] }), download: async () => valid });
+  await expiredSvc.tick();
+  time += 5 * 60000;
+  await expiredSvc.tick();
+  assert.equal(sent.slice(alertsBefore).filter(mail => /solicitud al SAT quedó vencida/.test(mail.subject)).length, 1);
+  await expiredSvc.tick();
+  assert.equal(sent.slice(alertsBefore).filter(mail => /solicitud al SAT quedó vencida/.test(mail.subject)).length, 1);
+  expiredSvc.close();
+  let failMode = true;
+  const failSvc = await alertHarness({ request: async () => 'request-fail',
+    check: async () => { if (failMode) throw new Error('SAT no disponible'); return { status: 'finished', packages: [] }; },
+    download: async () => valid });
+  const failAlerts = () => sent.slice(alertsBefore).filter(mail => /descarga automática está fallando/.test(mail.subject)).length;
+  await failSvc.tick();
+  for (let i = 0; i < 3; i++) { time += 5 * 60000; await failSvc.tick(); }
+  assert.equal(failAlerts(), 1);
+  time += 5 * 60000;
+  await failSvc.tick();
+  assert.equal(failAlerts(), 1);
+  failMode = false;
+  time += 5 * 60000;
+  await failSvc.tick();
+  failMode = true;
+  time += 60 * 60000;
+  await failSvc.tick();
+  for (let i = 0; i < 3; i++) { time += 5 * 60000; await failSvc.tick(); }
+  assert.equal(failAlerts(), 2);
+  failSvc.close();
   console.log('OK: seguridad local, programación, descarga, RFC ajeno, deduplicación, correo simulado y pausa.');
+  console.log('OK: alertas por solicitud vencida sin repetir y por fallo persistente de la descarga con reinicio al recuperarse.');
 } finally { service.close(); }
