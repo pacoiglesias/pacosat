@@ -208,6 +208,22 @@ function csvText(rows) {
 function exportCsv() {
   download(new Blob(['\uFEFF', csvText(invoiceRows())], { type: 'text/csv;charset=utf-8' }), 'CFDI-' + (scope || 'todos') + '.csv');
 }
+function totalsCsv() {
+  const escape = value => {
+    const text = String(value);
+    const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  const rows = [['RFC', 'Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN', 'En otra moneda sin sumar']];
+  for (const [rfc, group] of monthlyTotals()) {
+    for (const [monthKey, g] of group.months) rows.push([rfc, group.name, monthKey, g.received, centsPlain(g.receivedCents),
+      g.issued, centsPlain(g.issuedCents), g.receivedForeign + g.issuedForeign]);
+  }
+  return rows.map(row => row.map(escape).join(',')).join('\r\n');
+}
+function exportTotalsCsv() {
+  download(new Blob(['\uFEFF', totalsCsv()], { type: 'text/csv;charset=utf-8' }), 'Totales-por-RFC-y-mes.csv');
+}
 async function snapshot() {
   const data = { version: 2 };
   const records = cloudStorage ? await Promise.all(STORES.map(name => readStore(name))) : await new Promise((resolve, reject) => {
@@ -344,3 +360,4 @@ window.addEventListener('drop', event => {
 render();
 const startup = (cloudStorage ? Promise.resolve(null) : openDatabase()).then(async result => { db = result; ready = true; await refresh(); })
   .catch(() => { announce('El navegador bloqueó el almacenamiento local. Abre el archivo en Edge o Chrome con un perfil normal.', true); });
+startup.then(() => { computeNews(); if (newsCount && page === 'home') render(); });

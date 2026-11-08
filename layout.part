@@ -23,7 +23,7 @@
   <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"><option value="">Todos los RFC</option></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
   <nav aria-label="Navegación principal">
     <span class="nav-caption">OPERACIÓN FISCAL</span>
-    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen</button>
+    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen <span id="news-badge" class="news-badge" hidden></span></button>
     <button data-view="operations"><svg><use href="#i-sync"/></svg> Operaciones y alertas</button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
