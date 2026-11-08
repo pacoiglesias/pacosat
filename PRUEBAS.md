@@ -13,5 +13,6 @@
 11. En modo servidor, deja un XML válido, un ZIP con CFDI y un archivo dañado en la carpeta vigilada: en el siguiente ciclo los dos primeros deben importarse y moverse a `procesados/AAAA-MM-DD`, el dañado a `errores` y llegar un aviso por correo; la importación queda en la bitácora.
 12. Activa el respaldo programado: al vencimiento debe aparecer `PacoSAT-AAAA-MM-DD.faro` en la carpeta indicada y debe poder restaurarse con la contraseña del respaldo usando la interfaz; con la carpeta inaccesible debe llegar el aviso de fallo.
 13. En el navegador: cambia entre modo claro y oscuro, desactiva el sonido y recarga (la preferencia persiste), genera el reporte mensual e imprímelo a PDF, y exporta la base DIOT en CSV para compararla con los totales del Resumen.
+14. Blindaje 5002: solicita un periodo ya solicitado y comprueba que PacoSAT avisa antes de enviar («última disponible»), que al confirmar se envía una vez más y que el tercer intento queda bloqueado ofreciendo mover el inicio 1 segundo; la solicitud nueva debe mostrar el estado de su criterio en «Solicitudes recientes».
 
 Registra fecha, RFC de prueba, resultado esperado/obtenido y error. No publiques credenciales ni comprobantes en issues del repositorio público.

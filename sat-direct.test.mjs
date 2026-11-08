@@ -13,6 +13,7 @@ const query = {
   validate() { return []; }
 };
 let remote = 'InProgress';
+let remoteCode, periodArgs;
 const sdk = {
   Fiel: { create: () => ({ isValid: () => true, getRfc: () => rfc }) },
   FielRequestBuilder: class {}, HttpsWebClient: class {},
@@ -21,12 +22,13 @@ const sdk = {
     async query() { return { getStatus: () => status, getRequestId: () => 'request-1' }; }
     async verify() {
       return { getStatus: () => status, getStatusRequest: () => ({ isTypeOf: type => type === remote }),
+        getCodeRequest: () => ({ getValue: () => remoteCode }),
         getPackageIds: () => ['package-a', 'package-b', 'package-a'] };
     }
     async download() { return { getStatus: () => status, getPackageContent: () => archive.toString('base64') }; }
   },
   QueryParameters: { create: () => query },
-  DateTimePeriod: { createFromValues() {} },
+  DateTimePeriod: { createFromValues(from, to) { periodArgs = [from, to]; } },
   DownloadType: { issued() {}, received() {} },
   RequestType: { xml() {} },
   DocumentStatus: { active() {} }
@@ -37,6 +39,10 @@ assert.throws(() => createSatConnector(sdk, { ...settings, rfc: 'XEXX010101000' 
 await assert.rejects(connector.request({ start: '2026-02-30', end: '2026-03-01' }), /Periodo/);
 await assert.rejects(connector.download('../paquete'), /Identificador/);
 const requestId = await connector.request({ start: '2026-11-01', end: '2026-11-08' });
+assert.deepEqual(periodArgs, ['2026-11-01 00:00:00', '2026-11-08 23:59:59']);
+await connector.request({ start: '2026-11-01', end: '2026-11-08', startTime: '00:00:01' });
+assert.deepEqual(periodArgs, ['2026-11-01 00:00:01', '2026-11-08 23:59:59']);
+await assert.rejects(connector.request({ start: '2026-11-01', end: '2026-11-08', startTime: '24:00:00' }), /Hora de inicio/);
 let saved = { rfc, requestId, status: 'pending' };
 const save = async next => { saved = next; };
 const imported = [];
@@ -56,4 +62,10 @@ assert.equal((await advanceSatJob(connector, saved, save, ingest)).status, 'fini
 assert.deepEqual(imported, ['package-a', 'package-b']);
 remote = 'Expired';
 assert.equal((await advanceSatJob(connector, { rfc, requestId, status: 'pending' }, save, ingest)).status, 'expired');
+remote = 'Rejected'; remoteCode = 5002;
+const exhausted = await advanceSatJob(connector, { rfc, requestId, status: 'pending' }, save, ingest);
+assert.equal(exhausted.status, 'rejected');
+assert.equal(exhausted.satCode, 5002);
+remoteCode = undefined;
 console.log('OK: solicitud, RFC, validación, espera, descarga, reintento y expiración con SAT simulado.');
+console.log('OK: hora de inicio desplazable y propagación del CodigoEstadoSolicitud (5002) al avanzar la solicitud.');

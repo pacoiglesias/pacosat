@@ -22,6 +22,27 @@ const email = /^[a-z0-9.!#$%&'*+/=?^_\x60{|}~-]+@[a-z0-9.-]+\.[a-z]{2,63}$/i;
 const MAX_BODY = 192 * 1024;
 const validDate = input => /^\d{4}-\d{2}-\d{2}$/.test(input || '') && Number.isFinite(Date.parse(input)) && new Date(input).toISOString().slice(0, 10) === input;
 
+/* Blindaje 5002 (1.6.2). El SAT documenta oficialmente el error 5002
+   («Se han agotado las solicitudes de por vida» / límite «con el mismo
+   criterio», doc. WS v1.5) sin publicar la cifra; que el mismo criterio solo
+   admite dos solicitudes es el criterio de la comunidad técnica (PhpCfdi).
+   El criterio se identifica con precisión de segundos: RFC solicitante,
+   sentido (emitidos/recibidos son operaciones separadas), tipo de solicitud,
+   RFC emisor/receptor cuando se filtran, y fechas inicial y final exactas. */
+const pad2 = value => String(value).padStart(2, '0');
+export function pacosatShiftSecond(datetime, seconds = 1) {
+  const [datePart, timePart] = datetime.split(' ');
+  const [year, month, date] = datePart.split('-').map(Number);
+  const [hour, minute, second] = timePart.split(':').map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, date, hour, minute, second) + seconds * 1000);
+  return shifted.getUTCFullYear() + '-' + pad2(shifted.getUTCMonth() + 1) + '-' + pad2(shifted.getUTCDate()) +
+    ' ' + pad2(shifted.getUTCHours()) + ':' + pad2(shifted.getUTCMinutes()) + ':' + pad2(shifted.getUTCSeconds());
+}
+export function pacosatCriteriaKey(criteria) {
+  return JSON.stringify([criteria.rfc, criteria.direction, criteria.type || 'cfdi',
+    criteria.emitter || '', criteria.receiver || '', criteria.startAt, criteria.endAt]);
+}
+
 function need(ok, message, status = 400) {
   if (!ok) throw Object.assign(new Error(message), { status });
 }
@@ -90,7 +111,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       sent INTEGER, error TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS alert_state (key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
       alerted INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE IF NOT EXISTS automation_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');`);
+    CREATE TABLE IF NOT EXISTS automation_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
+    CREATE TABLE IF NOT EXISTS criteria (id INTEGER PRIMARY KEY, key TEXT NOT NULL,
+      rfc TEXT NOT NULL, direction TEXT NOT NULL, type TEXT NOT NULL DEFAULT 'cfdi',
+      emitter TEXT NOT NULL DEFAULT '', receiver TEXT NOT NULL DEFAULT '',
+      startAt TEXT NOT NULL, endAt TEXT NOT NULL, requestId TEXT NOT NULL DEFAULT '',
+      origin TEXT NOT NULL DEFAULT 'manual', sentAt INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS criteria_key_idx ON criteria(key);
+    CREATE TABLE IF NOT EXISTS criteria_exhausted (key TEXT PRIMARY KEY,
+      learnedAt INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '');`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
@@ -125,6 +154,63 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   const packageLookup = db.prepare('SELECT id FROM packages WHERE job=? AND remoteId=?');
   const insertPackage = db.prepare('INSERT INTO packages(job,remoteId,rfc,archive,newCount,review) VALUES (?,?,?,?,?,?)');
   const remember = db.prepare('INSERT OR IGNORE INTO discovered VALUES (?,?)');
+
+  /* Libro de criterios (blindaje 5002): la tabla criteria es append-only —
+     solo recibe inserciones, una por cada SolicitaDescarga realmente enviado
+     al SAT — y los criterios que el SAT devuelve agotados (5002) se marcan en
+     criteria_exhausted, sin tocar las filas del libro. */
+  const insertCriteria = db.prepare('INSERT INTO criteria(key,rfc,direction,type,emitter,receiver,startAt,endAt,requestId,origin,sentAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+  function criteriaFromJob(job) {
+    return { rfc: job.rfc, direction: job.direction, type: 'cfdi', emitter: '', receiver: '',
+      startAt: job.startAt || job.periodStart + ' 00:00:00',
+      endAt: job.endAt || job.periodEnd + ' 23:59:59' };
+  }
+  function criteriaInfo(criteria) {
+    const key = pacosatCriteriaKey(criteria);
+    const row = db.prepare('SELECT COUNT(*) AS count, MIN(sentAt) AS first FROM criteria WHERE key=?').get(key);
+    const count = row?.count || 0;
+    const exhausted = Boolean(db.prepare('SELECT 1 FROM criteria_exhausted WHERE key=?').get(key));
+    return { key, count, firstSentAt: row?.first || null, exhausted,
+      state: exhausted || count >= 2 ? 'agotado' : count === 1 ? 'ultima' : 'disponible' };
+  }
+  function guardError(info, criteria, text) {
+    return Object.assign(new Error(text), { status: 409, guard: {
+      state: info.state, count: info.count, firstSentAt: info.firstSentAt,
+      startAt: criteria.startAt, endAt: criteria.endAt,
+      shiftedStartAt: pacosatShiftSecond(criteria.startAt), message: text } });
+  }
+  function learnCriteria5002(job, time) {
+    const info = criteriaInfo(criteriaFromJob(job));
+    db.prepare('INSERT OR IGNORE INTO criteria_exhausted(key,learnedAt,detail) VALUES (?,?,?)')
+      .run(info.key, time, job.requestId);
+    queueAlert('criteria-5002', 'criteria:' + info.key, 'PacoSAT · El SAT agotó las solicitudes de un periodo (5002)',
+      'Al verificar la solicitud ' + job.requestId + ' del RFC ' + job.rfc + ' (' + job.periodStart + ' a ' + job.periodEnd +
+      ', ' + (job.direction === 'received' ? 'recibidos' : 'emitidos') + '), el SAT devolvió el código 5002: las solicitudes ' +
+      'con ese mismo criterio están agotadas de por vida, aunque el gasto viniera de otra aplicación. PacoSAT ya no enviará ' +
+      'ese criterio; para ese periodo usa una ventana desplazada al menos un segundo o revisa el histórico con metadatos.', time);
+  }
+  /* Migración suave: las solicitudes previas a 1.6.2 solo guardaban fechas.
+     Se reconstruyen los segundos con la misma regla con la que se enviaron
+     (cierre 23:59:59 en periodos pasados; hora del envío si el cierre era el
+     día de creación) y el libro se siembra una sola vez desde jobs, sin
+     perder ni duplicar ninguna solicitud ya enviada. */
+  tx(db, () => {
+    const jobColumns = db.prepare('PRAGMA table_info(jobs)').all().map(row => row.name);
+    if (!jobColumns.includes('startAt')) db.exec("ALTER TABLE jobs ADD COLUMN startAt TEXT NOT NULL DEFAULT ''");
+    if (!jobColumns.includes('endAt')) db.exec("ALTER TABLE jobs ADD COLUMN endAt TEXT NOT NULL DEFAULT ''");
+    for (const job of db.prepare("SELECT * FROM jobs WHERE startAt=''").all()) {
+      const endAt = job.periodEnd + ' ' + (job.periodEnd === day(job.created) ? clock.format(job.created) : '23:59:59');
+      db.prepare('UPDATE jobs SET startAt=?,endAt=? WHERE id=?').run(job.periodStart + ' 00:00:00', endAt, job.id);
+    }
+    if (!getState('ledger:seeded')) {
+      for (const job of db.prepare('SELECT * FROM jobs ORDER BY id').all()) {
+        const criteria = criteriaFromJob(job);
+        insertCriteria.run(pacosatCriteriaKey(criteria), criteria.rfc, criteria.direction, criteria.type,
+          '', '', criteria.startAt, criteria.endAt, job.requestId, 'seed', job.created);
+      }
+      setState('ledger:seeded', '1');
+    }
+  });
 
   async function bootstrap(config) {
     for (const row of config.profiles || []) {
@@ -181,7 +267,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return {
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
       profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc) })),
-      jobs: db.prepare('SELECT id,rfc,direction,periodStart,periodEnd,status,due,created,error FROM jobs ORDER BY id DESC LIMIT 35').all(),
+      jobs: db.prepare('SELECT id,rfc,direction,periodStart,periodEnd,startAt,endAt,status,due,created,error FROM jobs ORDER BY id DESC LIMIT 35').all()
+        .map(row => { const info = criteriaInfo(criteriaFromJob(row));
+          return { ...row, criteriaState: info.state, criteriaCount: info.count }; }),
       inbox: db.prepare('SELECT id,rfc,newCount,review FROM packages WHERE archive IS NOT NULL ORDER BY id LIMIT 50').all(),
       mail: { enabled: Boolean(mail), recipient: mail?.recipient || '', error: db.prepare("SELECT error FROM notices WHERE sent IS NULL AND error<>'' ORDER BY id DESC LIMIT 1").get()?.error || '' },
       watchFolder: { enabled: Boolean(inbox.dir), lastScan: inboxStatus.lastScan, imported: inboxStatus.imported,
@@ -365,9 +453,35 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const direction of directions) {
       try {
         if (db.prepare("SELECT 1 FROM jobs WHERE rfc=? AND direction=? AND status='pending'").get(profile.rfc, direction)) continue;
-        const requestId = await service.request({ start, end, endTime: clock.format(time), direction });
-        db.prepare('INSERT INTO jobs(rfc,direction,periodStart,periodEnd,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?)')
-          .run(profile.rfc, direction, start, end, requestId, 'pending', time + 5 * MIN, time);
+        let startAt = start + ' 00:00:00';
+        const endAt = end + ' ' + clock.format(time);
+        const criteria = { rfc: profile.rfc, direction, type: 'cfdi', emitter: '', receiver: '', startAt, endAt };
+        let info = criteriaInfo(criteria);
+        if (info.state !== 'disponible') {
+          /* Red de seguridad del blindaje 5002 en la programación: las
+             ventanas avanzan y no deberían colisionar nunca; si el criterio
+             ya se solicitó, se desplaza el inicio +1 s (las veces que haga
+             falta), se anota en la bitácora y se sigue. Jamás se envía un
+             duplicado en silencio ni se detiene la programación sin rastro. */
+          const original = startAt;
+          let shifts = 0;
+          while (info.state !== 'disponible' && shifts < 10) {
+            startAt = pacosatShiftSecond(startAt); shifts++;
+            info = criteriaInfo({ ...criteria, startAt });
+          }
+          need(info.state === 'disponible', 'No se encontró un criterio libre para la descarga programada.');
+          putMetadata('activity', { id: 'guard5002:' + profile.rfc + ':' + direction + ':' + time,
+            name: 'Blindaje SAT 5002 · ' + profile.rfc, date: new Date(time).toISOString(),
+            added: 0, duplicates: 0, review: 0, issues: [],
+            event: 'La descarga programada coincidía con un criterio ya solicitado (' + original + ' a ' + endAt +
+              '); el inicio se desplazó a ' + startAt + ' (+' + shifts + ' s) para no agotar las solicitudes del SAT (error 5002).' });
+          storageRevision++;
+        }
+        const requestId = await service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction });
+        db.prepare('INSERT INTO jobs(rfc,direction,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(profile.rfc, direction, start, end, startAt, endAt, requestId, 'pending', time + 5 * MIN, time);
+        insertCriteria.run(pacosatCriteriaKey({ ...criteria, startAt }), profile.rfc, direction, 'cfdi', '', '',
+          startAt, endAt, requestId, 'scheduled', time);
       } catch (error) {
         db.prepare('UPDATE profiles SET error=? WHERE rfc=?').run(message(error), profile.rfc);
       }
@@ -383,9 +497,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       const save = async next => db.prepare('UPDATE jobs SET imported=?,status=?,error=? WHERE id=?')
         .run(JSON.stringify(next.imported || []), next.status, '', job.id);
       try {
-        await advanceSatJob(active.connector, { ...job, imported: JSON.parse(job.imported) }, save,
+        const advanced = await advanceSatJob(active.connector, { ...job, imported: JSON.parse(job.imported) }, save,
           ({ id, archive }) => inspectPackage(job, id, archive, active.parser));
         db.prepare('UPDATE jobs SET error=? WHERE id=?').run('', job.id);
+        if (advanced?.satCode === 5002) learnCriteria5002(job, time);
       } catch (error) { db.prepare('UPDATE jobs SET error=? WHERE id=?').run(message(error), job.id); }
       const after = db.prepare('SELECT status,error FROM jobs WHERE id=?').get(job.id);
       if (after && ['expired', 'failed', 'rejected'].includes(after.status)) terminal.push({ ...job, afterStatus: after.status });
@@ -584,13 +699,30 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(Date.parse(x.end) - Date.parse(x.start) <= 92 * DAY, 'Selecciona un periodo de hasta 93 días.');
         need(['received', 'issued'].includes(x.direction), 'Dirección inválida.');
         need(!busy, 'PacoSAT está procesando otra solicitud. Intenta en unos segundos.', 409);
+        /* Guardia previa del blindaje 5002: se compara el criterio exacto
+           (con segundos) contra el libro antes de enviar nada al SAT. */
+        const endTime = x.end === day(now()) ? clock.format(now()) : '23:59:59';
+        let startAt = x.start + ' 00:00:00';
+        if (x.shiftStart === true) startAt = pacosatShiftSecond(startAt);
+        const endAt = x.end + ' ' + endTime;
+        const criteria = { rfc: x.rfc, direction: x.direction, type: 'cfdi', emitter: '', receiver: '', startAt, endAt };
+        const info = criteriaInfo(criteria);
+        if (info.state === 'agotado') throw guardError(info, criteria,
+          'Este criterio ya agotó sus solicitudes ante el SAT: una más recibiría el error 5002 ' +
+          '(«Se han agotado las solicitudes de por vida»). No se envió nada.');
+        if (info.state === 'ultima' && x.confirmRepeat !== true) throw guardError(info, criteria,
+          'Este criterio ya se solicitó el ' + new Date(info.firstSentAt).toISOString().slice(0, 10) +
+          '. Según el criterio de la comunidad técnica, el SAT admite dos solicitudes con el mismo criterio: ' +
+          'repetirla gasta la última disponible y una tercera recibiría el error 5002.');
         busy = true;
         try {
-          const prior = db.prepare("SELECT id FROM jobs WHERE rfc=? AND direction=? AND periodStart=? AND periodEnd=? AND status IN ('pending','finished')").get(x.rfc, x.direction, x.start, x.end);
-          need(!prior, 'Ese periodo ya tiene una solicitud registrada.', 409);
-          const requestId = await active.connector.request({ ...x, endTime: x.end === day(now()) ? clock.format(now()) : '23:59:59' });
-          db.prepare('INSERT INTO jobs(rfc,direction,periodStart,periodEnd,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?)')
-            .run(x.rfc, x.direction, x.start, x.end, requestId, 'pending', now() + 5 * MIN, now());
+          const prior = db.prepare("SELECT id FROM jobs WHERE rfc=? AND direction=? AND startAt=? AND endAt=? AND status='pending'")
+            .get(x.rfc, x.direction, startAt, endAt);
+          need(!prior, 'Ese criterio ya tiene una solicitud en curso.', 409);
+          const requestId = await active.connector.request({ start: x.start, end: x.end, startTime: startAt.slice(11), endTime, direction: x.direction });
+          db.prepare('INSERT INTO jobs(rfc,direction,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?)')
+            .run(x.rfc, x.direction, x.start, x.end, startAt, endAt, requestId, 'pending', now() + 5 * MIN, now());
+          insertCriteria.run(info.key, x.rfc, x.direction, 'cfdi', '', '', startAt, endAt, requestId, 'manual', now());
         } finally { busy = false; }
         return json(res, overview());
       }
@@ -602,7 +734,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       need(false, 'Ruta no encontrada.', 404);
     } catch (error) {
-      if (!res.headersSent && !res.destroyed) json(res, { error: message(error) }, error.status || 502);
+      if (!res.headersSent && !res.destroyed) json(res, { error: message(error),
+        ...(error.guard ? { guard: error.guard } : {}) }, error.status || 502);
     }
   }
   return { handle, tick, monitorTick: monitor.tick, inboxTick: (time = now()) => scanWatchFolder(time),

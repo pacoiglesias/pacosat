@@ -42,12 +42,13 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
     'La e.firma debe corresponder al RFC del expediente.');
   const service = new sdk.Service(new sdk.FielRequestBuilder(fiel), new sdk.HttpsWebClient(), sdk.ServiceEndpoints.cfdi());
   return {
-    async request({ start, end, endTime = '23:59:59', direction = 'received' }) {
+    async request({ start, end, startTime = '00:00:00', endTime = '23:59:59', direction = 'received' }) {
       ensure(validDate(start) && validDate(end) && start <= end, 'Periodo inválido.');
+      ensure(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(startTime), 'Hora de inicio inválida.');
       ensure(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(endTime), 'Hora de cierre inválida.');
       ensure(direction === 'received' || direction === 'issued', 'Dirección inválida.');
       let query = sdk.QueryParameters.create()
-        .withPeriod(sdk.DateTimePeriod.createFromValues(start + ' 00:00:00', end + ' ' + endTime))
+        .withPeriod(sdk.DateTimePeriod.createFromValues(start + ' ' + startTime, end + ' ' + endTime))
         .withDownloadType(direction === 'received' ? sdk.DownloadType.received() : sdk.DownloadType.issued())
         .withRequestType(sdk.RequestType.xml());
       if (direction === 'received') query = query.withDocumentStatus(sdk.DocumentStatus.active());
@@ -61,15 +62,19 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
     async check(id) {
       ensure(REQUEST_ID.test(id), 'Identificador de solicitud inválido.');
       const result = accepted(await service.verify(id), 'El SAT no pudo verificar la solicitud');
+      // CodigoEstadoSolicitud de la verificación (p. ej. 5002: solicitudes de
+      // por vida agotadas para el criterio). Se propaga para que el servicio
+      // aprenda qué criterios ya no debe volver a enviar.
+      const code = typeof result.getCodeRequest === 'function' ? result.getCodeRequest()?.getValue() : undefined;
       const status = result.getStatusRequest();
-      if (status.isTypeOf('Accepted') || status.isTypeOf('InProgress')) return { status: 'pending', packages: [] };
+      if (status.isTypeOf('Accepted') || status.isTypeOf('InProgress')) return { status: 'pending', packages: [], code };
       for (const [type, label] of [['Expired', 'expired'], ['Failure', 'failed'], ['Rejected', 'rejected']]) {
-        if (status.isTypeOf(type)) return { status: label, packages: [] };
+        if (status.isTypeOf(type)) return { status: label, packages: [], code };
       }
       ensure(status.isTypeOf('Finished'), 'El SAT devolvió un estado desconocido.');
       const packages = [...new Set(result.getPackageIds())];
       ensure(packages.every(packageId => REQUEST_ID.test(packageId)), 'El SAT devolvió un identificador de paquete inválido.');
-      return { status: 'finished', packages };
+      return { status: 'finished', packages, code };
     },
     async download(id) {
       ensure(REQUEST_ID.test(id), 'Identificador de paquete inválido.');
@@ -90,13 +95,13 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
 export async function advanceSatJob(connector, job, save, importPackage) {
   if (job.status !== 'pending') return job;
   const result = await connector.check(job.requestId);
-  if (result.status === 'pending') return job;
+  if (result.status === 'pending') return { ...job, satCode: result.code };
   if (result.status !== 'finished') {
-    const next = { ...job, status: result.status };
+    const next = { ...job, status: result.status, satCode: result.code };
     await save(next);
     return next;
   }
-  let next = { ...job, imported: [...(job.imported || [])] };
+  let next = { ...job, imported: [...(job.imported || [])], satCode: result.code };
   for (const id of result.packages) {
     if (next.imported.includes(id)) continue;
     await importPackage({ rfc: job.rfc, id, archive: await connector.download(id) });
