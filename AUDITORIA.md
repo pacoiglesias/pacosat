@@ -78,3 +78,23 @@ Tercera ronda, con el objetivo declarado de superar visual y operacionalmente a 
 - **Respaldo cifrado programado** (solo servidor): diario o semanal, en el formato exacto del respaldo manual — la lógica de cifrado se comparte en `backup-core.mjs` y el verificador comprueba la compatibilidad cruzada navegador/servidor en ambos sentidos —, con estado visible en Operaciones y Respaldos y aviso por correo si falla.
 
 **Fuera de alcance, por decisión documentada**: emisión/timbrado de CFDI (requiere un PAC; el propietario timbra en Más Facturas), buzón tributario y trámites del portal con CIEC (scraping con captcha, fuera del canal oficial por Web Service) y descarga de retenciones (el SDK integrado no la expone sin dependencias nuevas). Pendientes que NO cambian: conexión real con el SAT y SMTP real, CSP sin scripts inline, usuarios/roles/MFA, backoff exponencial y migración de identificadores legados.
+
+## Actualización 1.6.1 — 2026-11-08: validador completo de RFC
+
+Mini-actualización a petición del propietario: que al teclear un RFC el programa diga si es válido o no. Hay una sola función, `validateRfc` en `data.part` (se genera también a `xml-core.mjs`), y la usan la interfaz y el servidor.
+
+**Qué valida** (validación de forma, en este orden):
+- **Estructura**: 13 caracteres de persona física (4 letras + 6 de fecha + 2 de homoclave + dígito verificador) o 12 de persona moral (3 letras). Las letras admiten Ñ y &; la homoclave es alfanumérica; el último carácter es un dígito o la letra «A».
+- **Fecha embebida**: mes de 01 a 12 y día válido para ese mes, con años bisiestos por la regla de divisibilidad entre 4.
+- **Dígito verificador oficial**: el algoritmo publicado por el SAT (tabla de valores del Anexo III — el valor es la posición en la cadena `0123456789ABCDEFGHIJKLMN&OPQRSTUVWXYZ Ñ`: espacio 37, & 24, Ñ 38 —, pesos de 13 a 2 sobre la base de 12 posiciones anteponiendo un espacio cuando la base es de 11, suma módulo 11: residuo 0 → «0», residuo 1 → «A», otro residuo → 11 menos el residuo). Verificado contra el ejemplo resuelto del propio documento del SAT (`GODE561231GR`, suma 1026 → `GODE561231GR8`) y contra RFC reales en uso.
+
+**Qué NO valida**: la existencia del RFC en el SAT. Ninguna comprobación local puede hacerlo: eso lo confirma el SAT (constancia de situación fiscal o, en la práctica, la primera interacción del Web Service con la e.firma, donde además el certificado manda). La interfaz lo dice en cada mensaje para no vender una cosa por otra.
+
+**Decisiones de criterio**:
+- Error de estructura o de fecha: **bloquea** el guardado, con el mensaje concreto de qué falla.
+- Dígito verificador que no cuadra: **aviso fuerte de probable errata, sin bloqueo absoluto**. Solo se guarda marcando la casilla expresa «Guardar aunque el dígito verificador no cuadre». Motivo: existen RFC reales antiguos cuyo dígito no sigue el algoritmo, y un bloqueo total dejaría fuera expedientes legítimos; el silencio, en cambio, colaría erratas que luego hacen fallar la descarga.
+- **Genéricos del SAT** (`XAXX010101000` y `XEXX010101000`): se detectan y se aceptan con nota, sin exigirles el dígito — el de público en general no lo cumple por diseño (su base daría «4»); el de extranjeros sí lo cumple.
+
+**Un solo criterio, con dos niveles documentados**: el alta de contribuyentes aplica el validador completo. El importador de CFDI (mismo núcleo, navegador y servidor) exige estructura y fecha a emisor y receptor, pero no el dígito: en los CFDI reales aparecen los genéricos y el dato ya viene emitido por el SAT. El servidor, al guardar perfiles (`/api/unlock` y perfiles de arranque del archivo de configuración), bloquea con error de estructura o fecha y no con el dígito, porque su puerta decisiva es que el RFC del certificado de la e.firma coincida con el del expediente. Mantienen la expresión estructural anterior, a propósito: la restauración de respaldos (lo ya guardado no se revalida con efectos destructivos) y la validación de datos que llegan del SAT en el monitor y en el conector (sujeto del certificado y filas de estado), donde el dato del SAT es el que manda.
+
+**Pruebas**: suite nueva `rfc.test.mjs` con los vectores externos (ejemplo del SAT y RFC reales), los casos de residuo 0 y residuo 1 («A»), Ñ y &, ida y vuelta generando dígitos y rompiéndolos, genéricos, y cada error de estructura y de fecha con su mensaje. `npm run check` en verde (5 suites + verificador) y simulación de CI en clon limpio con el diff de generados limpio.

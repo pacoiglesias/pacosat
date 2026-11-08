@@ -1,6 +1,6 @@
 # PacoSAT · satfacturas
 
-Versión 1.6.0 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.6.1 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
 La instancia en modo servidor se publica tras un proxy HTTPS con autenticación; consulta [SERVIDOR.md](SERVIDOR.md).
 
 ## Inicio en Windows
@@ -17,6 +17,7 @@ Abre http://127.0.0.1:43729. Abrir solo el HTML no activa el servicio SAT.
 ## Funciones
 
 - XML y ZIP: validación de RFC, UUID, duplicados, motivos de rechazo y visor.
+- Alta de contribuyentes con **validador completo de RFC**: estructura, fecha embebida y dígito verificador oficial del SAT, con aviso al momento. Es una validación de forma (no confirma que el RFC exista en el SAT); si el dígito no cuadra avisa de la probable errata y solo guarda con confirmación expresa, y los RFC genéricos del SAT (XAXX010101000 y XEXX010101000) se aceptan con nota, sin exigirles el dígito.
 - PDF: lectura de candidatos UUID, visor y conciliación manual con XML del mismo RFC.
 - Descarga de CFDI mediante e.firma, cola de solicitudes y programación por RFC.
 - Consulta de estado SAT, seguimiento de cancelaciones y categorías del listado 69-B.
