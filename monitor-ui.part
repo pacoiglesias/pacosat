@@ -64,6 +64,14 @@ async function pollMonitor() {
     const result = await satApi('monitor', { records, ids: candidates.map(row => row.id) });
     for (const row of records) watched.add(row.id);
     for (const entry of result.results) fiscalResults.set(entry.id, entry);
+    let cancellationsLogged = 0;
+    for (const entry of result.results) {
+      if (cancellationsLogged >= 5 || entry.sat?.state !== 'Cancelado') continue;
+      const text = 'Cancelación detectada · ' + entry.id;
+      if (activity.some(row => row.event === text)) continue;
+      await logEvent(text);
+      cancellationsLogged++;
+    }
     if (page !== 'invoices') monitorCursor += 500;
     monitorData = result;
     monitorError = '';

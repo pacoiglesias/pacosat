@@ -115,7 +115,9 @@ function addDocument() {
       files: [{ id, blob: new Blob([file], { type: 'application/pdf' }) }] });
     docFilter = '';
     if (scope && scope !== taxpayer.value) scope = taxpayer.value;
-    await refresh(); announce('PDF archivado en ' + taxpayer.value + '.');
+    await refresh();
+    await logEvent('PDF archivado · ' + kind.value + ' · ' + taxpayer.value);
+    announce('PDF archivado en ' + taxpayer.value + '.');
   });
 }
 function invoiceDetail(row) {
@@ -262,7 +264,9 @@ async function validateBackup(data) {
     const issues = Array.isArray(entry.issues) ? entry.issues.slice(0, 20)
       .filter(item => validText(item?.name, 180) && validText(item.reason, 320))
       .map(item => ({ name: item.name, reason: item.reason })) : [];
-    output.activity.push({ id, name, date, added, duplicates, review, issues });
+    const restored = { id, name, date, added, duplicates, review, issues };
+    if (validText(entry.event, 320)) restored.event = entry.event;
+    output.activity.push(restored);
   }
   check(contents.size === 0, 'El respaldo contiene archivos sin expediente.');
   return output;
@@ -274,6 +278,7 @@ function backupDialog() {
   dialog('Crear respaldo cifrado', [field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
     check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
     download(await encryptBackup(await snapshot(), password.value), 'Faro-' + new Date().toISOString().slice(0, 10) + '.faro');
+    await logEvent('Respaldo cifrado creado');
     announce('Respaldo cifrado generado.');
   });
 }
@@ -286,7 +291,9 @@ function restoreDialog(file) {
     check(confirmation.checked, 'Confirma el reemplazo de los datos.');
     const contents = await validateBackup(await decryptBackup(file, password.value));
     await writeBatch(contents, true);
-    await refresh(); announce('Respaldo restaurado.');
+    await refresh();
+    await logEvent('Respaldo restaurado desde un archivo cifrado');
+    announce('Respaldo restaurado.');
   });
 }
 const handle = work => () => Promise.resolve().then(work).catch(error => announce(error.message, true));

@@ -1,6 +1,6 @@
 # Faro Fiscal · satfacturas
 
-Versión 1.2.0 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.3.0 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
 
 ## Inicio en Windows
 
@@ -20,6 +20,7 @@ Abre http://127.0.0.1:43729. Abrir solo el HTML no activa el servicio SAT.
 - Descarga de CFDI mediante e.firma, cola de solicitudes y programación por RFC.
 - Consulta de estado SAT, seguimiento de cancelaciones y categorías del listado 69-B.
 - Correo mediante SMTP configurado por el propietario.
+- Bitácora «Actividad reciente» en el Resumen: importaciones, descargas del SAT, respaldos, PDF archivados o vinculados y cancelaciones detectadas, con fecha y hora.
 - Respaldo cifrado de expedientes y restauración.
 - Modo servidor con SQLite, proxy HTTPS y configuración privada; consulta [SERVIDOR.md](SERVIDOR.md).
 
@@ -35,7 +36,7 @@ Para funcionar con la PC apagada necesita un servidor encendido y configurado; G
 
 Edita los archivos `.part` y ejecuta `npm run build`; `Faro-Fiscal.html` y `xml-core.mjs` son generados.
 GitHub Actions ejecuta las pruebas en Node.js 24 y verifica que los archivos generados estén actualizados.
-Las dependencias requieren resolución e instalación verificadas antes del despliegue. No hay lockfile validado todavía.
+El repositorio incluye `package-lock.json`, generado con una instalación real verificada: usa `npm ci` para reproducir el entorno exacto. La imagen Docker y `Iniciar-Faro.cmd` también instalan con `npm ci`.
 
 ## Datos privados
 

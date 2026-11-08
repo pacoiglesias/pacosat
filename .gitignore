@@ -1,6 +1,10 @@
 node_modules/
 .env
 .env.*
+# Configuración real con contraseñas (e.firma, SMTP, proxy): protegida por nombre, esté donde esté
+config.json
+*config*.local.json
+servidor-config.json
 faro-secrets/
 *.cer
 *.key
