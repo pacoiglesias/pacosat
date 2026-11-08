@@ -106,9 +106,10 @@ async function loadEfos(request = fetch) {
   return parseEfos(content);
 }
 
-export function createMonitor(db, { now = Date.now, checkSat = querySat, refreshEfos = loadEfos, notifyCancellation } = {}) {
+export function createMonitor(db, { now = Date.now, checkSat = querySat, refreshEfos = loadEfos, notifyCancellation, notifyEfos } = {}) {
   db.exec("CREATE TABLE IF NOT EXISTS cfdi_watch (id TEXT PRIMARY KEY, emitter TEXT NOT NULL, receiver TEXT NOT NULL, total TEXT NOT NULL, seal TEXT NOT NULL, next INTEGER NOT NULL, checked INTEGER, result TEXT, error TEXT NOT NULL DEFAULT ''); CREATE TABLE IF NOT EXISTS efos_rfc (rfc TEXT PRIMARY KEY, statuses TEXT NOT NULL); CREATE TABLE IF NOT EXISTS efos_meta (id INTEGER PRIMARY KEY CHECK(id=1), fetched INTEGER, next INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT ''); INSERT OR IGNORE INTO efos_meta(id) VALUES(1);");
   db.exec('CREATE TABLE IF NOT EXISTS cancellation_alert (id TEXT PRIMARY KEY, due INTEGER NOT NULL, sent INTEGER);');
+  db.exec('CREATE TABLE IF NOT EXISTS efos_alert (key TEXT PRIMARY KEY, rfc TEXT NOT NULL, due INTEGER NOT NULL, sent INTEGER);');
   let busy = false;
   const add = db.prepare("INSERT INTO cfdi_watch(id,emitter,receiver,total,seal,next) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET seal=excluded.seal,next=0 WHERE cfdi_watch.seal='' AND excluded.seal<>''");
   const saved = db.prepare('SELECT * FROM cfdi_watch WHERE id=?');
@@ -138,9 +139,16 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
           const data = await refreshEfos();
           db.exec('BEGIN IMMEDIATE');
           try {
+            const before = new Map(db.prepare('SELECT rfc,statuses FROM efos_rfc').all().map(row => [row.rfc, new Set(JSON.parse(row.statuses))]));
+            const parties = new Set(db.prepare('SELECT emitter AS rfc FROM cfdi_watch UNION SELECT receiver FROM cfdi_watch').all().map(row => row.rfc));
             db.exec('DELETE FROM efos_rfc');
             const statement = db.prepare('INSERT INTO efos_rfc VALUES (?,?)');
             for (const [rfc, values] of data) statement.run(rfc, JSON.stringify([...values]));
+            if (before.size) for (const [rfc, values] of data) {
+              const fresh = [...values].filter(state => (state === 'Presunto' || state === 'Definitivo') && !before.get(rfc)?.has(state));
+              if (fresh.length && parties.has(rfc)) db.prepare('INSERT OR IGNORE INTO efos_alert(key,rfc,due) VALUES (?,?,?)')
+                .run(rfc + '|' + fresh.sort().join(','), rfc, time);
+            }
             db.prepare("UPDATE efos_meta SET fetched=?,next=?,error='' WHERE id=1").run(time, time + DAY);
             db.exec('COMMIT');
           } catch (error) { db.exec('ROLLBACK'); throw error; }
@@ -163,6 +171,15 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
           db.prepare('UPDATE cancellation_alert SET due=? WHERE id=?').run(time + 15 * 60000, id);
           try {
             if (await notifyCancellation(saved.get(id))) db.prepare('UPDATE cancellation_alert SET sent=? WHERE id=?').run(now(), id);
+          } catch { /* Se reintenta en el próximo intervalo. */ }
+        }
+      }
+      if (notifyEfos) {
+        const alerts = db.prepare('SELECT key,rfc FROM efos_alert WHERE sent IS NULL AND due<=? ORDER BY due LIMIT 10').all(time);
+        for (const { key, rfc } of alerts) {
+          db.prepare('UPDATE efos_alert SET due=? WHERE key=?').run(time + 15 * 60000, key);
+          try {
+            if (await notifyEfos({ rfc, statuses: key.slice(rfc.length + 1).split(',') })) db.prepare('UPDATE efos_alert SET sent=? WHERE key=?').run(now(), key);
           } catch { /* Se reintenta en el próximo intervalo. */ }
         }
       }

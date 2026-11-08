@@ -83,7 +83,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       rfc TEXT NOT NULL, recipient TEXT NOT NULL, count INTEGER NOT NULL, due INTEGER NOT NULL,
       sent INTEGER, error TEXT NOT NULL DEFAULT '', FOREIGN KEY(package) REFERENCES packages(id));
     CREATE TABLE IF NOT EXISTS records (store TEXT NOT NULL, id TEXT NOT NULL, value TEXT, data BLOB, mime TEXT,
-      PRIMARY KEY(store,id));`);
+      PRIMARY KEY(store,id));
+    CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL UNIQUE,
+      subject TEXT NOT NULL, body TEXT NOT NULL, due INTEGER NOT NULL,
+      sent INTEGER, error TEXT NOT NULL DEFAULT '');
+    CREATE TABLE IF NOT EXISTS alert_state (key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
+      alerted INTEGER NOT NULL DEFAULT 0);`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
@@ -91,6 +96,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       subject: 'PacoSAT · CFDI cancelado detectado',
       text: 'El SAT reportó como cancelado el folio ' + item.id + '. Emisor: ' + item.emitter + '. Receptor: ' + item.receiver + '.',
       messageId: '<pacosat-cancelado-' + item.id.toLowerCase() + '@pacosat.local>' });
+    return true;
+  }, notifyEfos: async alert => {
+    if (!mail) return false;
+    await mail.transport.sendMail({ from: mail.from, to: mail.recipient,
+      subject: 'PacoSAT · Nuevo RFC en el listado 69-B',
+      text: 'El RFC ' + alert.rfc + ' apareció en el listado oficial del artículo 69-B con la situación: ' + alert.statuses.join(', ') +
+        '. Es emisor o receptor de CFDI de tu expediente. Revisa los comprobantes relacionados en Vigilancia SAT.',
+      messageId: '<pacosat-69b-' + alert.rfc.toLowerCase() + '-' + alert.statuses.join('-').toLowerCase().replaceAll(' ', '-') + '@pacosat.local>' });
     return true;
   }, ...monitorOptions });
   const host = new URL(origin).host;
@@ -214,6 +227,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
 
   async function verifyJobs(profile, active, time) {
     const jobs = db.prepare("SELECT * FROM jobs WHERE rfc=? AND status='pending' AND due<=? ORDER BY id").all(profile.rfc, time);
+    const terminal = [];
+    let stuck = 0;
     for (const job of jobs) {
       db.prepare('UPDATE jobs SET due=? WHERE id=?').run(time + 5 * MIN, job.id);
       const save = async next => db.prepare('UPDATE jobs SET imported=?,status=?,error=? WHERE id=?')
@@ -223,7 +238,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           ({ id, archive }) => inspectPackage(job, id, archive, active.parser));
         db.prepare('UPDATE jobs SET error=? WHERE id=?').run('', job.id);
       } catch (error) { db.prepare('UPDATE jobs SET error=? WHERE id=?').run(message(error), job.id); }
+      const after = db.prepare('SELECT status,error FROM jobs WHERE id=?').get(job.id);
+      if (after && ['expired', 'failed', 'rejected'].includes(after.status)) terminal.push({ ...job, afterStatus: after.status });
+      else if (after?.status === 'pending' && after.error) stuck++;
     }
+    return { terminal, attempted: jobs.length, stuck };
   }
 
   async function notify(time) {
@@ -243,6 +262,36 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       } catch { db.prepare('UPDATE notices SET error=? WHERE id=?').run('El servidor SMTP no aceptó el envío. Revisa la configuración y las credenciales.', item.id); }
     }
   }
+  const jobStateLabel = { expired: 'vencida', failed: 'fallida', rejected: 'rechazada' };
+  function queueAlert(kind, ref, subject, bodyText, time) {
+    db.prepare('INSERT OR IGNORE INTO alerts(kind,ref,subject,body,due) VALUES (?,?,?,?,?)').run(kind, ref, subject, bodyText, time);
+  }
+  function noteDownloadOutcome(rfc, attempted, failed, time) {
+    const key = 'autofail:' + rfc;
+    if (!attempted) return;
+    if (!failed) { db.prepare('DELETE FROM alert_state WHERE key=?').run(key); return; }
+    db.prepare('INSERT INTO alert_state(key,failures,alerted) VALUES (?,1,0) ON CONFLICT(key) DO UPDATE SET failures=failures+1').run(key);
+    const state = db.prepare('SELECT failures,alerted FROM alert_state WHERE key=?').get(key);
+    if (state.failures >= 3 && !state.alerted) {
+      queueAlert('download-fail', key + ':' + time, 'PacoSAT · La descarga automática está fallando',
+        'Las revisiones automáticas del RFC ' + rfc + ' llevan ' + state.failures + ' intentos seguidos con error. ' +
+        'Revisa la conexión y el estado del SAT en el Centro SAT; el detalle del último error aparece junto al RFC.', time);
+      db.prepare('UPDATE alert_state SET alerted=1 WHERE key=?').run(key);
+    }
+  }
+  async function sendAlerts(time) {
+    if (!mail) return;
+    const active = mail;
+    const items = db.prepare('SELECT * FROM alerts WHERE due<=? AND sent IS NULL ORDER BY id LIMIT 10').all(time);
+    for (const item of items) {
+      db.prepare('UPDATE alerts SET due=? WHERE id=?').run(time + 15 * MIN, item.id);
+      try {
+        await active.transport.sendMail({ from: active.from, to: active.recipient, subject: item.subject, text: item.body,
+          messageId: '<pacosat-alerta-' + item.id + '-' + active.instance + '@pacosat.local>' });
+        db.prepare('UPDATE alerts SET sent=?,error=? WHERE id=?').run(now(), '', item.id);
+      } catch { db.prepare('UPDATE alerts SET error=? WHERE id=?').run('El servidor SMTP no aceptó el envío. Revisa la configuración y las credenciales.', item.id); }
+    }
+  }
   async function tick() {
     if (busy) return;
     busy = true;
@@ -251,10 +300,20 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       for (const profile of db.prepare('SELECT * FROM profiles').all()) {
         const active = unlocked.get(profile.rfc);
         if (!active) continue;
-        await verifyJobs(profile, active, time);
-        if (profile.nextRun <= time) await schedule(profile, active.connector, time);
+        const outcome = await verifyJobs(profile, active, time);
+        for (const job of outcome.terminal) queueAlert('job-terminal', 'job:' + job.id,
+          'PacoSAT · Una solicitud al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus),
+          'La solicitud del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
+          (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT y no entregará paquetes. Crea una solicitud nueva para un periodo ' +
+          'distinto desde el Centro SAT; no reintentes la misma, porque el SAT limita las solicitudes por periodo.', time);
+        const scheduleAttempted = profile.nextRun <= time;
+        if (scheduleAttempted) await schedule(profile, active.connector, time);
+        const profileError = scheduleAttempted ? (db.prepare('SELECT error FROM profiles WHERE rfc=?').get(profile.rfc)?.error || '') : '';
+        noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
+          Boolean(profileError) || outcome.stuck > 0, time);
       }
       await notify(time);
+      await sendAlerts(time);
     } finally { busy = false; }
   }
 
@@ -408,7 +467,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const server = createServer(service.handle);
   server.requestTimeout = 90000;
   server.on('error', error => {
-    console.error(error.code === 'EADDRINUSE' ? 'El puerto local ya está ocupado. Si PacoSAT está abierto, usa su ventana actual.' : 'No se pudo iniciar Faro: ' + message(error));
+    console.error(error.code === 'EADDRINUSE' ? 'El puerto local ya está ocupado. Si PacoSAT está abierto, usa su ventana actual.' : 'No se pudo iniciar PacoSAT: ' + message(error));
     service.close();
     process.exitCode = 1;
   });
