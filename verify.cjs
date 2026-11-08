@@ -59,6 +59,11 @@ async function collect(stream) {
   const altered = Buffer.from(await file.arrayBuffer());
   altered[altered.length - 1] ^= 1;
   await assert.rejects(decryptBackup(new Blob([altered]), pass), /dañado/);
+  const { encryptBackupBuffer, decryptBackupBuffer } = await import('./backup-core.mjs');
+  const serverMade = encryptBackupBuffer({ version: 2, name: 'Servidor ficticio' }, pass);
+  assert.equal((await decryptBackup(new Blob([serverMade]), pass)).name, 'Servidor ficticio');
+  assert.equal(decryptBackupBuffer(Buffer.from(await file.arrayBuffer()), pass).name, 'Contribuyente ficticio');
+  await assert.rejects(Promise.resolve().then(() => decryptBackupBuffer(serverMade, 'incorrecta')), /incorrecta/);
   const source = fs.readFileSync('workflows.part', 'utf8');
   vm.runInContext(source.slice(source.indexOf('function csvText'), source.indexOf('function exportCsv')), context);
   const csv = context.csvText([{ id: 'id', from: { name: '=2+2', rfc: 'A' }, to: { name: 'B', rfc: 'C' },
@@ -69,5 +74,5 @@ async function collect(stream) {
   const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]));
   for (const match of html.matchAll(/\.id\s*=\s*'([^']+)'/g)) ids.add(match[1]);
   for (const match of html.matchAll(/\$\('([^']+)'\)/g)) assert.ok(ids.has(match[1]), 'Falta ' + match[1]);
-  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, CSV y referencias de interfaz.');
+  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV y referencias de interfaz.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

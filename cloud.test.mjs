@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createPacoSATService } from './local-server.mjs';
 import { invoiceCandidates } from './pdf-invoice.mjs';
+import { crc32 } from './xml-core.mjs';
+import { decryptBackupBuffer } from './backup-core.mjs';
 const id = '12345678-1234-1234-1234-1234567890AB';
 assert.deepEqual(invoiceCandidates('RFC: XAXX010101000 Folio: ' + id.toLowerCase() + ' ' + id), {
   uuids: [id], rfcs: ['XAXX010101000'], hasText: true
@@ -42,3 +47,113 @@ try {
   assert.notEqual((await (await request('/api/status')).json()).cloudRevision, before);
   console.log('OK: control del proxy, almacenamiento central, actualización, revisión, transacción y candidatos PDF.');
 } finally { service.close(); }
+
+// --- Carpeta vigilada y respaldo programado (1.6.0) ---
+const cfdiNs = 'http://www.sat.gob.mx/cfd/4';
+const tfdNs = 'http://www.sat.gob.mx/TimbreFiscalDigital';
+class FixtureParser {
+  parseFromString(xml) {
+    const node = (localName, data = {}, children = [], namespaceURI = cfdiNs) => ({
+      localName, namespaceURI, nodeType: 1, childNodes: children,
+      getAttribute: name => data[name] || '',
+      getElementsByTagNameNS: (namespace, name) => children.filter(child => child.namespaceURI === namespace && child.localName === name)
+    });
+    const expected = xml.includes('mismatch') ? 'XEXX010101000' : 'XAXX010101000';
+    const documentElement = node('Comprobante', {
+      Fecha: '2026-11-08T07:00:00', Total: '80.00', Moneda: 'MXN', TipoDeComprobante: 'I'
+    }, [
+      node('Emisor', { Rfc: 'AAA010101AAA' }), node('Receptor', { Rfc: expected }),
+      node('Complemento', {}, [node('TimbreFiscalDigital', { UUID: id }, [], tfdNs)])
+    ]);
+    return { documentElement, getElementsByTagName: () => [] };
+  }
+}
+function zipOf(payload) {
+  const raw = Buffer.from(payload), name = Buffer.from('test.xml');
+  const local = Buffer.alloc(30), central = Buffer.alloc(46), end = Buffer.alloc(22);
+  local.writeUInt32LE(0x04034b50); local.writeUInt16LE(name.length, 26);
+  central.writeUInt32LE(0x02014b50); central.writeUInt32LE(crc32(raw), 16);
+  central.writeUInt32LE(raw.length, 20); central.writeUInt32LE(raw.length, 24); central.writeUInt16LE(name.length, 28);
+  end.writeUInt32LE(0x06054b50); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(central.length + name.length, 12); end.writeUInt32LE(local.length + name.length + raw.length, 16);
+  return Buffer.concat([local, name, raw, central, name, end]);
+}
+let watchTime = Date.parse('2026-11-08T16:00:00Z');
+const watchSent = [];
+const base = mkdtempSync(join(tmpdir(), 'pacosat-160-'));
+const inboxDir = join(base, 'vigilada'); mkdirSync(inboxDir);
+const backupDir = join(base, 'respaldos');
+const watchService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+  now: () => watchTime, watchDir: inboxDir, inboxParser: FixtureParser,
+  analyzePdf: async data => data.includes('sin-vinculo')
+    ? { uuids: ['12345678-1234-1234-1234-1234567890CD'], rfcs: [], hasText: true }
+    : { uuids: [id], rfcs: [], hasText: true },
+  makeMailer: () => ({ verify: async () => true, sendMail: async payload => { watchSent.push(payload); } }) });
+let watchToken;
+async function watchRequest(url, data) {
+  const req = Object.assign(Readable.from(data === undefined ? [] : [Buffer.from(JSON.stringify(data))]), {
+    url, method: data === undefined ? 'GET' : 'POST',
+    headers: { origin, host: 'pacosat.example.com', 'x-pacosat-proxy': proxyKey, 'x-pacosat-token': watchToken }
+  });
+  let response;
+  await watchService.handle(req, { setHeader() {}, writeHead(status) { this.status = status; this.headersSent = true; },
+    end(payload) { response = new Response(payload, { status: this.status }); } });
+  return response;
+}
+try {
+  watchToken = (await (await watchRequest('/')).text()).match(/name="pacosat-token" content="([^"]+)"/)[1];
+  assert.equal((await watchRequest('/api/storage', { batch: { people: [{ id: 'XAXX010101000', name: 'Ejemplo' }] } })).status, 200);
+  await watchService.bootstrap({ backup: { password: 'respaldo-prueba-16', frequency: 'daily', dir: backupDir },
+    mail: { host: 'smtp.example.com', port: 587, from: 'from@example.com', recipient: 'to@example.com', user: '', password: '' } });
+  writeFileSync(join(inboxDir, 'lote.zip'), zipOf('<fixture/>'));
+  writeFileSync(join(inboxDir, 'suelto.xml'), '<fixture/>');
+  writeFileSync(join(inboxDir, 'malo.xml'), '<mismatch/>');
+  await watchService.inboxTick(watchTime);
+  const storedInvoices = await (await watchRequest('/api/storage?store=invoices')).json();
+  assert.equal(storedInvoices.length, 1);
+  assert.equal(storedInvoices[0].id, id);
+  assert.ok(existsSync(join(inboxDir, 'procesados', '2026-11-08', 'lote.zip')));
+  assert.ok(existsSync(join(inboxDir, 'procesados', '2026-11-08', 'suelto.xml')));
+  assert.ok(existsSync(join(inboxDir, 'errores', 'malo.xml')));
+  let status = (await (await watchRequest('/api/status')).json());
+  assert.equal(status.watchFolder.enabled, true);
+  assert.equal(status.watchFolder.failed, 1);
+  const log = await (await watchRequest('/api/storage?store=activity')).json();
+  assert.ok(log.some(row => row.name === 'Carpeta vigilada' && row.added === 1 && row.duplicates === 1 && row.review === 1));
+  await watchService.tick();
+  assert.equal(watchSent.filter(mail => /carpeta vigilada no se importó/.test(mail.subject)).length, 1);
+  writeFileSync(join(inboxDir, 'factura.pdf'), '%PDF-1.7 vinculado');
+  writeFileSync(join(inboxDir, 'sin-vinculo.pdf'), '%PDF-1.7 sin-vinculo');
+  await watchService.inboxTick(watchTime);
+  const storedDocs = await (await watchRequest('/api/storage?store=documents')).json();
+  assert.equal(storedDocs.length, 1);
+  assert.equal(storedDocs[0].uuid, id);
+  assert.ok(existsSync(join(inboxDir, 'errores', 'sin-vinculo.pdf')));
+  await watchService.backupTick(watchTime);
+  const made = readdirSync(backupDir).filter(name => name.endsWith('.faro'));
+  assert.deepEqual(made, ['PacoSAT-2026-11-08.faro']);
+  const { readFileSync } = await import('node:fs');
+  const restored = decryptBackupBuffer(readFileSync(join(backupDir, made[0])), 'respaldo-prueba-16');
+  assert.equal(restored.version, 2);
+  assert.equal(restored.people[0].id, 'XAXX010101000');
+  assert.equal(restored.invoices.length, 1);
+  await watchService.backupTick(watchTime + 3600000);
+  assert.equal(readdirSync(backupDir).filter(name => name.endsWith('.faro')).length, 1);
+  status = (await (await watchRequest('/api/status')).json());
+  assert.equal(status.scheduledBackup.enabled, true);
+  assert.equal(status.scheduledBackup.error, '');
+  console.log('OK: carpeta vigilada importa XML/ZIP, vincula PDF, aparta errores con aviso y respaldo programado cifrado compatible.');
+} finally { watchService.close(); }
+const failService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+  now: () => watchTime,
+  makeMailer: () => ({ verify: async () => true, sendMail: async payload => { watchSent.push(payload); } }) });
+try {
+  const blocker = join(base, 'no-es-carpeta');
+  writeFileSync(blocker, 'x');
+  await failService.bootstrap({ backup: { password: 'respaldo-prueba-16', frequency: 'daily', dir: join(blocker, 'sub') },
+    mail: { host: 'smtp.example.com', port: 587, from: 'from@example.com', recipient: 'to@example.com', user: '', password: '' } });
+  await failService.backupTick(watchTime);
+  await failService.tick();
+  assert.ok(watchSent.some(mail => /respaldo programado falló/.test(mail.subject)));
+  console.log('OK: el fallo del respaldo programado deja error visible y aviso por correo.');
+} finally { failService.close(); }

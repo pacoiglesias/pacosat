@@ -87,8 +87,11 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
       id: crypto.randomUUID(), name: files.length === 1 ? files[0].name.slice(0, 180) : files.length + ' archivos',
       date: new Date().toISOString(), added, duplicates, review, issues
     }] });
-    if (!quiet) announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
-      (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
+    if (!quiet) {
+      announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
+        (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
+      if (!review) soundCue('success'); else if (added) soundCue('notice');
+    }
     return { added, duplicates, review };
   } catch (error) {
     announce(added + ' comprobantes guardados antes de interrumpir el lote. ' + error.message, true);
@@ -296,6 +299,7 @@ function backupDialog() {
     download(await encryptBackup(await snapshot(), password.value), 'PacoSAT-' + new Date().toISOString().slice(0, 10) + '.faro');
     await logEvent('Respaldo cifrado creado');
     announce('Respaldo cifrado generado.');
+    soundCue('success');
   });
 }
 function restoreDialog(file) {
@@ -322,7 +326,8 @@ $('inspectFile').onchange = handle(async () => {
 });
 $('primary').onclick = handle(async () => {
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
-  return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() : chooseImport();
+  return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
+    page === 'diot' ? exportDiotCsv() : chooseImport();
 });
 for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
 $('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };

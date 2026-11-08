@@ -5,7 +5,8 @@ const screens = {
   docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
   sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
-  backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo']
+  backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
+  diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV']
 };
 const portals = [
   ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
@@ -15,7 +16,7 @@ const portals = [
 ];
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
-let invoiceKind = '', invoiceOrder = 'recent';
+let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '';
 let submit, importing = false, ready = false;
 const number = new Intl.NumberFormat('es-MX');
 const scopes = () => new Map(people.map(person => [person.id, person.name]));
@@ -35,6 +36,62 @@ function amount(row) {
   const [integer, decimals] = row.total.split('.');
   return number.format(BigInt(integer)) + (decimals ? '.' + decimals : '.00') + (row.currency ? ' ' + row.currency : '');
 }
+// Tema y sonidos de la interfaz (1.6.0): persistentes en este navegador.
+const prefGet = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const prefSet = (key, value) => { try { localStorage.setItem(key, value); } catch { /* Sin almacenamiento, la preferencia dura la sesión. */ } };
+const themeIsDark = () => document.documentElement.dataset.theme === 'dark' ||
+  (!document.documentElement.dataset.theme && typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches);
+function applyTheme() {
+  const saved = prefGet('pacosat-theme');
+  if (saved === 'dark' || saved === 'light') document.documentElement.dataset.theme = saved;
+  else delete document.documentElement.dataset.theme;
+  const button = $('theme-toggle');
+  if (button) { button.replaceChildren(icon(themeIsDark() ? 'sun' : 'moon')); button.setAttribute('aria-pressed', String(themeIsDark())); }
+}
+let soundOn = prefGet('pacosat-sound') !== 'off';
+let audioCtx = null;
+function ensureAudio() {
+  if (!soundOn) return null;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') void audioCtx.resume();
+    return audioCtx;
+  } catch { return null; }
+}
+function tone(frequency, start, duration, type = 'sine', gain = 0.055) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const osc = ctx.createOscillator(), amp = ctx.createGain();
+  const at = ctx.currentTime + start;
+  osc.type = type; osc.frequency.value = frequency;
+  amp.gain.setValueAtTime(0, at);
+  amp.gain.linearRampToValueAtTime(gain, at + 0.012);
+  amp.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+  osc.connect(amp); amp.connect(ctx.destination);
+  osc.start(at); osc.stop(at + duration + 0.05);
+}
+function soundCue(kind) {
+  if (!soundOn) return;
+  if (kind === 'success') { tone(659, 0, 0.13); tone(880, 0.1, 0.2); }
+  else if (kind === 'error') tone(196, 0, 0.22, 'triangle', 0.075);
+  else if (kind === 'alert') { tone(880, 0, 0.12); tone(880, 0.18, 0.12); }
+  else tone(740, 0, 0.11);
+}
+function initPrefs() {
+  applyTheme();
+  const soundButton = $('sound-toggle');
+  if (soundButton) {
+    const paint = () => { soundButton.replaceChildren(icon(soundOn ? 'volume' : 'mute')); soundButton.setAttribute('aria-pressed', String(soundOn)); };
+    paint();
+    soundButton.onclick = () => { soundOn = !soundOn; prefSet('pacosat-sound', soundOn ? 'on' : 'off'); paint(); if (soundOn) soundCue('notice'); };
+  }
+  const themeButton = $('theme-toggle');
+  if (themeButton) themeButton.onclick = () => { prefSet('pacosat-theme', themeIsDark() ? 'light' : 'dark'); applyTheme(); };
+  const unlock = () => { if (soundOn) ensureAudio(); };
+  window.addEventListener('pointerdown', unlock, { once: true });
+  window.addEventListener('keydown', unlock, { once: true });
+}
+initPrefs();
 let newsCount = 0;
 function computeNews() {
   try {
@@ -80,7 +137,8 @@ function totalsPanel() {
     wrap.append(empty('Sin comprobantes todavía', 'Los totales por contribuyente y mes aparecerán al importar o sincronizar CFDI.'));
     return wrap;
   }
-  wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'));
+  wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'),
+    action('Reporte mensual', reportDialog, 'metric-link', 'print'));
   const rows = [];
   let truncated = false;
   for (const [rfc, group] of totals) {
@@ -93,6 +151,175 @@ function totalsPanel() {
   }
   wrap.append(grid(['Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos', 'Emitidos', 'Importe emitidos'], rows));
   wrap.append(n('p', 'Importes en MXN sumados al centavo.' + (truncated ? ' Se muestran los últimos 12 meses por RFC; la exportación CSV incluye todos.' : '')));
+  return wrap;
+}
+function reportDialog() {
+  const months = [...new Set([...monthlyTotals().values()].flatMap(group => group.months.map(([key]) => key)))].sort().reverse();
+  check(months.length, 'Todavía no hay totales para reportar.');
+  const monthSel = select(months.map(key => [key, key.slice(5, 7) + '/' + key.slice(0, 4)]), months[0], 'Mes del reporte');
+  dialog('Reporte mensual por RFC', [n('p', 'Vista para imprimir o guardar en PDF del mes elegido. Respeta el contribuyente seleccionado en el selector principal; sin selección, incluye a todos.'),
+    field('Mes', monthSel)], () => printMonthlyReport(monthSel.value));
+  $('save').textContent = 'Generar e imprimir';
+}
+function printMonthlyReport(key) {
+  const section = $('print-report');
+  section.replaceChildren();
+  const head = n('div', undefined, 'report-head');
+  head.append(n('div', 'PACOSAT · REPORTE MENSUAL', 'hero-kicker'), n('h1', 'Reporte mensual ' + key.slice(5, 7) + '/' + key.slice(0, 4)),
+    n('p', (scope ? (scopes().get(scope) || scope) + ' · ' + scope : 'Todos los contribuyentes') + ' · Generado el ' + localDateTime(Date.now()), 'report-meta'));
+  section.append(head);
+  const rows = [];
+  for (const [rfc, group] of monthlyTotals()) {
+    const found = group.months.find(([monthKey]) => monthKey === key);
+    if (!found) continue;
+    const g = found[1];
+    rows.push([group.name + ' (' + rfc + ')', number.format(g.received), '$' + centsLabel(g.receivedCents),
+      number.format(g.issued), '$' + centsLabel(g.issuedCents)]);
+  }
+  const tableWrap = n('div');
+  tableWrap.append(grid(['Contribuyente', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN'],
+    rows.length ? rows : [['Sin comprobantes en el mes', '', '', '', '']]));
+  section.append(tableWrap);
+  let checked = 0, cancelled = 0, efosHits = 0;
+  for (const row of invoices) {
+    if (!row.date.startsWith(key) || !matches(row)) continue;
+    const item = fiscalResults.get(row.id);
+    if (item?.sat) { checked++; if (item.sat.state === 'Cancelado') cancelled++; }
+    if (item?.efos?.length) efosHits++;
+  }
+  section.append(n('p', 'Vigilancia según la última consulta disponible en esta sesión: ' + checked + ' CFDI del mes consultados al SAT, ' +
+    cancelled + ' cancelados y ' + efosHits + ' con coincidencia 69-B. Si la vigilancia no ha corrido, estos conteos quedan parciales.', 'report-note'));
+  section.append(n('p', 'Importes en MXN sumados al centavo desde el total de cada CFDI; los comprobantes en otra moneda se cuentan pero no se suman. Documento de trabajo generado por PacoSAT, no una declaración.', 'report-note'));
+  setTimeout(() => window.print(), 80);
+}
+function diotGroups() {
+  const groups = new Map();
+  for (const row of invoices) {
+    if (!roles(row).received) continue;
+    const key = row.date.slice(0, 7) + '|' + row.from.rfc;
+    if (!groups.has(key)) groups.set(key, { month: row.date.slice(0, 7), rfc: row.from.rfc, name: row.from.name || '', count: 0, cents: 0n, foreign: 0 });
+    const group = groups.get(key);
+    group.count++;
+    if (row.currency && row.currency !== 'MXN') group.foreign++;
+    else group.cents += totalCents(row);
+    if (!group.name && row.from.name) group.name = row.from.name;
+  }
+  return [...groups.values()].sort((a, b) => b.month.localeCompare(a.month) || a.rfc.localeCompare(b.rfc));
+}
+function diotScreen() {
+  const wrap = panel('Totales por proveedor y mes · CFDI recibidos');
+  wrap.append(n('p', 'Base de trabajo para la contadora, no la declaración. Suma el total de los CFDI recibidos por RFC emisor y mes' +
+    (scope ? ' para ' + scope : ' de todos tus RFC') + '. El importador no guarda el desglose de IVA: la DIOT formal requiere los ajustes de la contadora (valor de actos, IVA acreditable y retenciones).'));
+  const rows = diotGroups();
+  if (!rows.length) { wrap.append(empty('Sin CFDI recibidos', 'Importa comprobantes recibidos para construir la base por proveedor.')); return [wrap]; }
+  wrap.querySelector('.panel-head').append(action('Exportar CSV', exportDiotCsv, 'metric-link', 'down'));
+  wrap.append(grid(['Mes', 'RFC proveedor', 'Proveedor', 'CFDI', 'Total MXN'], rows.slice(0, 200).map(group => [
+    group.month.slice(5, 7) + '/' + group.month.slice(0, 4), group.rfc, group.name || '—', number.format(group.count),
+    cell('$' + centsLabel(group.cents), group.foreign ? group.foreign + ' en otra moneda sin sumar' : '')
+  ])));
+  if (rows.length > 200) wrap.append(n('p', 'Se muestran las primeras 200 filas; la exportación CSV incluye todas.'));
+  return [wrap];
+}
+function diotCsv() {
+  const escape = value => {
+    const text = String(value);
+    const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  const rows = [['Mes', 'RFC proveedor', 'Proveedor', 'CFDI recibidos', 'Total MXN', 'En otra moneda sin sumar']];
+  for (const group of diotGroups()) rows.push([group.month, group.rfc, group.name, group.count, centsPlain(group.cents), group.foreign]);
+  return rows.map(row => row.map(escape).join(',')).join('\r\n');
+}
+function exportDiotCsv() {
+  check(diotGroups().length, 'Sin CFDI recibidos para exportar.');
+  download(new Blob(['\uFEFF', diotCsv()], { type: 'text/csv;charset=utf-8' }), 'Base-DIOT-' + (scope || 'todos') + '.csv');
+  announce('Base DIOT exportada en CSV.');
+}
+function kpiRow(selection) {
+  const wrap = n('div', undefined, 'kpis');
+  const consulted = selection.filter(row => fiscalResults.get(row.id)?.sat);
+  const vigentes = consulted.filter(row => fiscalResults.get(row.id).sat.state === 'Vigente').length;
+  const cancelados = consulted.filter(row => fiscalResults.get(row.id).sat.state === 'Cancelado').length;
+  const efosCount = selection.filter(row => fiscalResults.get(row.id)?.efos?.length).length;
+  const monthKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit' }).format();
+  let issuedCents = 0n, receivedCents = 0n;
+  for (const row of selection) {
+    if (!row.date.startsWith(monthKey) || (row.currency && row.currency !== 'MXN')) continue;
+    const role = roles(row);
+    if (role.issued) issuedCents += totalCents(row);
+    if (role.received) receivedCents += totalCents(row);
+  }
+  const pendingJobs = satData.jobs.filter(job => job.status === 'pending').length;
+  const lastSync = satData.jobs.length ? Math.max(...satData.jobs.map(job => job.created)) : (activity[0] ? Date.parse(activity[0].date) : 0);
+  const card = (label, glyph, value, note, cls) => {
+    const el = n('article', undefined, 'kpi' + (cls ? ' ' + cls : ''));
+    const head = n('div', label, 'kpi-label'); head.prepend(icon(glyph));
+    el.append(head, n('strong', value), n('small', note));
+    return el;
+  };
+  wrap.append(
+    card('CFDI vigentes', 'shield', number.format(vigentes), consulted.length ? 'De ' + number.format(consulted.length) + ' consultados al SAT' : 'Sin consultas de vigilancia todavía'),
+    card('CFDI cancelados', 'alert', number.format(cancelados), efosCount ? number.format(efosCount) + ' con coincidencia 69-B' : 'Sin coincidencias 69-B en lo consultado'),
+    card('Importe del mes', 'chart', '$' + centsLabel(issuedCents + receivedCents),
+      'Emitidos $' + centsLabel(issuedCents) + ' · Recibidos $' + centsLabel(receivedCents) + ' · ' + monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4), 'split'),
+    card('Descargas en curso', 'sync', number.format(pendingJobs + satData.inbox.length),
+      number.format(pendingJobs) + ' solicitudes pendientes · ' + number.format(satData.inbox.length) + ' paquetes por importar'),
+    card('Última actividad', 'clock', lastSync ? localDateTime(lastSync) : '—',
+      activity.length ? 'Bitácora con ' + number.format(activity.length) + ' registros' : 'Sin registros todavía')
+  );
+  return wrap;
+}
+function monthlyChart() {
+  const byMonth = new Map();
+  for (const group of monthlyTotals().values()) for (const [key, g] of group.months) {
+    if (!byMonth.has(key)) byMonth.set(key, { issued: 0n, received: 0n });
+    const entry = byMonth.get(key);
+    entry.issued += g.issuedCents; entry.received += g.receivedCents;
+  }
+  const keys = [...byMonth.keys()].sort().slice(-6);
+  const wrap = panel('Totales por mes');
+  if (!keys.length) {
+    wrap.append(empty('Sin datos para el gráfico', 'Al importar CFDI verás aquí la evolución mensual de emitidos y recibidos.'));
+    return wrap;
+  }
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 640 238'); svg.setAttribute('class', 'chart'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Gráfico de barras con los importes emitidos y recibidos de los últimos meses');
+  const el = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  const base = 198, top = 26, height = base - top;
+  let max = 0n;
+  for (const key of keys) { const entry = byMonth.get(key); if (entry.issued > max) max = entry.issued; if (entry.received > max) max = entry.received; }
+  for (const frac of [0.25, 0.5, 0.75, 1]) svg.append(el('line', { x1: 10, x2: 630, y1: base - height * frac, y2: base - height * frac, class: 'grid-line' }));
+  svg.append(el('line', { x1: 10, x2: 630, y1: base, y2: base, class: 'grid-line' }));
+  const shortMoney = cents => {
+    const pesos = Number(cents) / 100;
+    return pesos >= 100000 ? '$' + number.format(Math.round(pesos / 1000)) + ' mil' : '$' + centsLabel(cents);
+  };
+  const slot = 620 / keys.length, barW = Math.min(27, slot / 4.5);
+  keys.forEach((key, index) => {
+    const entry = byMonth.get(key);
+    const center = 10 + slot * index + slot / 2;
+    for (const [kind, cents, offset] of [['issued', entry.issued, -barW - 2], ['received', entry.received, 2]]) {
+      const h = max ? Math.max(1, Math.round(Number(cents) / Number(max) * height)) : 0;
+      if (cents) {
+        const bar = el('rect', { x: center + offset, y: base - h, width: barW, height: h, rx: 3, class: 'bar-' + kind });
+        bar.append(el('title', {}, (kind === 'issued' ? 'Emitidos ' : 'Recibidos ') + key + ': $' + centsLabel(cents)));
+        svg.append(bar, el('text', { x: center + offset + barW / 2, y: base - h - 5, 'text-anchor': 'middle' }, shortMoney(cents)));
+      }
+    }
+    svg.append(el('text', { x: center, y: base + 18, 'text-anchor': 'middle' }, key.slice(5, 7) + '/' + key.slice(0, 4)));
+  });
+  const chartWrap = n('div', undefined, 'chart-wrap'); chartWrap.append(svg);
+  const legend = n('div', undefined, 'chart-legend');
+  const item = (cls, label) => { const span = n('span'); const sw = n('i', undefined, cls); span.append(sw, document.createTextNode(label)); return span; };
+  legend.append(item('sw-issued', 'Emitidos'), item('sw-received', 'Recibidos'));
+  wrap.append(chartWrap, legend);
   return wrap;
 }
 function n(tag, text, cls) {
@@ -120,6 +347,7 @@ function announce(message = '', error = false) {
   $('status').textContent = message;
   $('status').hidden = !message;
   $('status').dataset.error = error;
+  if (message && error) soundCue('error');
 }
 async function logEvent(text) {
   if (!ready) return;
@@ -225,9 +453,10 @@ function render() {
     headerCounts.textContent = people.length ?
       number.format(selectedCount) + ' CFDI · ' + number.format(docsCount) + ' PDF · ' + people.length + ' RFC' : '';
   }
-  $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : 'up'), n('span', button));
+  $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen })[page]();
+  for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
 }
 function home() {
@@ -296,7 +525,7 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
+  return [banner, metrics, kpiRow(selection), monthlyChart(), ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
 }
 
 function weeklyActivity(rows) {
@@ -327,11 +556,17 @@ function weeklyActivity(rows) {
   chart.append(header, bars);
   return chart;
 }
+const invoiceStateOf = row => {
+  const item = fiscalResults.get(row.id);
+  if (item?.efos?.length) return 'efos';
+  return item?.sat?.state || 'none';
+};
 function invoiceRows() {
   const needle = term.trim().toLocaleLowerCase('es-MX');
   const known = scopes();
   const matchScope = row => scope ? row.from.rfc === scope || row.to.rfc === scope : known.has(row.from.rfc) || known.has(row.to.rfc);
   const filtered = invoices.filter(row => matchScope(row) && (!month || row.date.startsWith(month)) && (!invoiceKind || row.kind === invoiceKind) &&
+    (!invoiceState || invoiceStateOf(row) === invoiceState) &&
     (direction === 'Todos' || (direction === 'Recibidos' ? (scope ? row.to.rfc === scope : known.has(row.to.rfc)) : (scope ? row.from.rfc === scope : known.has(row.from.rfc)))) &&
     [row.id, row.from.rfc, row.to.rfc, row.from.name, row.to.name].some(text => text.toLocaleLowerCase('es-MX').includes(needle)));
   return invoiceOrder === 'oldest' ? filtered.reverse() : filtered;
@@ -353,6 +588,7 @@ function invoiceScreen() {
   search.setAttribute('aria-label', 'Buscar comprobantes');
   const period = input('month', { value: month }); period.setAttribute('aria-label', 'Mes de emisión');
   const type = select([['', 'Todos los tipos'], ...Object.entries(KINDS)], invoiceKind, 'Tipo de CFDI');
+  const state = select([['', 'Todos los estados SAT'], ['Vigente', 'Vigente'], ['Cancelado', 'Cancelado'], ['efos', 'Con 69-B'], ['none', 'Sin consulta']], invoiceState, 'Estado SAT');
   const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
   const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
   const result = n('div');
@@ -380,8 +616,9 @@ function invoiceScreen() {
   search.oninput = () => { term = search.value; invoicePage = 0; update(); };
   period.onchange = () => { month = period.value; invoicePage = 0; update(); };
   type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
+  state.onchange = () => { invoiceState = state.value; invoicePage = 0; update(); };
   order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
-  controls.append(search, period, type, order, exportButton);
+  controls.append(search, period, type, state, order, exportButton);
   list.append(tabs, controls, result);
   update();
   return [list];
@@ -425,6 +662,20 @@ function backupScreen() {
   const options = n('div', undefined, 'actions');
   options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
   help.append(desc, options);
-  return [help];
+  const screens = [help];
+  if (satToken) {
+    const auto = panel('Automatización del servidor');
+    const sb = satData.scheduledBackup || {}, wf = satData.watchFolder || {};
+    auto.append(grid(['Componente', 'Estado'], [
+      ['Respaldo programado', sb.enabled ? (sb.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
+        (sb.last ? localDateTime(sb.last) : 'aún no') + ' · siguiente: ' + (sb.next ? localDateTime(sb.next) : 'al próximo ciclo') +
+        (sb.error ? ' · Error: ' + sb.error : '') : 'Sin configurar: se define en el archivo de arranque protegido del servidor.'],
+      ['Carpeta vigilada', wf.enabled ? 'Activa · ' + wf.imported + ' importados · ' + wf.failed + ' con error' +
+        (wf.lastScan ? ' · última revisión ' + localDateTime(wf.lastScan) : '') + (wf.error ? ' · ' + wf.error : '') :
+        'Sin configurar: se define en el archivo de arranque protegido del servidor.']
+    ]));
+    screens.push(auto);
+  }
+  return screens;
 }
 
