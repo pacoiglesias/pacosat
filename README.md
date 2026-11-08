@@ -1,6 +1,6 @@
 # PacoSAT · satfacturas
 
-Versión 1.6.1 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.6.2 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
 La instancia en modo servidor se publica tras un proxy HTTPS con autenticación; consulta [SERVIDOR.md](SERVIDOR.md).
 
 ## Inicio en Windows
@@ -20,6 +20,7 @@ Abre http://127.0.0.1:43729. Abrir solo el HTML no activa el servicio SAT.
 - Alta de contribuyentes con **validador completo de RFC**: estructura, fecha embebida y dígito verificador oficial del SAT, con aviso al momento. Es una validación de forma (no confirma que el RFC exista en el SAT); si el dígito no cuadra avisa de la probable errata y solo guarda con confirmación expresa, y los RFC genéricos del SAT (XAXX010101000 y XEXX010101000) se aceptan con nota, sin exigirles el dígito.
 - PDF: lectura de candidatos UUID, visor y conciliación manual con XML del mismo RFC.
 - Descarga de CFDI mediante e.firma, cola de solicitudes y programación por RFC.
+- **Blindaje contra el error 5002 del SAT**: libro permanente de criterios ya solicitados (RFC, sentido, tipo, filtros y ventana exacta al segundo). Antes de enviar, PacoSAT avisa si el criterio ya se solicitó una vez — repetirlo gasta la última disponible — y bloquea la tercera, ofreciendo mover el inicio un segundo; la descarga programada se auto-corrige igual y lo anota en la bitácora, y si el SAT devuelve un 5002 al verificar, el criterio queda marcado como agotado con aviso por correo. Cada solicitud muestra su estado de criterio: disponible, última disponible o agotado. El error 5002 y su límite «con el mismo criterio» son oficiales del SAT; la cifra de dos solicitudes por criterio es el criterio de la comunidad técnica (PhpCfdi), no una cifra publicada por el SAT.
 - Consulta de estado SAT, seguimiento de cancelaciones y categorías del listado 69-B.
 - Correo mediante SMTP configurado por el propietario.
 - Avisos por correo cuando un RFC del expediente aparece nuevo en el listado 69-B, cuando la descarga automática falla de forma persistente y cuando una solicitud al SAT queda vencida, fallida o rechazada.

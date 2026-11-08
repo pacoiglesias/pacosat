@@ -3,6 +3,7 @@ let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
 let satError = '', satPolling = false, cloudRevision;
 const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada' };
 const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
+const criteriaNotes = { disponible: 'Criterio disponible', ultima: 'Criterio: última solicitud disponible', agotado: 'Criterio agotado ante el SAT (5002)' };
 
 async function satApi(route, data) {
   const headers = { 'X-PacoSAT-Token': satToken };
@@ -11,7 +12,12 @@ async function satApi(route, data) {
     method: data === undefined ? 'GET' : 'POST', headers,
     body: data === undefined ? undefined : JSON.stringify(data)
   });
-  if (!response.ok) throw new Error((await response.json()).error || 'El servicio local no respondió.');
+  if (!response.ok) {
+    const failed = await response.json().catch(() => ({}));
+    const error = new Error(failed.error || 'El servicio local no respondió.');
+    error.guard = failed.guard || null;
+    throw error;
+  }
   return response.headers.get('Content-Type') === 'application/zip' ? response.blob() : response.json();
 }
 
@@ -58,7 +64,8 @@ function fillSat(target = $('sat-live')) {
   const jobs = satData.jobs.filter(row => !scope || row.rfc === scope);
   if (jobs.length) queue.append(grid(['RFC', 'Periodo', 'Estado', 'Acción'], jobs.map(row => [
     cell(row.rfc, directions[row.direction]), dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
-    cell(satStatus[row.status] || row.status, row.error || (row.status === 'pending' ? 'Próxima consulta ' + localDateTime(row.due) : '')),
+    cell(satStatus[row.status] || row.status, [row.error || (row.status === 'pending' ? 'Próxima consulta ' + localDateTime(row.due) : ''),
+      criteriaNotes[row.criteriaState] || ''].filter(Boolean).join(' · ')),
     row.status === 'pending' ? action('Reintentar consulta', async () => { satData = await satApi('retry', { id: row.id }); fillSat(); announce('Consulta programada para el siguiente ciclo del servicio.'); }) : n('span', 'Creada ' + localDateTime(row.created))
   ])));
   else queue.append(empty('Todavía no hay solicitudes', 'Al activar un RFC, PacoSAT iniciará la revisión en segundo plano.'));
@@ -97,6 +104,25 @@ function unlockDialog(rfc) {
     fillSat(); announce('Sincronización autorizada para ' + person.value + '.');
   });
 }
+function guardChoice(guard) {
+  return new Promise(resolve => {
+    const box = n('div');
+    box.append(n('h3', guard.state === 'agotado' ? 'Criterio agotado ante el SAT (5002)' : 'Este criterio ya se solicitó una vez'),
+      n('p', guard.message),
+      n('p', 'Ventana del criterio: ' + guard.startAt + ' a ' + guard.endAt + '. Al mover el inicio a ' +
+        guard.shiftedStartAt + ' el criterio es otro y no gasta las solicitudes de este.'));
+    if (guard.state === 'agotado') box.append(n('p',
+      'Si solo necesitas revisar estados o el histórico, la comunidad técnica considera que las solicitudes de tipo ' +
+      'Metadata no consumen solicitudes de CFDI; el SAT no publica esa exención como oficial. PacoSAT todavía no envía ' +
+      'solicitudes Metadata: queda como referencia para ese caso.'));
+    const row = n('div', undefined, 'actions');
+    if (guard.state === 'ultima') row.append(action('Enviar y gastar la última', () => resolve('confirm')));
+    row.append(action('Mover el inicio 1 segundo y enviar', () => resolve('shift'), 'primary', 'sync'),
+      action('No enviar', () => resolve('cancel')));
+    box.append(row);
+    $('fields').replaceChildren(box);
+  });
+}
 function requestDialog() {
   const person = selectPerson();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
@@ -105,7 +131,20 @@ function requestDialog() {
   const direction = select([['received', 'Recibidos'], ['issued', 'Emitidos']], 'received');
   dialog('Solicitar un periodo al SAT', [field('Contribuyente', person), field('Comprobantes', direction),
     field('Fecha inicial', start), field('Fecha final', end)], async () => {
-    satData = await satApi('request', { rfc: person.value, direction: direction.value, start: start.value, end: end.value });
+    const payload = { rfc: person.value, direction: direction.value, start: start.value, end: end.value };
+    for (;;) {
+      try { satData = await satApi('request', payload); break; }
+      catch (error) {
+        if (!error.guard) throw error;
+        const choice = await guardChoice(error.guard);
+        if (choice === 'cancel') {
+          $('dialog').close();
+          announce('Solicitud no enviada. ' + error.guard.message, true);
+          return;
+        }
+        if (choice === 'shift') payload.shiftStart = true; else payload.confirmRepeat = true;
+      }
+    }
     fillSat(); announce('Solicitud enviada. PacoSAT revisará cuándo libera el paquete el SAT.');
   });
 }

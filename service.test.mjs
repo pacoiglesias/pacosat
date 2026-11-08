@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { createPacoSATService } from './local-server.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createPacoSATService, pacosatCriteriaKey, pacosatShiftSecond } from './local-server.mjs';
 import { crc32, parseXml } from './xml-core.mjs';
 
 const rfc = 'XAXX010101000';
@@ -78,7 +82,7 @@ try {
   assert.equal((await call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received', password: 'simulated',
     certificate: 'YQ==', key: 'Yg==' })).status, 200);
   await service.tick();
-  assert.deepEqual(calls[0], { start: '2026-11-02', end: '2026-11-08', endTime: '10:00:00', direction: 'received' });
+  assert.deepEqual(calls[0], { start: '2026-11-02', end: '2026-11-08', startTime: '00:00:00', endTime: '10:00:00', direction: 'received' });
   assert.equal((await call('/api/retry', { id: -1 })).status, 400);
   assert.equal((await call('/api/retry', { id: 999 })).status, 404);
   assert.equal((await call('/api/retry', { id: 1 })).status, 200);
@@ -160,3 +164,200 @@ try {
   console.log('OK: seguridad local, programación, descarga, RFC ajeno, deduplicación, correo simulado y pausa.');
   console.log('OK: alertas por solicitud vencida sin repetir y por fallo persistente de la descarga con reinicio al recuperarse.');
 } finally { service.close(); }
+
+// --- Blindaje contra el error 5002 del SAT (1.6.2) ---
+const baseCriteria = { rfc, direction: 'received', type: 'cfdi', emitter: '', receiver: '',
+  startAt: '2026-10-01 00:00:00', endAt: '2026-10-07 23:59:59' };
+assert.equal(pacosatCriteriaKey(baseCriteria), pacosatCriteriaKey({ ...baseCriteria }));
+for (const variant of [{ direction: 'issued' }, { type: 'metadata' }, { emitter: 'AAA010101AAA' },
+  { receiver: 'BBB010101BBB' }, { startAt: '2026-10-01 00:00:01' }, { endAt: '2026-10-07 23:59:58' },
+  { rfc: 'XEXX010101000' }]) {
+  assert.notEqual(pacosatCriteriaKey(baseCriteria), pacosatCriteriaKey({ ...baseCriteria, ...variant }));
+}
+assert.equal(pacosatShiftSecond('2026-10-01 00:00:00'), '2026-10-01 00:00:01');
+assert.equal(pacosatShiftSecond('2026-10-01 23:59:59'), '2026-10-02 00:00:00');
+assert.equal(pacosatShiftSecond('2026-12-31 23:59:59'), '2027-01-01 00:00:00');
+function harness(svc, proxy) {
+  const state = { token: '' };
+  const call = async (path, data) => {
+    const headers = { host: new URL(origin).host, origin, 'x-pacosat-token': state.token, 'x-pacosat-proxy': proxy };
+    const req = Object.assign(Readable.from(data === undefined ? [] : [Buffer.from(JSON.stringify(data))]), {
+      url: path, method: data === undefined ? 'GET' : 'POST', headers });
+    let response;
+    const res = { setHeader() {}, writeHead(status) { this.status = status; this.headersSent = true; },
+      end(content) { response = new Response(content, { status: this.status }); } };
+    await svc.handle(req, res);
+    return response;
+  };
+  return { call, init: async () => { state.token = (await (await call('/')).text()).match(/content="([^"]+)"/)[1]; } };
+}
+let guardTime = Date.parse('2026-11-08T16:00:00Z');
+const guardCalls = [], guardSent = [];
+let guardCheckImpl = async () => ({ status: 'finished', packages: [] });
+const guardService = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TOKEN-->', origin,
+  proxyKey: 'b'.repeat(64), now: () => guardTime,
+  makeConnector: async () => ({ parser: FixtureParser, connector: {
+    request: async options => { guardCalls.push(options); return 'guard-req-' + guardCalls.length; },
+    check: id => guardCheckImpl(id), download: async () => valid } }),
+  makeMailer: () => ({ verify: async () => true, sendMail: async payload => { guardSent.push(payload); } }) });
+const guardApi = harness(guardService, 'b'.repeat(64));
+try {
+  await guardApi.init();
+  assert.equal((await guardApi.call('/api/mail', { host: 'smtp.example.com', port: 587, from: 'from@example.com',
+    recipient: 'to@example.com', user: '', password: '' })).status, 200);
+  assert.equal((await guardApi.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
+    password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  const october = { rfc, direction: 'received', start: '2026-10-01', end: '2026-10-07' };
+  let res = await guardApi.call('/api/request', october);
+  assert.equal(res.status, 200);
+  assert.deepEqual(guardCalls.at(-1), { start: '2026-10-01', end: '2026-10-07', startTime: '00:00:00',
+    endTime: '23:59:59', direction: 'received' });
+  await guardService.tick();
+  guardTime += 5 * 60000;
+  await guardService.tick();
+  const callsBeforeRepeat = guardCalls.length;
+  res = await guardApi.call('/api/request', october);
+  assert.equal(res.status, 409);
+  let guardBody = await res.json();
+  assert.equal(guardBody.guard.state, 'ultima');
+  assert.equal(guardBody.guard.count, 1);
+  assert.match(guardBody.error, /última disponible/);
+  assert.equal(guardCalls.length, callsBeforeRepeat);
+  res = await guardApi.call('/api/request', { ...october, confirmRepeat: true });
+  assert.equal(res.status, 200);
+  assert.equal(guardCalls.length, callsBeforeRepeat + 1);
+  guardTime += 5 * 60000;
+  await guardService.tick();
+  res = await guardApi.call('/api/request', october);
+  assert.equal(res.status, 409);
+  guardBody = await res.json();
+  assert.equal(guardBody.guard.state, 'agotado');
+  assert.equal(guardBody.guard.count, 2);
+  assert.equal(guardCalls.length, callsBeforeRepeat + 1);
+  res = await guardApi.call('/api/request', { ...october, shiftStart: true });
+  assert.equal(res.status, 200);
+  assert.equal(guardCalls.at(-1).startTime, '00:00:01');
+  let guardState = await (await guardApi.call('/api/status')).json();
+  const octoberJobs = guardState.jobs.filter(job => job.periodStart === '2026-10-01');
+  assert.equal(octoberJobs.find(job => job.startAt === '2026-10-01 00:00:01').criteriaState, 'ultima');
+  assert.equal(octoberJobs.find(job => job.startAt === '2026-10-01 00:00:00').criteriaState, 'agotado');
+  const september = { rfc, direction: 'received', start: '2026-09-01', end: '2026-09-07' };
+  res = await guardApi.call('/api/request', september);
+  assert.equal(res.status, 200);
+  const septemberRequestId = 'guard-req-' + guardCalls.length;
+  guardCheckImpl = async id => id === septemberRequestId
+    ? { status: 'rejected', packages: [], code: 5002 } : { status: 'finished', packages: [] };
+  guardTime += 5 * 60000;
+  await guardService.tick();
+  await guardService.tick();
+  assert.equal(guardSent.filter(mail => /agotó las solicitudes de un periodo/.test(mail.subject)).length, 1);
+  const callsBeforeBlocked = guardCalls.length;
+  res = await guardApi.call('/api/request', september);
+  assert.equal(res.status, 409);
+  guardBody = await res.json();
+  assert.equal(guardBody.guard.state, 'agotado');
+  assert.equal(guardBody.guard.count, 1);
+  assert.equal(guardCalls.length, callsBeforeBlocked);
+  guardState = await (await guardApi.call('/api/status')).json();
+  assert.equal(guardState.jobs.find(job => job.periodStart === '2026-09-01').criteriaState, 'agotado');
+  console.log('OK: blindaje 5002: identidad de criterio al segundo, primer repetido avisa sin enviar, confirmación expresa, segundo repetido bloquea, +1 s crea criterio nuevo y el 5002 del SAT marca agotado con un solo aviso.');
+} finally { guardService.close(); }
+
+// Colisión de la programación: la ventana automática coincide al segundo con
+// un criterio ya enviado; debe desplazarse +1 s sola y dejar rastro.
+const clashDir = mkdtempSync(join(tmpdir(), 'pacosat-162-'));
+const clashFile = join(clashDir, 'choque.sqlite');
+const clashTime = Date.parse('2026-11-08T16:00:00Z');
+const clashCalls = [];
+const clashConnector = () => ({ parser: FixtureParser, connector: {
+  request: async options => { clashCalls.push(options); return 'clash-req-' + clashCalls.length; },
+  check: async () => ({ status: 'finished', packages: [] }), download: async () => valid } });
+const clashMailer = () => ({ verify: async () => true, sendMail: async () => {} });
+const clashA = createPacoSATService({ dbFile: clashFile, html: '<!--PACOSAT_TOKEN-->', origin,
+  proxyKey: 'c'.repeat(64), now: () => clashTime, makeConnector: async () => clashConnector(), makeMailer: clashMailer });
+const clashApiA = harness(clashA, 'c'.repeat(64));
+try {
+  await clashApiA.init();
+  assert.equal((await clashApiA.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
+    password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  const manual = await clashApiA.call('/api/request', { rfc, direction: 'received', start: '2026-11-02', end: '2026-11-08' });
+  assert.equal(manual.status, 200);
+  assert.deepEqual(clashCalls[0], { start: '2026-11-02', end: '2026-11-08', startTime: '00:00:00',
+    endTime: '10:00:00', direction: 'received' });
+} finally { clashA.close(); }
+{
+  const direct = new DatabaseSync(clashFile);
+  direct.prepare("UPDATE jobs SET status='finished'").run();
+  direct.prepare('UPDATE profiles SET nextRun=0').run();
+  direct.close();
+}
+const clashB = createPacoSATService({ dbFile: clashFile, html: '<!--PACOSAT_TOKEN-->', origin,
+  proxyKey: 'c'.repeat(64), now: () => clashTime, makeConnector: async () => clashConnector(), makeMailer: clashMailer });
+const clashApiB = harness(clashB, 'c'.repeat(64));
+try {
+  await clashApiB.init();
+  assert.equal((await clashApiB.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
+    password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  await clashB.tick();
+  assert.equal(clashCalls.length, 2);
+  assert.equal(clashCalls[1].startTime, '00:00:01');
+  assert.equal(clashCalls[1].endTime, '10:00:00');
+  const activityRows = await (await clashApiB.call('/api/storage?store=activity')).json();
+  assert.ok(activityRows.some(row => /Blindaje SAT 5002/.test(row.name) && /\+1 s/.test(row.event) && /5002/.test(row.event)));
+  console.log('OK: la colisión de la descarga programada se auto-corrige desplazando el inicio +1 s y queda anotada en la bitácora.');
+} finally { clashB.close(); }
+
+// Migración suave: una base previa a 1.6.2 siembra el libro sin duplicar.
+const legacyDir = mkdtempSync(join(tmpdir(), 'pacosat-162-'));
+const legacyFile = join(legacyDir, 'legado.sqlite');
+{
+  const legacy = new DatabaseSync(legacyFile);
+  legacy.exec(`CREATE TABLE profiles (rfc TEXT PRIMARY KEY, minutes INTEGER NOT NULL, days INTEGER NOT NULL,
+    direction TEXT NOT NULL, nextRun INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+    CREATE TABLE jobs (id INTEGER PRIMARY KEY, rfc TEXT NOT NULL, direction TEXT NOT NULL,
+    periodStart TEXT NOT NULL, periodEnd TEXT NOT NULL, requestId TEXT NOT NULL,
+    status TEXT NOT NULL, imported TEXT NOT NULL DEFAULT '[]', due INTEGER NOT NULL,
+    created INTEGER NOT NULL, error TEXT NOT NULL DEFAULT '', FOREIGN KEY(rfc) REFERENCES profiles(rfc));`);
+  legacy.prepare("INSERT INTO profiles VALUES ('XAXX010101000',60,7,'received',0,'')").run();
+  legacy.prepare("INSERT INTO jobs(rfc,direction,periodStart,periodEnd,requestId,status,imported,due,created,error) VALUES (?,?,?,?,?,?,?,?,?,?)")
+    .run(rfc, 'received', '2026-08-03', '2026-08-09', 'legado-1', 'finished', '[]', 0, Date.parse('2026-08-10T15:00:00Z'), '');
+  legacy.close();
+}
+function legacyService() {
+  return createPacoSATService({ dbFile: legacyFile, html: '<!--PACOSAT_TOKEN-->', origin,
+    now: () => Date.parse('2026-11-08T16:00:00Z'),
+    makeConnector: async () => ({ parser: FixtureParser, connector: {
+      request: async () => 'legado-nuevo', check: async () => ({ status: 'finished', packages: [] }),
+      download: async () => valid } }),
+    makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
+}
+const legacyA = legacyService();
+const legacyApiA = harness(legacyA, '');
+try {
+  await legacyApiA.init();
+  const state = await (await legacyApiA.call('/api/status')).json();
+  const seeded = state.jobs.find(job => job.periodStart === '2026-08-03');
+  assert.equal(seeded.startAt, '2026-08-03 00:00:00');
+  assert.equal(seeded.endAt, '2026-08-09 23:59:59');
+  assert.equal(seeded.criteriaState, 'ultima');
+  assert.equal((await legacyApiA.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
+    password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  let res = await legacyApiA.call('/api/request', { rfc, direction: 'received', start: '2026-08-03', end: '2026-08-09' });
+  assert.equal(res.status, 409);
+  assert.equal((await res.json()).guard.state, 'ultima');
+  res = await legacyApiA.call('/api/request', { rfc, direction: 'received', start: '2026-08-03', end: '2026-08-09', confirmRepeat: true });
+  assert.equal(res.status, 200);
+} finally { legacyA.close(); }
+const legacyB = legacyService();
+const legacyApiB = harness(legacyB, '');
+try {
+  await legacyApiB.init();
+  assert.equal((await legacyApiB.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
+    password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  const res = await legacyApiB.call('/api/request', { rfc, direction: 'received', start: '2026-08-03', end: '2026-08-09' });
+  assert.equal(res.status, 409);
+  const guardBody = await res.json();
+  assert.equal(guardBody.guard.state, 'agotado');
+  assert.equal(guardBody.guard.count, 2);
+  console.log('OK: la migración siembra el libro desde las solicitudes previas, reconstruye los segundos y no duplica la siembra al reabrir.');
+} finally { legacyB.close(); }
