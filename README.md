@@ -1,6 +1,6 @@
 # PacoSAT · satfacturas
 
-Versión 1.5.0 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.6.0 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
 La instancia en modo servidor se publica tras un proxy HTTPS con autenticación; consulta [SERVIDOR.md](SERVIDOR.md).
 
 ## Inicio en Windows
@@ -24,6 +24,13 @@ Abre http://127.0.0.1:43729. Abrir solo el HTML no activa el servicio SAT.
 - Avisos por correo cuando un RFC del expediente aparece nuevo en el listado 69-B, cuando la descarga automática falla de forma persistente y cuando una solicitud al SAT queda vencida, fallida o rechazada.
 - Totales por RFC y mes en el Resumen (emitidos y recibidos, conteos e importes), con exportación CSV, y contador de novedades desde la última visita.
 - Bitácora «Actividad reciente» en el Resumen: importaciones, descargas del SAT, respaldos, PDF archivados o vinculados y cancelaciones detectadas, con fecha y hora.
+- Resumen con indicadores clave (CFDI vigentes y cancelados según la vigilancia, importe del mes, descargas en curso y última actividad) y gráfico de barras de totales por mes, emitidos contra recibidos.
+- Modo oscuro completo además del claro (sigue al sistema o se fija desde la cabecera) y juego propio de iconos SVG en navegación, acciones y estados.
+- Sonidos breves sintetizados (éxito, error y aviso nuevo) con interruptor visible y persistente en la cabecera; solo suenan tras la primera interacción con la página.
+- Reporte mensual por RFC listo para imprimir o guardar en PDF desde el navegador: totales y conteos por contribuyente, más cancelados y coincidencias 69-B del mes según la última vigilancia.
+- **Base para la DIOT**: vista y CSV con totales por RFC proveedor y mes desde los CFDI recibidos. Es base de trabajo para la contadora, no la declaración (el importador no guarda el desglose de IVA).
+- Archivo de CFDI con filtro por estado SAT (vigente, cancelado, con 69-B o sin consulta).
+- En modo servidor: **carpeta vigilada** que importa sola todo XML/ZIP/PDF que reciba (los válidos pasan a `procesados`, los fallidos a `errores` con aviso por correo) y **respaldo cifrado programado** diario o semanal con formato idéntico al manual, con aviso por correo si falla.
 - Respaldo cifrado de expedientes y restauración.
 - Modo servidor con SQLite, proxy HTTPS y configuración privada; consulta [SERVIDOR.md](SERVIDOR.md).
 

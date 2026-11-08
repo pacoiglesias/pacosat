@@ -22,6 +22,14 @@ function operationsScreen() {
     ['Servicio SAT', !satToken ? 'Abre Iniciar-PacoSAT.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
+    ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
+      'Activa · ' + satData.watchFolder.imported + ' archivos importados · ' + satData.watchFolder.failed + ' con error' +
+      (satData.watchFolder.lastScan ? ' · última revisión ' + localDateTime(satData.watchFolder.lastScan) : '') +
+      (satData.watchFolder.error ? ' · ' + satData.watchFolder.error : '') : 'Sin configurar en el servidor'],
+    ['Respaldo programado', !satToken ? 'Sin servidor: crea respaldos manuales' : satData.scheduledBackup?.enabled ?
+      (satData.scheduledBackup.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
+      (satData.scheduledBackup.last ? localDateTime(satData.scheduledBackup.last) : 'aún no') +
+      (satData.scheduledBackup.error ? ' · Error: ' + satData.scheduledBackup.error : '') : 'Sin configurar en el servidor'],
     ['Respaldo', 'Exporta una copia cifrada antes de actualizar. No incluye e.firma, SMTP ni cola SAT.']
   ]));
   const buttons = n('div', undefined, 'actions');

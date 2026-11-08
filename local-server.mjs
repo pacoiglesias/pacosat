@@ -1,15 +1,16 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
 import { parseXml, zipXml } from './xml-core.mjs';
 import { analyzeInvoicePdf } from './pdf-invoice.mjs';
 import { createMonitor } from './sat-monitor.mjs';
+import { encryptBackupBuffer } from './backup-core.mjs';
 
 const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/u;
 const DAY = 86400000;
@@ -65,7 +66,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {} }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null }) {
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
   db.exec(`
@@ -88,7 +89,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       subject TEXT NOT NULL, body TEXT NOT NULL, due INTEGER NOT NULL,
       sent INTEGER, error TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS alert_state (key TEXT PRIMARY KEY, failures INTEGER NOT NULL DEFAULT 0,
-      alerted INTEGER NOT NULL DEFAULT 0);`);
+      alerted INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS automation_state (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
@@ -114,6 +116,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   const insertRecord = db.prepare('INSERT OR IGNORE INTO records(store,id,value,data,mime) VALUES (?,?,?,?,?)');
   const putMetadata = (store, row) => insertRecord.run(store, row.id, JSON.stringify(row), null, null);
   const putFile = (id, data, mime) => insertRecord.run('files', id, null, data, mime);
+  const getState = key => db.prepare('SELECT value FROM automation_state WHERE key=?').get(key)?.value || '';
+  const setState = (key, value) => db.prepare('INSERT INTO automation_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
+  const inbox = { dir: watchDir || '' };
+  const inboxStatus = { lastScan: 0, imported: 0, failed: 0, error: '' };
+  const inboxStuck = new Set();
+  let backupJob = null;
   const packageLookup = db.prepare('SELECT id FROM packages WHERE job=? AND remoteId=?');
   const insertPackage = db.prepare('INSERT INTO packages(job,remoteId,rfc,archive,newCount,review) VALUES (?,?,?,?,?,?)');
   const remember = db.prepare('INSERT OR IGNORE INTO discovered VALUES (?,?)');
@@ -133,6 +141,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         putMetadata('people', { id: row.rfc, name: row.name });
         unlocked.set(row.rfc, active);
       } catch { console.error('PacoSAT: un perfil de e.firma del archivo de arranque no pudo activarse.'); }
+    }
+    if (config.watchFolder?.path) inbox.dir = String(config.watchFolder.path);
+    if (config.backup?.password) {
+      if (String(config.backup.password).length >= 12) {
+        backupJob = { password: String(config.backup.password),
+          frequency: config.backup.frequency === 'weekly' ? 'weekly' : 'daily',
+          dir: config.backup.dir ? String(config.backup.dir) : join(dirname(dbFile), 'respaldos') };
+      } else console.error('PacoSAT: el respaldo programado requiere una contraseña de al menos 12 caracteres.');
     }
     if (config.mail) {
       try { await configureMail(config.mail); }
@@ -167,7 +183,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc) })),
       jobs: db.prepare('SELECT id,rfc,direction,periodStart,periodEnd,status,due,created,error FROM jobs ORDER BY id DESC LIMIT 35').all(),
       inbox: db.prepare('SELECT id,rfc,newCount,review FROM packages WHERE archive IS NOT NULL ORDER BY id LIMIT 50').all(),
-      mail: { enabled: Boolean(mail), recipient: mail?.recipient || '', error: db.prepare("SELECT error FROM notices WHERE sent IS NULL AND error<>'' ORDER BY id DESC LIMIT 1").get()?.error || '' }
+      mail: { enabled: Boolean(mail), recipient: mail?.recipient || '', error: db.prepare("SELECT error FROM notices WHERE sent IS NULL AND error<>'' ORDER BY id DESC LIMIT 1").get()?.error || '' },
+      watchFolder: { enabled: Boolean(inbox.dir), lastScan: inboxStatus.lastScan, imported: inboxStatus.imported,
+        failed: inboxStatus.failed, error: inboxStatus.error || getState('watch:error') },
+      scheduledBackup: { enabled: Boolean(backupJob), frequency: backupJob?.frequency || '',
+        last: Number(getState('backup:last')) || null, next: Number(getState('backup:next')) || null, error: getState('backup:error') }
     };
   }
 
@@ -207,6 +227,135 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           .run(record.lastInsertRowid, job.rfc, mail.recipient, count, now());
       }
     });
+  }
+
+  function snapshotFromRecords() {
+    const data = { version: 2 };
+    let fileBytes = 0;
+    for (const store of stores) {
+      const rows = db.prepare('SELECT id,value,data FROM records WHERE store=? ORDER BY id').all(store);
+      if (store === 'files') {
+        data[store] = rows.map(row => { fileBytes += row.data?.length || 0; return { id: row.id, content: Buffer.from(row.data || []).toString('base64') }; });
+      } else data[store] = rows.map(row => JSON.parse(row.value));
+    }
+    need(fileBytes <= 100 * 1024 * 1024, 'El respaldo supera el límite de 100 MB.');
+    return data;
+  }
+
+  let backupBusy = false;
+  async function runScheduledBackup(time) {
+    if (!cloud || !backupJob || backupBusy) return;
+    const next = Number(getState('backup:next') || 0);
+    if (next && time < next) return;
+    backupBusy = true;
+    try {
+      mkdirSync(backupJob.dir, { recursive: true });
+      const stamp = day(time);
+      writeFileSync(join(backupJob.dir, 'PacoSAT-' + stamp + '.faro'), encryptBackupBuffer(snapshotFromRecords(), backupJob.password));
+      setState('backup:last', time);
+      setState('backup:next', time + (backupJob.frequency === 'weekly' ? 7 * DAY : DAY));
+      setState('backup:error', '');
+      putMetadata('activity', { id: 'backup:' + stamp + ':' + backupJob.frequency, name: 'Respaldo cifrado programado',
+        date: new Date(time).toISOString(), added: 0, duplicates: 0, review: 0, issues: [],
+        event: 'Respaldo programado · copia cifrada guardada (' + stamp + ')' });
+      storageRevision++;
+    } catch (error) {
+      setState('backup:error', message(error));
+      setState('backup:next', time + 60 * MIN);
+      queueAlert('backup-fail', 'backup:' + day(time), 'PacoSAT · El respaldo programado falló',
+        'El respaldo cifrado programado no pudo completarse: ' + message(error) +
+        ' Se reintentará en una hora. Revisa la carpeta de respaldos y el espacio disponible.', time);
+    } finally { backupBusy = false; }
+  }
+
+  let watchBusy = false;
+  async function resolveInboxParser() {
+    if (inboxParser) return inboxParser;
+    const dom = await import('@xmldom/xmldom').catch(() => { throw new Error('Falta el lector XML del servidor.'); });
+    return dom.DOMParser;
+  }
+  async function scanWatchFolder(time) {
+    if (!cloud || !inbox.dir || watchBusy) return;
+    watchBusy = true;
+    try {
+      let names;
+      try { names = readdirSync(inbox.dir); }
+      catch (error) { inboxStatus.error = message(error); setState('watch:error', inboxStatus.error); return; }
+      inboxStatus.error = ''; setState('watch:error', '');
+      const candidates = names.filter(name => /\.(xml|zip|pdf)$/i.test(name)).sort()
+        .filter(name => !inboxStuck.has(name)).slice(0, 20);
+      inboxStatus.lastScan = time;
+      if (!candidates.length) return;
+      const Parser = await resolveInboxParser();
+      const peopleIds = new Set(db.prepare("SELECT value FROM records WHERE store='people'").all().map(row => JSON.parse(row.value).id));
+      const okDir = join(inbox.dir, 'procesados', day(time));
+      const badDir = join(inbox.dir, 'errores');
+      const importXml = raw => {
+        const row = parseXml(raw, Parser);
+        need(peopleIds.has(row.from.rfc) || peopleIds.has(row.to.rfc), 'Los RFC del comprobante no están registrados.');
+        if (db.prepare("SELECT 1 FROM records WHERE store='invoices' AND id=?").get(row.id)) return 'duplicate';
+        putFile('xml:' + row.id, raw, 'application/xml');
+        putMetadata('invoices', row);
+        monitor.register({ id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
+          seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal) ? row.seal : '' });
+        return 'added';
+      };
+      let added = 0, duplicates = 0, review = 0;
+      const issues = [];
+      for (const name of candidates) {
+        const path = join(inbox.dir, name);
+        let failed = '';
+        try {
+          const raw = readFileSync(path);
+          if (/\.xml$/i.test(name)) {
+            need(raw.length <= 8 * 1024 * 1024, 'El XML supera 8 MB.');
+            if (importXml(raw) === 'added') added++; else duplicates++;
+          } else if (/\.zip$/i.test(name)) {
+            need(raw.length <= 80 * 1024 * 1024, 'El ZIP supera 80 MB.');
+            let count = 0;
+            for await (const entry of zipXml(raw)) {
+              count++;
+              try { if (importXml(entry.xml) === 'added') added++; else duplicates++; }
+              catch (error) { review++; if (issues.length < 20) issues.push({ name: entry.name, reason: message(error) }); }
+            }
+            need(count > 0, 'El ZIP no contiene CFDI XML.');
+          } else {
+            const result = await analyzePdf(raw);
+            const uuids = Array.isArray(result?.uuids) ? result.uuids : [];
+            need(uuids.length === 1, 'El PDF no contiene un único folio fiscal identificable.');
+            const saved = db.prepare("SELECT value FROM records WHERE store='invoices' AND id=?").get(uuids[0]);
+            need(saved, 'El CFDI del PDF aún no está en el expediente; importa primero su XML.');
+            const invoice = JSON.parse(saved.value);
+            const rfc = [invoice.from.rfc, invoice.to.rfc].find(value => peopleIds.has(value));
+            need(rfc, 'El CFDI del PDF no pertenece a un RFC registrado.');
+            const docs = db.prepare("SELECT value FROM records WHERE store='documents'").all().map(row => JSON.parse(row.value));
+            need(!docs.some(doc => doc.kind === 'Factura PDF' && doc.uuid === uuids[0] && doc.rfc === rfc), 'Ese CFDI ya tiene su PDF archivado.');
+            const id = 'pdf:' + randomUUID();
+            putFile(id, raw, 'application/pdf');
+            putMetadata('documents', { id, rfc, kind: 'Factura PDF', date: invoice.date.slice(0, 10),
+              period: '', name: name.slice(0, 180), uuid: uuids[0] });
+            added++;
+          }
+        } catch (error) { failed = message(error); }
+        try {
+          mkdirSync(failed ? badDir : okDir, { recursive: true });
+          renameSync(path, join(failed ? badDir : okDir, basename(name)));
+        } catch { inboxStuck.add(name); }
+        if (failed) {
+          review++;
+          inboxStatus.failed++;
+          if (issues.length < 20) issues.push({ name, reason: failed });
+          queueAlert('watch-fail', 'watch:' + name, 'PacoSAT · Un archivo de la carpeta vigilada no se importó',
+            'El archivo ' + name + ' de la carpeta vigilada no pudo importarse: ' + failed +
+            ' Quedó apartado en la subcarpeta «errores» de la carpeta vigilada.', time);
+        } else inboxStatus.imported++;
+      }
+      if (added || duplicates || review) {
+        putMetadata('activity', { id: 'inbox:' + time + ':' + added + ':' + review, name: 'Carpeta vigilada',
+          date: new Date(time).toISOString(), added, duplicates, review, issues });
+        storageRevision++;
+      }
+    } finally { watchBusy = false; }
   }
 
   async function schedule(profile, service, time) {
@@ -312,6 +461,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
           Boolean(profileError) || outcome.stuck > 0, time);
       }
+      await scanWatchFolder(time);
+      await runScheduledBackup(time);
       await notify(time);
       await sendAlerts(time);
     } finally { busy = false; }
@@ -453,7 +604,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (!res.headersSent && !res.destroyed) json(res, { error: message(error) }, error.status || 502);
     }
   }
-  return { handle, tick, monitorTick: monitor.tick, bootstrap, close: () => db.close() };
+  return { handle, tick, monitorTick: monitor.tick, inboxTick: (time = now()) => scanWatchFolder(time),
+    backupTick: (time = now()) => runScheduledBackup(time), bootstrap, close: () => db.close() };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
@@ -463,7 +615,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const origin = process.env.PACOSAT_ORIGIN || 'http://127.0.0.1:43729';
   need(origin === new URL(origin).origin && (!proxyKey || (proxyKey.length >= 32 && origin.startsWith('https://'))) &&
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
-  const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey });
+  const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '' });
   const server = createServer(service.handle);
   server.requestTimeout = 90000;
   server.on('error', error => {

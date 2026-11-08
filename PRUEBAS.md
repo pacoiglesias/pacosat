@@ -10,5 +10,8 @@
 8. Verifica un CFDI conocido vigente y uno cancelado; compara UUID y resultado con el SAT. No interpretes Sin consulta como Vigente.
 9. Configura SMTP y comprueba un aviso por nuevos CFDI; repite la descarga y verifica que no se duplique.
 10. Para nube: configura HTTPS y acceso privado; prueba rechazo sin autenticación y reinicio del servicio. Apaga la PC y confirma nuevas descargas en el servidor.
+11. En modo servidor, deja un XML válido, un ZIP con CFDI y un archivo dañado en la carpeta vigilada: en el siguiente ciclo los dos primeros deben importarse y moverse a `procesados/AAAA-MM-DD`, el dañado a `errores` y llegar un aviso por correo; la importación queda en la bitácora.
+12. Activa el respaldo programado: al vencimiento debe aparecer `PacoSAT-AAAA-MM-DD.faro` en la carpeta indicada y debe poder restaurarse con la contraseña del respaldo usando la interfaz; con la carpeta inaccesible debe llegar el aviso de fallo.
+13. En el navegador: cambia entre modo claro y oscuro, desactiva el sonido y recarga (la preferencia persiste), genera el reporte mensual e imprímelo a PDF, y exporta la base DIOT en CSV para compararla con los totales del Resumen.
 
 Registra fecha, RFC de prueba, resultado esperado/obtenido y error. No publiques credenciales ni comprobantes en issues del repositorio público.

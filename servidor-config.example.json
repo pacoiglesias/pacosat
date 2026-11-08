@@ -11,6 +11,14 @@
       "password": "CONFIGURA_LOCALMENTE"
     }
   ],
+  "watchFolder": {
+    "path": "/ruta/a/la/carpeta-vigilada"
+  },
+  "backup": {
+    "password": "CONFIGURA_LOCALMENTE",
+    "frequency": "daily",
+    "dir": "/ruta/a/los/respaldos"
+  },
   "mail": {
     "host": "smtp.example.com",
     "port": 587,

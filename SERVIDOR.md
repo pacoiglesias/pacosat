@@ -10,6 +10,20 @@ El servicio puede mantenerse encendido en un servidor Linux aunque apagues tu co
 
 Los secretos de arranque se vuelven a cargar al reiniciar el servidor. El botón Pausar de la interfaz afecta la sesión actual. Para desactivar de forma permanente un RFC o el correo, retira su entrada de la configuración protegida y reinicia. La automatización desatendida cubre CFDI. Constancias, opiniones y declaraciones pueden archivarse y visualizarse en el expediente.
 
+## Carpeta vigilada y respaldo programado
+
+Ambos se configuran en el mismo archivo protegido `pacosat-secrets/config.json` (ver `servidor-config.example.json`) y solo funcionan en modo servidor:
+
+```json
+{
+  "watchFolder": { "path": "/var/lib/pacosat/entrada" },
+  "backup": { "password": "contraseña-larga-del-respaldo", "frequency": "daily", "dir": "/var/lib/pacosat/respaldos" }
+}
+```
+
+- **Carpeta vigilada**: en cada ciclo del servicio (cada 60 s) se revisan los archivos `.xml`, `.zip` y `.pdf` de la carpeta, máximo 20 por ciclo, con las mismas reglas que la importación manual: el XML/ZIP debe pertenecer a un RFC registrado y no estar duplicado; el PDF se vincula solo si su UUID corresponde a un CFDI ya importado. Lo procesado se mueve a `procesados/AAAA-MM-DD/` dentro de la carpeta; lo rechazado o dañado va a `errores/` con aviso por correo, y cada ciclo con novedades queda registrado en la bitácora. La carpeta también puede fijarse con la variable `PACOSAT_WATCH_DIR`.
+- **Respaldo programado**: guarda `PacoSAT-AAAA-MM-DD.faro` cifrado en la carpeta indicada (por defecto, `respaldos` junto a la base de datos), a diario (`daily`) o semanalmente (`weekly`). El formato es idéntico al respaldo manual: se restaura desde la interfaz con la misma contraseña. Si el respaldo falla, llega un aviso por correo y el error queda visible en Operaciones y en Respaldos. La contraseña del respaldo vive solo en este archivo protegido, junto a los demás secretos del servidor.
+
 La plantilla se validó en un servidor real (NAS del propietario, 8-nov-2026) con la variante de túnel descrita abajo. El SAT y el SMTP reales aún requieren una prueba con credenciales reales, introducidas directamente en el entorno autorizado.
 
 ## Variante: detrás de un Cloudflare Tunnel

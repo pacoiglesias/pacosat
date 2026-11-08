@@ -1,14 +1,119 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><!--PACOSAT_TOKEN-->
-<style>:root{--ink:#182c2c;--muted:#516461;--border:#dce7e1;--surface:#fff;--bg:#f3f7f3;--green:#145c48;--green-hover:#104a3b;--tint:#e5f2e9;--nav:#142b29;--nav-text:#d6e9e2;--focus:#368b73;font:15px/1.48 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--bg)}*{box-sizing:border-box}body{margin:0}svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:none}.symbols,[hidden]{display:none!important}button,input,select,textarea{font:inherit}button,a,input,select{border-radius:8px}button{color:var(--ink);border:1px solid var(--border);background:white;padding:9px 12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-align:left}button:hover{background:#f1f7f3}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);border-color:var(--green);color:white}button.primary:hover:not(:disabled){background:var(--green-hover)}a{color:var(--green);font-weight:600;text-underline-offset:3px}input,select,textarea{border:1px solid #c8d8d1;background:#fff;color:var(--ink);padding:9px 11px;min-width:0;max-width:100%}:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.frame{min-height:100vh;display:grid;grid-template-columns:244px minmax(0,1fr)}.sidebar{padding:24px 17px;background:var(--nav);color:var(--nav-text);display:flex;flex-direction:column;gap:27px}.brand{display:flex;align-items:center;gap:10px;color:white;font-weight:720;font-size:20px;letter-spacing:-.025em}.brand small,.local small{display:block;color:#a8c1b7;font-size:10px;font-weight:650;letter-spacing:.11em}.logo{width:42px;height:42px;display:grid;place-items:center;color:#173831;background:#aee6c2;border-radius:12px}.logo svg{width:25px;height:25px}.switcher{display:grid;gap:7px}.switcher label{color:#b8cfc4;font-size:10px;letter-spacing:.12em;font-weight:700}.switcher select{background:#213b37;border-color:#49655d;color:white;width:100%}.sidebar nav{display:grid;gap:4px}.sidebar button{background:transparent;border-color:transparent;color:var(--nav-text);justify-content:flex-start}.sidebar button:hover{background:#223f3a}.sidebar .quiet{font-size:13px;padding:6px 4px}.sidebar nav button[aria-current]{background:#244740;border-color:#41675c;color:#b6f0cb}.local{display:flex;gap:10px;align-items:center;color:#cee6dc;font-size:13px;margin-top:auto}.local small{letter-spacing:0;font-size:11px;font-weight:400}.top{background:#fff;border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);gap:10px;font-size:13px}.top strong{color:var(--ink)}.slash{margin:0 7px;color:#849991}.badge,.tag{font-size:12px;color:#235b45;background:var(--tint);display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:100px;font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:#2e805e}.page{max-width:1340px;margin:auto;padding:29px 28px 36px}.heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:23px}.eyebrow{font-weight:750;font-size:11px;letter-spacing:.14em;color:var(--green);overflow-wrap:anywhere}h1{font-size:clamp(29px,4.1vw,46px);letter-spacing:-.052em;line-height:1.12;margin:6px 0}h2{font-size:20px;letter-spacing:-.025em;margin:0}h3{font-size:16px;margin:0}p{margin:0;color:var(--muted)}.heading .primary{padding:11px 15px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:15px}.metric,.panel,.guide{background:#fff;border:1px solid var(--border);border-radius:13px}.metric{padding:15px;display:grid;gap:5px;min-width:0}.metric-label{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:13px}.metric-label svg{color:var(--green)}.metric strong{font-size:28px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.panel{min-width:0;overflow:hidden;margin-bottom:14px}.panel-head,.filters,.table-foot,.guide{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;flex-wrap:wrap}.filters{justify-content:flex-start}.filters input[type=search]{flex:1 1 200px}.table-foot{color:var(--muted);font-size:13px}.guide{margin-bottom:14px;background:#e6f0e8;justify-content:space-between}.guide p{margin-top:4px}.guide ul{margin:8px 0 0;padding-left:20px}.guide .actions,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:11px 13px;border-top:1px solid var(--border);overflow-wrap:anywhere}th{font-size:12px;color:var(--muted);background:#f5f8f5}td small{display:block;color:var(--muted);margin-top:3px}td.num{white-space:nowrap;font-variant-numeric:tabular-nums}td button{font-size:13px;padding:5px 8px;white-space:nowrap}.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--border)}.tabs button{border-color:transparent}.tabs button[aria-pressed=true]{background:var(--tint);color:#164e3c}.empty{padding:30px 15px;text-align:center}.empty p{margin:6px 0 12px}#status{margin:0 0 12px;padding:11px 13px;border-radius:8px;background:var(--tint);white-space:pre-line;overflow-wrap:anywhere;color:var(--ink)}#status[data-error=true]{background:#fae7df;color:#802b1f}dialog{width:min(520px,calc(100% - 26px));border:1px solid var(--border);border-radius:14px;padding:20px;color:var(--ink);box-shadow:0 18px 55px #12251d40}dialog::backdrop{background:#10282077}.modal-head,.modal-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}.modal-actions{justify-content:flex-end;margin-top:16px}.icon-button{padding:6px}#fields{display:grid;gap:12px;margin-top:14px}#fields label{display:grid;gap:5px;font-weight:600}#fields p{overflow-wrap:anywhere}#formError{color:#952f21;margin-top:9px}.portal{display:grid;gap:8px;padding:14px 15px}.portal a{display:inline-block;width:max-content;max-width:100%}.import-history td:first-child{max-width:250px}.drag-active{outline:3px dashed var(--focus);outline-offset:-5px}@media(max-width:780px){.frame{grid-template-columns:1fr}.sidebar{padding:14px;gap:12px}.switcher{grid-template-columns:minmax(0,1fr) auto}.switcher label{grid-column:1/-1}.sidebar nav{display:flex;flex-wrap:wrap}.local{display:none}.top,.page{padding:14px}}@media(max-width:460px){.cards{grid-template-columns:1fr}.metric{grid-template-columns:1fr auto;align-items:center}.badge{font-size:10px}.heading .primary{width:100%}.filters input,.filters select{flex:1 1 140px}.top{gap:4px}.sidebar nav button{padding:7px 8px}}
-.xml-view{margin:0;padding:12px;max-height:45vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border);border-radius:8px;background:#f5f8f5;font:13px/1.55 Consolas,monospace;color:var(--ink)}
+<style>:root{font:15px/1.48 "Segoe UI",system-ui,-apple-system,"Helvetica Neue",sans-serif;color:var(--ink);background:var(--bg)}*{box-sizing:border-box}body{margin:0}svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:none}.symbols,[hidden]{display:none!important}button,input,select,textarea{font:inherit}button,a,input,select{border-radius:8px}button{color:var(--ink);border:1px solid var(--border);background:var(--surface);padding:9px 12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-align:left}button:hover{background:var(--surface-2)}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);border-color:var(--green);color:var(--on-accent)}button.primary:hover:not(:disabled){background:var(--green-hover)}a{color:var(--green);font-weight:600;text-underline-offset:3px}input,select,textarea{border:1px solid var(--field-border);background:var(--surface);color:var(--ink);padding:9px 11px;min-width:0;max-width:100%}:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.frame{min-height:100vh;display:grid;grid-template-columns:244px minmax(0,1fr)}.sidebar{padding:24px 17px;background:var(--nav);color:var(--nav-text);display:flex;flex-direction:column;gap:27px}.brand{display:flex;align-items:center;gap:10px;color:white;font-weight:720;font-size:20px;letter-spacing:-.025em}.brand small,.local small{display:block;color:var(--nav-muted);font-size:10px;font-weight:650;letter-spacing:.11em}.logo{width:42px;height:42px;display:grid;place-items:center;color:var(--logo-ink);background:var(--logo-bg);border-radius:12px}.logo svg{width:25px;height:25px}.switcher{display:grid;gap:7px}.switcher label{color:var(--nav-muted);font-size:10px;letter-spacing:.12em;font-weight:700}.switcher select{background:var(--nav-field);border-color:var(--nav-border);color:var(--nav-text);width:100%}.sidebar nav{display:grid;gap:4px}.sidebar button{background:transparent;border-color:transparent;color:var(--nav-text);justify-content:flex-start}.sidebar button:hover{background:var(--nav-hover)}.sidebar .quiet{font-size:13px;padding:6px 4px}.sidebar nav button[aria-current]{background:var(--nav-active-bg);border-color:var(--nav-border);color:var(--nav-active-ink)}.local{display:flex;gap:10px;align-items:center;color:var(--nav-text);font-size:13px;margin-top:auto}.local small{letter-spacing:0;font-size:11px;font-weight:400}.top{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);gap:10px;font-size:13px}.top strong{color:var(--ink)}.slash{margin:0 7px;color:var(--muted)}.badge,.tag{font-size:12px;color:var(--ok-ink);background:var(--tint);display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:100px;font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:var(--green)}.page{max-width:1340px;margin:auto;padding:29px 28px 36px}.heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:23px}.eyebrow{font-weight:750;font-size:11px;letter-spacing:.14em;color:var(--green);overflow-wrap:anywhere}h1{font-size:clamp(29px,4.1vw,46px);letter-spacing:-.052em;line-height:1.12;margin:6px 0}h2{font-size:20px;letter-spacing:-.025em;margin:0}h3{font-size:16px;margin:0}p{margin:0;color:var(--muted)}.heading .primary{padding:11px 15px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:15px}.metric,.panel,.guide{background:var(--surface);border:1px solid var(--border);border-radius:13px}.metric{padding:15px;display:grid;gap:5px;min-width:0}.metric-label{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:13px}.metric-label svg{color:var(--green)}.metric strong{font-size:28px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.panel{min-width:0;overflow:hidden;margin-bottom:14px}.panel-head,.filters,.table-foot,.guide{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;flex-wrap:wrap}.filters{justify-content:flex-start}.filters input[type=search]{flex:1 1 200px}.table-foot{color:var(--muted);font-size:13px}.guide{margin-bottom:14px;background:var(--guide-bg);justify-content:space-between}.guide p{margin-top:4px}.guide ul{margin:8px 0 0;padding-left:20px}.guide .actions,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:11px 13px;border-top:1px solid var(--border);overflow-wrap:anywhere}th{font-size:12px;color:var(--muted);background:var(--surface-2)}td small{display:block;color:var(--muted);margin-top:3px}td.num{white-space:nowrap;font-variant-numeric:tabular-nums}td button{font-size:13px;padding:5px 8px;white-space:nowrap}.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--border)}.tabs button{border-color:transparent}.tabs button[aria-pressed=true]{background:var(--tint);color:var(--ok-ink)}.empty{padding:30px 15px;text-align:center}.empty p{margin:6px 0 12px}#status{margin:0 0 12px;padding:11px 13px;border-radius:8px;background:var(--tint);white-space:pre-line;overflow-wrap:anywhere;color:var(--ink)}#status[data-error=true]{background:var(--danger-bg);color:var(--danger)}dialog{width:min(520px,calc(100% - 26px));border:1px solid var(--border);border-radius:14px;padding:20px;color:var(--ink);background:var(--surface);box-shadow:0 18px 55px var(--shadow-color)}dialog::backdrop{background:var(--backdrop)}.modal-head,.modal-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}.modal-actions{justify-content:flex-end;margin-top:16px}.icon-button{padding:6px}#fields{display:grid;gap:12px;margin-top:14px}#fields label{display:grid;gap:5px;font-weight:600}#fields p{overflow-wrap:anywhere}#formError{color:var(--danger);margin-top:9px}.portal{display:grid;gap:8px;padding:14px 15px}.portal a{display:inline-block;width:max-content;max-width:100%}.import-history td:first-child{max-width:250px}.drag-active{outline:3px dashed var(--focus);outline-offset:-5px}@media(max-width:780px){.frame{grid-template-columns:1fr}.sidebar{padding:14px;gap:12px}.switcher{grid-template-columns:minmax(0,1fr) auto}.switcher label{grid-column:1/-1}.sidebar nav{display:flex;flex-wrap:wrap}.local{display:none}.top,.page{padding:14px}}@media(max-width:460px){.cards{grid-template-columns:1fr}.metric{grid-template-columns:1fr auto;align-items:center}.badge{font-size:10px}.heading .primary{width:100%}.filters input,.filters select{flex:1 1 140px}.top{gap:4px}.sidebar nav button{padding:7px 8px}}
+.xml-view{margin:0;padding:12px;max-height:45vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font:13px/1.55 Consolas,monospace;color:var(--ink)}
 
-:root{--ink:#142338;--muted:#53647b;--border:#e1e8f0;--surface:#fff;--bg:#edf2f8;--green:#17635f;--green-hover:#114b48;--tint:#e4f2ef;--nav:#101d31;--nav-text:#dce8f6;--focus:#257879}body{background:radial-gradient(ellipse at 85% 0%,#e2ecf7 0,transparent 52%),var(--bg)}.sidebar{background:linear-gradient(165deg,#182b47 0,#101d31 62%,#14243a 100%);border-right:1px solid #304565;padding:26px 18px}.logo{background:linear-gradient(140deg,#e4f7ee,#8adbc3);color:#143643;box-shadow:0 8px 22px #0003}.brand{font-size:22px}.brand small{color:#a9bdcf}.switcher select,.sidebar nav button[aria-current]{background:#223a55;border-color:#3f5c7a;color:#ddf5ef}.sidebar nav button{padding:11px 10px}.sidebar nav button:hover,.sidebar .quiet:hover{background:#23384f}.top{min-height:60px;border-color:#e5ebf4;background:#ffffffeb}.badge{border:1px solid #cce7df;color:#154d47}.heading{align-items:center}.heading h1{font-size:clamp(30px,4vw,48px)}.heading p{font-size:14px}.dashboard-hero{display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;margin-bottom:18px;padding:23px 27px;border-radius:17px;background:radial-gradient(ellipse at 92% 7%,#236a78 0,transparent 54%),linear-gradient(122deg,#162a47,#1f4660);color:#fff;box-shadow:0 12px 30px #1c3d632b}.dashboard-hero h2{font-size:clamp(23px,3.1vw,34px);line-height:1.13;margin:5px 0 6px;overflow-wrap:anywhere}.dashboard-hero p{color:#d4e8ef}.hero-kicker{font-size:11px;letter-spacing:.16em;font-weight:700;color:#a7edda}.hero-actions{display:flex;flex-wrap:wrap;gap:8px}.hero-actions button{border-color:#7196a6;color:#f1fbff;background:#294d65}.hero-actions button:hover{background:#356680}.metric,.panel{border-radius:13px;box-shadow:0 2px 5px #2742640b}.metric{padding:17px}.metric strong{font-size:30px}.metric-label svg{box-sizing:content-box;padding:6px;border-radius:8px;background:#e9f2f9;color:#29597a}.metric:nth-child(2) .metric-label svg{background:#e5f4ed;color:#236c54}.metric:nth-child(3) .metric-label svg{background:#eef0fa;color:#514c83}.dashboard-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;align-items:start}.panel-head{padding:16px 17px}.panel-head h2{font-size:18px}.panel th{background:#f5f8fc}.panel tbody tr:hover{background:#f8fbfe}.panel td:first-child{min-width:120px}.guide{background:#e9f3f6;border-color:#ccdee6}.filters{background:#fbfcff}.filters button{margin-left:auto}.wide-dialog{width:min(990px,calc(100% - 24px));max-height:94vh}.pdf-preview{display:block;width:100%;height:min(62vh,650px);background:#eef2f7;border:1px solid #d7e1eb;border-radius:9px}.xml-view{background:#f2f6fb}.actions{flex-wrap:wrap}#form{max-height:inherit}.dialog-actions{position:sticky;bottom:0;background:#fff;padding-top:6px}@media(max-width:1080px){.dashboard-grid{grid-template-columns:1fr}}@media(max-width:780px){.sidebar{padding:15px}.dashboard-hero{padding:18px}.heading .actions{width:100%}.heading .actions button{flex:0 1 auto}.heading .actions .primary{width:auto}.filters button{margin-left:0}}
-
-.nav-caption{display:block;color:#9fb2ca;font-size:10px;font-weight:750;letter-spacing:.13em;padding:3px 10px 4px}.nav-divider{margin-top:13px}.sidebar{gap:24px}.dashboard-hero{position:relative;overflow:hidden;min-height:134px;isolation:isolate}.dashboard-hero::after{content:"";z-index:-1;position:absolute;width:285px;height:285px;right:-20px;top:-120px;border-radius:50%;border:1px solid #98c9ce50;box-shadow:0 0 0 25px #a5cbdd16,0 0 0 51px #a5cbdd15,0 0 0 80px #a5cbdd0b}.metric{grid-template-columns:1fr auto;align-items:center;min-height:105px}.metric-label{grid-column:1/-1}.metric-link{background:#f5f8fc;border:1px solid #e2eaf2;color:#34536d;padding:6px 8px;font-size:12px}.metric-link svg{width:14px;height:14px}.period-chip{display:inline-block;max-width:100%;padding:5px 8px;border:1px solid #dde8f1;border-radius:7px;background:#f3f7fb;color:#375977;font-size:12px;font-weight:700}.activity-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding:4px 17px 17px}.activity-day{display:grid;gap:5px;min-width:0;color:#53647b;font-size:12px;font-variant-numeric:tabular-nums}.activity-day strong{color:#213b59;font-size:14px}.activity-day meter{width:100%;height:12px}.activity-day meter::-webkit-meter-bar{background:#e8eff6;border:none;border-radius:8px}.activity-day meter::-webkit-meter-optimum-value{background:linear-gradient(90deg,#237570,#478e9e);border-radius:8px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:#f4f8fc;border:1px solid #dce7f1;padding:15px;border-radius:12px;overflow-wrap:anywhere}.invoice-summary h3{font-size:27px;letter-spacing:-.04em;margin-top:5px}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div{display:grid;gap:3px;padding:10px;background:#fff;border:1px solid #e1e8f0;border-radius:9px;min-width:0}.invoice-parties small{font-size:10px;color:#53647b;letter-spacing:.1em;font-weight:700}.invoice-parties span,.invoice-summary small{color:#53647b}.invoice-concepts{padding:11px 13px;border:1px solid #e1e8f0;border-radius:9px}.invoice-concepts ul{padding-left:21px;margin:6px 0 0}.invoice-concepts li{overflow-wrap:anywhere}.table-wrap td:last-child .actions{gap:5px}@media(max-width:780px){.nav-caption{width:100%;padding:3px 5px}.nav-divider{margin-top:5px}.metric{min-height:0}.dashboard-hero{min-height:0}.activity-bars{gap:6px}}@media(max-width:390px){.invoice-parties{grid-template-columns:1fr}.activity-bars{padding-inline:9px;gap:4px}.activity-day{font-size:10px}}
-.fiscal-state{display:grid;gap:2px;justify-items:start}.fiscal-badge{display:inline-block;padding:3px 8px;border-radius:100px;color:#435b74;background:#e8eef5;font-size:12px;font-weight:700;white-space:nowrap}.fiscal-badge[data-state=Vigente]{color:#125d44;background:#dcf2e7}.fiscal-badge[data-state=Cancelado]{color:#922b31;background:#fae5e5}.fiscal-badge[data-state="No encontrado"]{color:#755015;background:#fff0d7}.fiscal-state small{font-size:11px}
-body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button{transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.metric{transition:box-shadow .18s ease,transform .18s ease}.metric:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.top-side{display:inline-flex;align-items:center;gap:12px;min-width:0}.header-counters{color:var(--muted);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.activity-list{display:grid;padding:6px 15px 10px}.activity-item{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border)}.activity-item:first-child{border-top:none}.activity-kind{flex:none;margin-top:1px;padding:3px 8px;border-radius:100px;font-size:11px;font-weight:750;letter-spacing:.02em;background:#e8eef5;color:#435b74}.activity-kind[data-kind=sat]{background:#e0f0ee;color:#14524c}.activity-kind[data-kind=import]{background:#e5ecfa;color:#2c4a7c}.activity-kind[data-kind=alert]{background:#fae5e5;color:#922b31}.activity-body{display:grid;gap:2px;min-width:0}.activity-body strong{font-size:13.5px;overflow-wrap:anywhere}.activity-body small{color:var(--muted);font-size:12px}.activity-body .metric-link{justify-self:start;margin-top:3px}.table-wrap::-webkit-scrollbar,.xml-view::-webkit-scrollbar{height:10px;width:10px}.table-wrap::-webkit-scrollbar-thumb,.xml-view::-webkit-scrollbar-thumb{background:#c3d2e0;border-radius:8px}::selection{background:#bfe3d2}@media(max-width:780px){.header-counters{display:none}}@media print{.sidebar,.top,.heading .actions,.hero-actions{display:none!important}.frame{display:block}.page{padding:0;max-width:none}}@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
-.news-badge{margin-left:2px;padding:1px 7px;border-radius:100px;background:#d9534f;color:#fff;font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.news-note{margin:10px 17px 0;padding:7px 10px;border:1px solid #f0d9a8;border-radius:8px;background:#fdf6e0;color:#755015;font-size:12.5px;font-weight:700}
+/* PacoSAT 1.6.0 · Sistema de diseño: una sola capa de tokens para claro y oscuro.
+   El tema manual vive en data-theme del documento; sin él manda prefers-color-scheme. */
+:root{
+  --ink:#17293f;--muted:#54687f;--border:#d9e3ee;--field-border:#bcccdc;--surface:#fff;--surface-2:#f3f7fb;--bg:#ecf1f7;
+  --green:#0e6b4f;--green-hover:#0a5741;--on-accent:#fff;--tint:#e1f1e9;--focus:#1f7a6d;
+  --nav:#0c1a2d;--nav-2:#12263f;--nav-text:#d9e8f7;--nav-muted:#93a9c4;--nav-field:#1a3353;--nav-border:#33507a;
+  --nav-hover:#1a3353;--nav-active-bg:#14402f;--nav-active-ink:#a9ecc9;
+  --logo-bg:linear-gradient(140deg,#e6f8ee,#8adbc3);--logo-ink:#143643;
+  --danger:#a0281d;--danger-bg:#fae9e6;--warn-ink:#755015;--warn-bg:#fdf3d8;--ok-ink:#125d44;--ok-bg:#dcf2e7;
+  --info-bg:#e8eef5;--info-ink:#435b74;--chip-bg:#eef3f9;--chip-ink:#375977;--guide-bg:#e9f3f6;
+  --hero-1:#152c4e;--hero-2:#1e4a5f;--hero-ink:#fff;--hero-muted:#cfe5ee;--hero-kicker:#a7edda;
+  --chart-received:#3d7ab8;--scroll:#b9c9da;--selection:#bfe3d2;--backdrop:#0d1b2e8c;--shadow-color:#12251d33;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --ink:#e7eff8;--muted:#9db1c8;--border:#2b3e55;--field-border:#3a5578;--surface:#14243a;--surface-2:#1a2c47;--bg:#0a1424;
+    --green:#2fae83;--green-hover:#3cc398;--on-accent:#06231a;--tint:#14352b;--focus:#57c7a3;
+    --nav:#081120;--nav-2:#0b1a2e;--nav-text:#d9e8f7;--nav-muted:#7e96b3;--nav-field:#16294a;--nav-border:#274268;
+    --nav-hover:#16294a;--nav-active-bg:#14352b;--nav-active-ink:#a9ecc9;
+    --danger:#f0a49c;--danger-bg:#47231f;--warn-ink:#f2cf7e;--warn-bg:#473a14;--ok-ink:#9fe3c0;--ok-bg:#14352b;
+    --info-bg:#1c3049;--info-ink:#b9cadd;--chip-bg:#1c3049;--chip-ink:#b9cfe4;--guide-bg:#142f3d;
+    --hero-1:#0e2036;--hero-2:#123441;--hero-muted:#b7d3de;
+    --chart-received:#6ea8dc;--scroll:#33507a;--selection:#17573f;--backdrop:#040a14d9;--shadow-color:#00000073;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#e7eff8;--muted:#9db1c8;--border:#2b3e55;--field-border:#3a5578;--surface:#14243a;--surface-2:#1a2c47;--bg:#0a1424;
+  --green:#2fae83;--green-hover:#3cc398;--on-accent:#06231a;--tint:#14352b;--focus:#57c7a3;
+  --nav:#081120;--nav-2:#0b1a2e;--nav-text:#d9e8f7;--nav-muted:#7e96b3;--nav-field:#16294a;--nav-border:#274268;
+  --nav-hover:#16294a;--nav-active-bg:#14352b;--nav-active-ink:#a9ecc9;
+  --danger:#f0a49c;--danger-bg:#47231f;--warn-ink:#f2cf7e;--warn-bg:#473a14;--ok-ink:#9fe3c0;--ok-bg:#14352b;
+  --info-bg:#1c3049;--info-ink:#b9cadd;--chip-bg:#1c3049;--chip-ink:#b9cfe4;--guide-bg:#142f3d;
+  --hero-1:#0e2036;--hero-2:#123441;--hero-muted:#b7d3de;
+  --chart-received:#6ea8dc;--scroll:#33507a;--selection:#17573f;--backdrop:#040a14d9;--shadow-color:#00000073;
+  color-scheme:dark;
+}
+body{background:radial-gradient(ellipse at 85% 0%,var(--surface-2) 0,transparent 52%),var(--bg)}
+.sidebar{background:linear-gradient(165deg,var(--nav-2) 0,var(--nav) 62%,var(--nav-2) 100%);border-right:1px solid var(--nav-border);padding:26px 18px}
+.logo{background:var(--logo-bg);color:var(--logo-ink);box-shadow:0 8px 22px #0003}
+.brand{font-size:22px}.brand small{color:var(--nav-muted)}
+.sidebar nav button{padding:11px 10px}
+.top{min-height:60px;border-color:var(--border);background:color-mix(in srgb,var(--surface) 92%,transparent)}
+.badge{border:1px solid var(--ok-bg);color:var(--ok-ink)}
+.heading{align-items:center}.heading h1{font-size:clamp(30px,4vw,48px)}.heading p{font-size:14px}
+.top-tools{display:inline-flex;gap:6px;align-items:center}
+.top-tools .icon-button{border-color:var(--border);background:var(--surface);color:var(--muted)}
+.top-tools .icon-button[aria-pressed="true"]{color:var(--green);border-color:var(--green)}
+.dashboard-hero{display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;margin-bottom:18px;padding:23px 27px;border-radius:17px;background:radial-gradient(ellipse at 92% 7%,#236a78 0,transparent 54%),linear-gradient(122deg,var(--hero-1),var(--hero-2));color:var(--hero-ink);box-shadow:0 12px 30px #1c3d632b}
+.dashboard-hero h2{font-size:clamp(23px,3.1vw,34px);line-height:1.13;margin:5px 0 6px;overflow-wrap:anywhere}
+.dashboard-hero p{color:var(--hero-muted)}
+.hero-kicker{font-size:11px;letter-spacing:.16em;font-weight:700;color:var(--hero-kicker)}
+.hero-actions{display:flex;flex-wrap:wrap;gap:8px}
+.hero-actions button{border-color:#7196a6;color:#f1fbff;background:#294d65}
+.hero-actions button:hover{background:#356680}
+.metric,.panel{border-radius:13px;box-shadow:0 2px 5px #2742640b}
+.metric{padding:17px}.metric strong{font-size:30px}
+.metric-label svg{box-sizing:content-box;padding:6px;border-radius:8px;background:var(--info-bg);color:var(--info-ink)}
+.metric:nth-child(2) .metric-label svg{background:var(--ok-bg);color:var(--ok-ink)}
+.metric:nth-child(3) .metric-label svg{background:var(--chip-bg);color:var(--chip-ink)}
+.dashboard-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:14px;align-items:start}
+.panel-head{padding:16px 17px}.panel-head h2{font-size:18px}
+.panel th{background:var(--surface-2)}.panel tbody tr:hover{background:var(--surface-2)}
+.panel td:first-child{min-width:120px}
+.guide{background:var(--guide-bg);border-color:var(--border)}
+.filters{background:var(--surface)}.filters button{margin-left:auto}
+.wide-dialog{width:min(990px,calc(100% - 24px));max-height:94vh}
+.pdf-preview{display:block;width:100%;height:min(62vh,650px);background:var(--surface-2);border:1px solid var(--border);border-radius:9px}
+.xml-view{background:var(--surface-2)}
+.actions{flex-wrap:wrap}#form{max-height:inherit}.dialog-actions{position:sticky;bottom:0;background:var(--surface);padding-top:6px}
+/* KPI del panel principal */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:15px}
+.kpi{background:var(--surface);border:1px solid var(--border);border-radius:13px;box-shadow:0 2px 5px #2742640b;padding:15px 17px;display:grid;gap:4px;min-width:0}
+.kpi-label{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:13px}
+.kpi-label svg{color:var(--green)}
+.kpi strong{font-size:26px;letter-spacing:-.03em;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.kpi small{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.kpi.split strong{font-size:20px}
+/* Gráfico SVG de totales por mes */
+.chart-wrap{padding:6px 17px 14px}
+.chart{width:100%;height:auto;display:block}
+.chart text{fill:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.chart .bar-issued{fill:var(--green)}
+.chart .bar-received{fill:var(--chart-received)}
+.chart .grid-line{stroke:var(--border);stroke-width:1}
+.chart-legend{display:flex;gap:16px;flex-wrap:wrap;padding:0 17px 14px;color:var(--muted);font-size:12.5px;font-weight:600}
+.chart-legend span{display:inline-flex;gap:6px;align-items:center}
+.chart-legend i{width:11px;height:11px;border-radius:3px;display:inline-block}
+.chart-legend .sw-issued{background:var(--green)}.chart-legend .sw-received{background:var(--chart-received)}
+/* Reporte imprimible */
+#print-report{display:none}
+.report-head{border-bottom:3px solid var(--green);padding-bottom:10px;margin-bottom:14px}
+.report-head h1{font-size:24px;margin:2px 0}
+.report-meta{color:var(--muted);font-size:13px}
+.report-note{font-size:12.5px;color:var(--muted);margin-top:12px}
+@media print{
+  .frame{display:none!important}
+  #print-report{display:block!important;color:#000;background:#fff}
+  #print-report table{width:100%;border-collapse:collapse}
+  #print-report th,#print-report td{border:1px solid #bbb;padding:6px 8px;text-align:left;font-size:12.5px}
+  #print-report .panel{border:none;box-shadow:none}
+}
+@media(max-width:1080px){.dashboard-grid{grid-template-columns:1fr}}
+@media(max-width:780px){.sidebar{padding:15px}.dashboard-hero{padding:18px}.heading .actions{width:100%}.heading .actions button{flex:0 1 auto}.headin
+...[truncated 76 chars]
+.nav-caption{display:block;color:var(--nav-muted);font-size:10px;font-weight:750;letter-spacing:.13em;padding:3px 10px 4px}.nav-divider{margin-top:13px}.sidebar{gap:24px}.dashboard-hero{position:relative;overflow:hidden;min-height:134px;isolation:isolate}.dashboard-hero::after{content:"";z-index:-1;position:absolute;width:285px;height:285px;right:-20px;top:-120px;border-radius:50%;border:1px solid #98c9ce50;box-shadow:0 0 0 25px #a5cbdd16,0 0 0 51px #a5cbdd15,0 0 0 80px #a5cbdd0b}.metric{grid-template-columns:1fr auto;align-items:center;min-height:105px}.metric-label{grid-column:1/-1}.metric-link{background:var(--chip-bg);border:1px solid var(--border);color:var(--chip-ink);padding:6px 8px;font-size:12px}.metric-link svg{width:14px;height:14px}.period-chip{display:inline-block;max-width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--chip-bg);color:var(--chip-ink);font-size:12px;font-weight:700}.activity-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding:4px 17px 17px}.activity-day{display:grid;gap:5px;min-width:0;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.activity-day strong{color:var(--ink);font-size:14px}.activity-day meter{width:100%;height:12px}.activity-day meter::-webkit-meter-bar{background:var(--surface-2);border:none;border-radius:8px}.activity-day meter::-webkit-meter-optimum-value{background:linear-gradient(90deg,#237570,#478e9e);border-radius:8px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:var(--surface-2);border:1px solid var(--border);padding:15px;border-radius:12px;overflow-wrap:anywhere}.invoice-summary h3{font-size:27px;letter-spacing:-.04em;margin-top:5px}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div{display:grid;gap:3px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:9px;min-width:0}.invoice-parties small{font-size:10px;color:var(--muted);letter-spacing:.1em;font-weight:700}.invoice-parties span,.invoice-summary small{color:var(--muted)}.invoice-concepts{padding:11px 13px;border:1px solid var(--border);border-radius:9px}.invoice-concepts ul{padding-left:21px;margin:6px 0 0}.invoice-concepts li{overflow-wrap:anywhere}.table-wrap td:last-child .actions{gap:5px}@media(max-width:780px){.nav-caption{width:100%;padding:3px 5px}.nav-divider{margin-top:5px}.metric{min-height:0}.dashboard-hero{min-height:0}.activity-bars{gap:6px}}@media(max-width:390px){.invoice-parties{grid-template-columns:1fr}.activity-bars{padding-inline:9px;gap:4px}.activity-day{font-size:10px}}
+.fiscal-state{display:grid;gap:2px;justify-items:start}.fiscal-badge{display:inline-block;padding:3px 8px;border-radius:100px;color:var(--info-ink);background:var(--info-bg);font-size:12px;font-weight:700;white-space:nowrap}.fiscal-badge[data-state=Vigente]{color:var(--ok-ink);background:var(--ok-bg)}.fiscal-badge[data-state=Cancelado]{color:var(--danger);background:var(--danger-bg)}.fiscal-badge[data-state="No encontrado"]{color:var(--warn-ink);background:var(--warn-bg)}.fiscal-state small{font-size:11px}
+body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button{transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.metric{transition:box-shadow .18s ease,transform .18s ease}.metric:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.top-side{display:inline-flex;align-items:center;gap:12px;min-width:0}.header-counters{color:var(--muted);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.activity-list{display:grid;padding:6px 15px 10px}.activity-item{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border)}.activity-item:first-child{border-top:none}.activity-kind{flex:none;margin-top:1px;padding:3px 8px;border-radius:100px;font-size:11px;font-weight:750;letter-spacing:.02em;background:var(--info-bg);color:var(--info-ink)}.activity-kind[data-kind=sat]{background:var(--tint);color:var(--ok-ink)}.activity-kind[data-kind=import]{background:var(--chip-bg);color:var(--chip-ink)}.activity-kind[data-kind=alert]{background:var(--danger-bg);color:var(--danger)}.activity-body{display:grid;gap:2px;min-width:0}.activity-body strong{font-size:13.5px;overflow-wrap:anywhere}.activity-body small{color:var(--muted);font-size:12px}.activity-body .metric-link{justify-self:start;margin-top:3px}.table-wrap::-webkit-scrollbar,.xml-view::-webkit-scrollbar{height:10px;width:10px}.table-wrap::-webkit-scrollbar-thumb,.xml-view::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:8px}::selection{background:var(--selection)}@media(max-width:780px){.header-counters{display:none}}@media print{.sidebar,.top,.heading .actions,.hero-actions{display:none!important}.frame{display:block}.page{padding:0;max-width:none}}@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+.news-badge{margin-left:2px;padding:1px 7px;border-radius:100px;background:#d9534f;color:#fff;font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.news-note{margin:10px 17px 0;padding:7px 10px;border:1px solid var(--warn-ink);border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);font-size:12.5px;font-weight:700}
+.kpi,.panel,.metric{transition:box-shadow .18s ease,transform .18s ease}.kpi:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.view-in{animation:view-in .22s ease}@keyframes view-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -25,6 +130,21 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
 <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 4v3"/></symbol>
 <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9.5a6 6 0 0 1 12 0c0 4.5 2 5.5 2 5.5H4s2-1 2-5.5M10 19a2.2 2.2 0 0 0 4 0"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 2.8V11c0 4.8-2.9 7.9-7 9.5C7.9 18.9 5 15.8 5 11V5.8z"/><path d="m9 11.6 2.1 2.1 3.9-4.2"/></symbol>
+<symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15.5" r="4.3"/><path d="M11.1 12.4 20 3.5m-3.4 3.4 2.7 2.7M14.5 7.9l2.2 2.2"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v15.5h16"/><path d="M8.5 16.5v-4m4.5 4v-8.5m4.5 8.5V10"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M12 3.5v8m-3.8-3.8L12 11.5l3.8-3.8"/><path d="M4 14.5V18a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3.5M4 14.5h5l1.6 2.2h2.8L15 14.5h5"/></symbol>
+<symbol id="i-print" viewBox="0 0 24 24"><path d="M7 8V3.5h10V8"/><rect x="4" y="8" width="16" height="7.5" rx="2"/><path d="M7 12.5h10V20H7z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.8"/><path d="M12 2.8v2m0 14.4v2M2.8 12h2m14.4 0h2M5.2 5.2l1.4 1.4m10.8 10.8 1.4 1.4m0-13.6-1.4 1.4M6.6 17.4l-1.4 1.4"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 13.6A8.2 8.2 0 1 1 10.4 4 6.6 6.6 0 0 0 20 13.6z"/></symbol>
+<symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9.5v5h3.8L13 19V5L7.8 9.5H4z"/><path d="M16 9.2a4 4 0 0 1 0 5.6m2.4-8.3a8 8 0 0 1 0 11"/></symbol>
+<symbol id="i-mute" viewBox="0 0 24 24"><path d="M4 9.5v5h3.8L13 19V5L7.8 9.5H4z"/><path d="m16.2 9.7 5.3 5.3m0-5.3-5.3 5.3"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m4.5 12.6 5 5L19.5 6.4"/></symbol>
+<symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.8v4.2m0 2.8v.4"/></symbol>
+<symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+<symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.8 12S6.2 5.4 12 5.4 21.2 12 21.2 12 17.8 18.6 12 18.6 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="3"/></symbol>
 </svg>
 <div class="frame">
 <aside class="sidebar">
@@ -33,18 +153,19 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   <nav aria-label="Navegación principal">
     <span class="nav-caption">OPERACIÓN FISCAL</span>
     <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen <span id="news-badge" class="news-badge" hidden></span></button>
-    <button data-view="operations"><svg><use href="#i-sync"/></svg> Operaciones y alertas</button>
+    <button data-view="operations"><svg><use href="#i-bell"/></svg> Operaciones y alertas</button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
     <span class="nav-caption nav-divider">ADMINISTRACIÓN</span>
     <button data-view="sat"><svg><use href="#i-sync"/></svg> Centro SAT</button>
-    <button data-view="monitor"><svg><use href="#i-search"/></svg> Vigilancia SAT</button>
+    <button data-view="monitor"><svg><use href="#i-shield"/></svg> Vigilancia SAT</button>
     <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
+    <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>
   </nav>
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
 </aside>
 <main>
-  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><span id="counters" class="header-counters"></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
+  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><span id="counters" class="header-counters"></span><span class="top-tools"><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
   <div class="page">
     <header class="heading">
       <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
@@ -55,6 +176,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   </div>
 </main>
 </div>
+<section id="print-report" aria-hidden="true"></section>
 <input id="incoming" type="file" accept=".xml,.zip" multiple hidden>
 <input id="inspectFile" type="file" accept=".xml,text/xml,application/xml" hidden>
 <input id="invoice-pdf" type="file" accept=".pdf,application/pdf" hidden>
@@ -273,7 +395,8 @@ const screens = {
   docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
   sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
-  backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo']
+  backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
+  diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV']
 };
 const portals = [
   ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
@@ -283,7 +406,7 @@ const portals = [
 ];
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
-let invoiceKind = '', invoiceOrder = 'recent';
+let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '';
 let submit, importing = false, ready = false;
 const number = new Intl.NumberFormat('es-MX');
 const scopes = () => new Map(people.map(person => [person.id, person.name]));
@@ -303,6 +426,62 @@ function amount(row) {
   const [integer, decimals] = row.total.split('.');
   return number.format(BigInt(integer)) + (decimals ? '.' + decimals : '.00') + (row.currency ? ' ' + row.currency : '');
 }
+// Tema y sonidos de la interfaz (1.6.0): persistentes en este navegador.
+const prefGet = key => { try { return localStorage.getItem(key); } catch { return null; } };
+const prefSet = (key, value) => { try { localStorage.setItem(key, value); } catch { /* Sin almacenamiento, la preferencia dura la sesión. */ } };
+const themeIsDark = () => document.documentElement.dataset.theme === 'dark' ||
+  (!document.documentElement.dataset.theme && typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches);
+function applyTheme() {
+  const saved = prefGet('pacosat-theme');
+  if (saved === 'dark' || saved === 'light') document.documentElement.dataset.theme = saved;
+  else delete document.documentElement.dataset.theme;
+  const button = $('theme-toggle');
+  if (button) { button.replaceChildren(icon(themeIsDark() ? 'sun' : 'moon')); button.setAttribute('aria-pressed', String(themeIsDark())); }
+}
+let soundOn = prefGet('pacosat-sound') !== 'off';
+let audioCtx = null;
+function ensureAudio() {
+  if (!soundOn) return null;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') void audioCtx.resume();
+    return audioCtx;
+  } catch { return null; }
+}
+function tone(frequency, start, duration, type = 'sine', gain = 0.055) {
+  const ctx = ensureAudio();
+  if (!ctx) return;
+  const osc = ctx.createOscillator(), amp = ctx.createGain();
+  const at = ctx.currentTime + start;
+  osc.type = type; osc.frequency.value = frequency;
+  amp.gain.setValueAtTime(0, at);
+  amp.gain.linearRampToValueAtTime(gain, at + 0.012);
+  amp.gain.exponentialRampToValueAtTime(0.0001, at + duration);
+  osc.connect(amp); amp.connect(ctx.destination);
+  osc.start(at); osc.stop(at + duration + 0.05);
+}
+function soundCue(kind) {
+  if (!soundOn) return;
+  if (kind === 'success') { tone(659, 0, 0.13); tone(880, 0.1, 0.2); }
+  else if (kind === 'error') tone(196, 0, 0.22, 'triangle', 0.075);
+  else if (kind === 'alert') { tone(880, 0, 0.12); tone(880, 0.18, 0.12); }
+  else tone(740, 0, 0.11);
+}
+function initPrefs() {
+  applyTheme();
+  const soundButton = $('sound-toggle');
+  if (soundButton) {
+    const paint = () => { soundButton.replaceChildren(icon(soundOn ? 'volume' : 'mute')); soundButton.setAttribute('aria-pressed', String(soundOn)); };
+    paint();
+    soundButton.onclick = () => { soundOn = !soundOn; prefSet('pacosat-sound', soundOn ? 'on' : 'off'); paint(); if (soundOn) soundCue('notice'); };
+  }
+  const themeButton = $('theme-toggle');
+  if (themeButton) themeButton.onclick = () => { prefSet('pacosat-theme', themeIsDark() ? 'light' : 'dark'); applyTheme(); };
+  const unlock = () => { if (soundOn) ensureAudio(); };
+  window.addEventListener('pointerdown', unlock, { once: true });
+  window.addEventListener('keydown', unlock, { once: true });
+}
+initPrefs();
 let newsCount = 0;
 function computeNews() {
   try {
@@ -348,7 +527,8 @@ function totalsPanel() {
     wrap.append(empty('Sin comprobantes todavía', 'Los totales por contribuyente y mes aparecerán al importar o sincronizar CFDI.'));
     return wrap;
   }
-  wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'));
+  wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'),
+    action('Reporte mensual', reportDialog, 'metric-link', 'print'));
   const rows = [];
   let truncated = false;
   for (const [rfc, group] of totals) {
@@ -361,6 +541,175 @@ function totalsPanel() {
   }
   wrap.append(grid(['Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos', 'Emitidos', 'Importe emitidos'], rows));
   wrap.append(n('p', 'Importes en MXN sumados al centavo.' + (truncated ? ' Se muestran los últimos 12 meses por RFC; la exportación CSV incluye todos.' : '')));
+  return wrap;
+}
+function reportDialog() {
+  const months = [...new Set([...monthlyTotals().values()].flatMap(group => group.months.map(([key]) => key)))].sort().reverse();
+  check(months.length, 'Todavía no hay totales para reportar.');
+  const monthSel = select(months.map(key => [key, key.slice(5, 7) + '/' + key.slice(0, 4)]), months[0], 'Mes del reporte');
+  dialog('Reporte mensual por RFC', [n('p', 'Vista para imprimir o guardar en PDF del mes elegido. Respeta el contribuyente seleccionado en el selector principal; sin selección, incluye a todos.'),
+    field('Mes', monthSel)], () => printMonthlyReport(monthSel.value));
+  $('save').textContent = 'Generar e imprimir';
+}
+function printMonthlyReport(key) {
+  const section = $('print-report');
+  section.replaceChildren();
+  const head = n('div', undefined, 'report-head');
+  head.append(n('div', 'PACOSAT · REPORTE MENSUAL', 'hero-kicker'), n('h1', 'Reporte mensual ' + key.slice(5, 7) + '/' + key.slice(0, 4)),
+    n('p', (scope ? (scopes().get(scope) || scope) + ' · ' + scope : 'Todos los contribuyentes') + ' · Generado el ' + localDateTime(Date.now()), 'report-meta'));
+  section.append(head);
+  const rows = [];
+  for (const [rfc, group] of monthlyTotals()) {
+    const found = group.months.find(([monthKey]) => monthKey === key);
+    if (!found) continue;
+    const g = found[1];
+    rows.push([group.name + ' (' + rfc + ')', number.format(g.received), '$' + centsLabel(g.receivedCents),
+      number.format(g.issued), '$' + centsLabel(g.issuedCents)]);
+  }
+  const tableWrap = n('div');
+  tableWrap.append(grid(['Contribuyente', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN'],
+    rows.length ? rows : [['Sin comprobantes en el mes', '', '', '', '']]));
+  section.append(tableWrap);
+  let checked = 0, cancelled = 0, efosHits = 0;
+  for (const row of invoices) {
+    if (!row.date.startsWith(key) || !matches(row)) continue;
+    const item = fiscalResults.get(row.id);
+    if (item?.sat) { checked++; if (item.sat.state === 'Cancelado') cancelled++; }
+    if (item?.efos?.length) efosHits++;
+  }
+  section.append(n('p', 'Vigilancia según la última consulta disponible en esta sesión: ' + checked + ' CFDI del mes consultados al SAT, ' +
+    cancelled + ' cancelados y ' + efosHits + ' con coincidencia 69-B. Si la vigilancia no ha corrido, estos conteos quedan parciales.', 'report-note'));
+  section.append(n('p', 'Importes en MXN sumados al centavo desde el total de cada CFDI; los comprobantes en otra moneda se cuentan pero no se suman. Documento de trabajo generado por PacoSAT, no una declaración.', 'report-note'));
+  setTimeout(() => window.print(), 80);
+}
+function diotGroups() {
+  const groups = new Map();
+  for (const row of invoices) {
+    if (!roles(row).received) continue;
+    const key = row.date.slice(0, 7) + '|' + row.from.rfc;
+    if (!groups.has(key)) groups.set(key, { month: row.date.slice(0, 7), rfc: row.from.rfc, name: row.from.name || '', count: 0, cents: 0n, foreign: 0 });
+    const group = groups.get(key);
+    group.count++;
+    if (row.currency && row.currency !== 'MXN') group.foreign++;
+    else group.cents += totalCents(row);
+    if (!group.name && row.from.name) group.name = row.from.name;
+  }
+  return [...groups.values()].sort((a, b) => b.month.localeCompare(a.month) || a.rfc.localeCompare(b.rfc));
+}
+function diotScreen() {
+  const wrap = panel('Totales por proveedor y mes · CFDI recibidos');
+  wrap.append(n('p', 'Base de trabajo para la contadora, no la declaración. Suma el total de los CFDI recibidos por RFC emisor y mes' +
+    (scope ? ' para ' + scope : ' de todos tus RFC') + '. El importador no guarda el desglose de IVA: la DIOT formal requiere los ajustes de la contadora (valor de actos, IVA acreditable y retenciones).'));
+  const rows = diotGroups();
+  if (!rows.length) { wrap.append(empty('Sin CFDI recibidos', 'Importa comprobantes recibidos para construir la base por proveedor.')); return [wrap]; }
+  wrap.querySelector('.panel-head').append(action('Exportar CSV', exportDiotCsv, 'metric-link', 'down'));
+  wrap.append(grid(['Mes', 'RFC proveedor', 'Proveedor', 'CFDI', 'Total MXN'], rows.slice(0, 200).map(group => [
+    group.month.slice(5, 7) + '/' + group.month.slice(0, 4), group.rfc, group.name || '—', number.format(group.count),
+    cell('$' + centsLabel(group.cents), group.foreign ? group.foreign + ' en otra moneda sin sumar' : '')
+  ])));
+  if (rows.length > 200) wrap.append(n('p', 'Se muestran las primeras 200 filas; la exportación CSV incluye todas.'));
+  return [wrap];
+}
+function diotCsv() {
+  const escape = value => {
+    const text = String(value);
+    const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  const rows = [['Mes', 'RFC proveedor', 'Proveedor', 'CFDI recibidos', 'Total MXN', 'En otra moneda sin sumar']];
+  for (const group of diotGroups()) rows.push([group.month, group.rfc, group.name, group.count, centsPlain(group.cents), group.foreign]);
+  return rows.map(row => row.map(escape).join(',')).join('\r\n');
+}
+function exportDiotCsv() {
+  check(diotGroups().length, 'Sin CFDI recibidos para exportar.');
+  download(new Blob(['\uFEFF', diotCsv()], { type: 'text/csv;charset=utf-8' }), 'Base-DIOT-' + (scope || 'todos') + '.csv');
+  announce('Base DIOT exportada en CSV.');
+}
+function kpiRow(selection) {
+  const wrap = n('div', undefined, 'kpis');
+  const consulted = selection.filter(row => fiscalResults.get(row.id)?.sat);
+  const vigentes = consulted.filter(row => fiscalResults.get(row.id).sat.state === 'Vigente').length;
+  const cancelados = consulted.filter(row => fiscalResults.get(row.id).sat.state === 'Cancelado').length;
+  const efosCount = selection.filter(row => fiscalResults.get(row.id)?.efos?.length).length;
+  const monthKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit' }).format();
+  let issuedCents = 0n, receivedCents = 0n;
+  for (const row of selection) {
+    if (!row.date.startsWith(monthKey) || (row.currency && row.currency !== 'MXN')) continue;
+    const role = roles(row);
+    if (role.issued) issuedCents += totalCents(row);
+    if (role.received) receivedCents += totalCents(row);
+  }
+  const pendingJobs = satData.jobs.filter(job => job.status === 'pending').length;
+  const lastSync = satData.jobs.length ? Math.max(...satData.jobs.map(job => job.created)) : (activity[0] ? Date.parse(activity[0].date) : 0);
+  const card = (label, glyph, value, note, cls) => {
+    const el = n('article', undefined, 'kpi' + (cls ? ' ' + cls : ''));
+    const head = n('div', label, 'kpi-label'); head.prepend(icon(glyph));
+    el.append(head, n('strong', value), n('small', note));
+    return el;
+  };
+  wrap.append(
+    card('CFDI vigentes', 'shield', number.format(vigentes), consulted.length ? 'De ' + number.format(consulted.length) + ' consultados al SAT' : 'Sin consultas de vigilancia todavía'),
+    card('CFDI cancelados', 'alert', number.format(cancelados), efosCount ? number.format(efosCount) + ' con coincidencia 69-B' : 'Sin coincidencias 69-B en lo consultado'),
+    card('Importe del mes', 'chart', '$' + centsLabel(issuedCents + receivedCents),
+      'Emitidos $' + centsLabel(issuedCents) + ' · Recibidos $' + centsLabel(receivedCents) + ' · ' + monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4), 'split'),
+    card('Descargas en curso', 'sync', number.format(pendingJobs + satData.inbox.length),
+      number.format(pendingJobs) + ' solicitudes pendientes · ' + number.format(satData.inbox.length) + ' paquetes por importar'),
+    card('Última actividad', 'clock', lastSync ? localDateTime(lastSync) : '—',
+      activity.length ? 'Bitácora con ' + number.format(activity.length) + ' registros' : 'Sin registros todavía')
+  );
+  return wrap;
+}
+function monthlyChart() {
+  const byMonth = new Map();
+  for (const group of monthlyTotals().values()) for (const [key, g] of group.months) {
+    if (!byMonth.has(key)) byMonth.set(key, { issued: 0n, received: 0n });
+    const entry = byMonth.get(key);
+    entry.issued += g.issuedCents; entry.received += g.receivedCents;
+  }
+  const keys = [...byMonth.keys()].sort().slice(-6);
+  const wrap = panel('Totales por mes');
+  if (!keys.length) {
+    wrap.append(empty('Sin datos para el gráfico', 'Al importar CFDI verás aquí la evolución mensual de emitidos y recibidos.'));
+    return wrap;
+  }
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 640 238'); svg.setAttribute('class', 'chart'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Gráfico de barras con los importes emitidos y recibidos de los últimos meses');
+  const el = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  const base = 198, top = 26, height = base - top;
+  let max = 0n;
+  for (const key of keys) { const entry = byMonth.get(key); if (entry.issued > max) max = entry.issued; if (entry.received > max) max = entry.received; }
+  for (const frac of [0.25, 0.5, 0.75, 1]) svg.append(el('line', { x1: 10, x2: 630, y1: base - height * frac, y2: base - height * frac, class: 'grid-line' }));
+  svg.append(el('line', { x1: 10, x2: 630, y1: base, y2: base, class: 'grid-line' }));
+  const shortMoney = cents => {
+    const pesos = Number(cents) / 100;
+    return pesos >= 100000 ? '$' + number.format(Math.round(pesos / 1000)) + ' mil' : '$' + centsLabel(cents);
+  };
+  const slot = 620 / keys.length, barW = Math.min(27, slot / 4.5);
+  keys.forEach((key, index) => {
+    const entry = byMonth.get(key);
+    const center = 10 + slot * index + slot / 2;
+    for (const [kind, cents, offset] of [['issued', entry.issued, -barW - 2], ['received', entry.received, 2]]) {
+      const h = max ? Math.max(1, Math.round(Number(cents) / Number(max) * height)) : 0;
+      if (cents) {
+        const bar = el('rect', { x: center + offset, y: base - h, width: barW, height: h, rx: 3, class: 'bar-' + kind });
+        bar.append(el('title', {}, (kind === 'issued' ? 'Emitidos ' : 'Recibidos ') + key + ': $' + centsLabel(cents)));
+        svg.append(bar, el('text', { x: center + offset + barW / 2, y: base - h - 5, 'text-anchor': 'middle' }, shortMoney(cents)));
+      }
+    }
+    svg.append(el('text', { x: center, y: base + 18, 'text-anchor': 'middle' }, key.slice(5, 7) + '/' + key.slice(0, 4)));
+  });
+  const chartWrap = n('div', undefined, 'chart-wrap'); chartWrap.append(svg);
+  const legend = n('div', undefined, 'chart-legend');
+  const item = (cls, label) => { const span = n('span'); const sw = n('i', undefined, cls); span.append(sw, document.createTextNode(label)); return span; };
+  legend.append(item('sw-issued', 'Emitidos'), item('sw-received', 'Recibidos'));
+  wrap.append(chartWrap, legend);
   return wrap;
 }
 function n(tag, text, cls) {
@@ -388,6 +737,7 @@ function announce(message = '', error = false) {
   $('status').textContent = message;
   $('status').hidden = !message;
   $('status').dataset.error = error;
+  if (message && error) soundCue('error');
 }
 async function logEvent(text) {
   if (!ready) return;
@@ -493,9 +843,10 @@ function render() {
     headerCounts.textContent = people.length ?
       number.format(selectedCount) + ' CFDI · ' + number.format(docsCount) + ' PDF · ' + people.length + ' RFC' : '';
   }
-  $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : 'up'), n('span', button));
+  $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen })[page]();
+  for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
 }
 function home() {
@@ -564,7 +915,7 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  return [banner, metrics, ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
+  return [banner, metrics, kpiRow(selection), monthlyChart(), ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
 }
 
 function weeklyActivity(rows) {
@@ -595,11 +946,17 @@ function weeklyActivity(rows) {
   chart.append(header, bars);
   return chart;
 }
+const invoiceStateOf = row => {
+  const item = fiscalResults.get(row.id);
+  if (item?.efos?.length) return 'efos';
+  return item?.sat?.state || 'none';
+};
 function invoiceRows() {
   const needle = term.trim().toLocaleLowerCase('es-MX');
   const known = scopes();
   const matchScope = row => scope ? row.from.rfc === scope || row.to.rfc === scope : known.has(row.from.rfc) || known.has(row.to.rfc);
   const filtered = invoices.filter(row => matchScope(row) && (!month || row.date.startsWith(month)) && (!invoiceKind || row.kind === invoiceKind) &&
+    (!invoiceState || invoiceStateOf(row) === invoiceState) &&
     (direction === 'Todos' || (direction === 'Recibidos' ? (scope ? row.to.rfc === scope : known.has(row.to.rfc)) : (scope ? row.from.rfc === scope : known.has(row.from.rfc)))) &&
     [row.id, row.from.rfc, row.to.rfc, row.from.name, row.to.name].some(text => text.toLocaleLowerCase('es-MX').includes(needle)));
   return invoiceOrder === 'oldest' ? filtered.reverse() : filtered;
@@ -621,6 +978,7 @@ function invoiceScreen() {
   search.setAttribute('aria-label', 'Buscar comprobantes');
   const period = input('month', { value: month }); period.setAttribute('aria-label', 'Mes de emisión');
   const type = select([['', 'Todos los tipos'], ...Object.entries(KINDS)], invoiceKind, 'Tipo de CFDI');
+  const state = select([['', 'Todos los estados SAT'], ['Vigente', 'Vigente'], ['Cancelado', 'Cancelado'], ['efos', 'Con 69-B'], ['none', 'Sin consulta']], invoiceState, 'Estado SAT');
   const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
   const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
   const result = n('div');
@@ -648,8 +1006,9 @@ function invoiceScreen() {
   search.oninput = () => { term = search.value; invoicePage = 0; update(); };
   period.onchange = () => { month = period.value; invoicePage = 0; update(); };
   type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
+  state.onchange = () => { invoiceState = state.value; invoicePage = 0; update(); };
   order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
-  controls.append(search, period, type, order, exportButton);
+  controls.append(search, period, type, state, order, exportButton);
   list.append(tabs, controls, result);
   update();
   return [list];
@@ -693,7 +1052,21 @@ function backupScreen() {
   const options = n('div', undefined, 'actions');
   options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
   help.append(desc, options);
-  return [help];
+  const screens = [help];
+  if (satToken) {
+    const auto = panel('Automatización del servidor');
+    const sb = satData.scheduledBackup || {}, wf = satData.watchFolder || {};
+    auto.append(grid(['Componente', 'Estado'], [
+      ['Respaldo programado', sb.enabled ? (sb.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
+        (sb.last ? localDateTime(sb.last) : 'aún no') + ' · siguiente: ' + (sb.next ? localDateTime(sb.next) : 'al próximo ciclo') +
+        (sb.error ? ' · Error: ' + sb.error : '') : 'Sin configurar: se define en el archivo de arranque protegido del servidor.'],
+      ['Carpeta vigilada', wf.enabled ? 'Activa · ' + wf.imported + ' importados · ' + wf.failed + ' con error' +
+        (wf.lastScan ? ' · última revisión ' + localDateTime(wf.lastScan) : '') + (wf.error ? ' · ' + wf.error : '') :
+        'Sin configurar: se define en el archivo de arranque protegido del servidor.']
+    ]));
+    screens.push(auto);
+  }
+  return screens;
 }
 
 
@@ -832,6 +1205,14 @@ function operationsScreen() {
     ['Servicio SAT', !satToken ? 'Abre Iniciar-PacoSAT.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
+    ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
+      'Activa · ' + satData.watchFolder.imported + ' archivos importados · ' + satData.watchFolder.failed + ' con error' +
+      (satData.watchFolder.lastScan ? ' · última revisión ' + localDateTime(satData.watchFolder.lastScan) : '') +
+      (satData.watchFolder.error ? ' · ' + satData.watchFolder.error : '') : 'Sin configurar en el servidor'],
+    ['Respaldo programado', !satToken ? 'Sin servidor: crea respaldos manuales' : satData.scheduledBackup?.enabled ?
+      (satData.scheduledBackup.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
+      (satData.scheduledBackup.last ? localDateTime(satData.scheduledBackup.last) : 'aún no') +
+      (satData.scheduledBackup.error ? ' · Error: ' + satData.scheduledBackup.error : '') : 'Sin configurar en el servidor'],
     ['Respaldo', 'Exporta una copia cifrada antes de actualizar. No incluye e.firma, SMTP ni cola SAT.']
   ]));
   const buttons = n('div', undefined, 'actions');
@@ -943,8 +1324,11 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
       id: crypto.randomUUID(), name: files.length === 1 ? files[0].name.slice(0, 180) : files.length + ' archivos',
       date: new Date().toISOString(), added, duplicates, review, issues
     }] });
-    if (!quiet) announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
-      (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
+    if (!quiet) {
+      announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
+        (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
+      if (!review) soundCue('success'); else if (added) soundCue('notice');
+    }
     return { added, duplicates, review };
   } catch (error) {
     announce(added + ' comprobantes guardados antes de interrumpir el lote. ' + error.message, true);
@@ -1152,6 +1536,7 @@ function backupDialog() {
     download(await encryptBackup(await snapshot(), password.value), 'PacoSAT-' + new Date().toISOString().slice(0, 10) + '.faro');
     await logEvent('Respaldo cifrado creado');
     announce('Respaldo cifrado generado.');
+    soundCue('success');
   });
 }
 function restoreDialog(file) {
@@ -1178,7 +1563,8 @@ $('inspectFile').onchange = handle(async () => {
 });
 $('primary').onclick = handle(async () => {
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
-  return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() : chooseImport();
+  return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
+    page === 'diot' ? exportDiotCsv() : chooseImport();
 });
 for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
 $('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
@@ -1363,7 +1749,7 @@ async function pollSat() {
         const archive = await satApi('packages/' + packet.id);
         if (importing || $('dialog').open) break;
         const result = await importBatch([new File([archive], 'SAT-' + packet.rfc + '-' + packet.id + '.zip')], packet.rfc, { quiet: true });
-        if (result) await satApi('packages/' + packet.id, { imported: result.added });
+        if (result) { if (result.added) soundCue('notice'); await satApi('packages/' + packet.id, { imported: result.added }); }
       }
     };
     if (!$('dialog').open) {
@@ -1454,6 +1840,7 @@ async function pollMonitor() {
       const text = 'Cancelación detectada · ' + entry.id;
       if (activity.some(row => row.event === text)) continue;
       await logEvent(text);
+      soundCue('alert');
       cancellationsLogged++;
     }
     if (page !== 'invoices') monitorCursor += 500;

@@ -143,7 +143,7 @@ async function pollSat() {
         const archive = await satApi('packages/' + packet.id);
         if (importing || $('dialog').open) break;
         const result = await importBatch([new File([archive], 'SAT-' + packet.rfc + '-' + packet.id + '.zip')], packet.rfc, { quiet: true });
-        if (result) await satApi('packages/' + packet.id, { imported: result.added });
+        if (result) { if (result.added) soundCue('notice'); await satApi('packages/' + packet.id, { imported: result.added }); }
       }
     };
     if (!$('dialog').open) {
