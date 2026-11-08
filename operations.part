@@ -38,6 +38,8 @@ function linkPdfDialog(doc) {
     check([row.from.rfc,row.to.rfc].includes(doc.rfc), 'El XML corresponde a otro RFC.');
     check(!documents.some(d => d.id !== doc.id && d.rfc === doc.rfc && d.uuid === id && d.kind === 'Factura PDF'), 'Ese CFDI ya tiene un PDF vinculado.');
     await writeBatch({ documents: [{ ...doc, uuid: id }] });
-    await refresh(); announce('PDF vinculado al XML.');
+    await refresh();
+    await logEvent('PDF vinculado al CFDI ' + id);
+    announce('PDF vinculado al XML.');
   });
 }

@@ -1,6 +1,6 @@
 # Faro Fiscal para Windows
 
-1. Extrae todo el ZIP en una carpeta. Con Node.js 24 o superior, ejecuta **Iniciar-Faro.cmd**. La primera ejecución instala componentes del SAT y correo desde npm.
+1. Para instalar y arrancar, sigue los pasos de **Inicio en Windows** del [README](README.md): extrae todo el ZIP en una carpeta, instala Node.js 24 o superior y ejecuta **Iniciar-Faro.cmd**. La primera ejecución instala los componentes del SAT y de correo desde npm con las versiones fijadas del repositorio.
 2. Si el navegador no se abre solo, entra en **http://127.0.0.1:43729/** desde Chrome o Edge.
 3. Agrega un contribuyente. En **Centro SAT → Configurar RFC**, selecciona la e.firma de ese RFC y el intervalo.
 4. Para avisos, usa **Centro SAT → Configurar SMTP**. La conexión se verifica al guardar y los avisos se envían para CFDI recibidos detectados como nuevos.
