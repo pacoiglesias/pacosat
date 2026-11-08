@@ -7,12 +7,12 @@ import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
-import { parseXml, zipXml } from './xml-core.mjs';
+import { parseXml, zipXml, validateRfc } from './xml-core.mjs';
 import { analyzeInvoicePdf } from './pdf-invoice.mjs';
 import { createMonitor } from './sat-monitor.mjs';
 import { encryptBackupBuffer } from './backup-core.mjs';
 
-const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/u;
+/* El RFC se valida con validateRfc (xml-core): un solo criterio en todo el sistema. */
 const DAY = 86400000;
 const MIN = 60000;
 const formatDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -129,7 +129,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   async function bootstrap(config) {
     for (const row of config.profiles || []) {
       try {
-        need(RFC.test(row.rfc || '') && typeof row.name === 'string' && row.name.length > 0 && row.name.length <= 120 &&
+        need(validateRfc(row.rfc || '').level !== 'structure' && typeof row.name === 'string' && row.name.length > 0 && row.name.length <= 120 &&
           [60,120,240,720,1440].includes(row.minutes) && Number.isInteger(row.days) && row.days >= 1 && row.days <= 31 &&
           ['received','issued','both'].includes(row.direction), 'Perfil inicial inválido.');
         const certificate = readFileSync(row.certificatePath), privateKey = readFileSync(row.keyPath);
@@ -544,7 +544,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       if (req.method === 'POST' && url.pathname === '/api/unlock') {
         const x = await body(req);
-        need(typeof x.rfc === 'string' && RFC.test(x.rfc), 'RFC inválido.');
+        const unlockShape = validateRfc(typeof x.rfc === 'string' ? x.rfc : '');
+        need(unlockShape.level !== 'structure', unlockShape.error || 'RFC inválido.');
         need(Number.isInteger(x.minutes) && x.minutes >= 60 && x.minutes <= 1440, 'El intervalo debe ser de 60 a 1440 minutos.');
         need(Number.isInteger(x.days) && x.days >= 1 && x.days <= 31, 'El periodo de revisión debe ser de 1 a 31 días.');
         need(['received', 'issued', 'both'].includes(x.direction), 'Elige emitidos o recibidos.');

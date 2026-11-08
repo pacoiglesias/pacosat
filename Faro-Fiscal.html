@@ -113,6 +113,10 @@ body{background:radial-gradient(ellipse at 85% 0%,var(--surface-2) 0,transparent
 .fiscal-state{display:grid;gap:2px;justify-items:start}.fiscal-badge{display:inline-block;padding:3px 8px;border-radius:100px;color:var(--info-ink);background:var(--info-bg);font-size:12px;font-weight:700;white-space:nowrap}.fiscal-badge[data-state=Vigente]{color:var(--ok-ink);background:var(--ok-bg)}.fiscal-badge[data-state=Cancelado]{color:var(--danger);background:var(--danger-bg)}.fiscal-badge[data-state="No encontrado"]{color:var(--warn-ink);background:var(--warn-bg)}.fiscal-state small{font-size:11px}
 body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button{transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.metric{transition:box-shadow .18s ease,transform .18s ease}.metric:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.top-side{display:inline-flex;align-items:center;gap:12px;min-width:0}.header-counters{color:var(--muted);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.activity-list{display:grid;padding:6px 15px 10px}.activity-item{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border)}.activity-item:first-child{border-top:none}.activity-kind{flex:none;margin-top:1px;padding:3px 8px;border-radius:100px;font-size:11px;font-weight:750;letter-spacing:.02em;background:var(--info-bg);color:var(--info-ink)}.activity-kind[data-kind=sat]{background:var(--tint);color:var(--ok-ink)}.activity-kind[data-kind=import]{background:var(--chip-bg);color:var(--chip-ink)}.activity-kind[data-kind=alert]{background:var(--danger-bg);color:var(--danger)}.activity-body{display:grid;gap:2px;min-width:0}.activity-body strong{font-size:13.5px;overflow-wrap:anywhere}.activity-body small{color:var(--muted);font-size:12px}.activity-body .metric-link{justify-self:start;margin-top:3px}.table-wrap::-webkit-scrollbar,.xml-view::-webkit-scrollbar{height:10px;width:10px}.table-wrap::-webkit-scrollbar-thumb,.xml-view::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:8px}::selection{background:var(--selection)}@media(max-width:780px){.header-counters{display:none}}@media print{.sidebar,.top,.heading .actions,.hero-actions{display:none!important}.frame{display:block}.page{padding:0;max-width:none}}@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 .news-badge{margin-left:2px;padding:1px 7px;border-radius:100px;background:#d9534f;color:#fff;font-size:11px;font-weight:750;font-variant-numeric:tabular-nums}.news-note{margin:10px 17px 0;padding:7px 10px;border:1px solid var(--warn-ink);border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);font-size:12.5px;font-weight:700}
+.rfc-note{font-size:12.5px;font-weight:600;color:var(--muted)}
+.rfc-note[data-state=ok]{color:var(--ok-ink)}
+.rfc-note[data-state=warn]{color:var(--warn-ink);background:var(--warn-bg);border:1px solid var(--warn-ink);border-radius:8px;padding:7px 10px}
+.rfc-note[data-state=error]{color:var(--danger);background:var(--danger-bg);border:1px solid var(--danger);border-radius:8px;padding:7px 10px}
 .kpi,.panel,.metric{transition:box-shadow .18s ease,transform .18s ease}.kpi:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.view-in{animation:view-in .22s ease}@keyframes view-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 </style></head>
 <body>
@@ -193,6 +197,65 @@ const KB = 1024;
 const MB = KB * KB;
 const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/u;
 const UUID = /^[A-F0-9]{8}(?:-[A-F0-9]{4}){3}-[A-F0-9]{12}$/;
+// Validador completo de RFC (1.6.1). Comprueba estructura, fecha embebida y el
+// dígito verificador oficial del SAT (Anexo III y procedimiento publicados por
+// el SAT: el valor de cada carácter es su posición en RFC_CHAR_VALUES —
+// 0-9 valen 0-9, A-N valen 10-23, & vale 24, O-Z valen 25-36, el espacio vale
+// 37 y Ñ vale 38 —; se pondera de 13 a 2 sobre la base de 12 posiciones, ante-
+// poniendo un espacio cuando la base es de 11, y la suma módulo 11 da el
+// dígito: residuo 0 → «0», residuo 1 → «A», otro residuo → 11 menos residuo).
+// Es una validación DE FORMA: no confirma que el RFC exista en el SAT.
+const RFC_GENERICS = new Set(['XAXX010101000', 'XEXX010101000']);
+const RFC_CHAR_VALUES = '0123456789ABCDEFGHIJKLMN&OPQRSTUVWXYZ Ñ';
+function rfcCheckDigit(base) {
+  let body = String(base ?? '');
+  if (body.length === 11) body = ' ' + body;
+  if (body.length !== 12) return '';
+  let sum = 0;
+  for (let i = 0; i < 12; i++) {
+    const value = RFC_CHAR_VALUES.indexOf(body[i]);
+    sum += (value < 0 ? 0 : value) * (13 - i);
+  }
+  const rest = sum % 11;
+  if (!rest) return '0';
+  const digit = 11 - rest;
+  return digit === 10 ? 'A' : String(digit);
+}
+// Devuelve { rfc, type, generic, level, valid, digitExpected, digitOk, error }.
+// level: 'structure' (error de estructura o de fecha, en error va el detalle),
+// 'digit' (la forma es buena pero el dígito verificador no cuadra) o 'valid'.
+// generic marca los RFC genéricos del SAT, que se aceptan con nota aunque su
+// dígito no cuadre (XAXX010101000 no lo cumple por diseño).
+function validateRfc(value) {
+  const rfc = String(value ?? '').trim().toUpperCase();
+  const result = { rfc, type: null, generic: RFC_GENERICS.has(rfc), level: 'structure', valid: false, digitExpected: null, digitOk: false, error: '' };
+  const fail = message => { result.error = message; return result; };
+  if (rfc.length !== 12 && rfc.length !== 13)
+    return fail('El RFC debe tener 12 caracteres (persona moral) o 13 (persona física); este tiene ' + rfc.length + '.');
+  const letters = rfc.length - 9;
+  const letterPart = rfc.slice(0, letters), datePart = rfc.slice(letters, letters + 6),
+    homoclave = rfc.slice(letters + 6, letters + 8), digit = rfc.slice(-1);
+  if (!/^[A-ZÑ&]+$/.test(letterPart))
+    return fail('Las ' + (letters === 4 ? 'cuatro' : 'tres') + ' primeras posiciones del RFC deben ser letras (se admiten Ñ y &).');
+  if (!/^\d{6}$/.test(datePart))
+    return fail('Después de las letras, el RFC lleva 6 dígitos con la fecha (año, mes y día).');
+  const month = Number(datePart.slice(2, 4)), day = Number(datePart.slice(4, 6));
+  const monthDays = [31, Number(datePart.slice(0, 2)) % 4 === 0 ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  if (month < 1 || month > 12)
+    return fail('La fecha del RFC trae un mes imposible (' + datePart.slice(2, 4) + '): debe ir de 01 a 12.');
+  if (day < 1 || day > monthDays[month - 1])
+    return fail('La fecha del RFC trae un día imposible (' + datePart.slice(4, 6) + ' para el mes ' + datePart.slice(2, 4) + ').');
+  if (!/^[A-Z0-9]{2}$/.test(homoclave))
+    return fail('La homoclave (las dos posiciones antes del último carácter) debe ser alfanumérica.');
+  if (!/^[0-9A]$/.test(digit))
+    return fail('El último carácter del RFC es el dígito verificador: debe ser un número o la letra A.');
+  result.type = letters === 4 ? 'fisica' : 'moral';
+  result.level = 'digit';
+  result.digitExpected = rfcCheckDigit(rfc.slice(0, -1));
+  result.digitOk = result.digitExpected === digit;
+  if (result.digitOk) { result.level = 'valid'; result.valid = true; }
+  return result;
+}
 const KINDS = { I: 'Ingreso', E: 'Egreso', P: 'Pago', N: 'Nómina', T: 'Traslado' };
 const DOCUMENTS = ['Factura PDF', 'Constancia / CIF', 'Opinión de cumplimiento', 'Declaración', 'Acuse', 'Otro documento'];
 const STORES = ['people', 'invoices', 'documents', 'files', 'activity'];
@@ -273,8 +336,9 @@ function parseXml(raw, Parser = DOMParser) {
   const legacy = { INGRESO: 'I', EGRESO: 'E', TRASLADO: 'T', PAGO: 'P', NÓMINA: 'N', NOMINA: 'N' };
   const rawKind = attr(root, 'TipoDeComprobante', 'tipoDeComprobante').toUpperCase();
   const kind = legacy[rawKind] || rawKind;
-  check(RFC.test(from.rfc), 'Falta el RFC del emisor o su formato es inválido.');
-  check(RFC.test(to.rfc), 'Falta el RFC del receptor o su formato es inválido.');
+  const fromShape = validateRfc(from.rfc), toShape = validateRfc(to.rfc);
+  check(fromShape.level !== 'structure', 'El RFC del emisor no es válido. ' + fromShape.error);
+  check(toShape.level !== 'structure', 'El RFC del receptor no es válido. ' + toShape.error);
   check(UUID.test(uuid), 'Falta un UUID válido en el Timbre Fiscal Digital.');
   check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(date), 'La fecha de emisión no tiene el formato esperado.');
   check(Object.hasOwn(KINDS, kind), 'El tipo de comprobante no es compatible con este importador.');
@@ -1239,14 +1303,47 @@ function addPerson() {
   check(ready, 'El almacenamiento todavía no está disponible.');
   const name = input('text', { required: true, maxLength: 120, placeholder: 'Nombre o razón social' });
   const id = input('text', { required: true, maxLength: 13, placeholder: 'RFC de 12 o 13 caracteres' });
-  dialog('Agregar contribuyente', [field('Nombre o razón social', name), field('RFC', id)], async () => {
+  const note = n('p', '', 'rfc-note');
+  const confirmDigit = input('checkbox');
+  const confirmField = field('Guardar aunque el dígito verificador no cuadre', confirmDigit);
+  confirmField.hidden = true;
+  const hint = 'Al escribir se revisan la estructura, la fecha y el dígito verificador oficial. ' +
+    'La revisión es de forma: no confirma que el RFC exista en el SAT.';
+  const paint = () => {
+    const result = validateRfc(id.value);
+    confirmField.hidden = !(result.level === 'digit' && !result.generic);
+    if (!id.value.trim()) { note.dataset.state = 'info'; note.textContent = hint; }
+    else if (result.level === 'structure') { note.dataset.state = 'error'; note.textContent = result.error; }
+    else if (result.generic) {
+      note.dataset.state = 'info';
+      note.textContent = 'Es uno de los RFC genéricos del SAT (público en general u operaciones con extranjeros): ' +
+        'se acepta con esta nota y no se le exige el dígito verificador.';
+    } else if (result.level === 'digit') {
+      note.dataset.state = 'warn';
+      note.textContent = 'El dígito verificador no cuadra: para esta base debería ser «' + result.digitExpected + '» y trae «' +
+        result.rfc.slice(-1) + '». Casi siempre es una errata al teclear. Revisa el RFC y, solo si estás seguro de que así consta, ' +
+        'marca la casilla para guardarlo de todos modos.';
+    } else {
+      note.dataset.state = 'ok';
+      note.textContent = 'Válido en forma: estructura, fecha y dígito verificador correctos (' +
+        (result.type === 'fisica' ? 'persona física' : 'persona moral') + '). Esto no confirma que el RFC exista en el SAT.';
+    }
+    return result;
+  };
+  id.oninput = () => { confirmDigit.checked = false; paint(); };
+  dialog('Agregar contribuyente', [field('Nombre o razón social', name), field('RFC', id), note, confirmField], async () => {
     const rfc = id.value.trim().toUpperCase(), label = name.value.trim();
-    check(RFC.test(rfc) && label, 'Escribe un nombre y un RFC con formato válido.');
+    check(label, 'Escribe un nombre o razón social.');
+    const result = validateRfc(rfc);
+    check(result.level !== 'structure', result.error);
+    check(result.generic || result.level !== 'digit' || confirmDigit.checked,
+      'El dígito verificador no cuadra (debería ser «' + result.digitExpected + '»). Corrige el RFC o marca la casilla «Guardar aunque el dígito verificador no cuadre».');
     check(!await readStore('people', rfc), 'Ese RFC ya está en tu cartera.');
     await writeBatch({ people: [{ id: rfc, name: label }] });
     scope = rfc;
     await refresh(); announce('Expediente creado para ' + rfc + '.');
   });
+  paint();
 }
 function chooseImport() {
   check(ready && people.length, 'Agrega un RFC antes de importar.');

@@ -2,14 +2,47 @@ function addPerson() {
   check(ready, 'El almacenamiento todavía no está disponible.');
   const name = input('text', { required: true, maxLength: 120, placeholder: 'Nombre o razón social' });
   const id = input('text', { required: true, maxLength: 13, placeholder: 'RFC de 12 o 13 caracteres' });
-  dialog('Agregar contribuyente', [field('Nombre o razón social', name), field('RFC', id)], async () => {
+  const note = n('p', '', 'rfc-note');
+  const confirmDigit = input('checkbox');
+  const confirmField = field('Guardar aunque el dígito verificador no cuadre', confirmDigit);
+  confirmField.hidden = true;
+  const hint = 'Al escribir se revisan la estructura, la fecha y el dígito verificador oficial. ' +
+    'La revisión es de forma: no confirma que el RFC exista en el SAT.';
+  const paint = () => {
+    const result = validateRfc(id.value);
+    confirmField.hidden = !(result.level === 'digit' && !result.generic);
+    if (!id.value.trim()) { note.dataset.state = 'info'; note.textContent = hint; }
+    else if (result.level === 'structure') { note.dataset.state = 'error'; note.textContent = result.error; }
+    else if (result.generic) {
+      note.dataset.state = 'info';
+      note.textContent = 'Es uno de los RFC genéricos del SAT (público en general u operaciones con extranjeros): ' +
+        'se acepta con esta nota y no se le exige el dígito verificador.';
+    } else if (result.level === 'digit') {
+      note.dataset.state = 'warn';
+      note.textContent = 'El dígito verificador no cuadra: para esta base debería ser «' + result.digitExpected + '» y trae «' +
+        result.rfc.slice(-1) + '». Casi siempre es una errata al teclear. Revisa el RFC y, solo si estás seguro de que así consta, ' +
+        'marca la casilla para guardarlo de todos modos.';
+    } else {
+      note.dataset.state = 'ok';
+      note.textContent = 'Válido en forma: estructura, fecha y dígito verificador correctos (' +
+        (result.type === 'fisica' ? 'persona física' : 'persona moral') + '). Esto no confirma que el RFC exista en el SAT.';
+    }
+    return result;
+  };
+  id.oninput = () => { confirmDigit.checked = false; paint(); };
+  dialog('Agregar contribuyente', [field('Nombre o razón social', name), field('RFC', id), note, confirmField], async () => {
     const rfc = id.value.trim().toUpperCase(), label = name.value.trim();
-    check(RFC.test(rfc) && label, 'Escribe un nombre y un RFC con formato válido.');
+    check(label, 'Escribe un nombre o razón social.');
+    const result = validateRfc(rfc);
+    check(result.level !== 'structure', result.error);
+    check(result.generic || result.level !== 'digit' || confirmDigit.checked,
+      'El dígito verificador no cuadra (debería ser «' + result.digitExpected + '»). Corrige el RFC o marca la casilla «Guardar aunque el dígito verificador no cuadre».');
     check(!await readStore('people', rfc), 'Ese RFC ya está en tu cartera.');
     await writeBatch({ people: [{ id: rfc, name: label }] });
     scope = rfc;
     await refresh(); announce('Expediente creado para ' + rfc + '.');
   });
+  paint();
 }
 function chooseImport() {
   check(ready && people.length, 'Agrega un RFC antes de importar.');
