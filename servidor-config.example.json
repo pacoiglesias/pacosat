@@ -6,8 +6,8 @@
       "minutes": 240,
       "days": 7,
       "direction": "received",
-      "certificatePath": "/run/faro-secrets/contribuyente.cer",
-      "keyPath": "/run/faro-secrets/contribuyente.key",
+      "certificatePath": "/run/pacosat-secrets/contribuyente.cer",
+      "keyPath": "/run/pacosat-secrets/contribuyente.key",
       "password": "CONFIGURA_LOCALMENTE"
     }
   ],

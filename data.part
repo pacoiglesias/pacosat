@@ -22,7 +22,7 @@ function openDatabase(name = 'faro-fiscal-v2') {
       resolve(request.result);
     };
     request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Cierra otras ventanas de Faro y vuelve a abrirlo.'));
+    request.onblocked = () => reject(new Error('Cierra otras ventanas de PacoSAT y vuelve a abrirlo.'));
   });
 }
 function readStore(store, key) {
@@ -190,7 +190,7 @@ async function encryptBackup(data, password) {
   return new Blob([backupMagic, salt, iv, cipher], { type: 'application/octet-stream' });
 }
 async function decryptBackup(file, password) {
-  check(file.size >= 50 && file.size <= 180 * MB && await file.slice(0, 6).text() === backupMagic, 'El archivo no es un respaldo Faro válido.');
+  check(file.size >= 50 && file.size <= 180 * MB && await file.slice(0, 6).text() === backupMagic, 'El archivo no es un respaldo PacoSAT válido.');
   const raw = bytes(await file.arrayBuffer());
   const key = await keyFor(password, raw.subarray(6, 22));
   let plain;

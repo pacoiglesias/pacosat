@@ -192,7 +192,7 @@ function reviewDetail(row) {
     for (const item of row.issues) list.append(n('li', item.name + ' · ' + item.reason));
     fields.push(list);
     if (row.issues.length < row.review) fields.push(n('p', 'Se muestran los primeros ' + row.issues.length + ' motivos del lote.'));
-  } else fields.push(n('p', 'Este lote se registró antes de que Faro guardara los motivos. Abre el XML original para revisarlo.'));
+  } else fields.push(n('p', 'Este lote se registró antes de que PacoSAT guardara los motivos. Abre el XML original para revisarlo.'));
   dialog('Revisión de importación', fields);
 }
 function csvText(rows) {
@@ -277,7 +277,7 @@ function backupDialog() {
   const repeat = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
   dialog('Crear respaldo cifrado', [field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
     check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
-    download(await encryptBackup(await snapshot(), password.value), 'Faro-' + new Date().toISOString().slice(0, 10) + '.faro');
+    download(await encryptBackup(await snapshot(), password.value), 'PacoSAT-' + new Date().toISOString().slice(0, 10) + '.faro');
     await logEvent('Respaldo cifrado creado');
     announce('Respaldo cifrado generado.');
   });
@@ -286,7 +286,7 @@ function restoreDialog(file) {
   check(ready && !importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
   const password = input('password', { required: true, autocomplete: 'off' });
   const confirmation = input('checkbox', { required: true });
-  dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de Faro se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
+  dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de PacoSAT se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
     field('Confirmo que quiero reemplazar los datos actuales', confirmation)], async () => {
     check(confirmation.checked, 'Confirma el reemplazo de los datos.');
     const contents = await validateBackup(await decryptBackup(file, password.value));

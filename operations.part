@@ -19,7 +19,7 @@ function operationsScreen() {
   const health = panel('Estado de operación');
   health.append(grid(['Componente', 'Estado'], [
     ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : 'No disponible'],
-    ['Servicio SAT', !satToken ? 'Abre Iniciar-Faro.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
+    ['Servicio SAT', !satToken ? 'Abre Iniciar-PacoSAT.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
     ['Respaldo', 'Exporta una copia cifrada antes de actualizar. No incluye e.firma, SMTP ni cola SAT.']

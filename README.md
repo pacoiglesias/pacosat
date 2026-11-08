@@ -1,12 +1,13 @@
-# Faro Fiscal · satfacturas
+# PacoSAT · satfacturas
 
-Versión 1.3.0 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.4.0 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+La instancia en modo servidor se publica en **https://sat.cobertores.com**.
 
 ## Inicio en Windows
 
 1. Instala Node.js 24 LTS.
 2. Descarga el repositorio y descomprime todos los archivos.
-3. Ejecuta `Iniciar-Faro.cmd`. La instalación inicial requiere internet.
+3. Ejecuta `Iniciar-PacoSAT.cmd`. La instalación inicial requiere internet.
 4. Agrega un RFC, importa un XML y abre **Operaciones y alertas**.
 5. Configura e.firma únicamente dentro de tu instalación, en **Centro SAT**.
 

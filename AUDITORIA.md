@@ -1,6 +1,6 @@
 # Revisión técnica interna — 2026-11-08
 
-Versión 1.3.0 (revisión original sobre la 1.2.0; al final se añade la actualización 1.3.0). Alcance: lectura del código, configuración y ejecución de pruebas con dependencias SAT/SMTP simuladas. No es certificación, pentest externo ni validación fiscal.
+Versión 1.4.0 (revisión original sobre la 1.2.0; al final se añaden las actualizaciones 1.3.0 y 1.4.0). Alcance: lectura del código, configuración y ejecución de pruebas con dependencias SAT/SMTP simuladas. No es certificación, pentest externo ni validación fiscal.
 
 ## Corregido
 
@@ -45,3 +45,9 @@ Cambios aplicados y verificados en local (`npm run check` en verde, 4 suites + v
 - **Orden**: unificado el `.dockerignore` (se elimina el duplicado `Dockerfile.dockerignore`), LEEME remite al README para la instalación y se añade `LICENSE`.
 
 Pendientes que NO cambian con esta actualización: conexión real con el SAT, SMTP real, CSP sin scripts inline, usuarios/roles/MFA y validación exhaustiva de esquemas antes de un uso multiusuario.
+
+## Actualización 1.4.0 — 2026-11-08: renombre a PacoSAT
+
+- El producto pasa a llamarse **PacoSAT** (antes «Faro Fiscal»): título, marca e interfaz, asuntos de los correos de aviso, mensajes del servicio y documentación. La dirección pública de la instancia en servidor es https://sat.cobertores.com.
+- Renombre interno consistente (sin despliegue previo que romper): variables de entorno `FARO_*` → `PACOSAT_*` en código, compose, Caddyfile y ejemplo de `.env`; carpeta `faro-secrets` → `pacosat-secrets`; servicio y volumen de compose `faro`/`faro-data` → `pacosat`/`pacosat-data`; datos en `/var/lib/pacosat`; lanzador `Iniciar-Faro.cmd` → `Iniciar-PacoSAT.cmd`; paquete npm `pacosat` y lockfile regenerado.
+- Se mantienen a propósito, por compatibilidad: el archivo generado sigue llamándose `Faro-Fiscal.html` (el paso de verificación de CI en `ci.yml` lo referencia por nombre y ese archivo no es editable desde el conector de GitHub; se renombrará en el mismo paso web que añada `npm ci` al CI), la base IndexedDB `faro-fiscal-v2` y la carpeta local `FaroFiscalLocal` (renombrarlos huérfanaría los datos ya guardados), la magia de respaldo `FARO2` y la extensión `.faro` (compatibilidad con respaldos ya creados), y los identificadores internos de protocolo (metas `faro-token`/`faro-cloud`, cabeceras `x-faro-*`, `createFaroService`, `faro-sat.sqlite`), invisibles para el usuario y cubiertos por las pruebas.

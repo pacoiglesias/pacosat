@@ -1,7 +1,7 @@
 # Prueba piloto
 
 1. Ejecuta `npm run check`. Debe terminar sin errores.
-2. Inicia Faro y agrega un RFC propio autorizado.
+2. Inicia PacoSAT y agrega un RFC propio autorizado.
 3. Importa un XML de ese RFC: debe aparecer con su UUID, importe y detalle; volver a importarlo debe marcar duplicado.
 4. Importa un XML ajeno: debe indicar RFC emisor/receptor y motivo de rechazo.
 5. Archiva una factura PDF y vincúlala desde Operaciones. Un UUID de otro RFC debe rechazarse. Recarga y verifica persistencia.
