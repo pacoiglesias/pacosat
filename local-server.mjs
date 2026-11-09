@@ -720,7 +720,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       coverage: computeCoverage(),
       criteriaBook: criteriaBook(),
       avisos: (() => { try {
-        const row = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN estado='por-confirmar' THEN 1 ELSE 0 END) AS porConfirmar FROM avisos WHERE estado<>'solventado'").get();
+        const row = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN estado='por-confirmar' THEN 1 ELSE 0 END) AS porConfirmar FROM avisos WHERE estado NOT IN ('solventado','descartado')").get();
         return { total: row?.total || 0, porConfirmar: row?.porConfirmar || 0 };
       } catch { return { total: 0, porConfirmar: 0 }; } })()
     };
@@ -1566,7 +1566,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (config.correo === 'no') return;
     const mx = mxParts(time);
     if (mx.hour < config.hora) return;
-    const pendientes = db.prepare("SELECT * FROM avisos WHERE estado<>'solventado' AND baseline=0 AND correo=0 ORDER BY creado").all();
+    const pendientes = db.prepare("SELECT * FROM avisos WHERE estado NOT IN ('solventado','descartado') AND baseline=0 AND correo=0 ORDER BY creado").all();
     if (!pendientes.length) return;
     const graves = pendientes.filter(aviso => aviso.severidad === 'alta');
     const lastDay = getState('avisos:digest-day');
@@ -1660,7 +1660,20 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     let content;
     if (fetcher) content = await fetcher(source);
     else {
-      const response = await fetch(source.url, { redirect: 'error', signal: AbortSignal.timeout(90000) });
+      /* Los CDN oficiales (Akamai) rechazan la petición «pelada» de un
+         servidor con HTTP 403; con las cabeceras de un navegador normal
+         la descarga pasa (verificado el 9 nov 2026: datos.gob.mx llega
+         al origen y repodatos.atdt.gob.mx entrega los CSV del Art. 69). */
+      const response = await fetch(source.url, { redirect: 'follow', signal: AbortSignal.timeout(90000),
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Accept': 'text/csv,text/html,application/xhtml+xml,application/octet-stream;q=0.8,*/*;q=0.7',
+          'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
+          'Referer': 'https://www.datos.gob.mx/',
+          'sec-ch-ua': '"Chromium";v="131", "Google Chrome";v="131", "Not-A.Brand";v="99"',
+          'sec-ch-ua-mobile': '?0', 'sec-ch-ua-platform': '"Windows"',
+          'Sec-Fetch-Dest': 'document', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Site': 'cross-site'
+        } });
       if (!response.ok) throw new Error('La fuente oficial respondió HTTP ' + response.status + '.');
       const raw = Buffer.from(await response.arrayBuffer());
       if (raw.length > 64 * 1024 * 1024) throw new Error('El listado supera el tamaño permitido.');
@@ -2063,6 +2076,23 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       .run(time, resolucion, time, aviso.id);
     avisoLog(aviso.id, 'solventado', resolucion, time);
   }
+  /* Pago manual con cierre rápido (ronda de correcciones, 9 nov
+     2026): la nota es OPCIONAL — si ya se pagó, el aviso se cierra
+     con un toque, sin decir cómo ni dónde. La bitácora registra sola
+     el cierre: la fecha, que fue manual y el origen (tarjeta o lote).
+     Vale como pago enlazado en Dinero vía manual_payments. */
+  function avisoMarkPaid(aviso, nota, fecha, time, lote = false) {
+    const datos = avisoDatos(aviso);
+    const balance = moneyBalances().find(item => item.id === datos.uuid);
+    const importe = balance ? moneyText(balance.balance) : (aviso.importe || '0.00');
+    const notaFinal = (fecha ? fecha + ' · ' : '') +
+      (nota || 'Pago confirmado sin nota (' + (lote ? 'cierre en lote' : 'cierre rápido') + ', ' + day(time) + ')');
+    db.prepare('INSERT INTO manual_payments(uuid,at,nota,importe) VALUES (?,?,?,?) ' +
+      'ON CONFLICT(uuid) DO UPDATE SET at=excluded.at,nota=excluded.nota,importe=excluded.importe')
+      .run(String(datos.uuid || ''), time, notaFinal, importe);
+    avisoLog(aviso.id, lote ? 'pago-manual-lote' : 'pago-manual', notaFinal, time);
+    avisoSolve(aviso.ref, 'Pagado a mano' + (lote ? ' (en lote)' : '') + ': ' + (nota || 'pago confirmado, sin nota.'), time);
+  }
   /* Fecha en que «toca» pagar una factura PPD según el calendario de
      su contraparte: plazo en días si está fijado; si no, el día de
      pago del mes (el de la factura o el siguiente); si no hay
@@ -2119,7 +2149,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         detalle: 'El día de pago ' + (cobrar ? 'de ' : 'a ') + (cpName || cpRfc) + ' fue el ' + due +
           ' y en PacoSAT no consta el pago de $' + moneyShow(balance.balance) + ' (factura del ' + String(balance.date).slice(0, 10) +
           ', total $' + moneyShow(balance.total) + '). ' + (cobrar ? '¿Ya pagaron?' : '¿Ya se pagó?') +
-          ' Si ya se pagó, confírmalo aquí mismo con la nota (ej. «pagado con Konfío»); si llegó el complemento de pago, enlázalo en Dinero y este aviso se cierra solo.',
+          ' Si ya se pagó, ciérralo aquí mismo con un toque («Ya se pagó · Cerrar»; la nota es opcional); si llegó el complemento de pago, enlázalo en Dinero y este aviso se cierra solo.',
         contraparte: cpRfc || '', nombre: cpName, importe: moneyText(balance.balance), enlace: 'dinero',
         datos: { direccion: cobrar ? 'cobrar' : 'pagar', uuid: balance.id, vence: due } }, time, baseline);
     }
@@ -2214,7 +2244,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       const balance = moneyBalances().find(item => item.id === datos.uuid);
       if (!balance || balance.balance <= 0n) return { ok: true, resolucion: 'El pago quedó enlazado en PacoSAT: el saldo llegó a cero.' };
       return { ok: false, falta: 'En PacoSAT sigue constando un saldo de $' + moneyShow(balance.balance) +
-        ' sin pago enlazado. Enlaza el complemento de pago en Dinero, concílialo en Bancos o usa «Marcar pagado a mano» con su nota.' };
+        ' sin pago enlazado. Enlaza el complemento de pago en Dinero, concílialo en Bancos o ciérralo con «Ya se pagó · Cerrar».' };
     }
     if (aviso.kind === 'esperada') {
       const arrived = recordInvoices().some(invoice => invoice.kind === 'I' && invoice.from?.rfc === datos.rfc &&
@@ -2238,7 +2268,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return { ok: true, resolucion: 'Marcado como corregido por ti; queda registrado en el historial.' };
   }
   function avisosOverview() {
-    const open = db.prepare("SELECT * FROM avisos WHERE estado<>'solventado' ORDER BY baseline ASC, creado ASC").all();
+    const open = db.prepare("SELECT * FROM avisos WHERE estado NOT IN ('solventado','descartado') ORDER BY baseline ASC, creado ASC").all();
     const history = db.prepare("SELECT * FROM avisos WHERE estado='solventado' ORDER BY resuelto DESC LIMIT 50").all();
     const serialize = row => { const datos = avisoDatos(row); return { id: row.id, ref: row.ref, kind: row.kind, clase: row.clase,
       estado: row.estado, severidad: row.severidad, titulo: row.titulo, detalle: row.detalle, contraparte: row.contraparte,
@@ -2266,7 +2296,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           paidBy.set(doc.idDocumento, (paidBy.get(doc.idDocumento) || 0n) + centsOf(doc.impPagado));
     }
     /* Pagos marcados a mano desde el Centro de Avisos (1.7.4): la
-       confirmación de Paco con su nota vale como pago enlazado. */
+       confirmación de Paco vale como pago enlazado (la nota es
+       opcional desde la ronda de correcciones). */
     for (const manual of db.prepare('SELECT * FROM manual_payments').all())
       paidBy.set(manual.uuid, (paidBy.get(manual.uuid) || 0n) + centsOf(manual.importe));
     return paidBy;
@@ -2495,9 +2526,24 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const invoice of invoices) {
       if (invoice.fiscal?.serie || invoice.fiscal?.folio) {
         const key = invoice.from.rfc + '|' + (invoice.fiscal.serie || '') + '|' + (invoice.fiscal.folio || '');
-        if (byFolio.has(key) && byFolio.get(key) !== invoice.id)
-          issues.push({ id: invoice.id, kind: 'folio-duplicado', detail: 'Mismo emisor, serie y folio que ' + byFolio.get(key) + ' con otro UUID.' });
-        else byFolio.set(key, invoice.id);
+        /* Folio repetido (afinado en la ronda de correcciones, 9 nov
+           2026): los bancos usan como folio el nº de cuenta/contrato,
+           idéntico cada mes, con fechas e importes distintos — eso NO
+           es un duplicado. Solo es sospechoso (el patrón de una
+           cancelada reemitida con el mismo folio) si ADEMÁS coincide
+           la fecha de emisión o el importe total con otro UUID. */
+        const diaEmision = String(invoice.date || '').slice(0, 10);
+        const total = centsOf(invoice.total);
+        const group = byFolio.get(key) || [];
+        const clash = group.find(other => other.id !== invoice.id &&
+          ((diaEmision && other.dia === diaEmision) || (total > 0n && other.total === total)));
+        if (clash)
+          issues.push({ id: invoice.id, kind: 'folio-duplicado',
+            detail: 'Mismo emisor, serie y folio que ' + clash.id + ' con otro UUID, y además coincide ' +
+              (diaEmision && clash.dia === diaEmision ? 'la fecha de emisión' : 'el importe total') +
+              ': patrón de una factura reemitida con el mismo folio.' });
+        group.push({ id: invoice.id, dia: diaEmision, total });
+        byFolio.set(key, group);
       }
       if (invoice.kind === 'I' && invoice.to?.rfc && !profileRfcs.has(invoice.to.rfc) && profileRfcs.has(invoice.from?.rfc) === false &&
           ![...profileRfcs].some(rfc => invoice.from?.rfc === rfc))
@@ -3322,26 +3368,21 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         return json(res, avisosOverview());
       }
       if (req.method === 'POST' && url.pathname === '/api/notices/answer') {
-        /* Respuesta a un «por confirmar» (criterio 7): «sí» exige la
-           nota del pago y lo registra como pago manual en bitácora;
-           «no» convierte el aviso en atraso declarado — con el texto
-           veraz: en PacoSAT no consta el pago. */
+        /* Respuesta a un «por confirmar» (criterio 7): «sí» registra
+           el pago manual en bitácora y cierra el aviso — desde la
+           ronda de correcciones la nota es OPCIONAL: si ya se pagó,
+           se cierra con un toque y la bitácora anota sola la fecha,
+           que fue manual y el origen. «no» convierte el aviso en
+           atraso declarado — con el texto veraz: en PacoSAT no consta
+           el pago. */
         const x = await body(req);
-        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado<>'solventado'").get(Number(x.id));
+        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado NOT IN ('solventado','descartado')").get(Number(x.id));
         need(aviso, 'Ese aviso ya no está abierto.');
         need(aviso.kind === 'saldo', 'Ese aviso no es de un saldo.');
         need(x.respuesta !== 'no' || aviso.estado === 'por-confirmar', 'Ese aviso ya no está por confirmar.');
         const datos = avisoDatos(aviso);
         if (x.respuesta === 'si') {
-          const nota = String(x.nota || '').trim();
-          need(nota.length >= 4, 'La nota del pago es obligatoria: medio y detalle (ej. «Pagado con Konfío el 8 de noviembre»).');
-          const balance = moneyBalances().find(item => item.id === datos.uuid);
-          const importe = balance ? moneyText(balance.balance) : (aviso.importe || '0.00');
-          db.prepare('INSERT INTO manual_payments(uuid,at,nota,importe) VALUES (?,?,?,?) ' +
-            'ON CONFLICT(uuid) DO UPDATE SET at=excluded.at,nota=excluded.nota,importe=excluded.importe')
-            .run(String(datos.uuid || ''), now(), (x.fecha ? x.fecha + ' · ' : '') + nota, importe);
-          avisoLog(aviso.id, 'pago-manual', (x.fecha ? x.fecha + ' · ' : '') + nota, now());
-          avisoSolve(aviso.ref, 'Pagado a mano: ' + nota, now());
+          avisoMarkPaid(aviso, String(x.nota || '').trim(), x.fecha ? String(x.fecha) : '', now());
         } else if (x.respuesta === 'no') {
           db.prepare("UPDATE avisos SET estado='abierto',clase='mal',severidad='alta',titulo=?,detalle=?,actualizado=? WHERE id=?")
             .run('Saldo vencido: no consta el pago en PacoSAT',
@@ -3357,12 +3398,44 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (req.method === 'POST' && url.pathname === '/api/notices/resolve') {
         /* «Ya lo corregí»: re-comprobación real de la condición. */
         const x = await body(req);
-        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado<>'solventado'").get(Number(x.id));
+        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado NOT IN ('solventado','descartado')").get(Number(x.id));
         need(aviso, 'Ese aviso ya no está abierto.');
         const check = avisoRecheck(aviso);
         if (!check.ok) return json(res, { ok: false, falta: check.falta });
         avisoSolve(aviso.ref, check.resolucion, now());
         return json(res, { ok: true, ...avisosOverview() });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/notices/batch') {
+        /* Acciones por lote (ronda de correcciones, 9 nov 2026):
+           «pagadas» solo actúa sobre avisos de saldo que admiten pago
+           (los demás se saltan y se reportan); «cerrar» solventa sin
+           re-comprobación y va al historial; «borrar» DESCARTA: el
+           aviso deja de aparecer y los generadores respetan el estado
+           (no resucita en la siguiente sincronización). Un lote vacío
+           no hace nada. Todo queda en bitácora como operación por
+           lote y la respuesta dice aplicados y saltados, con motivo. */
+        const x = await body(req);
+        need(['pagadas', 'cerrar', 'borrar'].includes(x.accion), 'Acción por lote inválida.');
+        const ids = [...new Set((Array.isArray(x.ids) ? x.ids : []).map(Number).filter(Number.isFinite))].slice(0, 200);
+        let aplicados = 0;
+        const motivos = [];
+        for (const id of ids) {
+          const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado NOT IN ('solventado','descartado')").get(id);
+          if (!aviso) { motivos.push({ id, motivo: 'ya no está abierto' }); continue; }
+          if (x.accion === 'pagadas') {
+            if (aviso.kind !== 'saldo') { motivos.push({ id, motivo: 'no es un aviso de saldo' }); continue; }
+            avisoMarkPaid(aviso, '', '', now(), true);
+          } else if (x.accion === 'cerrar') {
+            avisoLog(aviso.id, 'cerrado-lote', 'Cerrado en lote desde el Centro de Avisos.', now());
+            avisoSolve(aviso.ref, 'Cerrado por ti en lote (sin re-comprobación).', now());
+          } else {
+            db.prepare("UPDATE avisos SET estado='descartado',actualizado=? WHERE id=?").run(now(), aviso.id);
+            avisoLog(aviso.id, 'descartado-lote', 'Descartado en lote desde el Centro de Avisos.', now());
+          }
+          aplicados++;
+        }
+        avisosSync(now());
+        return json(res, { aplicados, saltados: motivos.length, motivos, ...avisosOverview() });
       }
       if (req.method === 'POST' && url.pathname === '/api/notices/config') {
         const x = await body(req);
