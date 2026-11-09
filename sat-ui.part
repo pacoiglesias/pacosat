@@ -88,10 +88,9 @@ function connectedSatScreen() {
   guide.append(restBar);
   const container = n('div'); container.id = 'sat-live';
   fillSat(container);
-  const extras = panel('Otros trámites fiscales');
-  extras.append(empty('Disponibles en el expediente', 'Puedes archivar constancias, cédulas, opiniones y declaraciones en PDF. La conexión automática de esta edición cubre CFDI.',
-    action('Abrir expedientes', () => navigate('docs'))));
-  return [guide, container, extras];
+  /* 1.6.14: las constancias y la opinión dejan de ser un hueco «otros
+     trámites»: tienen su propia sección con semáforos y automatización. */
+  return [guide, container, satDocsSection()];
 }
 function fillSat(target = $('sat-live')) {
   if (!target) return;

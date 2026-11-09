@@ -42,9 +42,9 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - 🔄 Multi-RFC ampliado: Mano Fil, Elemental Denim (EDE1902136T2), el RFC personal de Paco y los de Rodrigo y José Javier — cada uno con su perfil y su e.firma cuando la aporten.
 
 ## 5. Constancias y opiniones (solo SAT)
-- 🔄 Descarga mensual automática, activable por RFC, de la constancia de situación fiscal y la opinión de cumplimiento del SAT, archivadas en Expedientes con fecha de emisión.
-- 🔄 Semáforo de vigencia (verde <60 días, ámbar 60–90, rojo >90) y alerta si una renovación falla o vence.
-- 🔄 Envío automático por correo a uno o varios destinatarios, con día y hora programables en pantalla clara.
+- ✅ Descarga mensual automática, activable por RFC, de la constancia de situación fiscal y la opinión de cumplimiento del SAT, archivadas en Expedientes con fecha de emisión (1.6.14). La descarga pasa por un puerto dedicado: el portal del SAT exige su flujo propio con e.firma y, si un intento falla, queda registrado, llega alerta y manda el semáforo; el PDF también se puede subir a mano en la misma pantalla y vale igual.
+- ✅ Semáforo de vigencia (verde <60 días, ámbar 60–90, rojo >90) y alerta si una renovación falla o vence (1.6.14).
+- ✅ Envío automático por correo a uno o varios destinatarios, con día y hora programables en pantalla clara (1.6.14).
 
 ## 6. Salidas: reportes, impresión, exportaciones y correo
 - ✅ Representación impresa del CFDI y paquete mensual básico para la contadora.
