@@ -280,7 +280,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
   <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
 </dialog>
-<script>const PACOSAT_META = {"version":"1.6.7","created":"2026-11-08T13:42:35-06:00"};
+<script>const PACOSAT_META = {"version":"1.6.8","created":"2026-11-08T13:42:35-06:00"};
 'use strict';
 const $ = id => document.getElementById(id);
 const KB = 1024;
@@ -353,18 +353,32 @@ let db;
 
 function check(condition, message) { if (!condition) throw new Error(message); }
 function bytes(value) { return new Uint8Array(value); }
+/* Estado de bloqueo del almacén local (1.6.8): «bloqueado» no es un
+   fallo. Otra pestaña tiene la base abierta y la petición de apertura
+   sigue viva; cuando esa pestaña se cierra, el navegador dispara
+   onsuccess sobre la MISMA petición y la apertura se completa sola.
+   Hasta la 1.6.7, onblocked rechazaba la promesa: el arranque quedaba
+   muerto, `ready` nunca pasaba a true y cada acción se rendía con «El
+   almacenamiento todavía no está disponible.», sin recuperación posible
+   en esa sesión. Ahora el bloqueo se registra (isStorageBlocked) y la
+   promesa espera; el error de verdad (onerror) sí rechaza. */
+let storageBlocked = false;
+function isStorageBlocked() { return storageBlocked; }
 function openDatabase(name = 'faro-fiscal-v2') {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name, 1);
+    let request;
+    try { request = indexedDB.open(name, 1); }
+    catch (error) { reject(error); return; }
     request.onupgradeneeded = () => {
       for (const store of STORES) request.result.createObjectStore(store, { keyPath: 'id' });
     };
     request.onsuccess = () => {
+      storageBlocked = false;
       request.result.onversionchange = () => request.result.close();
       resolve(request.result);
     };
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Cierra otras ventanas de PacoSAT y vuelve a abrirlo.'));
+    request.onerror = () => reject(request.error || new Error('El navegador no dejó abrir el almacenamiento local.'));
+    request.onblocked = () => { storageBlocked = true; };
   });
 }
 function readStore(store, key) {
@@ -1509,7 +1523,8 @@ $('dialog').addEventListener('close', () => {
 });
 
 async function importInvoicePdf(file) {
-  check(ready && people.length, 'Agrega un contribuyente antes de importar una factura PDF.');
+  await requireStorage();
+  check(people.length, 'Agrega un contribuyente antes de importar una factura PDF.');
   check(await pdfOk(file), 'Elige un PDF válido de hasta 15 MB.');
   let result = { uuids: [], rfcs: [], hasText: false }, failure = '';
   if (satToken) {
@@ -1593,7 +1608,7 @@ function operationsScreen() {
   reconcile.append(action('Ver facturas', () => navigate('invoices')));
   const health = panel('Estado de operación');
   health.append(grid(['Componente', 'Estado'], [
-    ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : 'No disponible'],
+    ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : isStorageBlocked() ? 'Bloqueado por otra pestaña' : 'No disponible'],
     ['Servicio SAT', !satToken ? 'Abre Iniciar-PacoSAT.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
@@ -1654,8 +1669,8 @@ function linkPdfDialog(doc) {
   });
 }
 
-function addPerson() {
-  check(ready, 'El almacenamiento todavía no está disponible.');
+async function addPerson() {
+  await requireStorage();
   const name = input('text', { required: true, maxLength: 120, placeholder: 'Nombre o razón social' });
   const id = input('text', { required: true, maxLength: 13, placeholder: 'RFC de 12 o 13 caracteres' });
   const note = n('p', '', 'rfc-note');
@@ -1700,12 +1715,15 @@ function addPerson() {
   });
   paint();
 }
-function chooseImport() {
-  check(ready && people.length, 'Agrega un RFC antes de importar.');
+async function chooseImport() {
+  await requireStorage();
+  check(people.length, 'Agrega un RFC antes de importar.');
   if (!importing) $('incoming').click();
 }
 async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) {
-  if (!ready || importing) return;
+  if (importing) return;
+  try { await requireStorage(); }
+  catch (error) { if (quiet) throw error; announce(error.message, true); return; }
   const files = [...source].filter(file => /\.(xml|zip)$/i.test(file.name));
   if (!files.length) return announce('Elige archivos .xml o .zip con CFDI.', true);
   if (!people.length) return announce('Agrega primero los RFC que quieres importar.', true);
@@ -1791,8 +1809,9 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
     try { await refresh(quiet && page === 'sat'); } catch (error) { announce(error.message, true); }
   }
 }
-function addDocument() {
-  check(ready && people.length, 'Agrega un RFC antes de archivar documentos.');
+async function addDocument() {
+  await requireStorage();
+  check(people.length, 'Agrega un RFC antes de archivar documentos.');
   const taxpayer = select(people.map(p => [p.id, p.name + ' · ' + p.id]), scope || people[0].id);
   const kind = select(DOCUMENTS.map(x => [x, x]), DOCUMENTS[0]);
   const date = input('date', { required: true });
@@ -2161,8 +2180,9 @@ async function validateBackup(data) {
   check(contents.size === 0, 'El respaldo contiene archivos sin expediente.');
   return output;
 }
-function backupDialog() {
-  check(ready && !importing && crypto.subtle, 'El respaldo no está disponible en este navegador o hay una importación activa.');
+async function backupDialog() {
+  await requireStorage();
+  check(!importing && crypto.subtle, 'El respaldo no está disponible en este navegador o hay una importación activa.');
   const password = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
   const repeat = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
   dialog('Crear respaldo cifrado', [field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
@@ -2207,8 +2227,9 @@ function monthlyPackageManifest(rfc, monthKey, files, generatedAt, installName =
     'Generado: ' + generatedAt, ...(installName ? ['Instalación: ' + installName] : []), '', 'Contenido del paquete:']
     .concat(files.map(name => '- ' + name)).join('\n') + '\n';
 }
-function restoreDialog(file) {
-  check(ready && !importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
+async function restoreDialog(file) {
+  await requireStorage();
+  check(!importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
   const password = input('password', { required: true, autocomplete: 'off' });
   const confirmation = input('checkbox', { required: true });
   dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de PacoSAT se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
@@ -2278,7 +2299,7 @@ for (const id of ['incoming', 'folder']) {
   $(id).onchange = () => { const files = [...$(id).files]; $(id).value = ''; importBatch(files).catch(error => announce(error.message, true)); };
 }
 $('restore').onchange = handle(() => {
-  const file = $('restore').files[0]; $('restore').value = ''; if (file) restoreDialog(file);
+  const file = $('restore').files[0]; $('restore').value = ''; if (file) return restoreDialog(file);
 });
 $('close').onclick = $('cancel').onclick = () => $('dialog').close();
 $('dialog').addEventListener('cancel', event => { if ($('save').disabled) event.preventDefault(); });
@@ -2305,9 +2326,71 @@ window.addEventListener('drop', event => {
   event.preventDefault(); $('body').classList.remove('drag-active');
   if (!$('dialog').open) importBatch(event.dataTransfer.files).catch(error => announce(error.message, true));
 });
+/* Preparación del almacenamiento (1.6.8). Hasta la 1.6.7, las acciones
+   comprobaban `ready` en el acto y se rendían con «El almacenamiento
+   todavía no está disponible.» si el usuario actuaba antes de que el
+   arranque terminara; y si la apertura quedaba bloqueada por otra
+   pestaña o fallaba, `ready` quedaba en falso para siempre y no había
+   recuperación. Ahora las acciones ESPERAN a la preparación
+   (requireStorage) con un límite razonable; si el almacén de verdad no
+   abre, hay un reintento — el bloqueo pudo ceder si la otra pestaña ya
+   se cerró — y solo entonces un mensaje claro y accionable según el
+   modo y la causa (storageAdvice). En modo servidor (cloudStorage) la
+   preparación es la carga inicial de datos desde el servidor: las
+   acciones trabajan contra el servidor y nunca dependen de IndexedDB. */
+const STORAGE_WAIT_MS = 10000;
+let storageFailure = null;   // error definitivo de la última apertura local
+let storagePending = false;  // hay una apertura local en curso
+async function openLocalStorage() {
+  storagePending = true;
+  try { db = await openDatabase(); return true; }
+  catch (error) { storageFailure = error; return false; }
+  finally { storagePending = false; }
+}
+function storageAdvice() {
+  if (cloudStorage) return 'PacoSAT no pudo cargar los datos del servidor. Revisa la conexión con el servidor, recarga la página y vuelve a intentarlo.';
+  if (isStorageBlocked()) return 'Otra pestaña o ventana de PacoSAT tiene el almacenamiento local ocupado. Cierra las demás pestañas de PacoSAT, recarga esta página y vuelve a intentarlo.';
+  return 'El navegador no dejó abrir el almacenamiento local de PacoSAT. Cierra las demás pestañas de la app, recarga la página y vuelve a intentarlo; si aun así falla, abre la app en Chrome o Edge con un perfil normal (no privado).';
+}
+let storageAttempt, readiness;
+function beginReadiness() {
+  storageAttempt = cloudStorage ? Promise.resolve(true) : openLocalStorage();
+  readiness = storageAttempt.then(async opened => {
+    if (!opened) return false;
+    ready = true;
+    await refresh();
+    return true;
+  });
+  return readiness;
+}
+async function waitReadiness(waitMs) {
+  if (ready) return true;
+  let timer;
+  const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), waitMs); });
+  const settled = readiness.then(() => ready, () => ready);
+  const ok = await Promise.race([settled, timeout]);
+  clearTimeout(timer);
+  return Boolean(ok && ready);
+}
+async function retryStorage(waitMs) {
+  /* Si la apertura sigue en curso (bloqueada por otra pestaña), no se
+     abre otra: se vuelve a esperar sobre la misma preparación, que se
+     completa sola en cuanto esa pestaña se cierra. Si el intento ya
+     terminó en fallo, se reintenta desde cero; en modo servidor, la
+     preparación nueva simplemente recarga los datos. */
+  if (!storagePending) beginReadiness();
+  return waitReadiness(waitMs);
+}
+async function requireStorage(waitMs = STORAGE_WAIT_MS) {
+  if (ready) return;
+  if (await waitReadiness(waitMs)) return;
+  if (await retryStorage(waitMs)) return;
+  throw new Error(storageAdvice());
+}
+/* Fin de la preparación del almacenamiento (1.6.8). */
 render();
-const startup = (cloudStorage ? Promise.resolve(null) : openDatabase()).then(async result => { db = result; ready = true; await refresh(); })
-  .catch(() => { announce('El navegador bloqueó el almacenamiento local. Abre el archivo en Edge o Chrome con un perfil normal.', true); });
+const startup = beginReadiness().then(opened => { if (!opened) announce(storageAdvice(), true); })
+  .catch(error => announce(error.message, true));
 startup.then(() => { computeNews(); if (newsCount && page === 'home') render(); });
 
 const satToken = document.querySelector('meta[name="pacosat-token"]')?.content;
