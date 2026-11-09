@@ -1,6 +1,6 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Última modificación: 8 nov 2026, 22:15 CST**
+**Última modificación: 8 nov 2026, 22:16 CST**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro (pantalla «Qué incluye PacoSAT») y se actualiza en cada ronda y cada despliegue, junto con el sello de versión y hora de creación.
@@ -72,7 +72,7 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - 🔄 Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente; los correos de alerta llevan enlace.
 - 🔄 Acciones directas en tarjetas CFDI (ver, descargar XML, abrir PDF, copiar UUID, imprimir) y arrastrar y soltar para importar en cualquier pantalla; «Descargar ahora» por RFC; buscador global que también ejecuta acciones.
 - 🔄 PacoSAT instalable en el móvil (PWA) con pantallas adaptadas.
-- 🔄 MODO OFFLINE: la app abre sin conexión y permite CONSULTAR una copia local cifrada de solo lectura (CFDI, estados, por cobrar/pagar, listas) con la hora de la última sincronización siempre visible; lo que no puede salir (descargas y consultas al SAT) queda en cola y se ejecuta al volver la conexión. Aviso claro de «estás viendo datos de las HH:MM».
+- 🔄 MODO OFFLINE: la app abre sin conexión y permite CONSULTAR una copia local cifrada de solo lectura con los datos de los ÚLTIMOS 3 MESES (CFDI con su desglose, estados, por cobrar/pagar, listas negras), con la hora de la última sincronización siempre visible («estás viendo datos de las HH:MM»); en cada conexión se dejan además PREGENERADOS los informes clave de esos 3 meses (resumen mensual, IVA estimado, por cobrar/pagar) para abrirlos o imprimirlos offline. Lo que no puede salir (descargas y consultas al SAT) queda en cola y se ejecuta al volver la conexión. El XML/PDF individual se abre offline si quedó en la caché reciente; el archivo histórico completo vive en el NAS.
 - 🔄 Acceso en casa sin internet: además del nombre público, PacoSAT responde en la red local del NAS con la misma contraseña, para cuando se caiga internet o el túnel.
 - 🔄 Preguntas en lenguaje normal sobre los propios datos, calculadas 100 % en local (sin salir del NAS).
 - 🔄 Escala: sincronización por diferencias, paginación y caché de cobertura para miles de CFDI.
