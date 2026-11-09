@@ -30,11 +30,11 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 
 ## 3. Listas negras (art. 69, 69-B y 69-B Bis)
 - ✅ Hoy (manual, ya verificado): cruce de contrapartes contra los 16 listados oficiales guardados en ~/workspace/pacosat-listas-sat/.
-- 🔄 Descarga automática y continua de los listados oficiales desde Datos Abiertos del SAT.
-- 🔄 Padrón de empresas a monitorear (clientes/proveedores): se puebla solo desde los CFDI y los pagos; alta uno por uno y carga masiva por Excel (Nombre, RFC, Nota).
-- 🔄 Validador manual por RFC y por nombre/razón social (69, 69-B o ambas), en tiempo real.
-- 🔄 Alertas ante CUALQUIER transición (entradas, salidas, desvirtuados; también la línea base inicial) con la exposición por empresa (importes y CFDI en riesgo), alarma si un listado lleva >48 h sin actualizarse y panel «cómo voy» con semáforo por contraparte.
-- 🔄 Constancia de validación en PDF por empresa (fecha, listados consultados y resultado).
+- ✅ Descarga automática y continua de los listados oficiales desde Datos Abiertos del SAT: 69-B y 69-B Bis desde el blob oficial del minisitio y los supuestos del art. 69 desde el paquete oficial del SAT en datos.gob.mx; los supuestos CSD sin efectos y Reducción art. 74 se cargan por archivo (sin CSV oficial verificado) y el motor los trata igual (1.6.13).
+- ✅ Padrón de empresas a monitorear (clientes/proveedores): se puebla solo desde los CFDI; alta uno por uno y carga masiva por Excel o CSV (Nombre, RFC, Nota) leída en la propia app (1.6.13).
+- ✅ Validador manual por RFC y por nombre/razón social (69, 69-B o ambas), en tiempo real contra todos los listados cargados (1.6.13).
+- ✅ Alertas ante CUALQUIER transición (entradas, salidas, desvirtuados; también la línea base inicial) con la exposición por empresa (importes y CFDI en riesgo), alarma si un listado lleva >48 h sin actualizarse y panel «cómo voy» con semáforo por contraparte (1.6.13).
+- ✅ Constancia de validación en PDF por empresa (fecha, listados consultados y resultado), lista para imprimir o guardar (1.6.13).
 
 ## 4. e.firma y RFC que maneja
 - ✅ Perfil de Mano Fil (MFI6212158B4) con su e.firma en la carpeta protegida del NAS.

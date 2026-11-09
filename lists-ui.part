@@ -1,0 +1,275 @@
+/* ===== Listas negras (1.6.13) =====
+   Pantalla del servidor: listados oficiales con su semáforo de
+   frescura, validador en tiempo real, padrón de contrapartes con su
+   peor situación y su exposición, historial de cambios y constancia
+   imprimible por empresa. Todo lenguaje llano: «lista negra» aquí
+   significa que el SAT publicó ese RFC en un listado oficial. */
+const LISTS_VIEW = { data: null };
+const listStatePill = source => {
+  if (source.error) return pill('bad', 'Con error');
+  if (!source.fetched) return pill('dim', source.manual ? 'Sin cargar' : 'Pendiente');
+  if (Date.now() - source.fetched > 48 * 3600 * 1000) return pill('warn', 'Desactualizado');
+  return pill('ok', 'Al día');
+};
+async function loadLists() {
+  LISTS_VIEW.data = await satApi('lists');
+  if (VIEW === 'lists') render();
+  return LISTS_VIEW.data;
+}
+async function listsScreen() {
+  const data = LISTS_VIEW.data || await loadLists();
+  const wrap = n('div');
+  /* Fuentes oficiales */
+  const sourcesPanel = panel('Listados oficiales del SAT', 'Se descargan solos cada día. Si uno lleva más de 48 horas sin actualizar, PacoSAT avisa: vigilar con datos viejos es peor que no vigilar.');
+  const grid = n('div', undefined, 'sat-grid');
+  for (const source of data.sources) {
+    const card = n('article', undefined, 'sat-card');
+    const head = n('div', undefined, 'sat-card-head');
+    head.append(n('strong', source.label), listStatePill(source));
+    const meta = n('div', undefined, 'sat-meta');
+    meta.append(n('span', source.count ? source.count.toLocaleString('es-MX') + ' registros' : 'Sin registros cargados'));
+    if (source.fetched) meta.append(n('span', 'Descargado: ' + localDateTime(source.fetched)));
+    if (source.declared) meta.append(n('span', 'La fuente declara: ' + source.declared));
+    if (source.manual) meta.append(n('span', 'Este listado no tiene descarga automática oficial: se carga su archivo a mano.'));
+    card.append(head, meta);
+    if (source.error) card.append(n('p', 'Último intento: ' + source.error, 'error-text'));
+    const actions = n('div', undefined, 'sat-actions');
+    if (source.url) {
+      const update = n('button', 'Actualizar ahora', 'soft');
+      update.onclick = async () => { update.disabled = true; update.textContent = 'Actualizando…';
+        try { await satApi('lists/refresh', { listId: source.id }); await loadLists(); toast('Listado actualizado.', 'ok'); }
+        catch (error) { toast(error.message, 'error'); render(); } };
+      actions.append(update);
+    } else {
+      const file = input('file', { accept: '.csv,text/csv' }); file.hidden = true;
+      file.onchange = async () => {
+        if (!file.files[0]) return;
+        try {
+          const content = bytesToBase64(new Uint8Array(await file.files[0].arrayBuffer()));
+          await satApi('lists/import', { listId: source.id, content });
+          await loadLists(); toast('Listado cargado y cruzado con tu padrón.', 'ok');
+        } catch (error) { toast(error.message, 'error'); render(); }
+      };
+      const importBtn = n('button', 'Cargar archivo CSV', 'soft');
+      importBtn.onclick = () => file.click();
+      actions.append(importBtn, file);
+    }
+    card.append(actions);
+    grid.append(card);
+  }
+  sourcesPanel.append(grid);
+  wrap.append(sourcesPanel);
+  /* Validador */
+  const validator = panel('Validar una empresa', 'Escribe un RFC o parte del nombre: se busca en TODOS los listados cargados, aunque no sea tu contraparte.');
+  const vrow = n('div', undefined, 'filterbar');
+  const vinput = input('search', { placeholder: 'RFC o nombre de la empresa…', 'aria-label': 'RFC o nombre a validar' });
+  const vbtn = n('button', 'Validar', 'primary');
+  const vout = n('div');
+  const runValidate = async () => {
+    vout.replaceChildren(n('p', 'Buscando en los listados…', 'empty'));
+    try {
+      const result = await satApi('lists/validate', { query: vinput.value });
+      vout.replaceChildren();
+      if (!result.matches.length) vout.append(n('p', 'Sin coincidencias: «' + result.query + '» no aparece en ningún listado cargado.', 'empty ok-note'));
+      for (const match of result.matches) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(n('strong', match.name || match.rfc),
+          n('span', match.rfc + ' · ' + match.label + ' · ' + match.detail, 'muted'),
+          pill(match.severity === 'bad' ? 'bad' : match.severity === 'warn' ? 'warn' : 'ok',
+            match.severity === 'bad' ? 'Alerta' : match.severity === 'warn' ? 'Precaución' : 'Regularizado'));
+        vout.append(row);
+      }
+    } catch (error) { vout.replaceChildren(n('p', error.message, 'error-text')); }
+  };
+  vbtn.onclick = runValidate;
+  vinput.onkeydown = event => { if (event.key === 'Enter') runValidate(); };
+  vrow.append(vinput, vbtn);
+  validator.append(vrow, vout);
+  wrap.append(validator);
+  /* Padrón */
+  const counts = { bad: 0, warn: 0, clean: 0 };
+  for (const cp of data.counterparts) {
+    if (cp.severity === 'bad') counts.bad++;
+    else if (cp.severity === 'warn' || cp.severity === 'dim') counts.warn++;
+    else counts.clean++;
+  }
+  const registry = panel('Padrón de contrapartes', 'Toda empresa que te factura o a la que facturas, más las que agregues. «Exposición» es lo que te ha facturado quien aparece en un listado: ese dinero es el que el SAT podría cuestionar.');
+  const summary = n('div', undefined, 'traffic-strip');
+  summary.append(pill(counts.bad ? 'bad' : 'ok', counts.bad + ' con alerta grave'),
+    pill(counts.warn ? 'warn' : 'ok', counts.warn + ' con precaución'),
+    pill('ok', counts.clean + ' sin coincidencias'),
+    pill('dim', data.counterparts.length + ' en el padrón'));
+  registry.append(summary);
+  const addRow = n('div', undefined, 'filterbar');
+  const addBtn = n('button', 'Agregar contraparte', 'soft');
+  addBtn.onclick = () => counterpartDialog();
+  const bulkFile = input('file', { accept: '.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  bulkFile.hidden = true;
+  bulkFile.onchange = async () => {
+    if (!bulkFile.files[0]) return;
+    try {
+      const rows = await parseSpreadsheetRows(bulkFile.files[0]);
+      const result = await satApi('lists/counterparts/bulk', { rows });
+      LISTS_VIEW.data = result;
+      toast('Carga masiva: ' + result.bulk.saved + ' guardadas, ' + result.bulk.skipped + ' omitidas (RFC no válido).', 'ok');
+      render();
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  const bulkBtn = n('button', 'Importar Excel o CSV (Nombre · RFC · Nota)', 'soft');
+  bulkBtn.onclick = () => bulkFile.click();
+  addRow.append(addBtn, bulkBtn, bulkFile);
+  registry.append(addRow);
+  for (const cp of data.counterparts) {
+    const row = n('div', undefined, 'cp-row clickable');
+    const main = n('div', undefined, 'cp-main');
+    main.append(n('strong', cp.name || cp.rfc),
+      n('span', cp.rfc + (cp.kind ? ' · ' + cp.kind : '') + (cp.source === 'cfdi' ? ' · detectada en tus CFDI' : cp.source === 'perfil' ? ' · tu empresa' : ''), 'muted'));
+    if (cp.note) main.append(n('span', cp.note, 'muted'));
+    for (const hit of cp.hits) main.append(n('span', hit.label + ': ' + hit.detail, 'cp-hit sev-' + hit.severity));
+    if (cp.exposure && cp.exposure.receivedCount)
+      main.append(n('span', 'Te ha facturado ' + money(cp.exposure.received) + ' en ' + cp.exposure.receivedCount + ' CFDI', 'muted'));
+    row.append(main,
+      pill(cp.severity === 'bad' ? 'bad' : cp.severity === 'warn' ? 'warn' : cp.severity === 'dim' ? 'dim' : 'ok',
+        cp.severity === 'bad' ? 'En lista · grave' : cp.severity === 'warn' ? 'En lista' :
+        cp.severity === 'dim' ? 'En lista · menor' : cp.severity === 'ok' ? 'Regularizada' : 'Limpia'));
+    const actions = n('div', undefined, 'row-actions');
+    const cert = n('button', 'Constancia', 'soft');
+    cert.onclick = event => { event.stopPropagation(); printListsCertificate(cp, data.sources); };
+    actions.append(cert);
+    if (cp.source === 'manual') {
+      const edit = n('button', 'Editar', 'soft');
+      edit.onclick = event => { event.stopPropagation(); counterpartDialog(cp); };
+      const remove = n('button', 'Quitar', 'danger-soft');
+      remove.onclick = async event => { event.stopPropagation();
+        if (!confirm('¿Quitar a ' + cp.rfc + ' del padrón manual? Seguirá apareciendo si tiene CFDI tuyos.')) return;
+        await satApi('lists/counterparts/remove', { rfc: cp.rfc }); await loadLists(); };
+      actions.append(edit, remove);
+    }
+    row.append(actions);
+    registry.append(row);
+  }
+  if (!data.counterparts.length) registry.append(n('p', 'El padrón se llena solo con tus CFDI; también puedes agregar empresas a mano.', 'empty'));
+  wrap.append(registry);
+  /* Cambios */
+  const eventsPanel = panel('Cambios detectados', 'Cada vez que un listado cambia para una de tus contrapartes queda anotado aquí y llega un aviso por correo.');
+  if (!data.events.length) eventsPanel.append(n('p', 'Todavía no hay cambios: la primera descarga deja la línea base de tu padrón.', 'empty'));
+  for (const event of data.events) {
+    const row = n('div', undefined, 'cp-row');
+    row.append(n('span', localDateTime(event.at), 'muted'),
+      n('strong', event.rfc),
+      n('span', event.label + ' · ' + event.change + (event.detail ? ' · ' + event.detail : '')));
+    eventsPanel.append(row);
+  }
+  wrap.append(eventsPanel);
+  return wrap;
+}
+function counterpartDialog(existing = null) {
+  const nameInput = input('text', { value: existing?.name || '', placeholder: 'Nombre o razón social' });
+  const rfcInput = input('text', { value: existing?.rfc || '', placeholder: 'RFC' });
+  const kindSelect = n('select');
+  for (const kind of ['', 'Cliente', 'Proveedor', 'Ambos']) {
+    const option = n('option', kind || 'Sin clasificar'); option.value = kind;
+    if ((existing?.kind || '') === kind) option.selected = true;
+    kindSelect.append(option);
+  }
+  const noteInput = input('text', { value: existing?.note || '', placeholder: 'Nota (opcional)' });
+  dialog(existing ? 'Editar contraparte' : 'Agregar contraparte',
+    [field('Nombre', nameInput), field('RFC', rfcInput), field('Tipo', kindSelect), field('Nota', noteInput)],
+    async () => {
+      await satApi('lists/counterparts', { rfc: rfcInput.value.trim().toUpperCase(),
+        name: nameInput.value.trim(), kind: kindSelect.value, note: noteInput.value.trim() });
+      await loadLists();
+      toast('Contraparte guardada y cruzada con los listados.', 'ok');
+    }, existing ? 'Guardar cambios' : 'Agregar y validar');
+}
+/* Lectura de hoja (CSV nativo o XLSX con el lector ZIP propio, sin
+   librerías): columnas Nombre · RFC · Nota (y Tipo si viene). */
+function splitCsvText(text) {
+  const rows = []; let row = [], cell = '', quoted = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (quoted) {
+      if (ch === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; }
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',' || ch === ';') { row.push(cell); cell = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && text[i + 1] === '\n') i++;
+      row.push(cell); cell = ''; rows.push(row); row = [];
+    } else cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => String(c).trim()));
+}
+async function parseSpreadsheetRows(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let grid;
+  if (/\.xlsx$/i.test(file.name)) {
+    let shared = [], sheet = '';
+    for await (const entry of zipEntries(bytes, /\.xml$/)) {
+      if (/sharedStrings\.xml$/.test(entry.name)) {
+        const doc = new DOMParser().parseFromString(decodeXml(entry.content), 'text/xml');
+        shared = [...doc.querySelectorAll('si')].map(si => [...si.querySelectorAll('t')].map(t => t.textContent).join(''));
+      }
+      if (/worksheets\/sheet1\.xml$/.test(entry.name)) sheet = decodeXml(entry.content);
+    }
+    if (!sheet) throw new Error('No se encontró la primera hoja del libro.');
+    const doc = new DOMParser().parseFromString(sheet, 'text/xml');
+    grid = [...doc.querySelectorAll('row')].map(row => [...row.querySelectorAll('c')].map(cell => {
+      const value = cell.querySelector('v')?.textContent || cell.querySelector('is t')?.textContent || '';
+      return cell.getAttribute('t') === 's' ? (shared[Number(value)] || '') : value;
+    }));
+  } else {
+    grid = splitCsvText(new TextDecoder('utf-8').decode(bytes).replace(/^﻿/, ''));
+  }
+  if (!grid.length) throw new Error('La hoja está vacía.');
+  const header = grid[0].map(cell => String(cell).normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase());
+  const hasHeader = header.some(cell => /nombre|rfc|nota|tipo/.test(cell));
+  const col = (names, fallback) => { const i = header.findIndex(cell => names.includes(cell)); return hasHeader && i >= 0 ? i : fallback; };
+  const ci = { name: col(['nombre', 'nombre o razon social', 'razon social'], 0), rfc: col(['rfc'], 1),
+    note: col(['nota', 'notas'], 2), kind: col(['tipo'], 3) };
+  return grid.slice(hasHeader ? 1 : 0).map(row => ({
+    name: String(row[ci.name] || ''), rfc: String(row[ci.rfc] || ''),
+    note: String(row[ci.note] || ''), kind: String(row[ci.kind] || '') }))
+    .filter(row => row.rfc.trim());
+}
+function bytesToBase64(bytes) {
+  let out = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) out += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(out);
+}
+/* Constancia de validación por empresa: documento imprimible con la
+   fecha, los listados consultados y el resultado. */
+function printListsCertificate(cp, sources) {
+  const section = $('print-report');
+  section.replaceChildren();
+  const head = n('div', undefined, 'report-head');
+  head.append(n('h1', 'Constancia de validación en listados del SAT'),
+    n('p', installName + ' · ' + new Date().toLocaleString('es-MX', { dateStyle: 'full', timeStyle: 'short' })));
+  const body = n('div', undefined, 'report-body');
+  body.append(n('p', 'Empresa validada: ' + (cp.name || cp.rfc) + ' (' + cp.rfc + ')' + (cp.kind ? ' · ' + cp.kind : '')));
+  const table = n('table', undefined, 'report-table');
+  const thead = n('thead'); const htr = n('tr');
+  for (const label of ['Listado oficial', 'Última descarga', 'Registros', 'Resultado']) htr.append(n('th', label));
+  thead.append(htr); table.append(thead);
+  const tbody = n('tbody');
+  for (const source of sources) {
+    const hit = cp.hits.find(item => item.listId === source.id);
+    const tr = n('tr');
+    tr.append(n('td', source.label),
+      n('td', source.fetched ? localDateTime(source.fetched) : 'Sin cargar'),
+      n('td', source.count ? source.count.toLocaleString('es-MX') : '—'),
+      n('td', hit ? 'CONSTA: ' + hit.detail : 'Sin coincidencias'));
+    tbody.append(tr);
+  }
+  table.append(tbody);
+  body.append(table);
+  if (cp.exposure && cp.exposure.receivedCount)
+    body.append(n('p', 'Exposición registrada: te ha facturado ' + money(cp.exposure.received) + ' en ' + cp.exposure.receivedCount + ' CFDI.'));
+  body.append(n('p', cp.hits.length ?
+    'RESULTADO: la empresa CONSTA en al menos un listado oficial (ver detalle en la tabla). Esta constancia refleja los listados en la fecha de su última descarga indicada.' :
+    'RESULTADO: la empresa NO consta en ninguno de los listados oficiales consultados en la fecha de su última descarga indicada.'));
+  body.append(n('p', 'Generada por PacoSAT desde los listados oficiales publicados por el SAT (datos abiertos). No sustituye la consulta directa en el portal del SAT.'));
+  section.append(head, body);
+  setTimeout(() => window.print(), 80);
+}

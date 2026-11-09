@@ -123,3 +123,12 @@ html[data-theme="dark"]{--pill-ok-bg:#173a26;--pill-ok-ink:#9fd8b0;--pill-warn-b
 .side-version{color:var(--nav-muted);font-size:12px;padding:0 4px}
 body.drag-active::after{content:"Suelta los archivos para importar";position:fixed;inset:auto 0 22px 0;margin:0 auto;width:max-content;max-width:92vw;background:var(--green);color:var(--on-accent);padding:11px 18px;border-radius:100px;font-weight:700;z-index:60;box-shadow:0 10px 30px var(--shadow-color)}
 td button{padding:7px 10px}
+/* Listas negras (1.6.13) */
+.cp-row{display:flex;align-items:flex-start;gap:12px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.cp-row:last-child{border-bottom:0}
+.cp-main{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+.cp-hit{font-size:12.5px;font-weight:600}
+.cp-hit.sev-bad{color:var(--bad,#b3261e)}
+.cp-hit.sev-warn{color:var(--warn,#9a6a00)}
+.cp-hit.sev-ok{color:var(--ok,#1e7d32)}
+.ok-note{color:var(--ok,#1e7d32);font-weight:600}
