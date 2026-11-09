@@ -114,7 +114,12 @@ async function collect(stream) {
     monitorSource.slice(monitorSource.indexOf('function fiscalStateCounts'), monitorSource.indexOf('function fiscalDonut')) +
     "var __rows = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => ({ id }));\n" +
     'globalThis.__donut = { counts: fiscalStateCounts(__rows), segments: donutSegments(fiscalStateCounts(__rows)) };', context);
-  assert.deepEqual(context.__donut.counts, { vigente: 2, cancelado: 1, efos: 1, sin: 2 });
+  /* Los objetos creados dentro del contexto VM tienen otro prototipo:
+     se comparan campo a campo, no con deepStrictEqual contra literales. */
+  assert.equal(context.__donut.counts.vigente, 2);
+  assert.equal(context.__donut.counts.cancelado, 1);
+  assert.equal(context.__donut.counts.efos, 1);
+  assert.equal(context.__donut.counts.sin, 2);
   assert.equal(context.__donut.segments.reduce((sum, seg) => sum + seg.value, 0), 6);
   assert.ok(Math.abs(context.__donut.segments.reduce((sum, seg) => sum + seg.frac, 0) - 1) < 1e-9);
   assert.equal(context.__donut.segments[1].start, context.__donut.segments[0].frac);
@@ -127,9 +132,26 @@ async function collect(stream) {
   assert.ok(manifest.includes('RFC: XAXX010101000') && manifest.includes('Mes: 2026-10') && manifest.includes('- base-diot.csv'));
   const zipBlob = context.zipStore([{ name: 'totales.csv', data: new TextEncoder().encode('a,b\n1,2') },
     { name: 'manifiesto.txt', data: manifest }]);
-  const entries = await collect(zipXml(new Uint8Array(await zipBlob.arrayBuffer())));
-  assert.deepEqual(entries.map(entry => entry.name), ['totales.csv', 'manifiesto.txt']);
-  assert.equal(new TextDecoder().decode(entries[0].xml), 'a,b\n1,2');
-  assert.equal(new TextDecoder().decode(entries[1].xml), manifest);
+  /* Lector mínimo del propio verify: zipXml solo expone entradas .xml
+     (es el lector de CFDI), así que el paquete se comprueba recorriendo
+     las cabeceras locales: nombre, contenido y CRC de cada entrada, y el
+     registro final con su conteo. */
+  const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+  const zipView = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
+  const parsed = [];
+  for (let p = 0; p + 30 <= zipBytes.length && zipView.getUint32(p, true) === 0x04034b50;) {
+    const size = zipView.getUint32(p + 18, true);
+    const nameLen = zipView.getUint16(p + 26, true), extraLen = zipView.getUint16(p + 28, true);
+    const data = zipBytes.subarray(p + 30 + nameLen + extraLen, p + 30 + nameLen + extraLen + size);
+    assert.equal(context.crc32(data), zipView.getUint32(p + 14, true));
+    parsed.push({ name: new TextDecoder().decode(zipBytes.subarray(p + 30, p + 30 + nameLen)),
+      text: new TextDecoder().decode(data) });
+    p += 30 + nameLen + extraLen + size;
+  }
+  assert.deepEqual(parsed.map(entry => entry.name), ['totales.csv', 'manifiesto.txt']);
+  assert.equal(parsed[0].text, 'a,b\n1,2');
+  assert.equal(parsed[1].text, manifest);
+  assert.equal(zipView.getUint32(zipBytes.length - 22, true), 0x06054b50);
+  assert.equal(zipView.getUint16(zipBytes.length - 22 + 10, true), 2);
   console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados y paquete mensual.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
