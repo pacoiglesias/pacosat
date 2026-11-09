@@ -88,6 +88,7 @@ function settingsScreen() {
   const facts = n('div', undefined, 'facts');
   const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
   facts.append(fact('Versión', 'PacoSAT ' + PACOSAT_META.version),
+    fact('Autor', 'Creado por Paco Iglesias'),
     fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'));
   if (satToken && satData.buildModified) facts.append(fact('Última modificación de esta copia', stampText(new Date(satData.buildModified).toISOString())));
   if (satToken && satData.serverStartedAt) facts.append(fact('Esta instancia se inició', stampText(new Date(satData.serverStartedAt).toISOString())));
@@ -96,6 +97,33 @@ function settingsScreen() {
     'Sin servidor, los ajustes se guardan en este navegador. La fecha de inicio de la instancia solo existe en modo servidor y por eso no se muestra aquí.'));
   about.append(aboutBody);
   panels.push(about);
+  /* Sonidos por evento (1.6.11): el interruptor general vive en la
+     cabecera; aquí se elige qué eventos suenan. Se guarda al momento en
+     este navegador, sin pasar por «Guardar ajustes». */
+  const sounds = panel('Sonidos de la interfaz');
+  const soundsBody = n('div', undefined, 'portal');
+  soundsBody.append(n('p', 'Sonidos discretos al completar acciones. El botón de altavoz de la cabecera los apaga todos.'));
+  const soundPrefs = (() => { try { return JSON.parse(prefGet('pacosat-sound-events') || '{}'); } catch { return {}; } })();
+  for (const [kind, label] of [['success', 'Éxito (importación terminada, respaldo creado)'],
+    ['notice', 'Avisos (novedades y confirmaciones)'], ['alert', 'Alertas (algo requiere tu atención)'],
+    ['error', 'Errores (una acción falló)']]) {
+    const toggle = input('checkbox');
+    toggle.checked = soundPrefs[kind] !== false;
+    toggle.onchange = () => {
+      const prefs = (() => { try { return JSON.parse(prefGet('pacosat-sound-events') || '{}'); } catch { return {}; } })();
+      prefs[kind] = toggle.checked;
+      prefSet('pacosat-sound-events', JSON.stringify(prefs));
+      if (toggle.checked) soundCue(kind);
+    };
+    soundsBody.append(field(label, toggle));
+  }
+  sounds.append(soundsBody);
+  panels.push(sounds);
+  /* Guardar también al pie (UX-17): el botón de la cabecera queda lejos
+     al hacer scroll en esta pantalla. */
+  const saveBar = n('div', undefined, 'actions');
+  saveBar.append(action('Guardar ajustes', saveAppSettings, 'primary', 'check'));
+  panels.push(saveBar);
   return panels;
 }
 async function saveAppSettings() {

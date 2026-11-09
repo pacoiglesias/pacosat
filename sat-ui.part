@@ -5,6 +5,20 @@ const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos'
 const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
 const criteriaNotes = { disponible: 'Criterio disponible', ultima: 'Criterio: última solicitud disponible', agotado: 'Criterio agotado ante el SAT (5002)' };
 
+/* Errores del servidor en lenguaje claro (UX-20): cada mensaje críptico
+   conocido se traduce a qué pasó y qué hacer. Los que ya vienen claros
+   (la mayoría desde la 1.6.7) pasan tal cual. */
+const FRIENDLY_ERRORS = [
+  [/sesión local inválida/i, 'El servicio se reinició y la sesión caducó: pulsa «Actualizar estado» o recarga la página para reconectar.'],
+  [/^host inválido/i, 'El servicio rechazó la dirección de acceso: entra por la dirección oficial de PacoSAT en tu NAS.'],
+  [/^solicitud inválida/i, 'La solicitud no es válida tal como se envió: revisa el RFC y el periodo e inténtalo de nuevo.'],
+  [/^cfdi de otro rfc/i, 'Ese CFDI es de otro RFC: cambia el contribuyente seleccionado o registra ese RFC en tu cartera.'],
+  [/almacenamiento todavía no está disponible/i, 'El almacenamiento aún se está preparando: espera unos segundos y reintenta; si persiste, cierra las demás pestañas de PacoSAT.']
+];
+function friendlyError(message) {
+  for (const [pattern, text] of FRIENDLY_ERRORS) if (pattern.test(message)) return text;
+  return message;
+}
 async function satApi(route, data) {
   const headers = { 'X-PacoSAT-Token': satToken };
   if (data !== undefined) headers['Content-Type'] = 'application/json';
@@ -14,7 +28,7 @@ async function satApi(route, data) {
   });
   if (!response.ok) {
     const failed = await response.json().catch(() => ({}));
-    const error = new Error(failed.error || 'El servicio local no respondió.');
+    const error = new Error(friendlyError(failed.error || 'El servicio local no respondió.'));
     error.guard = failed.guard || null;
     throw error;
   }
@@ -29,6 +43,36 @@ function selectPerson() {
   check(people.length, 'Agrega un contribuyente antes de configurar el SAT.');
   return select(people.map(person => [person.id, person.name + ' · ' + person.id]), scope || people[0].id);
 }
+/* Interruptor general de descanso (1.6.10, compartido en 1.6.11): la
+   misma pieza vive en el Centro SAT y en la pantalla «Hoy en PacoSAT».
+   Un toque para descansar o reactivar; la fecha se pide solo si se
+   elige «Descansar hasta…». */
+function restSwitch() {
+  const wrap = n('div', undefined, 'rest-switch');
+  const active = Boolean(satData.rest?.active);
+  const label = n('span', undefined, 'rest-label');
+  label.append(n('strong', active ? '🌙 Descansando' : '🟢 Vigilando'),
+    n('small', active ? 'Sin envíos al SAT ni avisos' + (satData.rest.until && satData.rest.until < Date.UTC(2099, 0, 1) ? ' hasta ' + localDateTime(satData.rest.until) : ' (sin fecha: se reactiva con este interruptor)') :
+      'Descarga y avisos automáticos activos'));
+  const toggle = n('button', active ? 'Reactivar' : 'Descansar', 'rest-toggle');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-pressed', String(active));
+  toggle.onclick = async () => {
+    if (active) {
+      satData = await satApi('rest', { until: 0 });
+      announce('Descanso general terminado. PacoSAT se pone al día con la ventana pendiente.');
+    } else {
+      /* Un toque, sin formularios: descanso sin fecha (se reactiva con
+         el mismo interruptor). La fecha se elige con «Descansar hasta…». */
+      satData = await satApi('rest', { until: Date.UTC(2100, 0, 1) });
+      announce('PacoSAT entra en descanso general: sin descargas ni avisos hasta que lo reactives.');
+    }
+    render();
+  };
+  wrap.append(label, toggle);
+  if (!active) wrap.append(action('Descansar hasta…', restDialog, undefined, 'bell'));
+  return wrap;
+}
 function connectedSatScreen() {
   const guide = n('section', undefined, 'guide');
   const info = n('div');
@@ -39,13 +83,7 @@ function connectedSatScreen() {
     action('Solicitar un periodo', requestDialog, undefined, 'sync'));
   guide.append(info, controls);
   const restBar = n('div', undefined, 'panel-head');
-  const restState = satData.rest?.active ?
-    cell('Descanso general ACTIVO hasta ' + localDateTime(satData.rest.until), 'No se envía nada al SAT ni se generan avisos. Al vencer la fecha, todo se reanuda solo con la ventana pendiente.') :
-    cell('Vigilancia activa', 'El descanso general apaga todas las descargas y avisos hasta la fecha que elijas.');
-  const restButtons = n('div', undefined, 'actions');
-  if (satData.rest?.active) restButtons.append(action('Reactivar ahora', async () => { satData = await satApi('rest', { until: 0 }); fillSat(); announce('Descanso general terminado. PacoSAT se pone al día.'); }));
-  else restButtons.append(action('Descansar hasta…', restDialog, undefined, 'bell'));
-  restBar.append(restState, restButtons);
+  restBar.append(cell('Modo descanso general', 'Un toque apaga todas las descargas y los avisos; al reanudar, PacoSAT se pone al día solo.'), restSwitch());
   guide.append(restBar);
   const container = n('div'); container.id = 'sat-live';
   fillSat(container);
@@ -60,7 +98,7 @@ function fillSat(target = $('sat-live')) {
   if (satError) schedules.append(empty('No se pudo leer el estado', satError, action('Actualizar', pollSat)));
   else {
     const profiles = satData.profiles.filter(row => !scope || row.rfc === scope);
-    if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Agrega o selecciona un RFC y autoriza su e.firma para activar la revisión.'));
+    if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Agrega o selecciona un RFC y autoriza su e.firma para activar la revisión.', action('Configurar mi primer RFC', () => unlockDialog(), 'primary', 'lock')));
     else schedules.append(grid(['RFC', 'Frecuencia', 'Próxima revisión', 'Estado', 'Acción'], profiles.map(row => {
       const restingProfile = Boolean(row.paused) || (row.pauseUntil || 0) > Date.now();
       const buttons = n('div', undefined, 'actions');
@@ -74,6 +112,13 @@ function fillSat(target = $('sat-live')) {
         satData = await satApi('pause', { rfc: row.rfc, paused: true });
         fillSat(); announce(row.rfc + ' entra en descanso: sin descargas ni avisos.');
       }), action('Hasta…', () => pauseUntilDialog(row)));
+      if (row.unlocked && !restingProfile) buttons.append(action('Descargar ahora', async () => {
+        /* UX-06: fuerza el ciclo de este RFC al momento (el servidor
+           aplica los mismos frenos: descanso o bloqueo lo impiden). */
+        satData = await satApi('run-now', { rfc: row.rfc });
+        fillSat(); announce('Revisión inmediata de ' + row.rfc + ' ejecutada: solicitudes programadas y paquetes al día.');
+        soundCue('success');
+      }, undefined, 'sync'));
       return [
         cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma')),
         (row.minutes / 60) + ' h · últimos ' + row.days + ' días',
@@ -98,7 +143,15 @@ function fillSat(target = $('sat-live')) {
     satData.mail.error || 'Avisos de CFDI recibidos nuevos. El correo lleva el conteo, sin adjuntar los XML.');
   const buttons = n('div', undefined, 'actions');
   buttons.append(action('Configurar SMTP', mailDialog, undefined, 'lock'));
-  if (satData.mail.enabled) buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSat(); }));
+  if (satData.mail.enabled) {
+    buttons.append(action('Enviar correo de prueba', async () => {
+      /* UX-09: la primera prueba del SMTP no debe ser un aviso real. */
+      await satApi('mail/test', {});
+      announce('Correo de prueba enviado a ' + satData.mail.recipient + '. Revisa tu bandeja: si llegó, los avisos funcionarán.');
+      soundCue('success');
+    }, undefined, 'bell'));
+    buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSat(); }));
+  }
   bar.append(notice, buttons); alerts.append(bar);
   const silence = panel('Aviso de silencio');
   const silenceBar = n('div', undefined, 'panel-head');
@@ -142,7 +195,7 @@ function unlockDialog(rfc) {
   const person = selectPerson();
   if (rfc && people.some(row => row.id === rfc)) person.value = rfc;
   const defaults = satData.profiles.find(row => row.rfc === person.value);
-  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults?.minutes || 240));
+  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['360','Cada 6 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults?.minutes || 240));
   const days = input('number', { min: 1, max: 31, value: defaults?.days || 7, required: true });
   const direction = select(Object.entries(directions), defaults?.direction || 'received');
   const certificate = input('file', { required: true, accept: '.cer' });
@@ -161,15 +214,16 @@ function unlockDialog(rfc) {
       direction: direction.value, certificate: await fileData(certificate.files[0]), key: await fileData(key.files[0]), password: password.value });
     password.value = '';
     fillSat(); announce('Sincronización autorizada para ' + person.value + '.');
-  });
+  }, 'Autorizar');
 }
 function guardChoice(guard) {
   return new Promise(resolve => {
     const box = n('div');
     box.append(n('h3', guard.state === 'agotado' ? 'Criterio agotado ante el SAT (5002)' : 'Este criterio ya se solicitó una vez'),
       n('p', guard.message),
-      n('p', 'Ventana del criterio: ' + guard.startAt + ' a ' + guard.endAt + '. Al mover el inicio a ' +
-        guard.shiftedStartAt + ' el criterio es otro y no gasta las solicitudes de este.'));
+      /* Fechas siempre en formato humano (UX-25): nada de ISO crudo. */
+      n('p', 'Ventana del criterio: ' + stampLabel(guard.startAt) + ' a ' + stampLabel(guard.endAt) + '. Al mover el inicio a ' +
+        stampLabel(guard.shiftedStartAt) + ' el criterio es otro y no gasta las solicitudes de este.'));
     if (guard.state === 'agotado') box.append(n('p',
       'Si solo necesitas reconciliar el histórico o revisar estados, pide el mismo periodo como Metadatos: ' +
       'es otro tipo de solicitud, con su propio criterio, y no gasta las solicitudes de CFDI.'));
@@ -181,12 +235,20 @@ function guardChoice(guard) {
     $('fields').replaceChildren(box);
   });
 }
-function requestDialog() {
+function requestDialog(preset) {
   const person = selectPerson();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
   const start = input('date', { max: today, value: today.slice(0, 8) + '01', required: true });
   const end = input('date', { max: today, value: today, required: true });
   const direction = select([['received', 'Recibidos'], ['issued', 'Emitidos']], 'received');
+  /* Preselección (UX-05): desde un hueco de Cobertura el diálogo nace
+     con el RFC, el sentido y los extremos exactos del hueco. */
+  if (preset) {
+    if (preset.rfc) person.value = preset.rfc;
+    if (preset.direction) direction.value = preset.direction;
+    if (preset.start) start.value = preset.start;
+    if (preset.end) end.value = preset.end;
+  }
   const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Metadatos (registros ligeros, para reconciliar)']], 'cfdi');
   /* Periodos frecuentes en un clic (1.6.10): sin teclear fechas. */
   const quick = n('div', undefined, 'actions');
@@ -216,7 +278,7 @@ function requestDialog() {
       }
     }
     fillSat(); announce('Solicitud enviada. PacoSAT revisará cuándo libera el paquete el SAT.');
-  });
+  }, 'Enviar solicitud');
 }
 function mailDialog() {
   const recipient = input('email', { required: true, value: satData.mail.recipient || '', maxLength: 200 });
@@ -232,7 +294,7 @@ function mailDialog() {
       host: host.value.trim(), port: Number(port.value), user: user.value, password: password.value });
     password.value = '';
     fillSat(); announce('Avisos activados. Se enviarán al detectar nuevos CFDI recibidos.');
-  });
+  }, 'Activar avisos');
 }
 
 async function pollSat() {

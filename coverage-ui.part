@@ -38,14 +38,19 @@ function coverageScreen() {
   const gaps = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
   if (!gaps.length) gapsPanel.append(n('p', 'Sin huecos: en cada RFC y sentido, los tramos descargados forman una cadena continua.'));
   else {
-    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Para cubrir uno, pídelo desde el Centro SAT; si el criterio exacto ya se envió, desplaza un extremo un segundo.'));
+    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Con «Solicitar este hueco» el diálogo se abre ya rellenado con el RFC, el sentido y los extremos exactos; si el criterio exacto ya se envió, desplaza un extremo un segundo.'));
     const duration = seconds => seconds < 90 ? seconds + ' s' : seconds < 5400 ? Math.round(seconds / 60) + ' min' :
       seconds < 172800 ? (seconds / 3600).toFixed(1).replace('.', ',') + ' h' : Math.round(seconds / 86400) + ' días';
-    gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo'], gaps.map(gap => [gap.rfc,
+    gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo', 'Acción'], gaps.map(gap => [gap.rfc,
       gap.direction === 'received' ? 'Recibidos' : 'Emitidos',
       gap.from.slice(0, 10) === gap.to.slice(0, 10) ? gap.from.slice(0, 16) + ' → ' + gap.to.slice(11, 16) :
         gap.from.slice(0, 16) + ' → ' + gap.to.slice(0, 16),
-      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura del blindaje ±1 s' : 'Hueco'])));
+      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura del blindaje ±1 s' : 'Hueco',
+      /* El hueco se pide desde la propia pantalla (UX-05): el diálogo
+         nace rellenado; los micro-huecos son costuras de ±1 s y no se
+         piden (se cosen solos al mover un extremo). */
+      gap.micro ? n('span', '—') : action('Solicitar este hueco', () => requestDialog({
+        rfc: gap.rfc, direction: gap.direction, start: gap.from.slice(0, 10), end: gap.to.slice(0, 10) }))])));
   }
   screens.push(gapsPanel);
   /* Metadatos (1.6.10): lo que el SAT conoce según las solicitudes
@@ -107,6 +112,7 @@ function coverageHeatmap(rfc, daysForRfc) {
     const week = Math.floor((first - firstSunday) / (7 * 86400000));
     svg.append(el('text', { x: week * pitch + 1, y: 10 }, months[month]));
   }
+  const detail = n('p', 'Toca un día del mapa para ver su detalle aquí.', 'hm-detail');
   for (let offset = 0; offset < 371; offset++) {
     const date = new Date(firstSunday + offset * 86400000);
     if (date.getUTCFullYear() !== Number(year)) continue;
@@ -116,12 +122,19 @@ function coverageHeatmap(rfc, daysForRfc) {
       width: cell, height: cell, rx: 2, class: 'hm-l' + level });
     rect.append(el('title', {}, key + ' · recibidos: ' + (received.has(key) ? 'cubierto' : 'sin cubrir') +
       ' · emitidos: ' + (issued.has(key) ? 'cubierto' : 'sin cubrir')));
+    /* El detalle por día también con tacto y teclado (UX-26), no solo
+       con el tooltip del ratón. */
+    rect.style.cursor = 'pointer';
+    rect.addEventListener('click', () => {
+      detail.textContent = dateLabel(key) + ' · recibidos: ' + (received.has(key) ? 'cubierto' : 'sin cubrir') +
+        ' · emitidos: ' + (issued.has(key) ? 'cubierto' : 'sin cubrir');
+    });
     svg.append(rect);
   }
   const scroll = n('div', undefined, 'hm-scroll'); scroll.append(svg);
   const legend = n('div', undefined, 'chart-legend');
   const item = (cls, label) => { const span = n('span'); span.append(n('i', undefined, cls), document.createTextNode(label)); return span; };
   legend.append(item('sw-hm0', 'Sin cubrir'), item('sw-hm1', 'Un sentido'), item('sw-hm2', 'Recibidos y emitidos'));
-  wrap.append(scroll, legend);
+  wrap.append(scroll, legend, detail);
   return wrap;
 }

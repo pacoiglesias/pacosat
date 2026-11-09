@@ -15,7 +15,13 @@ function statusCell(id) {
   wrap.append(badge);
   if (item?.checked) wrap.append(n('small', 'Consultado ' + localDateTime(item.checked)));
   if (item?.sat?.cancellation) wrap.append(n('small', item.sat.cancellation));
-  if (item?.efos.length) wrap.append(n('small', '69-B · ' + item.efos.join(' / ')));
+  if (item?.efos.length) {
+    wrap.append(n('small', '69-B · ' + item.efos.join(' / ')));
+    /* Qué significa y qué hacer, en lenguaje llano (UX-19). */
+    wrap.append(n('small', item.efos.includes('Definitivo') ?
+      'El SAT confirmó operaciones inexistentes de este RFC: esos CFDI no deben deducirse. Avisa a tu contadora.' :
+      'El SAT presume operaciones inexistentes de este RFC: pide aclaración al emisor y avisa a tu contadora antes de deducir.'));
+  }
   else if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS.'));
   if (item?.error) wrap.append(n('small', 'Consulta pendiente de reintento.'));
   return wrap;
@@ -81,8 +87,16 @@ function fiscalDonut(rows) {
   const chartWrap = n('div', undefined, 'chart-wrap'); chartWrap.append(svg);
   const legend = n('div', undefined, 'chart-legend');
   for (const segment of segments) {
-    const span = n('span');
+    /* La leyenda también abre (1.6.11): cada estado filtra el archivo. */
+    const span = n('button', undefined, 'legend-item');
+    span.type = 'button';
     span.append(n('i', undefined, 'sw-donut-' + segment.key), document.createTextNode(segment.label + ' ' + number.format(segment.value)));
+    span.onclick = () => {
+      invoiceState = segment.key === 'vigente' ? 'Vigente' : segment.key === 'cancelado' ? 'Cancelado' :
+        segment.key === 'efos' ? 'efos' : 'none';
+      invoicePage = 0;
+      navigate('invoices');
+    };
     legend.append(span);
   }
   wrap.append(chartWrap, legend);
