@@ -249,7 +249,15 @@ try {
   statusB = await (await apiB.call('/api/status')).json();
   assert.equal(septEntry().rescuedCount, 1);
   await serviceB.tick();
-  assert.ok(sentB.some(mail => /rescatado por el portal/.test(mail.subject)));
+  /* 1.7.4: el aviso de rescate vive en el Centro (sin correo
+     individual) y entra en el correo-resumen del día siguiente — el
+     de hoy ya salió con el aviso del periodo agotado. */
+  assert.equal(sentB.filter(mail => /rescatado por el portal/.test(mail.subject)).length, 0);
+  const noticesB = await (await apiB.call('/api/notices')).json();
+  assert.ok(noticesB.avisos.some(aviso => /rescatado por el portal/.test(aviso.titulo)), JSON.stringify(noticesB.avisos.map(a => a.titulo)));
+  fakeNowB += 22 * 3600000;
+  await serviceB.tick();
+  assert.ok(sentB.some(mail => /rescatado por el portal/.test(mail.text || '')));
   console.log('anti-5002 · rescate por carpeta vigilada marca «rescatado»: ok');
 } finally { await serviceB.close(); }
 console.log('anti5002.test: ok');

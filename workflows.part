@@ -87,16 +87,33 @@ async function chooseImport() {
   check(people.length, 'Agrega un RFC antes de importar.');
   if (!importing) $('incoming').click();
 }
-async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) {
+async function importBatch(source, requiredRfc = scope, { quiet = false, fromFolder = false } = {}) {
   if (importing) return;
   try { await requireStorage(); }
   catch (error) { if (quiet) throw error; announce(error.message, true); return; }
-  const files = [...source].filter(file => /\.(xml|zip)$/i.test(file.name));
-  if (!files.length) return announce('Elige archivos .xml o .zip con CFDI.', true);
+  /* Modo carpeta (1.7.4, pieza 1): la estructura tipo OneFacture
+     (Emitidos/Recibidos/año/mes) entra por el MISMO pipeline; lo que no
+     es XML/ZIP no se descarta en silencio: se anota como «no procesado»
+     con su motivo y sale en el resumen fijo. */
+  const allFiles = [...source];
+  const files = allFiles.filter(file => /\.(xml|zip)$/i.test(file.name));
+  const skipped = fromFolder
+    ? allFiles.filter(file => !/\.(xml|zip)$/i.test(file.name)).slice(0, 20)
+        .map(file => ({ name: file.name.slice(0, 180), reason: 'No es un XML ni un ZIP de CFDI: no se procesó.' }))
+    : [];
+  if (!files.length) return announce(fromFolder && skipped.length
+    ? 'La carpeta no trae XML ni ZIP de CFDI (' + skipped.length + ' archivos de otro tipo, sin procesar).'
+    : 'Elige archivos .xml o .zip con CFDI.', true);
   if (!people.length) return announce('Agrega primero los RFC que quieres importar.', true);
   importing = true;
   $('primary').disabled = true;
+  /* Indicador global persistente: contador real por entradas (los ZIP
+     suman sus entradas al total en cuanto se abre su directorio). */
+  let totalUnits = files.length, doneUnits = 0;
+  if (!quiet) activityStart(fromFolder ? 'Importando carpeta de comprobantes' : 'Importando comprobantes', totalUnits);
   let added = 0, duplicates = 0, review = 0, scopeRejected = 0;
+  let nuevosEmitidos = 0, nuevosRecibidos = 0;
+  const nuevosPorMes = new Map();
   const dupIds = [];
   const issues = [];
   const pending = new Map();
@@ -130,6 +147,10 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
     }
     if (seen.has(row.id)) { duplicates++; if (dupIds.length < 50) dupIds.push(row.id); return; }
     seen.add(row.id);
+    /* Desglose del resumen fijo: dirección y mes de cada nuevo. */
+    if (known.has(row.from.rfc)) nuevosEmitidos++; else if (known.has(row.to.rfc)) nuevosRecibidos++;
+    const monthKey = String(row.date || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(monthKey)) nuevosPorMes.set(monthKey, (nuevosPorMes.get(monthKey) || 0) + 1);
     pending.set(row.id, { row, file: { id: 'xml:' + row.id, blob: new Blob([xml], { type: 'application/xml' }) } });
     pendingSize += xml.length;
     if (pending.size >= 100 || pendingSize >= 12 * MB) await flush();
@@ -139,28 +160,48 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
       const file = files[i];
       if (!quiet) announce('Importando ' + (i + 1) + ' de ' + files.length + ' · ' + file.name);
       if (/\.xml$/i.test(file.name)) {
-        if (file.size > 8 * MB) { issue(file.name, new Error('El XML supera 8 MB.')); continue; }
+        if (file.size > 8 * MB) { issue(file.name, new Error('El XML supera 8 MB.')); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
         let xml;
         try { xml = bytes(await file.arrayBuffer()); }
-        catch (error) { issue(file.name, error); continue; }
+        catch (error) { issue(file.name, error); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
         await accept(file.name, xml);
+        doneUnits++;
+        if (!quiet) activityProgress(doneUnits, file.name);
       } else {
-        if (file.size > 80 * MB) { issue(file.name, new Error('El ZIP supera 80 MB.')); continue; }
+        if (file.size > 80 * MB) { issue(file.name, new Error('El ZIP supera 80 MB.')); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
+        /* El ZIP cuenta como UNA unidad hasta abrir su directorio:
+           entonces el total crece con sus entradas XML reales y el
+           contador pasa a ser por comprobante (meta.total). */
+        const meta = {};
         let zip;
-        try { zip = zipXml(bytes(await file.arrayBuffer())); }
-        catch (error) { issue(file.name, error); continue; }
-        let count = 0;
+        try { zip = zipXml(bytes(await file.arrayBuffer()), meta); }
+        catch (error) { issue(file.name, error); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
+        let count = 0, expanded = false;
         while (true) {
           let entry;
           try { entry = await zip.next(); }
           catch (error) { issue(file.name, error); break; }
+          if (!expanded && meta.total) {
+            expanded = true;
+            totalUnits += meta.total - 1;
+            if (!quiet) activitySetTotal(totalUnits);
+          }
           if (entry.done) {
             if (!count) issue(file.name, new Error('El ZIP no contiene CFDI XML.'));
             break;
           }
           count++;
           await accept(entry.value.name, entry.value.xml);
+          doneUnits++;
+          if (!quiet) activityProgress(doneUnits, file.name + ' · ' + entry.value.name);
         }
+        if (expanded && count < meta.total) {
+          /* El ZIP se interrumpió a mitad: el contador cierra el hueco
+             para que la barra termine en el total anunciado. */
+          doneUnits += meta.total - count;
+          if (!quiet) activityProgress(doneUnits, file.name);
+        }
+        if (!expanded) { doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); }
       }
     }
     await flush();
@@ -176,10 +217,38 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
         (scopeRejected ? '\n' + scopeRejected + ' archivo(s) no corresponden al RFC seleccionado (' + requiredRfc + ') y quedaron por revisar: cambia el selector a «Todos los RFC» para importarlos.' : '') +
         (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
       if (!review) soundCue('success'); else if (added) soundCue('notice');
+      /* Resumen FIJO (1.7.4, pieza 1): en importaciones grandes, con
+         problemas o con archivos sin procesar, el resultado queda en
+         pantalla hasta que el usuario lo cierra — nada de avisos
+         fugaces para 2.493 comprobantes. */
+      const esGrande = totalUnits >= 10 || review > 0 || skipped.length > 0;
+      if (esGrande) {
+        const lines = [];
+        lines.push(added
+          ? '✓ ' + number.format(added) + ' comprobantes nuevos (' + number.format(nuevosEmitidos) + ' emitidos · ' + number.format(nuevosRecibidos) + ' recibidos).'
+          : 'Sin comprobantes nuevos.');
+        if (nuevosPorMes.size) {
+          const top = [...nuevosPorMes.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 4);
+          lines.push('Por mes: ' + top.map(([mes, n]) => mes + ': ' + number.format(n)).join(' · ') + (nuevosPorMes.size > 4 ? ' · …' : ''));
+        }
+        if (duplicates) lines.push(number.format(duplicates) + ' duplicados: ya estaban en PacoSAT y no se tocaron.');
+        if (review) {
+          lines.push('⚠ ' + number.format(review) + ' por revisar — no entraron. Motivo de los primeros:');
+          for (const item of issues.slice(0, 6)) lines.push('· ' + item.name + ' — ' + item.reason);
+          if (scopeRejected) lines.push(number.format(scopeRejected) + ' no corresponden al RFC seleccionado (' + requiredRfc + '): cambia el selector a «Todos los RFC» y vuelve a importarlos.');
+          lines.push('Qué hacer: corrige el archivo o el RFC indicado y vuelve a importar solo esos; los demás ya están dentro.');
+        }
+        if (skipped.length) {
+          lines.push('Sin procesar (' + skipped.length + '): no son XML ni ZIP de CFDI.');
+          for (const item of skipped.slice(0, 6)) lines.push('· ' + item.name + ' — ' + item.reason);
+        }
+        activityDone('✓ Procesado', lines);
+      } else activityFinish();
     }
     return { added, duplicates, review };
   } catch (error) {
     announce(added + ' comprobantes guardados antes de interrumpir el lote. ' + error.message, true);
+    if (!quiet) activityFail('La importación se interrumpió', added + ' comprobantes quedaron guardados antes de la interrupción. ' + error.message);
     if (quiet) throw error;
   } finally {
     importing = false;
@@ -684,6 +753,7 @@ $('inspectFile').onchange = handle(async () => {
   if (file) await viewXml(file, file.name);
 });
 $('primary').onclick = handle(async () => {
+  if (page === 'avisos') { await refreshAvisos(true); render(); return; }
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
   if (page === 'coverage') { await pollSat(); render(); return; }
   if (page === 'settings') { await saveAppSettings(); return; }
@@ -712,7 +782,7 @@ function runGlobalSearch() {
      y órdenes cortas («descargar ahora MFI…», «crear respaldo», «ir a
      cobertura») se resuelven antes de tratar el texto como búsqueda. */
   const lower = query.toLocaleLowerCase('es-MX');
-  const screensByWord = [['resumen', 'home'], ['inicio', 'home'], ['hoy', 'home'], ['facturas', 'invoices'], ['cfdi', 'invoices'],
+  const screensByWord = [['resumen', 'home'], ['inicio', 'home'], ['hoy', 'home'], ['avisos', 'avisos'], ['centro de avisos', 'avisos'], ['facturas', 'invoices'], ['cfdi', 'invoices'],
     ['expedientes', 'docs'], ['documentos', 'docs'], ['centro sat', 'sat'], ['descargas', 'sat'], ['vigilancia', 'monitor'],
     ['69-b', 'monitor'], ['operaciones', 'operations'], ['alertas', 'operations'], ['cobertura', 'coverage'], ['huecos', 'coverage'],
     ['respaldos', 'backup'], ['respaldo', 'backup'], ['diot', 'diot'], ['ajustes', 'settings'], ['qué incluye', 'capacidades'], ['capacidades', 'capacidades']];
@@ -749,9 +819,8 @@ document.addEventListener('keydown', event => {
   globalSearchInput.select();
 });
 $('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
-for (const id of ['incoming', 'folder']) {
-  $(id).onchange = () => { const files = [...$(id).files]; $(id).value = ''; importBatch(files).catch(error => announce(error.message, true)); };
-}
+$('incoming').onchange = () => { const files = [...$('incoming').files]; $('incoming').value = ''; importBatch(files).catch(error => announce(error.message, true)); };
+$('folder').onchange = () => { const files = [...$('folder').files]; $('folder').value = ''; importBatch(files, scope, { fromFolder: true }).catch(error => announce(error.message, true)); };
 $('restore').onchange = handle(() => {
   const file = $('restore').files[0]; $('restore').value = ''; if (file) return restoreDialog(file);
 });

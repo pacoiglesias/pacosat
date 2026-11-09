@@ -108,7 +108,9 @@ try {
   assert.equal((await api2.call('/api/mail', { host: 'smtp.example.com', port: 587, user: 'u', password: 'p',
     from: 'from@example.com', recipient: 'avisos@example.com' })).status, 200);
   await service2.tick();
-  assert.ok(sent.some(mail => /presunto enviadas/.test(mail.subject)), 'Debe avisar de la intención sin confirmar.');
+  /* 1.7.4: el aviso vive en el Centro y se nombra en el cuerpo del
+     único correo-resumen (ya no sale un correo individual). */
+  assert.ok(sent.some(mail => /presunto enviadas/.test(mail.text || '')), 'Debe avisar de la intención sin confirmar.');
   console.log('blindaje presunto enviado: ok');
 } finally { await service2.close(); }
 console.log('blindaje.test: ok');

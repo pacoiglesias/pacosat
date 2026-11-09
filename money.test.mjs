@@ -65,10 +65,20 @@ try {
   assert.equal(balB.balance, '2320.00');
   /* Esperadas: CCC aparece; AAA y BBB no (no son mensuales). */
   assert.deepEqual(money.expected.map(item => item.rfc), ['CCC030303CCC']);
-  /* El tick avisa: PPD por pagar envejecidos y la esperada de CCC. */
+  /* El tick ya NO manda correos por factura (1.7.4): los saldos y la
+     esperada nacen en el Centro de Avisos. Como es la primera
+     evaluación sobre datos ya existentes, todo nace como LÍNEA BASE:
+     en el panel, sin un solo correo. */
   await service.tick();
-  const subjects = sent.map(mail => mail.subject);
-  assert.ok(subjects.some(subject => /por pagar cumple 30 días/.test(subject)), subjects.join(' | '));
-  assert.ok(subjects.some(subject => /Factura esperada que no ha llegado/.test(subject)), subjects.join(' | '));
+  assert.equal(sent.length, 0, sent.map(mail => mail.subject).join(' | '));
+  const notices = await (await call('/api/notices')).json();
+  const saldoA = notices.avisos.find(aviso => aviso.kind === 'saldo' && aviso.importe === '660.00');
+  assert.ok(saldoA, JSON.stringify(notices.avisos));
+  assert.equal(saldoA.estado, 'por-confirmar');
+  assert.equal(saldoA.clase, 'necesita');
+  assert.equal(saldoA.baseline, true);
+  assert.match(saldoA.detalle, /no consta el pago en PacoSAT|no consta el pago de/);
+  assert.ok(notices.avisos.some(aviso => aviso.kind === 'saldo' && aviso.importe === '2320.00' && aviso.estado === 'por-confirmar'));
+  assert.ok(notices.avisos.some(aviso => aviso.kind === 'esperada' && aviso.clase === 'falta' && aviso.baseline === true));
   console.log('money.test: ok');
 } finally { await service.close(); }

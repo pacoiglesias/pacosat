@@ -174,11 +174,20 @@ function counterpartDialog(existing = null) {
     kindSelect.append(option);
   }
   const noteInput = input('text', { value: existing?.note || '', placeholder: 'Nota (opcional)' });
+  /* Calendario de pago (1.7.4, criterio 6): con día de pago y/o plazo,
+     el Centro de Avisos solo pregunta tras vencer ESE calendario;
+     sin calendario manda la regla general (30/60 días). */
+  const payDayInput = input('number', { value: existing?.payDay ?? '', min: '1', max: '31', placeholder: 'Ej. 10' });
+  const payTermsInput = input('number', { value: existing?.payTerms ?? '', min: '0', max: '365', placeholder: 'Ej. 30' });
   dialog(existing ? 'Editar contraparte' : 'Agregar contraparte',
-    [field('Nombre', nameInput), field('RFC', rfcInput), field('Tipo', kindSelect), field('Nota', noteInput)],
+    [field('Nombre', nameInput), field('RFC', rfcInput), field('Tipo', kindSelect), field('Nota', noteInput),
+     field('Día de pago (del mes, opcional)', payDayInput), field('Plazo en días desde la factura (opcional)', payTermsInput),
+     n('p', 'El aviso de cobro/pago de esta contraparte solo nace cuando vence su calendario, y nace preguntando. Vacío = regla general.', 'muted')],
     async () => {
       await satApi('lists/counterparts', { rfc: rfcInput.value.trim().toUpperCase(),
-        name: nameInput.value.trim(), kind: kindSelect.value, note: noteInput.value.trim() });
+        name: nameInput.value.trim(), kind: kindSelect.value, note: noteInput.value.trim(),
+        payDay: payDayInput.value === '' ? null : Number(payDayInput.value),
+        payTerms: payTermsInput.value === '' ? null : Number(payTermsInput.value) });
       await loadLists();
       toast('Contraparte guardada y cruzada con los listados.', 'ok');
     }, existing ? 'Guardar cambios' : 'Agregar y validar');

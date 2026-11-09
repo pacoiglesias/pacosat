@@ -128,7 +128,9 @@ try {
   const log = await (await watchRequest('/api/storage?store=activity')).json();
   assert.ok(log.some(row => row.name === 'Carpeta vigilada' && row.added === 1 && row.duplicates === 1 && row.review === 1));
   await watchService.tick();
-  assert.equal(watchSent.filter(mail => /carpeta vigilada no se importó/.test(mail.subject)).length, 1);
+  /* 1.7.4: el aviso de la carpeta vigilada vive en el Centro y se
+     nombra en el cuerpo del único correo-resumen del día. */
+  assert.equal(watchSent.filter(mail => /carpeta vigilada no se importó/.test(mail.text || '')).length, 1);
   writeFileSync(join(inboxDir, 'factura.pdf'), '%PDF-1.7 vinculado');
   writeFileSync(join(inboxDir, 'sin-vinculo.pdf'), '%PDF-1.7 sin-vinculo');
   await watchService.inboxTick(watchTime);
@@ -221,7 +223,9 @@ try {
   assert.equal(firstScan.review, 1);
   assert.ok(firstScan.issues.some(issue => issue.name === 'x/y/z/malo.xml'));
   await deepService.tick();
-  const watchMails = deepSent.filter(mail => /carpeta vigilada no se importó/.test(mail.subject));
+  /* 1.7.4: el aviso vive en el Centro y se nombra, con su detalle
+     (el archivo que falló), en el cuerpo del único correo-resumen. */
+  const watchMails = deepSent.filter(mail => /carpeta vigilada no se importó/.test(mail.text || ''));
   assert.equal(watchMails.length, 1);
   assert.ok(watchMails[0].text.includes('x/y/z/malo.xml'));
   // Segundo ciclo sin novedades: nada se reimporta (sin bucles entre ciclos).
@@ -274,8 +278,10 @@ try {
     mail: { host: 'smtp.example.com', port: 587, from: 'from@example.com', recipient: 'to@example.com', user: '', password: '' } });
   await failService.backupTick(watchTime);
   await failService.tick();
-  assert.ok(watchSent.some(mail => /respaldo programado falló/.test(mail.subject)));
-  console.log('OK: el fallo del respaldo programado deja error visible y aviso por correo.');
+  /* 1.7.4: el aviso vive en el Centro y se nombra en el cuerpo del
+     único correo-resumen (ya no sale un correo por cada fallo). */
+  assert.ok(watchSent.some(mail => /respaldo programado falló/.test(mail.text || '')));
+  console.log('OK: el fallo del respaldo programado deja error visible y aviso en el Centro y en el resumen.');
 } finally { failService.close(); }
 
 // --- 1.6.4: respaldo con estado operativo, destino secundario y prueba ---
@@ -478,7 +484,9 @@ try {
   const robActivity2 = await (await robApi.call('/api/storage?store=activity')).json();
   assert.ok(robActivity2.some(row => (row.issues || []).some(issue => issue.name === 'lotes/mixto.zip · malo.xml')));
   await robService.tick();
-  assert.ok(robSent.some(mail => /con incidencias/.test(mail.subject)));
+  /* 1.7.4: el aviso de incidencias vive en el Centro y se nombra en
+     el cuerpo del único correo-resumen del día. */
+  assert.ok(robSent.some(mail => /con incidencias/.test(mail.text || '')));
   robTime += 60000;
   await robService.inboxTick(robTime);
   robStatus = await (await robApi.call('/api/status')).json();
@@ -508,23 +516,26 @@ try {
     password: 'simulated', certificate: CERT_B64, key: 'YQ==' })).status, 200);
   const certStatus = await (await certApi.call('/api/status')).json();
   assert.equal(certStatus.profiles[0].certExpires, certExpected);
-  const certMails = () => certSent.filter(mail => /e\.firma/.test(mail.subject));
+  /* 1.7.4: los avisos de caducidad viven en el Centro y viajan en el
+     correo-resumen diario: los umbrales que caen el mismo día (60 y
+     30) comparten UN solo correo, no uno por umbral. */
+  const certMails = () => certSent.filter(mail => /e\.firma/.test(mail.text || ''));
   await certService.tick();
   assert.equal(certMails().length, 0);
   certTime = certExpected - 89 * 86400000;
   await certService.tick();
   assert.equal(certMails().length, 1);
-  assert.match(certMails()[0].subject, /vence en 89 días/);
+  assert.match(certMails()[0].text, /vence en 89 días/);
   await certService.tick();
   assert.equal(certMails().length, 1);
   certTime = certExpected - 29 * 86400000;
   await certService.tick();
-  assert.equal(certMails().length, 3);
+  assert.equal(certMails().length, 2);
   certTime = certExpected + 86400000;
   await certService.tick();
-  assert.equal(certMails().length, 4);
-  assert.match(certMails()[3].subject, /vencida o vence hoy/);
-  console.log('OK: caducidad de e.firma leída del certificado real, persistida y con un aviso por umbral (90/60/30/0) sin duplicados.');
+  assert.equal(certMails().length, 3);
+  assert.match(certMails()[2].text, /vencida o vence hoy/);
+  console.log('OK: caducidad de e.firma leída del certificado real, persistida y con avisos por umbral (90/60/30/0) sin duplicados, agrupados en el resumen diario.');
 } finally { certService.close(); }
 
 // --- 1.6.5: historia de un CFDI desde los datos guardados ---
@@ -647,14 +658,15 @@ const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_
       password: 'simulated', certificate: CERT_B64, key: 'YQ==' });
     fromTime = certExpected - 89 * 86400000;
     await fromService.tick();
-    const plain = fromSent.filter(mail => /e\.firma/.test(mail.subject));
+    /* 1.7.4: el correo que nombra la e.firma es el resumen diario. */
+    const plain = fromSent.filter(mail => /e\.firma/.test(mail.text || ''));
     assert.equal(plain.length, 1);
     assert.equal(plain[0].from, 'from@example.com');
     await fromApi.call('/api/settings', { installName: '', senderName: 'Avisos PacoSAT', accent: '' });
     fromTime = certExpected - 29 * 86400000;
     await fromService.tick();
-    const named = fromSent.filter(mail => /e\.firma/.test(mail.subject) && /Avisos PacoSAT/.test(mail.from));
-    assert.equal(named.length, 2);
+    const named = fromSent.filter(mail => /e\.firma/.test(mail.text || '') && /Avisos PacoSAT/.test(mail.from));
+    assert.equal(named.length, 1);
     assert.equal(named[0].from, 'Avisos PacoSAT <from@example.com>');
     console.log('OK: sin nombre del remitente el From no cambia; con nombre, los avisos salen como «Nombre <correo>».');
   } finally { fromService.close(); }

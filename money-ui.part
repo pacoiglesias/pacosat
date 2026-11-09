@@ -159,6 +159,21 @@ function counterpart360Panel(paidBy) {
         '⚠ Consta en listados: ' + result.matches.map(match => match.label + ' (' + match.detail + ')').join(' · ') :
         'Sin coincidencias en los listados oficiales cargados.';
     }).catch(() => { listNote.textContent = ''; });
+    /* Calendario de pago de la contraparte (1.7.4, criterio 6): el
+       Centro de Avisos respeta este calendario antes de preguntar por
+       un pago. Se edita en la misma ficha de la contraparte. */
+    const calRow = n('div', undefined, 'traffic-strip');
+    body.append(calRow);
+    if (satToken) satApi('lists').then(data => {
+      const cp = (data.counterparts || []).find(row => row.rfc === rfc);
+      const texto = cp?.payDay ? 'Calendario de pago: día ' + cp.payDay + ' de cada mes' + (cp.payTerms != null ? ' · plazo ' + cp.payTerms + ' días' : '')
+        : cp?.payTerms != null ? 'Calendario de pago: plazo de ' + cp.payTerms + ' días desde la factura'
+        : 'Sin calendario de pago: manda la regla general (30 días por pagar · 60 por cobrar)';
+      calRow.append(statusPill(cp?.payDay || cp?.payTerms != null ? 'ok' : 'dim', texto));
+      const edit = n('button', 'Editar calendario', 'soft small');
+      edit.onclick = () => counterpartDialog(cp || { rfc, name: parties.get(rfc) || '' });
+      calRow.append(edit);
+    }).catch(() => {});
     const seeInvoices = n('button', 'Ver sus CFDI', 'soft');
     seeInvoices.onclick = () => { setInvoiceTerm(rfc); navigate('invoices'); };
     body.append(seeInvoices);

@@ -102,5 +102,4 @@ body{background:radial-gradient(ellipse at 85% 0%,var(--surface-2) 0,transparent
   #print-report .panel{border:none;box-shadow:none}
 }
 @media(max-width:1080px){.dashboard-grid{grid-template-columns:1fr}}
-@media(max-width:780px){.sidebar{padding:15px}.dashboard-hero{padding:18px}.heading .actions{width:100%}.heading .actions button{flex:0 1 auto}.headin
-...[truncated 76 chars]
+@media(max-width:780px){.sidebar{padding:15px}.dashboard-hero{padding:18px}.heading .actions{width:100%}.heading .actions button{flex:0 1 auto}}

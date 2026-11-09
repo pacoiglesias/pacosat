@@ -145,15 +145,21 @@ try {
   await expiredSvc.tick();
   time += 5 * 60000;
   await expiredSvc.tick();
-  assert.equal(sent.slice(alertsBefore).filter(mail => /solicitud al SAT quedó vencida/.test(mail.subject)).length, 1);
+  /* 1.7.4 (punto 17, criterio 3): ya NO hay correo individual por
+     alerta. La solicitud vencida vive en el Centro de Avisos y, como
+     mucho, dentro del ÚNICO correo-resumen del día, cuyo cuerpo la
+     nombra por su título. */
+  const expiredMails = () => sent.slice(alertsBefore).filter(mail => /solicitud al SAT quedó vencida/.test(mail.text || '')).length;
+  assert.equal(expiredMails(), 1);
+  assert.equal(sent.slice(alertsBefore).filter(mail => /Resumen de avisos/.test(mail.subject)).length, 1);
   await expiredSvc.tick();
-  assert.equal(sent.slice(alertsBefore).filter(mail => /solicitud al SAT quedó vencida/.test(mail.subject)).length, 1);
+  assert.equal(expiredMails(), 1);
   expiredSvc.close();
   let failMode = true;
   const failSvc = await alertHarness({ request: async () => 'request-fail',
     check: async () => { if (failMode) throw new Error('SAT no disponible'); return { status: 'finished', packages: [] }; },
     download: async () => valid });
-  const failAlerts = () => sent.slice(alertsBefore).filter(mail => /descarga automática está fallando/.test(mail.subject)).length;
+  const failAlerts = () => sent.slice(alertsBefore).filter(mail => /descarga automática está fallando/.test(mail.text || '')).length;
   await failSvc.tick();
   /* 1.6.4: la verificación reintenta con espera creciente (5, 10, 20, 40,
      60 min), así que los tres intentos fallidos ya no caben en 15 min:
@@ -169,10 +175,15 @@ try {
   assert.equal(failAlerts(), 1);
   failMode = true;
   for (const step of [5, 10, 20]) { time += step * 60000; await failSvc.tick(); }
+  /* La segunda oleada de fallos crea su aviso en el Centro, pero el
+     correo-resumen diario ya salió hoy: espera al de mañana. */
+  assert.equal(failAlerts(), 1);
+  time += 22 * 3600000;
+  await failSvc.tick();
   assert.equal(failAlerts(), 2);
   failSvc.close();
   console.log('OK: seguridad local, programación, descarga, RFC ajeno, deduplicación, correo simulado y pausa.');
-  console.log('OK: alertas por solicitud vencida sin repetir y por fallo persistente de la descarga con reinicio al recuperarse.');
+  console.log('OK: avisos al Centro (sin correo individual) y un solo correo-resumen diario por solicitud vencida y por fallo persistente de la descarga.');
 } finally { service.close(); }
 
 // --- Blindaje contra el error 5002 del SAT (1.6.2) ---
@@ -264,7 +275,9 @@ try {
   guardTime += 5 * 60000;
   await guardService.tick();
   await guardService.tick();
-  assert.equal(guardSent.filter(mail => /agotó las solicitudes de un periodo/.test(mail.subject)).length, 1);
+  /* 1.7.4: el aviso 5002 ya no es un correo suelto: va en el cuerpo
+     del único correo-resumen (y vive en el Centro de Avisos). */
+  assert.equal(guardSent.filter(mail => /agotó las solicitudes de un periodo/.test(mail.text || '')).length, 1);
   const callsBeforeBlocked = guardCalls.length;
   res = await guardApi.call('/api/request', september);
   assert.equal(res.status, 409);

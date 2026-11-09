@@ -40,6 +40,7 @@
   <nav aria-label="Navegación principal">
     <span class="nav-caption">OPERACIÓN FISCAL</span>
     <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen <span id="news-badge" class="news-badge" hidden></span></button>
+    <button data-view="avisos"><svg><use href="#i-alert"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
     <button data-view="operations"><svg><use href="#i-bell"/></svg> Operaciones y alertas</button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
@@ -71,6 +72,15 @@
       <div class="actions"><button id="inspect"><svg><use href="#i-file"/></svg> Abrir XML</button><button id="pdf-import"><svg><use href="#i-file"/></svg> Factura PDF</button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
     </header>
     <p id="status" role="status" hidden></p>
+    <section id="activity-dock" class="activity-dock" hidden aria-live="polite">
+      <div class="activity-dock-head"><span class="activity-spinner" aria-hidden="true"></span><strong id="activity-label">Trabajando…</strong><span id="activity-count" class="activity-count"></span></div>
+      <meter id="activity-bar" min="0" max="100" value="0"></meter>
+      <p id="activity-detail" class="activity-detail"></p>
+    </section>
+    <section id="activity-result" class="activity-result" hidden>
+      <div class="activity-result-head"><strong id="activity-result-title">✓ Procesado</strong><button type="button" id="activity-result-close" class="icon-button" aria-label="Cerrar el resumen"><svg><use href="#i-close"/></svg></button></div>
+      <div id="activity-result-text"></div>
+    </section>
     <section id="body" aria-label="Contenido"></section>
     <footer class="app-footer" id="app-footer"></footer>
   </div>
