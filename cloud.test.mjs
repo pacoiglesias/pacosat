@@ -321,8 +321,8 @@ try {
   assert.equal(ops.version, 1);
   assert.equal(ops.packagesArchiveOmitted, true);
   assert.equal(ops.profiles.length, 1);
-  assert.equal(ops.jobs.length, 2);
-  assert.equal(ops.criteria.length, 2);
+  assert.equal(ops.jobs.length, 3); /* 1.6.10: viaja también el job diario de Metadata */
+  assert.equal(ops.criteria.length, 3); /* y su criterio (tipo metadata) */
   assert.equal(ops.criteria_exhausted.length, 1);
   assert.ok(ops.alerts.length >= 1, 'las alertas pendientes viajan en el respaldo');
   assert.equal(ops.jobs.find(job => job.periodStart === '2026-10-01').status, 'rejected');
@@ -344,7 +344,7 @@ try {
     assert.equal((await bak2Api.call('/api/backup/operations', ops)).status, 200);
     const restored = await (await bak2Api.call('/api/status')).json();
     assert.equal(restored.profiles.length, 1);
-    assert.equal(restored.jobs.length, 2);
+    assert.equal(restored.jobs.length, 3); /* 1.6.10: también se restaura el job de Metadata */
     assert.equal(restored.jobs.find(job => job.periodStart === '2026-10-01').criteriaState, 'agotado');
     assert.equal(restored.jobs.find(job => job.periodStart === '2026-10-08').checks, 1);
     assert.equal((await bak2Api.call('/api/backup/verify', {})).status, 400);

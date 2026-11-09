@@ -71,4 +71,4 @@ const layout = read('layout.part')
   .replace('<title>PacoSAT</title>', '<title>PacoSAT</title><!--PACOSAT_TOKEN-->');
 if (layout.includes('unsafe-inline')) throw new Error('La CSP generada no debe contener unsafe-inline.');
 write('Faro-Fiscal.html', layout.replace('/*STYLES*/', () => css).replace('/*SCRIPT*/', () => script));
-write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, zipXml, rfcCheckDigit, validateRfc };\n');
+write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, zipXml, zipText, rfcCheckDigit, validateRfc };\n');

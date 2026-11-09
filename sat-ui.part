@@ -38,6 +38,15 @@ function connectedSatScreen() {
   controls.append(action('Configurar RFC', () => unlockDialog(), 'primary', 'lock'),
     action('Solicitar un periodo', requestDialog, undefined, 'sync'));
   guide.append(info, controls);
+  const restBar = n('div', undefined, 'panel-head');
+  const restState = satData.rest?.active ?
+    cell('Descanso general ACTIVO hasta ' + localDateTime(satData.rest.until), 'No se envía nada al SAT ni se generan avisos. Al vencer la fecha, todo se reanuda solo con la ventana pendiente.') :
+    cell('Vigilancia activa', 'El descanso general apaga todas las descargas y avisos hasta la fecha que elijas.');
+  const restButtons = n('div', undefined, 'actions');
+  if (satData.rest?.active) restButtons.append(action('Reactivar ahora', async () => { satData = await satApi('rest', { until: 0 }); fillSat(); announce('Descanso general terminado. PacoSAT se pone al día.'); }));
+  else restButtons.append(action('Descansar hasta…', restDialog, undefined, 'bell'));
+  restBar.append(restState, restButtons);
+  guide.append(restBar);
   const container = n('div'); container.id = 'sat-live';
   fillSat(container);
   const extras = panel('Otros trámites fiscales');
@@ -52,18 +61,32 @@ function fillSat(target = $('sat-live')) {
   else {
     const profiles = satData.profiles.filter(row => !scope || row.rfc === scope);
     if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Agrega o selecciona un RFC y autoriza su e.firma para activar la revisión.'));
-    else schedules.append(grid(['RFC', 'Frecuencia', 'Próxima revisión', 'Acción'], profiles.map(row => [
-      cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma')),
-      (row.minutes / 60) + ' h · últimos ' + row.days + ' días',
-      row.unlocked ? localDateTime(row.nextRun) : 'En pausa',
-      row.unlocked ? action('Pausar', async () => { satData = await satApi('lock', { rfc: row.rfc }); fillSat(); }) :
-        action('Desbloquear', () => unlockDialog(row.rfc))
-    ])));
+    else schedules.append(grid(['RFC', 'Frecuencia', 'Próxima revisión', 'Estado', 'Acción'], profiles.map(row => {
+      const restingProfile = Boolean(row.paused) || (row.pauseUntil || 0) > Date.now();
+      const buttons = n('div', undefined, 'actions');
+      if (row.unlocked) buttons.append(action('Bloquear', async () => { satData = await satApi('lock', { rfc: row.rfc }); fillSat(); }));
+      else buttons.append(action('Desbloquear', () => unlockDialog(row.rfc)));
+      if (restingProfile) buttons.append(action('Reanudar', async () => {
+        satData = await satApi('pause', { rfc: row.rfc, paused: false });
+        fillSat(); announce(row.rfc + ' vuelve a vigilar; se pondrá al día con la ventana pendiente.');
+      }, 'primary'));
+      else buttons.append(action('Descansar', async () => {
+        satData = await satApi('pause', { rfc: row.rfc, paused: true });
+        fillSat(); announce(row.rfc + ' entra en descanso: sin descargas ni avisos.');
+      }), action('Hasta…', () => pauseUntilDialog(row)));
+      return [
+        cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma')),
+        (row.minutes / 60) + ' h · últimos ' + row.days + ' días',
+        row.unlocked ? localDateTime(row.nextRun) : 'En pausa',
+        restingProfile ? cell('Descansando', row.pauseUntil ? 'Hasta ' + localDateTime(row.pauseUntil) : 'Hasta que lo reanudes') : cell('Vigilando', 'Descargas y avisos activos'),
+        buttons
+      ];
+    })));
   }
   const queue = panel('Solicitudes recientes');
   const jobs = satData.jobs.filter(row => !scope || row.rfc === scope);
   if (jobs.length) queue.append(grid(['RFC', 'Periodo', 'Estado', 'Acción'], jobs.map(row => [
-    cell(row.rfc, directions[row.direction]), dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
+    cell(row.rfc, directions[row.direction] + (row.kind === 'metadata' ? ' · Metadatos' : '')), dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
     cell(satStatus[row.status] || row.status, [row.error || (row.status === 'pending' ? 'Próxima consulta ' + localDateTime(row.due) : ''),
       criteriaNotes[row.criteriaState] || ''].filter(Boolean).join(' · ')),
     row.status === 'pending' ? action('Reintentar consulta', async () => { satData = await satApi('retry', { id: row.id }); fillSat(); announce('Consulta programada para el siguiente ciclo del servicio.'); }) : n('span', 'Creada ' + localDateTime(row.created))
@@ -77,7 +100,43 @@ function fillSat(target = $('sat-live')) {
   buttons.append(action('Configurar SMTP', mailDialog, undefined, 'lock'));
   if (satData.mail.enabled) buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSat(); }));
   bar.append(notice, buttons); alerts.append(bar);
-  target.replaceChildren(schedules, queue, alerts);
+  const silence = panel('Aviso de silencio');
+  const silenceBar = n('div', undefined, 'panel-head');
+  silenceBar.append(cell(satData.silenceDays ? 'Avisar si un RFC lleva ' + satData.silenceDays + ' días sin CFDI recibidos nuevos' : 'Desactivado',
+    'El silencio también avisa: una factura esperada que no llega (renta, igualas, servicios) se detecta a tiempo. Tú defines el umbral.'));
+  const silenceButtons = n('div', undefined, 'actions');
+  silenceButtons.append(action('Cambiar umbral', silenceDialog, undefined, 'bell'));
+  silenceBar.append(silenceButtons); silence.append(silenceBar);
+  target.replaceChildren(schedules, queue, alerts, silence);
+}
+function silenceDialog() {
+  const days = input('number', { min: 0, max: 365, value: satData.silenceDays || 0, required: true });
+  dialog('Aviso de silencio', [
+    n('p', 'Si un RFC pasa más días que el umbral sin recibir CFDI nuevos, PacoSAT avisa por correo una vez por episodio. Con 0 queda desactivado.'),
+    field('Días sin CFDI nuevos para avisar', days)], async () => {
+    satData = await satApi('silence', { days: Number(days.value) });
+    fillSat(); announce(Number(days.value) ? 'Aviso de silencio activo: ' + days.value + ' días.' : 'Aviso de silencio desactivado.');
+  });
+}
+function restDialog() {
+  const until = input('date', { required: true, min: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format() });
+  dialog('Descanso general de PacoSAT', [
+    n('p', 'Mientras dure el descanso no se envía ninguna solicitud al SAT (la disciplina 5002 queda intacta) y no se genera ningún aviso. La carpeta vigilada y los respaldos siguen trabajando. Al llegar la fecha, la vigilancia se reanuda sola y se pone al día con la ventana pendiente.'),
+    field('Descansar hasta el', until)], async () => {
+    const ms = new Date(until.value + 'T08:00:00-06:00').getTime();
+    satData = await satApi('rest', { until: ms });
+    fillSat(); announce('PacoSAT entra en descanso hasta el ' + until.value + '.');
+  });
+}
+function pauseUntilDialog(row) {
+  const until = input('date', { required: true, min: new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City' }).format() });
+  dialog('Descanso de ' + row.rfc, [
+    n('p', 'Este RFC deja de descargar y de generar avisos hasta la fecha indicada; entonces se reanuda solo y se pone al día con la ventana pendiente.'),
+    field('Descansando hasta el', until)], async () => {
+    const ms = new Date(until.value + 'T08:00:00-06:00').getTime();
+    satData = await satApi('pause', { rfc: row.rfc, until: ms });
+    fillSat(); announce(row.rfc + ' descansa hasta el ' + until.value + '.');
+  });
 }
 function unlockDialog(rfc) {
   const person = selectPerson();
@@ -112,9 +171,8 @@ function guardChoice(guard) {
       n('p', 'Ventana del criterio: ' + guard.startAt + ' a ' + guard.endAt + '. Al mover el inicio a ' +
         guard.shiftedStartAt + ' el criterio es otro y no gasta las solicitudes de este.'));
     if (guard.state === 'agotado') box.append(n('p',
-      'Si solo necesitas revisar estados o el histórico, la comunidad técnica considera que las solicitudes de tipo ' +
-      'Metadata no consumen solicitudes de CFDI; el SAT no publica esa exención como oficial. PacoSAT todavía no envía ' +
-      'solicitudes Metadata: queda como referencia para ese caso.'));
+      'Si solo necesitas reconciliar el histórico o revisar estados, pide el mismo periodo como Metadatos: ' +
+      'es otro tipo de solicitud, con su propio criterio, y no gasta las solicitudes de CFDI.'));
     const row = n('div', undefined, 'actions');
     if (guard.state === 'ultima') row.append(action('Enviar y gastar la última', () => resolve('confirm')));
     row.append(action('Mover el inicio 1 segundo y enviar', () => resolve('shift'), 'primary', 'sync'),
@@ -129,9 +187,21 @@ function requestDialog() {
   const start = input('date', { max: today, value: today.slice(0, 8) + '01', required: true });
   const end = input('date', { max: today, value: today, required: true });
   const direction = select([['received', 'Recibidos'], ['issued', 'Emitidos']], 'received');
+  const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Metadatos (registros ligeros, para reconciliar)']], 'cfdi');
+  /* Periodos frecuentes en un clic (1.6.10): sin teclear fechas. */
+  const quick = n('div', undefined, 'actions');
+  const fmt = date => date.toISOString().slice(0, 10);
+  const setRange = (from, to) => { start.value = fmt(from); end.value = fmt(to); };
+  const nowDate = new Date(today + 'T12:00:00');
+  quick.append(
+    action('Mes pasado', () => setRange(new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1), new Date(nowDate.getFullYear(), nowDate.getMonth(), 0))),
+    action('Este trimestre', () => setRange(new Date(nowDate.getFullYear(), Math.floor(nowDate.getMonth() / 3) * 3, 1), nowDate)),
+    action('Este año', () => setRange(new Date(nowDate.getFullYear(), 0, 1), nowDate)),
+    action('Últimos 30 días', () => setRange(new Date(nowDate.getTime() - 29 * 86400000), nowDate)));
   dialog('Solicitar un periodo al SAT', [field('Contribuyente', person), field('Comprobantes', direction),
+    field('Tipo de solicitud', type), field('Periodo frecuente', quick),
     field('Fecha inicial', start), field('Fecha final', end)], async () => {
-    const payload = { rfc: person.value, direction: direction.value, start: start.value, end: end.value };
+    const payload = { rfc: person.value, direction: direction.value, start: start.value, end: end.value, type: type.value };
     for (;;) {
       try { satData = await satApi('request', payload); break; }
       catch (error) {

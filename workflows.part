@@ -233,6 +233,7 @@ function invoiceDetail(row) {
   }
   summary.append(headline, parties, cell(row.id, 'Folio fiscal'));
   summary.append(statusCell(row.id));
+  if (row.initialState) summary.append(n('p', 'Estado al importarse (según los metadatos del SAT): ' + row.initialState + '.', 'report-note'));
   const contents = [summary];
   const linked = documents.filter(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id && (!scope || doc.rfc === scope));
   const actionsRow = n('div', undefined, 'actions');

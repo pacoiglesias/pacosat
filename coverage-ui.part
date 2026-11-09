@@ -48,6 +48,21 @@ function coverageScreen() {
       duration(gap.seconds), gap.micro ? 'Micro-hueco · costura del blindaje ±1 s' : 'Hueco'])));
   }
   screens.push(gapsPanel);
+  /* Metadatos (1.6.10): lo que el SAT conoce según las solicitudes
+     Metadata y todavía no está en XML — la reconciliación que encuentra
+     CFDI perdidos sin gastar descargas completas. */
+  const metaPanel = panel('Metadatos del SAT · CFDI sin descargar');
+  const meta = satData.metadata || { records: 0, missing: [], lastSeen: null };
+  const missing = (meta.missing || []).filter(row => !scope ||
+    row.emitter === scope || row.receiver === scope);
+  metaPanel.append(n('p', meta.records ?
+    number.format(meta.records) + ' registros de metadatos guardados' + (meta.lastSeen ? ' · última lectura ' + localDateTime(meta.lastSeen) : '') +
+    '. De ellos, ' + missing.length + ' CFDI constan en el SAT y aún no están en el expediente como XML.' :
+    'Todavía no hay metadatos: PacoSAT pide una solicitud Metadata al día por RFC, y también puedes pedir un periodo como Metadatos desde el Centro SAT.'));
+  if (missing.length) metaPanel.append(grid(['UUID', 'Emisor', 'Receptor', 'Fecha', 'Total', 'Estado en el SAT'],
+    missing.slice(0, 100).map(row => [row.uuid, row.emitter, row.receiver, (row.issuedAt || '').slice(0, 10),
+      row.total ? '$' + row.total : '—', row.status === '0' ? 'Cancelado' : 'Vigente'])));
+  screens.push(metaPanel);
   const rfcs = [...new Set([...visible.map(group => group.rfc), ...Object.keys(coverage.days)])].filter(rfc => !scope || rfc === scope).sort();
   for (const rfc of rfcs) screens.push(coverageHeatmap(rfc, coverage.days[rfc] || { received: [], issued: [] }));
   return screens;
