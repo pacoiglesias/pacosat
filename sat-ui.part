@@ -6,7 +6,7 @@ let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
 let satError = '', satPolling = false, cloudRevision;
 const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada' };
 const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
-const criteriaNotes = { disponible: 'Criterio disponible', ultima: 'Criterio: última solicitud disponible', agotado: 'Criterio agotado ante el SAT (5002)' };
+const criteriaNotes = { disponible: 'Criterio sin usar', ultima: 'Criterio ya usado · no se repite', agotado: 'Criterio quemado ante el SAT (5002)', rescatado: 'Criterio rescatado por el portal' };
 
 /* Errores del servidor en lenguaje claro (UX-20): cada mensaje críptico
    conocido se traduce a qué pasó y qué hacer. Los que ya vienen claros
@@ -168,7 +168,30 @@ function fillSat(target = $('sat-live')) {
   const silenceButtons = n('div', undefined, 'actions');
   silenceButtons.append(action('Cambiar umbral', silenceDialog, undefined, 'bell'));
   silenceBar.append(silenceButtons); silence.append(silenceBar);
-  target.replaceChildren(schedules, queue, alerts, silence);
+  /* Libro de criterios (ronda anti-5002): el registro persistente de
+     cada criterio enviado, por RFC, con su resultado. Es la fuente de
+     verdad de la guardia, del planificador y del rescate. */
+  const book = panel('Libro de criterios · blindaje 5002');
+  book.append(n('p', 'Cada criterio exacto (RFC, sentido, tipo y fechas con segundos) enviado al SAT y su resultado. ' +
+    'Un criterio usado no se repite nunca; uno quemado (5002) solo se recupera con la variante de cierre +1 segundo ' +
+    'o con el rescate por el portal web.'));
+  const entries = (satData.criteriaBook || []).filter(row => !scope || row.rfc === scope);
+  if (!entries.length) book.append(empty('Libro vacío', 'Cuando se envíe la primera solicitud al SAT, su criterio quedará registrado aquí.'));
+  else book.append(grid(['RFC', 'Criterio', 'Envíos', 'Estado', 'Acción'], entries.slice(0, 60).map(entry => {
+    const acts = n('div', undefined, 'actions');
+    if (entry.state === 'agotado' || entry.state === 'rescatado')
+      acts.append(action(entry.state === 'agotado' ? 'Preparar rescate' : 'Ver rescate', () => rescueDialog(entry)));
+    if (entry.state !== 'disponible')
+      acts.append(action('Pedir con cierre +1 s', () => requestDialog({ rfc: entry.rfc, direction: entry.direction,
+        start: entry.startAt.slice(0, 10), end: entry.endAt.slice(0, 10), type: entry.type, shiftEnd: true })));
+    return [cell(entry.rfc, (entry.type === 'metadata' ? 'Metadatos' : 'CFDI') + ' · ' + directions[entry.direction]),
+      stampLabel(entry.startAt) + ' → ' + stampLabel(entry.endAt),
+      entry.sends.length ? entry.sends.length + ' · ' + (entry.presumed ? 'presunto enviado' : localDateTime(entry.lastSentAt)) : 'Sin envíos propios',
+      cell(criteriaNotes[entry.state] || entry.state, entry.state === 'rescatado' ? 'Entraron ' + entry.rescuedCount + ' CFDI por la carpeta vigilada' :
+        entry.state === 'agotado' ? 'Solo se quemó esta combinación exacta' : ''),
+      acts];
+  })));
+  target.replaceChildren(schedules, queue, book, alerts, silence);
 }
 function silenceDialog() {
   const days = input('number', { min: 0, max: 365, value: satData.silenceDays || 0, required: true });
@@ -261,21 +284,56 @@ function efirmaDialog(prefillRfc) {
 function guardChoice(guard) {
   return new Promise(resolve => {
     const box = n('div');
-    box.append(n('h3', guard.state === 'agotado' ? 'Criterio agotado ante el SAT (5002)' : 'Este criterio ya se solicitó una vez'),
+    const titles = { agotado: 'Criterio quemado ante el SAT (5002)', rescatado: 'Periodo ya rescatado por el portal',
+      ultima: 'Este criterio ya se pidió: no se repite' };
+    box.append(n('h3', titles[guard.state] || titles.ultima),
       n('p', guard.message),
       /* Fechas siempre en formato humano (UX-25): nada de ISO crudo. */
-      n('p', 'Ventana del criterio: ' + stampLabel(guard.startAt) + ' a ' + stampLabel(guard.endAt) + '. Al mover el inicio a ' +
-        stampLabel(guard.shiftedStartAt) + ' el criterio es otro y no gasta las solicitudes de este.'));
+      n('p', 'Ventana del criterio: ' + stampLabel(guard.startAt) + ' a ' + stampLabel(guard.endAt) +
+        '. Cerrando el periodo 1 segundo más tarde (' + stampLabel(guard.shiftedEndAt) + ') el criterio es nuevo ' +
+        'ante el SAT y en la práctica no entra ningún CFDI extra.'));
     if (guard.state === 'agotado') box.append(n('p',
-      'Si solo necesitas reconciliar el histórico o revisar estados, pide el mismo periodo como Metadatos: ' +
-      'es otro tipo de solicitud, con su propio criterio, y no gasta las solicitudes de CFDI.'));
+      'Lo quemado es solo esta combinación exacta (RFC, sentido, tipo y fechas con segundos): ni el RFC ni la ' +
+      'e.firma están quemados. También puedes recuperar el periodo a mano desde el portal del SAT: es un canal ' +
+      'aparte (hasta 2.000 XML al día) y PacoSAT prepara la lista exacta de folios. Y si solo necesitas ' +
+      'reconciliar el histórico, el mismo periodo como Metadatos es otro criterio, con su propio cupo.'));
+    if (guard.state === 'rescatado') box.append(n('p',
+      'Los XML de este periodo ya entraron por la carpeta vigilada tras descargarlos del portal: están en el expediente.'));
     const row = n('div', undefined, 'actions');
-    if (guard.state === 'ultima') row.append(action('Enviar y gastar la última', () => resolve('confirm')));
-    row.append(action('Mover el inicio 1 segundo y enviar', () => resolve('shift'), 'primary', 'sync'),
-      action('No enviar', () => resolve('cancel')));
+    row.append(action('Cerrar 1 segundo más tarde y enviar', () => resolve('shift'), 'primary', 'sync'));
+    if (guard.state === 'agotado' || guard.state === 'rescatado')
+      row.append(action(guard.state === 'agotado' ? 'Preparar el rescate por el portal' : 'Ver el rescate', () => resolve('rescue')));
+    row.append(action('No enviar', () => resolve('cancel')));
     box.append(row);
     $('fields').replaceChildren(box);
   });
+}
+/* Rescate 5002 asistido: el servidor prepara la lista exacta de folios
+   pendientes del periodo quemado (de los metadatos guardados, sin los
+   ya descargados) y las instrucciones paso a paso para bajarlos del
+   portal del SAT. Al dejarlos en la carpeta vigilada, el criterio pasa
+   a «rescatado» en el libro. Sin botón de guardado: es una guía. */
+async function rescueDialog(source) {
+  const plan = await satApi('rescue', { rfc: source.rfc, direction: source.direction, startAt: source.startAt, endAt: source.endAt });
+  const box = n('div');
+  box.append(n('p', 'Periodo quemado: ' + stampLabel(plan.startAt) + ' a ' + stampLabel(plan.endAt) + ' · ' +
+      (plan.direction === 'received' ? 'Recibidos' : 'Emitidos') + ' · ' + plan.rfc),
+    n('p', plan.folios.length ? 'Según los metadatos guardados faltan ' + plan.folios.length + ' folios por ' +
+      'descargar: son los de esta lista (los que ya están en el expediente no aparecen).' :
+      'Todavía no hay metadatos guardados de este periodo: descarga por el periodo completo y deja que la ' +
+      'carpeta vigilada descarte sola los duplicados.'));
+  if (plan.folios.length) {
+    const list = n('ul', undefined, 'rescue-folios');
+    for (const folio of plan.folios.slice(0, 200)) list.append(n('li',
+      folio.uuid + ' · ' + (folio.issuedAt || '').slice(0, 19) + ' · ' + folio.emitter + ' → ' + folio.receiver +
+      ' · ' + (folio.total ? '$' + folio.total : '—')));
+    box.append(list);
+    if (plan.folios.length > 200) box.append(n('p', '…y ' + (plan.folios.length - 200) + ' folios más en el mismo periodo.'));
+  }
+  const steps = n('ol', undefined, 'rescue-steps');
+  for (const step of plan.instructions) steps.append(n('li', step));
+  box.append(steps);
+  dialog('Rescate por el portal del SAT', [box]);
 }
 function requestDialog(preset) {
   const person = selectPerson();
@@ -292,20 +350,49 @@ function requestDialog(preset) {
     if (preset.end) end.value = preset.end;
   }
   const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Metadatos (registros ligeros, para reconciliar)']], 'cfdi');
+  if (preset?.type) type.value = preset.type;
   /* Periodos frecuentes en un clic (1.6.10): sin teclear fechas. */
   const quick = n('div', undefined, 'actions');
   const fmt = date => date.toISOString().slice(0, 10);
-  const setRange = (from, to) => { start.value = fmt(from); end.value = fmt(to); };
+  const setRange = (from, to) => { start.value = fmt(from); end.value = fmt(to); refreshPlan(); };
   const nowDate = new Date(today + 'T12:00:00');
   quick.append(
     action('Mes pasado', () => setRange(new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1), new Date(nowDate.getFullYear(), nowDate.getMonth(), 0))),
     action('Este trimestre', () => setRange(new Date(nowDate.getFullYear(), Math.floor(nowDate.getMonth() / 3) * 3, 1), nowDate)),
     action('Este año', () => setRange(new Date(nowDate.getFullYear(), 0, 1), nowDate)),
     action('Últimos 30 días', () => setRange(new Date(nowDate.getTime() - 29 * 86400000), nowDate)));
+  /* Planificador anti-5002: antes de gastar una solicitud, el servidor
+     cruza el criterio exacto contra el libro y avisa aquí mismo. Si ya
+     se pidió, la vía es la variante de cierre +1 s (nunca el duplicado);
+     si el rango CFDI es amplio y nuevo, propone explorar primero con
+     Metadatos. Es una lectura: no envía nada por sí solo. */
+  const planNote = n('p', 'Revisando el criterio en el libro…', 'plan-note');
+  const metaFirst = action('Pedir este rango como Metadatos', () => { type.value = 'metadata'; refreshPlan(); });
+  metaFirst.hidden = true;
+  const planBox = n('div', undefined, 'plan-box');
+  planBox.append(planNote, metaFirst);
+  let planSeq = 0;
+  async function refreshPlan() {
+    const seq = ++planSeq;
+    try {
+      const plan = await satApi('plan', { rfc: person.value, direction: direction.value, type: type.value, start: start.value, end: end.value });
+      if (seq !== planSeq) return;
+      planNote.textContent = plan.reason;
+      metaFirst.hidden = plan.recommendation !== 'metadata-first';
+    } catch {
+      if (seq !== planSeq) return;
+      planNote.textContent = 'El planificador no pudo revisar el libro; la guardia actuará al enviar, como siempre.';
+      metaFirst.hidden = true;
+    }
+  }
+  for (const control of [person, direction, type, start, end]) control.addEventListener('change', refreshPlan);
+  refreshPlan();
   dialog('Solicitar un periodo al SAT', [field('Contribuyente', person), field('Comprobantes', direction),
-    field('Tipo de solicitud', type), field('Periodo frecuente', quick),
+    field('Tipo de solicitud', type), field('Planificador 5002', planBox), field('Periodo frecuente', quick),
     field('Fecha inicial', start), field('Fecha final', end)], async () => {
     const payload = { rfc: person.value, direction: direction.value, start: start.value, end: end.value, type: type.value };
+    /* Desde el Libro, «Pedir con cierre +1 s» nace ya con la variante. */
+    if (preset?.shiftEnd) payload.shiftEnd = 1;
     for (;;) {
       try { satData = await satApi('request', payload); break; }
       catch (error) {
@@ -316,7 +403,15 @@ function requestDialog(preset) {
           announce('Solicitud no enviada. ' + error.guard.message, true);
           return;
         }
-        if (choice === 'shift') payload.shiftStart = true; else payload.confirmRepeat = true;
+        if (choice === 'rescue') {
+          $('dialog').close();
+          rescueDialog(error.guard);
+          return;
+        }
+        /* Cada vuelta suma un segundo al cierre: si esa variante
+           también estaba usada, la siguiente guardia ofrece el
+           segundo siguiente. Nunca se repite un criterio. */
+        payload.shiftEnd = (payload.shiftEnd || 0) + 1;
       }
     }
     fillSat(); announce('Solicitud enviada. PacoSAT revisará cuándo libera el paquete el SAT.');

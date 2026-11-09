@@ -231,26 +231,30 @@ try {
   let guardBody = await res.json();
   assert.equal(guardBody.guard.state, 'ultima');
   assert.equal(guardBody.guard.count, 1);
-  assert.match(guardBody.error, /última disponible/);
+  assert.match(guardBody.error, /no repite criterios/);
+  assert.equal(guardBody.guard.shiftedEndAt, '2026-10-08 00:00:00');
   assert.equal(guardCalls.length, callsBeforeRepeat);
+  /* Ronda anti-5002: confirmRepeat quedó retirado — ya no se gasta la
+     última solicitud repitiendo el criterio; tampoco envía nada. */
   res = await guardApi.call('/api/request', { ...october, confirmRepeat: true });
+  assert.equal(res.status, 409);
+  assert.equal(guardCalls.length, callsBeforeRepeat);
+  /* La vía es la variante: el mismo periodo cerrando 1 segundo más
+     tarde — criterio nuevo ante el SAT, sin duplicar el original. */
+  res = await guardApi.call('/api/request', { ...october, shiftEnd: 1 });
   assert.equal(res.status, 200);
   assert.equal(guardCalls.length, callsBeforeRepeat + 1);
+  assert.deepEqual(guardCalls.at(-1), { start: '2026-10-01', end: '2026-10-08', startTime: '00:00:00',
+    endTime: '00:00:00', direction: 'received' });
   guardTime += 5 * 60000;
   await guardService.tick();
-  res = await guardApi.call('/api/request', october);
-  assert.equal(res.status, 409);
-  guardBody = await res.json();
-  assert.equal(guardBody.guard.state, 'agotado');
-  assert.equal(guardBody.guard.count, 2);
-  assert.equal(guardCalls.length, callsBeforeRepeat + 1);
-  res = await guardApi.call('/api/request', { ...october, shiftStart: true });
-  assert.equal(res.status, 200);
-  assert.equal(guardCalls.at(-1).startTime, '00:00:01');
   let guardState = await (await guardApi.call('/api/status')).json();
   const octoberJobs = guardState.jobs.filter(job => job.periodStart === '2026-10-01');
-  assert.equal(octoberJobs.find(job => job.startAt === '2026-10-01 00:00:01').criteriaState, 'ultima');
-  assert.equal(octoberJobs.find(job => job.startAt === '2026-10-01 00:00:00').criteriaState, 'agotado');
+  assert.equal(octoberJobs.find(job => job.endAt === '2026-10-08 00:00:00').criteriaState, 'ultima');
+  assert.equal(octoberJobs.find(job => job.endAt === '2026-10-07 23:59:59').criteriaState, 'ultima');
+  const octoberBook = guardState.criteriaBook.filter(entry => entry.rfc === rfc && entry.startAt === '2026-10-01 00:00:00');
+  assert.equal(octoberBook.length, 2);
+  assert.ok(octoberBook.every(entry => entry.count === 1 && entry.state === 'ultima'));
   const september = { rfc, direction: 'received', start: '2026-09-01', end: '2026-09-07' };
   res = await guardApi.call('/api/request', september);
   assert.equal(res.status, 200);
@@ -270,7 +274,7 @@ try {
   assert.equal(guardCalls.length, callsBeforeBlocked);
   guardState = await (await guardApi.call('/api/status')).json();
   assert.equal(guardState.jobs.find(job => job.periodStart === '2026-09-01').criteriaState, 'agotado');
-  console.log('OK: blindaje 5002: identidad de criterio al segundo, primer repetido avisa sin enviar, confirmación expresa, segundo repetido bloquea, +1 s crea criterio nuevo y el 5002 del SAT marca agotado con un solo aviso.');
+  console.log('OK: blindaje 5002 + anti-5002: identidad de criterio al segundo, el repetido avisa sin enviar y sin gastar la última (confirmRepeat retirado), la variante de cierre +1 s crea criterio nuevo, el libro por RFC es visible en el estado y el 5002 del SAT marca agotado con un solo aviso.');
 } finally { guardService.close(); }
 
 // Colisión de la programación: la ventana automática coincide al segundo con
@@ -310,11 +314,12 @@ try {
     password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
   await clashB.tick();
   assert.equal(clashCalls.length, 3); /* 1.6.10: el Metadata diario se suma a las dos de CFDI */
-  assert.equal(clashCalls[1].startTime, '00:00:01');
-  assert.equal(clashCalls[1].endTime, '10:00:00');
+  assert.equal(clashCalls[1].startTime, '00:00:00');
+  assert.equal(clashCalls[1].endTime, '10:00:01');
+  assert.equal(clashCalls[1].end, '2026-11-08');
   const activityRows = await (await clashApiB.call('/api/storage?store=activity')).json();
   assert.ok(activityRows.some(row => /Blindaje SAT 5002/.test(row.name) && /\+1 s/.test(row.event) && /5002/.test(row.event)));
-  console.log('OK: la colisión de la descarga programada se auto-corrige desplazando el inicio +1 s y queda anotada en la bitácora.');
+  console.log('OK: la colisión de la descarga programada se auto-corrige desplazando el cierre +1 s y queda anotada en la bitácora.');
 } finally { clashB.close(); }
 
 // Migración suave: una base previa a 1.6.2 siembra el libro sin duplicar.
@@ -355,7 +360,10 @@ try {
   let res = await legacyApiA.call('/api/request', { rfc, direction: 'received', start: '2026-08-03', end: '2026-08-09' });
   assert.equal(res.status, 409);
   assert.equal((await res.json()).guard.state, 'ultima');
+  /* Anti-5002: confirmRepeat ya no envía; la salida es la variante +1 s. */
   res = await legacyApiA.call('/api/request', { rfc, direction: 'received', start: '2026-08-03', end: '2026-08-09', confirmRepeat: true });
+  assert.equal(res.status, 409);
+  res = await legacyApiA.call('/api/request', { rfc, direction: 'received', start: '2026-08-03', end: '2026-08-09', shiftEnd: 1 });
   assert.equal(res.status, 200);
 } finally { legacyA.close(); }
 const legacyB = legacyService();
@@ -367,8 +375,15 @@ try {
   const res = await legacyApiB.call('/api/request', { rfc, direction: 'received', start: '2026-08-03', end: '2026-08-09' });
   assert.equal(res.status, 409);
   const guardBody = await res.json();
-  assert.equal(guardBody.guard.state, 'agotado');
-  assert.equal(guardBody.guard.count, 2);
+  assert.equal(guardBody.guard.state, 'ultima');
+  assert.equal(guardBody.guard.count, 1);
+  /* La siembra no se duplicó al reabrir: el criterio sembrado sigue con
+     un solo envío y la variante de la sesión anterior es otra entrada. */
+  const legacyState = await (await legacyApiB.call('/api/status')).json();
+  const legacyBook = legacyState.criteriaBook.filter(entry => entry.rfc === rfc);
+  assert.equal(legacyBook.length, 2);
+  assert.equal(legacyBook.find(entry => entry.endAt === '2026-08-09 23:59:59').count, 1);
+  assert.equal(legacyBook.find(entry => entry.endAt === '2026-08-10 00:00:00').count, 1);
   console.log('OK: la migración siembra el libro desde las solicitudes previas, reconstruye los segundos y no duplica la siembra al reabrir.');
 } finally { legacyB.close(); }
 
