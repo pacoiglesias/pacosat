@@ -1,6 +1,12 @@
 services:
   pacosat:
-    build: .
+    # Vía principal: imagen publicada en GHCR por GitHub Actions al
+    # fusionar a main (el NAS descarga y recrea, no compila).
+    # Ver DESPLIEGUE.md. El paquete debe ser público o el NAS debe
+    # tener sesión en GHCR con un token de solo lectura.
+    image: ghcr.io/pacoiglesias/pacosat:latest
+    # Respaldo (vía anterior, lenta): descomenta para construir en el NAS.
+    # build: .
     restart: unless-stopped
     environment:
       PACOSAT_ORIGIN: https://${PACOSAT_DOMAIN:?Configura PACOSAT_DOMAIN}
