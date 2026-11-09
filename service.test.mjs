@@ -147,18 +147,20 @@ try {
     download: async () => valid });
   const failAlerts = () => sent.slice(alertsBefore).filter(mail => /descarga automática está fallando/.test(mail.subject)).length;
   await failSvc.tick();
-  for (let i = 0; i < 3; i++) { time += 5 * 60000; await failSvc.tick(); }
+  /* 1.6.4: la verificación reintenta con espera creciente (5, 10, 20, 40,
+     60 min), así que los tres intentos fallidos ya no caben en 15 min:
+     se avanza siguiendo la propia cadencia del backoff. */
+  for (const step of [5, 10, 20]) { time += step * 60000; await failSvc.tick(); }
   assert.equal(failAlerts(), 1);
   time += 5 * 60000;
   await failSvc.tick();
   assert.equal(failAlerts(), 1);
   failMode = false;
-  time += 5 * 60000;
+  time += 40 * 60000;
   await failSvc.tick();
+  assert.equal(failAlerts(), 1);
   failMode = true;
-  time += 60 * 60000;
-  await failSvc.tick();
-  for (let i = 0; i < 3; i++) { time += 5 * 60000; await failSvc.tick(); }
+  for (const step of [5, 10, 20]) { time += step * 60000; await failSvc.tick(); }
   assert.equal(failAlerts(), 2);
   failSvc.close();
   console.log('OK: seguridad local, programación, descarga, RFC ajeno, deduplicación, correo simulado y pausa.');
@@ -361,3 +363,44 @@ try {
   assert.equal(guardBody.guard.count, 2);
   console.log('OK: la migración siembra el libro desde las solicitudes previas, reconstruye los segundos y no duplica la siembra al reabrir.');
 } finally { legacyB.close(); }
+
+// --- Espera creciente en la verificación de solicitudes (1.6.4) ---
+let backTime = Date.parse('2026-11-09T15:00:00Z');
+let backChecks = 0;
+const backService = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TOKEN-->', origin,
+  proxyKey: 'f'.repeat(64), now: () => backTime,
+  makeConnector: async () => ({ parser: FixtureParser, connector: {
+    request: async () => 'back-req-1',
+    check: async () => { backChecks++; return backChecks <= 4 ? { status: 'pending', packages: [] } : { status: 'finished', packages: [] }; },
+    download: async () => valid } }),
+  makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
+const backApi = harness(backService, 'f'.repeat(64));
+try {
+  await backApi.init();
+  assert.equal((await backApi.call('/api/unlock', { rfc, minutes: 1440, days: 7, direction: 'received',
+    password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  await backService.tick();
+  const waits = [];
+  for (let round = 0; round < 4; round++) {
+    let state = await (await backApi.call('/api/status')).json();
+    const job = state.jobs.find(row => row.status === 'pending');
+    assert.ok(job, 'la solicitud sigue pendiente en la ronda ' + round);
+    backTime = job.due;
+    await backService.tick();
+    state = await (await backApi.call('/api/status')).json();
+    const after = state.jobs.find(row => row.id === job.id);
+    assert.equal(after.status, 'pending');
+    assert.equal(after.checks, round + 1);
+    waits.push((after.due - backTime) / 60000);
+  }
+  assert.deepEqual(waits, [10, 20, 40, 60]);
+  const activityRows = await (await backApi.call('/api/storage?store=activity')).json();
+  assert.ok(activityRows.some(row => /espera entre consultas queda en su tope de 60 minutos/.test(row.event || '')));
+  let state = await (await backApi.call('/api/status')).json();
+  backTime = state.jobs.find(row => row.status === 'pending').due;
+  await backService.tick();
+  state = await (await backApi.call('/api/status')).json();
+  assert.equal(state.jobs.find(row => row.id === 1).status, 'finished');
+  assert.equal(state.jobs.filter(row => row.status === 'pending').length, 0);
+  console.log('OK: espera creciente 5→10→20→40→60 con tope, contador persistido y apunte único en bitácora al llegar al máximo.');
+} finally { backService.close(); }

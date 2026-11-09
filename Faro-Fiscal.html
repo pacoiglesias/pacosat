@@ -118,6 +118,17 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .rfc-note[data-state=warn]{color:var(--warn-ink);background:var(--warn-bg);border:1px solid var(--warn-ink);border-radius:8px;padding:7px 10px}
 .rfc-note[data-state=error]{color:var(--danger);background:var(--danger-bg);border:1px solid var(--danger);border-radius:8px;padding:7px 10px}
 .kpi,.panel,.metric{transition:box-shadow .18s ease,transform .18s ease}.kpi:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.view-in{animation:view-in .22s ease}@keyframes view-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Cobertura (1.6.4): mapa de calor anual de días cubiertos por RFC. */
+.hm-scroll{overflow-x:auto;padding:2px 17px 6px}
+.hm{display:block;height:auto}
+.hm rect.hm-l0{fill:var(--surface-2);stroke:var(--border);stroke-width:.6}
+.hm rect.hm-l1{fill:var(--chart-received);opacity:.5}
+.hm rect.hm-l2{fill:var(--chart-received)}
+.hm text{fill:var(--muted);font-size:9px;font-weight:600}
+.chart-legend .sw-hm0{background:var(--surface-2);border:1px solid var(--border)}
+.chart-legend .sw-hm1{background:var(--chart-received);opacity:.5}
+.chart-legend .sw-hm2{background:var(--chart-received)}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -162,6 +173,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
     <span class="nav-caption nav-divider">ADMINISTRACIÓN</span>
     <button data-view="sat"><svg><use href="#i-sync"/></svg> Centro SAT</button>
+    <button data-view="coverage"><svg><use href="#i-chart"/></svg> Cobertura</button>
     <button data-view="monitor"><svg><use href="#i-shield"/></svg> Vigilancia SAT</button>
     <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
     <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>
@@ -458,6 +470,7 @@ const screens = {
   invoices: ['Facturas CFDI', 'Busca por nombre, RFC o UUID y abre el comprobante sin perder tus filtros.', 'Importar XML / ZIP'],
   docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
   sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
+  coverage: ['Cobertura de descarga', 'Qué periodos están descargados por RFC, dónde quedan huecos y el mapa anual de días cubiertos.', 'Actualizar estado'],
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
   backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
   diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV']
@@ -909,7 +922,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
 }
@@ -1123,11 +1136,26 @@ function backupScreen() {
     auto.append(grid(['Componente', 'Estado'], [
       ['Respaldo programado', sb.enabled ? (sb.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
         (sb.last ? localDateTime(sb.last) : 'aún no') + ' · siguiente: ' + (sb.next ? localDateTime(sb.next) : 'al próximo ciclo') +
-        (sb.error ? ' · Error: ' + sb.error : '') : 'Sin configurar: se define en el archivo de arranque protegido del servidor.'],
+        (sb.error ? ' · Error: ' + sb.error : '') + ' · incluye el estado operativo (descargas, criterios 5002 y avisos pendientes)' : 'Sin configurar: se define en el archivo de arranque protegido del servidor.'],
+      ['Destino secundario', !sb.enabled ? '—' : sb.secondary ? 'Configurado: recibe el mismo respaldo cifrado' +
+        (sb.secondaryError ? ' · ÚLTIMO FALLO: ' + sb.secondaryError : ' · sin fallos') :
+        'Sin configurar: añade «secondaryDir» al bloque backup del archivo de arranque (una carpeta sincronizada fuera del NAS).'],
+      ['Prueba de restauración', !sb.enabled ? '—' : sb.verify ? (sb.verify.ok ? 'Íntegra' : 'CON FALLO') + ' · ' + localDateTime(sb.verify.at) +
+        ' (' + sb.verify.source + ')' : 'Aún no se ha ejecutado: corre sola tras cada respaldo programado.'],
       ['Carpeta vigilada', wf.enabled ? 'Activa' + (wf.subfolders ? ' · incluye subcarpetas' : '') + ' · ' + wf.imported + ' importados · ' + wf.failed + ' con error' +
+        (wf.incidents ? ' · ' + wf.incidents + ' con incidencias' : '') + (wf.waiting ? ' · ' + wf.waiting + ' en espera (copiándose)' : '') +
         (wf.lastScan ? ' · última revisión ' + localDateTime(wf.lastScan) : '') + (wf.error ? ' · ' + wf.error : '') :
         'Sin configurar: se define en el archivo de arranque protegido del servidor.']
     ]));
+    if (sb.enabled) {
+      const verifyActions = n('div', undefined, 'actions');
+      verifyActions.append(action('Probar restauración ahora', async () => {
+        await satApi('backup/verify', {});
+        await pollSat(); render();
+        announce('Prueba de restauración ejecutada: quedó registrada en la bitácora.');
+      }, undefined, 'shield'));
+      auto.append(verifyActions);
+    }
     screens.push(auto);
   }
   return screens;
@@ -1271,13 +1299,15 @@ function operationsScreen() {
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
     ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
       'Activa' + (satData.watchFolder.subfolders ? ' · incluye subcarpetas' : '') + ' · ' + satData.watchFolder.imported + ' archivos importados · ' + satData.watchFolder.failed + ' con error' +
+      (satData.watchFolder.incidents ? ' · ' + satData.watchFolder.incidents + ' con incidencias' : '') +
+      (satData.watchFolder.waiting ? ' · ' + satData.watchFolder.waiting + ' en espera (copiándose)' : '') +
       (satData.watchFolder.lastScan ? ' · última revisión ' + localDateTime(satData.watchFolder.lastScan) : '') +
       (satData.watchFolder.error ? ' · ' + satData.watchFolder.error : '') : 'Sin configurar en el servidor'],
     ['Respaldo programado', !satToken ? 'Sin servidor: crea respaldos manuales' : satData.scheduledBackup?.enabled ?
       (satData.scheduledBackup.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
       (satData.scheduledBackup.last ? localDateTime(satData.scheduledBackup.last) : 'aún no') +
       (satData.scheduledBackup.error ? ' · Error: ' + satData.scheduledBackup.error : '') : 'Sin configurar en el servidor'],
-    ['Respaldo', 'Exporta una copia cifrada antes de actualizar. No incluye e.firma, SMTP ni cola SAT.']
+    ['Respaldo', 'Exporta una copia cifrada antes de actualizar. Ningún respaldo incluye la e.firma ni las credenciales SMTP; el respaldo programado del servidor sí incluye la cola SAT y el estado operativo.']
   ]));
   const buttons = n('div', undefined, 'actions');
   buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
@@ -1643,11 +1673,21 @@ function restoreDialog(file) {
   dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de PacoSAT se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
     field('Confirmo que quiero reemplazar los datos actuales', confirmation)], async () => {
     check(confirmation.checked, 'Confirma el reemplazo de los datos.');
-    const contents = await validateBackup(await decryptBackup(file, password.value));
+    const rawBackup = await decryptBackup(file, password.value);
+    const contents = await validateBackup(rawBackup);
     await writeBatch(contents, true);
+    /* Estado operativo (1.6.4): si el respaldo lo trae y hay servidor, se
+       restaura también en el servidor. Los respaldos anteriores a 1.6.4 no
+       lo traen y se restauran como siempre. */
+    let operationsNote = '';
+    if (rawBackup.operations && typeof satToken !== 'undefined' && satToken) {
+      await satApi('backup/operations', rawBackup.operations);
+      await pollSat();
+      operationsNote = ' También se restauró el estado operativo (descargas, criterios 5002 y avisos pendientes); desbloquea cada perfil para reanudar.';
+    }
     await refresh();
     await logEvent('Respaldo restaurado desde un archivo cifrado');
-    announce('Respaldo restaurado.');
+    announce('Respaldo restaurado.' + operationsNote);
   });
 }
 const handle = work => () => Promise.resolve().then(work).catch(error => announce(error.message, true));
@@ -1660,6 +1700,7 @@ $('inspectFile').onchange = handle(async () => {
 });
 $('primary').onclick = handle(async () => {
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
+  if (page === 'coverage') { await pollSat(); render(); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });
@@ -1992,6 +2033,109 @@ async function pollMonitor() {
 if (satToken) {
   startup.then(pollMonitor);
   setInterval(pollMonitor, 30000);
+}
+
+/* Cobertura de descarga (1.6.4): qué periodos están descargados por RFC y
+   sentido, hasta dónde llega la cadena continua («verificado hasta»), los
+   huecos entre tramos —con las costuras de ±1 s del blindaje marcadas como
+   micro-huecos— y el mapa de calor anual de días cubiertos. Todo sale del
+   modelo que el servidor calcula desde las solicitudes y el libro de
+   criterios; esta vista no pide nada al SAT. */
+let coverageYear = '';
+function coverageScreen() {
+  if (typeof satToken === 'undefined' || !satToken) {
+    const guide = n('section', undefined, 'guide');
+    const info = n('div');
+    info.append(n('h2', 'La cobertura se calcula en el servidor'),
+      n('p', 'El mapa de periodos descargados sale de las solicitudes y del libro de criterios 5002 que guarda el servidor de PacoSAT. Abre la app desde el servidor (el NAS o Iniciar-PacoSAT.cmd) para verlo; en el modo de navegador no hay solicitudes que analizar.'));
+    guide.append(info);
+    return [guide];
+  }
+  const coverage = satData.coverage || { groups: [], gaps: [], days: {} };
+  const visible = coverage.groups.filter(group => !scope || group.rfc === scope);
+  const screens = [];
+  const table = panel('Verificado por RFC y sentido');
+  if (!visible.length) table.append(empty('Sin solicitudes todavía', 'Cuando el Centro SAT descargue periodos, aquí verás hasta dónde está verificado cada RFC y qué sigue en curso o falló.'));
+  else table.append(grid(['RFC', 'Sentido', 'Verificado hasta', 'Tramos cubiertos', 'En curso', 'Fallidos', 'Criterios agotados'],
+    visible.map(group => [group.rfc, group.direction === 'received' ? 'Recibidos' : 'Emitidos',
+      group.verifiedUntil ? group.verifiedUntil.slice(0, 16) : '—', String(group.covered.length),
+      String(group.pending), String(group.failed), String(group.exhausted)])));
+  screens.push(table);
+  const gapsPanel = panel('Huecos sin descargar');
+  const gaps = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
+  if (!gaps.length) gapsPanel.append(n('p', 'Sin huecos: en cada RFC y sentido, los tramos descargados forman una cadena continua.'));
+  else {
+    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Para cubrir uno, pídelo desde el Centro SAT; si el criterio exacto ya se envió, desplaza un extremo un segundo.'));
+    const duration = seconds => seconds < 90 ? seconds + ' s' : seconds < 5400 ? Math.round(seconds / 60) + ' min' :
+      seconds < 172800 ? (seconds / 3600).toFixed(1).replace('.', ',') + ' h' : Math.round(seconds / 86400) + ' días';
+    gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo'], gaps.map(gap => [gap.rfc,
+      gap.direction === 'received' ? 'Recibidos' : 'Emitidos',
+      gap.from.slice(0, 10) === gap.to.slice(0, 10) ? gap.from.slice(0, 16) + ' → ' + gap.to.slice(11, 16) :
+        gap.from.slice(0, 16) + ' → ' + gap.to.slice(0, 16),
+      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura del blindaje ±1 s' : 'Hueco'])));
+  }
+  screens.push(gapsPanel);
+  const rfcs = [...new Set([...visible.map(group => group.rfc), ...Object.keys(coverage.days)])].filter(rfc => !scope || rfc === scope).sort();
+  for (const rfc of rfcs) screens.push(coverageHeatmap(rfc, coverage.days[rfc] || { received: [], issued: [] }));
+  return screens;
+}
+function coverageHeatmap(rfc, daysForRfc) {
+  const wrap = panel('Mapa anual de días cubiertos · ' + rfc);
+  const received = new Set(daysForRfc.received || []), issued = new Set(daysForRfc.issued || []);
+  const years = [...new Set([...received, ...issued].map(date => date.slice(0, 4)))].sort();
+  const year = years.includes(coverageYear) ? coverageYear : (years.length ? years[years.length - 1] : String(new Date().getFullYear()));
+  if (years.length > 1) {
+    const picker = n('div', undefined, 'actions');
+    const select = n('select');
+    for (const option of years) { const node = n('option', option); node.value = option; select.append(node); }
+    select.value = year;
+    select.onchange = () => { coverageYear = select.value; render(); };
+    picker.append(n('label', 'Año'), select);
+    wrap.append(picker);
+  }
+  if (!received.size && !issued.size) {
+    wrap.append(empty('Sin días cubiertos', 'Cuando una solicitud de este RFC termine, sus días se pintan aquí.'));
+    return wrap;
+  }
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  const el = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  const cell = 11, pitch = 14, top = 16;
+  const jan1 = Date.UTC(Number(year), 0, 1);
+  const firstSunday = jan1 - new Date(jan1).getUTCDay() * 86400000;
+  const weeks = Math.ceil(((Date.UTC(Number(year), 11, 31) - firstSunday) / 86400000 + 1) / 7);
+  svg.setAttribute('viewBox', '0 0 ' + (weeks * pitch + 2) + ' ' + (top + 7 * pitch));
+  svg.setAttribute('class', 'hm'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Mapa de calor de días con descarga cubierta en ' + year + ' para ' + rfc);
+  svg.append(el('title', {}, 'Días cubiertos en ' + year + ' · ' + rfc));
+  const months = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  for (let month = 0; month < 12; month++) {
+    const first = Date.UTC(Number(year), month, 1);
+    const week = Math.floor((first - firstSunday) / (7 * 86400000));
+    svg.append(el('text', { x: week * pitch + 1, y: 10 }, months[month]));
+  }
+  for (let offset = 0; offset < 371; offset++) {
+    const date = new Date(firstSunday + offset * 86400000);
+    if (date.getUTCFullYear() !== Number(year)) continue;
+    const key = date.toISOString().slice(0, 10);
+    const level = (received.has(key) ? 1 : 0) + (issued.has(key) ? 1 : 0);
+    const rect = el('rect', { x: Math.floor(offset / 7) * pitch + 1, y: top + (offset % 7) * pitch + 1,
+      width: cell, height: cell, rx: 2, class: 'hm-l' + level });
+    rect.append(el('title', {}, key + ' · recibidos: ' + (received.has(key) ? 'cubierto' : 'sin cubrir') +
+      ' · emitidos: ' + (issued.has(key) ? 'cubierto' : 'sin cubrir')));
+    svg.append(rect);
+  }
+  const scroll = n('div', undefined, 'hm-scroll'); scroll.append(svg);
+  const legend = n('div', undefined, 'chart-legend');
+  const item = (cls, label) => { const span = n('span'); span.append(n('i', undefined, cls), document.createTextNode(label)); return span; };
+  legend.append(item('sw-hm0', 'Sin cubrir'), item('sw-hm1', 'Un sentido'), item('sw-hm2', 'Recibidos y emitidos'));
+  wrap.append(scroll, legend);
+  return wrap;
 }
 </script>
 </body></html>

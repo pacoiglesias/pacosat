@@ -1,6 +1,6 @@
 # PacoSAT · satfacturas
 
-Versión 1.6.3 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.6.4 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
 La instancia en modo servidor se publica tras un proxy HTTPS con autenticación; consulta [SERVIDOR.md](SERVIDOR.md).
 
 ## Inicio en Windows
@@ -32,7 +32,9 @@ Abre http://127.0.0.1:43729. Abrir solo el HTML no activa el servicio SAT.
 - Reporte mensual por RFC listo para imprimir o guardar en PDF desde el navegador: totales y conteos por contribuyente, más cancelados y coincidencias 69-B del mes según la última vigilancia.
 - **Base para la DIOT**: vista y CSV con totales por RFC proveedor y mes desde los CFDI recibidos. Es base de trabajo para la contadora, no la declaración (el importador no guarda el desglose de IVA).
 - Archivo de CFDI con filtro por estado SAT (vigente, cancelado, con 69-B o sin consulta).
-- En modo servidor: **carpeta vigilada** que importa sola todo XML/ZIP/PDF que reciba, recorriendo también las subcarpetas (los válidos pasan a `procesados` conservando su ruta, los fallidos a `errores` con aviso por correo) y **respaldo cifrado programado** diario o semanal con formato idéntico al manual, con aviso por correo si falla.
+- En modo servidor: **carpeta vigilada** que importa sola todo XML/ZIP/PDF que reciba, recorriendo también las subcarpetas. La ingesta es prudente: espera a que cada archivo deje de crecer antes de leerlo, rechaza por tamaño sin cargar el contenido y distingue tres resultados — procesado (a `procesados` conservando su ruta), procesado con incidencias (un ZIP parcialmente válido, a `incidencias` con el desglose por archivo en la bitácora y en el aviso) y rechazado (a `errores` con aviso por correo).
+- **Respaldo completo y recuperable**: el respaldo programado (diario o semanal, mismo formato .faro cifrado que el manual) incluye además el **estado operativo** — cola de descargas, libro de criterios 5002 y agotados, avisos pendientes y estado de la vigilancia — en una sección versionada dentro del mismo archivo, tomada en la misma foto que el expediente; admite un **destino secundario** con el mismo cifrado (una carpeta sincronizada fuera del NAS) y una **prueba de restauración** que descifra y valida el respaldo más reciente sin tocar los datos activos, ejecutable a demanda y automática tras cada respaldo, con registro en la bitácora. Ni la e.firma ni las credenciales SMTP viajan en el respaldo. El límite de 100 MB del formato se aplica al conjunto (archivos + estado); el diseño prevé partir en un respaldo por RFC y año si un expediente lo supera.
+- **Cobertura de descarga por RFC**: vista con el «verificado hasta» por RFC y sentido, los huecos entre tramos descargados (las costuras de ±1 s del blindaje marcadas como micro-huecos) y un mapa de calor anual de días cubiertos; los huecos nuevos se anotan en la bitácora y PacoSAT nunca solicita un tramo por su cuenta. La verificación de solicitudes pendientes reintenta con espera creciente (5, 10, 20, 40 y hasta 60 minutos) en lugar del ritmo fijo anterior.
 - Respaldo cifrado de expedientes y restauración.
 - Modo servidor con SQLite, proxy HTTPS y configuración privada; consulta [SERVIDOR.md](SERVIDOR.md).
 

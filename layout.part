@@ -44,6 +44,7 @@
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
     <span class="nav-caption nav-divider">ADMINISTRACIÓN</span>
     <button data-view="sat"><svg><use href="#i-sync"/></svg> Centro SAT</button>
+    <button data-view="coverage"><svg><use href="#i-chart"/></svg> Cobertura</button>
     <button data-view="monitor"><svg><use href="#i-shield"/></svg> Vigilancia SAT</button>
     <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
     <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>

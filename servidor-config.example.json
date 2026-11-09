@@ -17,7 +17,8 @@
   "backup": {
     "password": "CONFIGURA_LOCALMENTE",
     "frequency": "daily",
-    "dir": "/ruta/a/los/respaldos"
+    "dir": "/ruta/a/los/respaldos",
+    "secondaryDir": "/ruta/sincronizada/fuera-del-nas/respaldos"
   },
   "mail": {
     "host": "smtp.example.com",
