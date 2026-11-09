@@ -13,9 +13,10 @@ services:
       PACOSAT_PROXY_KEY: ${PACOSAT_PROXY_KEY:?Configura PACOSAT_PROXY_KEY}
       PACOSAT_DATA_DIR: /var/lib/pacosat
       PACOSAT_STARTUP_CONFIG: /run/pacosat-secrets/config.json
+      PACOSAT_EFIRMA_DIR: /run/pacosat-secrets/efirma
     volumes:
       - pacosat-data:/var/lib/pacosat
-      - ./pacosat-secrets:/run/pacosat-secrets:ro
+      - ./pacosat-secrets:/run/pacosat-secrets
   proxy:
     image: caddy:2.11-alpine
     restart: unless-stopped

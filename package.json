@@ -1,11 +1,11 @@
 {
   "name": "pacosat",
-  "version": "1.6.11",
+  "version": "1.6.12",
   "description": "Expediente fiscal privado con importación CFDI y seguimiento SAT",
   "scripts": {
     "build": "node build.mjs",
     "start": "node local-server.mjs",
-    "test": "node --test sat-direct.test.mjs service.test.mjs cloud.test.mjs monitor.test.mjs rfc.test.mjs storage.test.mjs metadata.test.mjs && node verify.cjs",
+    "test": "node --test sat-direct.test.mjs service.test.mjs cloud.test.mjs monitor.test.mjs rfc.test.mjs storage.test.mjs metadata.test.mjs efirma.test.mjs && node verify.cjs",
     "check": "npm run build && npm test"
   },
   "private": true,
