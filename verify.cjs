@@ -182,32 +182,27 @@ async function collect(stream) {
       ['oscuro nav', dark['--nav-active-ink'], dark['--nav-active-bg']]])
       assert.ok(contrast(a, b) >= 4.5, 'Contraste AA insuficiente en ' + name + ' (' + label + '): ' + contrast(a, b).toFixed(2));
   }
-  /* Sellos de la copia (1.6.6): en un repositorio temporal, el sello de
-     modificación es la fecha del último commit de fuentes, cambia al
-     avanzar el historial y coincide con el generado; la creación es la
-     constante documentada y la versión, la de package.json. */
+  /* Sellos de la copia (1.6.6): el artefacto es una función pura del
+     árbol (dos generaciones seguidas, byte a byte idénticas: es la
+     propiedad que exige el diff de CI) y sus metadatos son la versión
+     de package.json y la creación constante documentada. El sello de
+     modificación NO vive en el artefacto (un derivado del historial no
+     es reproducible entre checkouts): lo aporta el servidor con la
+     mtime del archivo servido, probado en cloud.test. */
   const { execFileSync } = require('node:child_process');
   const os = require('node:os');
   const path = require('node:path');
   const stampDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pacosat-stamp-'));
   fs.cpSync('.', stampDir, { recursive: true, filter: source => !/(^|[\\/])(\.git|node_modules)([\\/]|$)/.test(source) });
-  const gitIn = (args, env = {}) => execFileSync('git', args, { cwd: stampDir, encoding: 'utf8', env: { ...process.env, ...env } });
-  gitIn(['init', '-q']);
-  gitIn(['add', '-A']);
-  const commitAt = iso => gitIn(['-c', 'user.name=PacoSAT', '-c', 'user.email=verify@pacosat.local', 'commit', '-q', '-m', 'sello'],
-    { GIT_AUTHOR_DATE: iso, GIT_COMMITTER_DATE: iso });
-  commitAt('2026-11-08T10:00:00-06:00');
   execFileSync('node', ['build.mjs'], { cwd: stampDir });
-  const metaOf = () => JSON.parse(fs.readFileSync(path.join(stampDir, 'Faro-Fiscal.html'), 'utf8')
-    .match(/PACOSAT_META = (\{[^}]*\})/)[1]);
-  assert.equal(metaOf().modified, '2026-11-08T10:00:00-06:00');
-  assert.equal(metaOf().created, '2026-11-08T13:42:35-06:00');
-  assert.equal(metaOf().version, JSON.parse(fs.readFileSync('package.json', 'utf8')).version);
-  fs.appendFileSync(path.join(stampDir, 'polish.part'), '\n/* avance */\n');
-  gitIn(['add', '-A']);
-  commitAt('2026-11-09T10:00:00-06:00');
+  const firstBuild = fs.readFileSync(path.join(stampDir, 'Faro-Fiscal.html'));
   execFileSync('node', ['build.mjs'], { cwd: stampDir });
-  assert.equal(metaOf().modified, '2026-11-09T10:00:00-06:00');
+  assert.ok(firstBuild.equals(fs.readFileSync(path.join(stampDir, 'Faro-Fiscal.html'))),
+    'Dos generaciones del mismo árbol deben ser byte a byte idénticas.');
+  const meta = JSON.parse(firstBuild.toString('utf8').match(/PACOSAT_META = (\{[^}]*\})/)[1]);
+  assert.equal(meta.version, JSON.parse(fs.readFileSync('package.json', 'utf8')).version);
+  assert.equal(meta.created, '2026-11-08T13:42:35-06:00');
+  assert.ok(!('modified' in meta), 'El artefacto no debe llevar sello volátil.');
   fs.rmSync(stampDir, { recursive: true, force: true });
   /* La constante de creación coincide con el primer commit real cuando
      el historial está completo (en CI la copia es superficial y se omite). */

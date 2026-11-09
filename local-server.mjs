@@ -87,7 +87,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000 }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null }) {
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
   db.exec(`
@@ -153,6 +153,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      reinicios y redespliegues y viajan en el respaldo completo. NUNCA en
      pacosat-secrets: no son credenciales. */
   const startedAt = now();
+  /* Fecha de modificación real del archivo de la copia servida (su
+     mtime al arrancar el proceso): es el sello «Modificado el» de la
+     interfaz en modo servidor. Null cuando quien crea el servicio no la
+     conoce (p. ej. la copia local suelta), y entonces no se muestra. */
+  const servedBuildModified = buildModified;
   const getSetting = key => db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || '';
   const setSetting = (key, value) => db.prepare('INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
   const deleteSetting = key => db.prepare('DELETE FROM settings WHERE key=?').run(key);
@@ -347,6 +352,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return {
       settings: publicSettings(),
       serverStartedAt: startedAt,
+      buildModified: servedBuildModified,
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
       profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc),
         lastSatSuccess: db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(row.rfc)?.last || null })),
@@ -1293,7 +1299,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const origin = process.env.PACOSAT_ORIGIN || 'http://127.0.0.1:43729';
   need(origin === new URL(origin).origin && (!proxyKey || (proxyKey.length >= 32 && origin.startsWith('https://'))) &&
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
-  const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '' });
+  const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '',
+    buildModified: statSync(new URL('./Faro-Fiscal.html', import.meta.url)).mtimeMs });
   const server = createServer(service.handle);
   server.requestTimeout = 90000;
   server.on('error', error => {

@@ -268,7 +268,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
   <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
 </dialog>
-<script>const PACOSAT_META = {"version":"1.6.6","created":"2026-11-08T13:42:35-06:00","modified":"2026-11-09T01:35:00+00:00"};
+<script>const PACOSAT_META = {"version":"1.6.6","created":"2026-11-08T13:42:35-06:00"};
 'use strict';
 const $ = id => document.getElementById(id);
 const KB = 1024;
@@ -566,10 +566,12 @@ function applySettings() {
   const logoImg = $('brand-logo'), mark = $('brand-mark');
   if (appSettings.logoData) { logoImg.src = appSettings.logoData; logoImg.hidden = false; mark.style.display = 'none'; }
   else { logoImg.hidden = true; logoImg.removeAttribute('src'); mark.style.display = ''; }
-  const stamp = new Date(PACOSAT_META.modified);
-  $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + ' · Modificado el ' +
-    stamp.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
-    ' a las ' + stamp.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+  /* El sello de modificación lo aporta el servidor (la mtime real del
+     archivo servido); sin servidor esa parte se omite, no se inventa. */
+  const modified = typeof satData !== 'undefined' && satData.buildModified ? new Date(satData.buildModified) : null;
+  $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + (modified ? ' · Modificado el ' +
+    modified.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
+    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : '');
 }
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
@@ -2618,8 +2620,8 @@ function settingsScreen() {
   const facts = n('div', undefined, 'facts');
   const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
   facts.append(fact('Versión', 'PacoSAT ' + PACOSAT_META.version),
-    fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'),
-    fact('Última modificación', stampText(PACOSAT_META.modified)));
+    fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'));
+  if (satToken && satData.buildModified) facts.append(fact('Última modificación de esta copia', stampText(new Date(satData.buildModified).toISOString())));
   if (satToken && satData.serverStartedAt) facts.append(fact('Esta instancia se inició', stampText(new Date(satData.serverStartedAt).toISOString())));
   aboutBody.append(facts, n('p', satToken ?
     'Los ajustes de identidad viven en el servidor, en su volumen de datos junto al estado operativo: sobreviven a reinicios y redespliegues, viajan en el respaldo completo y se restauran con él. Nunca se mezclan con las credenciales de pacosat-secrets.' :

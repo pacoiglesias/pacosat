@@ -88,8 +88,8 @@ function settingsScreen() {
   const facts = n('div', undefined, 'facts');
   const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
   facts.append(fact('Versión', 'PacoSAT ' + PACOSAT_META.version),
-    fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'),
-    fact('Última modificación', stampText(PACOSAT_META.modified)));
+    fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'));
+  if (satToken && satData.buildModified) facts.append(fact('Última modificación de esta copia', stampText(new Date(satData.buildModified).toISOString())));
   if (satToken && satData.serverStartedAt) facts.append(fact('Esta instancia se inició', stampText(new Date(satData.serverStartedAt).toISOString())));
   aboutBody.append(facts, n('p', satToken ?
     'Los ajustes de identidad viven en el servidor, en su volumen de datos junto al estado operativo: sobreviven a reinicios y redespliegues, viajan en el respaldo completo y se restauran con él. Nunca se mezclan con las credenciales de pacosat-secrets.' :

@@ -1,31 +1,21 @@
 import { readFileSync, writeFileSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
 const read = name => readFileSync(new URL(name, import.meta.url), 'utf8');
 const write = (name, content) => writeFileSync(new URL(name, import.meta.url), content);
-/* Metadatos de la copia (1.6.6): la versión sale de package.json; la
+/* Metadatos de la copia (1.6.6): la versión sale de package.json y la
    creación del software es la fecha del PRIMER commit del repositorio
    (git log: 483de58 «Initial commit», 8 nov 2026 13:42:35 -06:00), una
-   constante documentada, no un dato tecleado; el sello de modificación
-   es la fecha del último commit sin fusionar que tocó las fuentes
-   (determinista para un mismo árbol: regenerar sin cambios no lo mueve
-   y el diff de CI sigue limpio). Sin historial git (copia exportada) se
-   conserva el sello de la copia anterior; nunca se inventa. */
+   constante documentada, no un dato tecleado. Ambos son funciones del
+   árbol: el artefacto generado es reproducible byte a byte en cualquier
+   checkout (la regla del diff de CI). La «última modificación» NO va en
+   el artefacto: un sello derivado del historial git no es reproducible
+   entre checkouts (la publicación aplasta commits con fechas nuevas y
+   la CI de la 1.6.6 lo demostró), así que la aporta el servidor al
+   servir la copia — la fecha de modificación real del archivo servido
+   (buildModified en /api/status) — y en modo local sin servidor esa
+   línea se omite, como documenta AUDITORIA §1.6.6. */
 const SOFTWARE_CREATED = '2026-11-08T13:42:35-06:00';
-function buildStamp() {
-  try {
-    const out = execFileSync('git', ['log', '-1', '--format=%cI', '--no-merges', '--', '.',
-      ':(exclude)Faro-Fiscal.html', ':(exclude)xml-core.mjs'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-    if (out) return out;
-  } catch { /* sin git o sin historial útil: se conserva el sello anterior */ }
-  try {
-    const previous = read('Faro-Fiscal.html').match(/"modified":\s*"([^"]+)"/);
-    if (previous) return previous[1];
-  } catch { /* primera generación sin copia previa */ }
-  return new Date().toISOString();
-}
 const pkg = JSON.parse(read('package.json'));
-const meta = 'const PACOSAT_META = ' + JSON.stringify({ version: pkg.version, created: SOFTWARE_CREATED, modified: buildStamp() }) + ';\n';
+const meta = 'const PACOSAT_META = ' + JSON.stringify({ version: pkg.version, created: SOFTWARE_CREATED }) + ';\n';
 const layout = read('layout.part')
   .replace("img-src data:; base-uri", "img-src data:; frame-src blob:; connect-src 'self'; base-uri")
   .replace('<title>PacoSAT</title>', '<title>PacoSAT</title><!--PACOSAT_TOKEN-->');

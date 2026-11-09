@@ -564,7 +564,7 @@ try {
 const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const idBase = mkdtempSync(join(tmpdir(), 'pacosat-166-'));
 const idFile = join(idBase, 'identidad.sqlite');
-const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_TOKEN-->', buildModified: 1762732800000,
   makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
 {
   const first = createPacoSATService(idOptions());
@@ -599,6 +599,9 @@ const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_
        el resto intacto tras un reinicio completo sobre el mismo volumen. */
     assert.deepEqual(status.settings, { installName: 'Mano Fil · PacoSAT', senderName: 'PacoSAT bMano/b Fil', accent: 'azul', hasLogo: true });
     assert.ok(status.serverStartedAt > 0);
+    /* El sello de modificación de la copia lo aporta el servidor (la
+       mtime del archivo servido que recibe al crearse el servicio). */
+    assert.equal(status.buildModified, 1762732800000);
     const logo = await (await apiB.call('/api/settings/logo')).json();
     assert.equal(logo.mime, 'image/png');
     assert.equal(logo.data, PNG_1PX);

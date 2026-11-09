@@ -34,10 +34,12 @@ function applySettings() {
   const logoImg = $('brand-logo'), mark = $('brand-mark');
   if (appSettings.logoData) { logoImg.src = appSettings.logoData; logoImg.hidden = false; mark.style.display = 'none'; }
   else { logoImg.hidden = true; logoImg.removeAttribute('src'); mark.style.display = ''; }
-  const stamp = new Date(PACOSAT_META.modified);
-  $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + ' · Modificado el ' +
-    stamp.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
-    ' a las ' + stamp.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+  /* El sello de modificación lo aporta el servidor (la mtime real del
+     archivo servido); sin servidor esa parte se omite, no se inventa. */
+  const modified = typeof satData !== 'undefined' && satData.buildModified ? new Date(satData.buildModified) : null;
+  $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + (modified ? ' · Modificado el ' +
+    modified.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
+    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : '');
 }
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
