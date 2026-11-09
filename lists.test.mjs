@@ -14,7 +14,7 @@ const fixtures = {
   '69b-bis': 'Información actualizada al 09 de octubre de 2026\r\nNo.,RFC,Nombre del Contribuyente,Situación del contribuyente\r\n' +
     '1,' + DUMMY + ',OTRA SA,Definitivo\r\n',
   '69-firmes': 'RFC,RAZON SOCIAL,TIPO PERSONA,SUPUESTO,FECHA DE PRIMERA PUBLICACION,ENTIDAD FEDERATIVA\r\n' +
-    'CCC030303CCC,EMPRESA GAMA SA,MORAL,FIRMES,15/01/2025,CIUDAD DE MEXICO\r\n'
+    'CCC030303CCA,EMPRESA GAMA SA,MORAL,FIRMES,15/01/2025,CIUDAD DE MEXICO\r\n'
 };
 const generic = () => 'RFC,RAZON SOCIAL,SUPUESTO,FECHA\r\n' + DUMMY + ',OTRA SA,X,01/01/2025\r\n';
 let failing = false;
@@ -38,7 +38,7 @@ try {
   /* Padrón previo a la primera descarga: la línea base debe avisar. */
   let res = await call('/api/lists/counterparts', { rfc: 'AAA010101AAA', name: 'EMPRESA ALFA SA DE CV', kind: 'Proveedor', note: '' });
   assert.equal(res.status, 200);
-  res = await call('/api/lists/counterparts', { rfc: 'CCC030303CCC', name: 'EMPRESA GAMA SA', kind: 'Cliente', note: '' });
+  res = await call('/api/lists/counterparts', { rfc: 'CCC030303CCA', name: 'EMPRESA GAMA SA', kind: 'Cliente', note: '' });
   assert.equal(res.status, 200);
 
   res = await call('/api/lists/refresh', {});
@@ -51,7 +51,7 @@ try {
   const alfa = data.counterparts.find(cp => cp.rfc === 'AAA010101AAA');
   assert.equal(alfa.severity, 'bad');
   assert.equal(alfa.hits[0].detail, 'Definitivo');
-  const gama = data.counterparts.find(cp => cp.rfc === 'CCC030303CCC');
+  const gama = data.counterparts.find(cp => cp.rfc === 'CCC030303CCA');
   assert.equal(gama.severity, 'bad'); /* Firmes también es grave. */
   assert.ok(data.events.some(event => event.rfc === 'AAA010101AAA' && event.change.startsWith('Línea base')));
 
@@ -72,21 +72,21 @@ try {
   assert.equal(data.counterparts.find(cp => cp.rfc === 'AAA010101AAA').severity, 'none');
 
   /* Importación manual de un listado sin URL (CSD sin efectos). */
-  await call('/api/lists/counterparts', { rfc: 'DDD040404DDD', name: 'EMPRESA DELTA SA', kind: 'Proveedor', note: '' });
-  const csdCsv = 'RFC,RAZON SOCIAL,SUPUESTO\r\nDDD040404DDD,EMPRESA DELTA SA,CSD SIN EFECTOS\r\n';
+  await call('/api/lists/counterparts', { rfc: 'DDD040404DDA', name: 'EMPRESA DELTA SA', kind: 'Proveedor', note: '' });
+  const csdCsv = 'RFC,RAZON SOCIAL,SUPUESTO\r\nDDD040404DDA,EMPRESA DELTA SA,CSD SIN EFECTOS\r\n';
   res = await call('/api/lists/import', { listId: '69-csd', content: Buffer.from(csdCsv).toString('base64') });
   assert.equal(res.status, 200);
   data = await res.json();
-  assert.equal(data.counterparts.find(cp => cp.rfc === 'DDD040404DDD').severity, 'bad');
+  assert.equal(data.counterparts.find(cp => cp.rfc === 'DDD040404DDA').severity, 'bad');
   assert.ok(data.sources.find(source => source.id === '69-csd').fetched > 0);
 
   /* Carga masiva: una fila buena y una con RFC imposible. */
   res = await call('/api/lists/counterparts/bulk', { rows: [
-    { name: 'BULK UNO SA', rfc: 'EEE050505EEE', note: 'de la hoja' },
+    { name: 'BULK UNO SA', rfc: 'EEE050505EEA', note: 'de la hoja' },
     { name: 'MALA', rfc: 'BAD', note: '' }] });
   data = await res.json();
   assert.deepEqual(data.bulk, { saved: 1, skipped: 1 });
-  assert.ok(data.counterparts.some(cp => cp.rfc === 'EEE050505EEE' && cp.note === 'de la hoja'));
+  assert.ok(data.counterparts.some(cp => cp.rfc === 'EEE050505EEA' && cp.note === 'de la hoja'));
 
   /* Fuente caída: el error queda registrado para el semáforo. */
   failing = true;

@@ -1,0 +1,254 @@
+/* ===== Dinero (1.6.17) =====
+   Por cobrar y por pagar desde la relación Pagos↔facturas persistida
+   en el desglose: saldos con antigüedad por contraparte, facturas
+   esperadas que no han llegado, expediente 360 y la conciliación con
+   movimientos (CSV hoy; los estados archivados de Bancos la alimentan
+   en la 1.6.19 por esta misma vía). Nada se estima: un saldo sale de
+   los complementos de pago reales o del método PUE. */
+function paidByMap() {
+  const paidBy = new Map();
+  for (const payment of invoices) {
+    if (payment.kind !== 'P' || !payment.fiscal?.payments) continue;
+    for (const pago of payment.fiscal.payments.pagos || [])
+      for (const doc of pago.documentos || [])
+        paidBy.set(doc.idDocumento, (paidBy.get(doc.idDocumento) || 0n) + moneyCents(doc.impPagado));
+  }
+  return paidBy;
+}
+function balanceOf(row, paidBy) {
+  const total = totalCents(row);
+  const paid = row.fiscal?.paymentMethod === 'PUE' ? total : (paidBy.get(row.id) || 0n);
+  return { total, paid, balance: total - paid, method: row.fiscal?.paymentMethod || '' };
+}
+const AGE_BUCKETS = [[0, 30, '0–30 días'], [31, 60, '31–60 días'], [61, 90, '61–90 días'], [91, Infinity, 'Más de 90 días']];
+const ageDaysOf = row => Math.max(0, Math.floor((Date.now() - Date.parse(row.date)) / 86400000));
+function dineroScreen() {
+  const wrap = n('div');
+  const paidBy = paidByMap();
+  const own = new Set(people.map(person => person.id));
+  const open = invoices.filter(row => row.kind === 'I').map(row => ({ row, ...balanceOf(row, paidBy),
+    state: invoiceStateOf(row) })).filter(item => item.balance > 0n);
+  const receivable = open.filter(item => own.has(item.row.from.rfc) && (!scope || item.row.from.rfc === scope));
+  const payable = open.filter(item => own.has(item.row.to.rfc) && (!scope || item.row.to.rfc === scope));
+  const cancelledPaid = invoices.filter(row => row.kind === 'I' && invoiceStateOf(row) === 'Cancelado' &&
+    (paidBy.get(row.id) || 0n) > 0n);
+  /* Resumen */
+  const summary = panel('El dinero, de un vistazo', 'Saldos abiertos calculados desde tus complementos de pago: si una factura PPD no tiene complemento, su saldo es el total; las PUE nacen pagadas.');
+  const strip = n('div', undefined, 'traffic-strip');
+  const sum = items => items.reduce((acc, item) => acc + item.balance, 0n);
+  strip.append(statusPill(receivable.length ? 'warn' : 'ok', 'Por cobrar: $' + centsLabel(sum(receivable))),
+    statusPill(payable.length ? 'warn' : 'ok', 'Por pagar: $' + centsLabel(sum(payable))),
+    statusPill(cancelledPaid.length ? 'bad' : 'ok', cancelledPaid.length + ' canceladas con pago'),
+    statusPill('dim', open.length + ' facturas con saldo abierto'));
+  summary.append(strip);
+  if (cancelledPaid.length) {
+    const alertBox = n('p', '🔴 ALERTA ROJA: hay CFDI cancelados que ya tenían pagos registrados: ' +
+      cancelledPaid.map(row => row.id.slice(0, 8) + '… ($' + centsLabel(paidBy.get(row.id)) + ' pagados)').join(' · ') +
+      '. Revisión inmediata con tu contadora.', 'error-text');
+    summary.append(alertBox);
+  }
+  wrap.append(summary);
+  wrap.append(balancePanel('Por cobrar', 'Lo que te deben: facturas emitidas a crédito (PPD) sin cobro completo.', receivable, 'to'));
+  wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. La antigüedad se cuenta desde la fecha de la factura.', payable, 'from'));
+  wrap.append(expectedPanel());
+  wrap.append(counterpart360Panel(paidBy));
+  wrap.append(reconcilePanel(paidBy));
+  return [wrap];
+}
+function balancePanel(title, description, items, partyField) {
+  const panelEl = panel(title, description);
+  if (!items.length) { panelEl.append(n('p', 'Sin saldos abiertos. Todo cobrado/pagado o sin facturas a crédito.', 'empty')); return panelEl; }
+  /* Antigüedad resumida */
+  const strip = n('div', undefined, 'traffic-strip');
+  for (const [min, max, label] of AGE_BUCKETS) {
+    const bucket = items.filter(item => { const age = ageDaysOf(item.row); return age >= min && age <= max; });
+    if (bucket.length) strip.append(statusPill(max <= 30 ? 'ok' : max <= 60 ? 'warn' : 'bad',
+      label + ': $' + centsLabel(bucket.reduce((acc, item) => acc + item.balance, 0n))));
+  }
+  panelEl.append(strip);
+  const byParty = new Map();
+  for (const item of items) {
+    const party = item.row[partyField];
+    if (!byParty.has(party.rfc)) byParty.set(party.rfc, { name: party.name || party.rfc, rfc: party.rfc, items: [], total: 0n });
+    const group = byParty.get(party.rfc);
+    group.items.push(item); group.total += item.balance;
+  }
+  for (const group of [...byParty.values()].sort((a, b) => (b.total > a.total ? 1 : -1))) {
+    const head = n('div', undefined, 'cp-row');
+    head.append(n('strong', group.name), n('span', group.rfc, 'muted'),
+      statusPill('warn', 'Saldo $' + centsLabel(group.total)));
+    panelEl.append(head);
+    for (const item of group.items.sort((a, b) => a.row.date.localeCompare(b.row.date))) {
+      const row = n('div', undefined, 'cp-row clickable');
+      const main = n('div', undefined, 'cp-main');
+      main.append(n('span', item.row.date + ' · ' + item.row.id.slice(0, 13) + '… · ' + ageDaysOf(item.row) + ' días'),
+        n('span', 'Total $' + centsLabel(item.total) + ' · pagado $' + centsLabel(item.paid) + ' · saldo $' + centsLabel(item.balance), 'muted'));
+      row.append(main);
+      row.onclick = () => invoiceDetail(item.row);
+      panelEl.append(row);
+    }
+  }
+  return panelEl;
+}
+function expectedPanel() {
+  const panelEl = panel('Facturas esperadas', 'Proveedores que te facturan casi cada mes y este mes aún no han llegado. Si era un gasto fijo, algo pasa.');
+  const monthKey = new Date().toISOString().slice(0, 7);
+  const own = new Set(people.map(person => person.id));
+  const byEmitter = new Map();
+  for (const row of invoices) {
+    if (row.kind !== 'I' || !own.has(row.to.rfc)) continue;
+    if (!byEmitter.has(row.from.rfc)) byEmitter.set(row.from.rfc, { name: row.from.name || '', months: new Set() });
+    byEmitter.get(row.from.rfc).months.add(row.date.slice(0, 7));
+  }
+  const missing = [];
+  for (const [rfc, entry] of byEmitter) {
+    if (entry.months.has(monthKey)) continue;
+    let recent = 0;
+    for (let i = 1; i <= 6; i++) {
+      const date = new Date(); date.setMonth(date.getMonth() - i);
+      if (entry.months.has(date.toISOString().slice(0, 7))) recent++;
+    }
+    if (recent >= 3) missing.push({ rfc, name: entry.name, recent });
+  }
+  if (!missing.length) panelEl.append(n('p', 'Ninguna esperada pendiente: tus proveedores recurrentes ya facturaron este mes o aún es pronto.', 'empty'));
+  for (const item of missing) {
+    const row = n('div', undefined, 'cp-row');
+    row.append(statusPill('warn', 'No ha llegado'),
+      n('span', (item.name || item.rfc) + ' · te facturó en ' + item.recent + ' de los últimos 6 meses'));
+    panelEl.append(row);
+  }
+  return panelEl;
+}
+function counterpart360Panel(paidBy) {
+  const panelEl = panel('Expediente 360 por contraparte', 'Todo lo de una empresa en una tarjeta: sus CFDI, pagos, saldos, su situación en listas y sus documentos.');
+  const select = n('select');
+  const parties = new Map();
+  for (const row of invoices) {
+    for (const party of [row.from, row.to]) if (!parties.has(party.rfc)) parties.set(party.rfc, party.name || party.rfc);
+  }
+  for (const [rfc, name] of [...parties.entries()].sort((a, b) => a[1].localeCompare(b[1], 'es-MX'))) {
+    const option = n('option', name + ' · ' + rfc); option.value = rfc; select.append(option);
+  }
+  const body = n('div');
+  const fill = () => {
+    const rfc = select.value;
+    body.replaceChildren();
+    if (!rfc) return;
+    const mine = invoices.filter(row => row.from.rfc === rfc || row.to.rfc === rfc);
+    let issued = 0n, received = 0n, openBalance = 0n, paidTotal = 0n;
+    for (const row of mine) {
+      if (row.kind !== 'I') continue;
+      const balance = balanceOf(row, paidBy);
+      if (row.from.rfc === rfc) received += balance.total; else issued += balance.total;
+      if (balance.balance > 0n) openBalance += balance.balance;
+      paidTotal += balance.paid;
+    }
+    const docs = documents.filter(doc => doc.rfc === rfc);
+    const grid = n('div', undefined, 'sat-meta');
+    grid.append(n('span', 'CFDI relacionados: ' + mine.length),
+      n('span', 'Te ha facturado: $' + centsLabel(received)),
+      n('span', 'Le has facturado: $' + centsLabel(issued)),
+      n('span', 'Pagado/cobrado: $' + centsLabel(paidTotal)),
+      n('span', 'Saldo abierto: $' + centsLabel(openBalance)),
+      n('span', 'Documentos en Expedientes: ' + docs.length));
+    body.append(grid);
+    const listNote = n('p', '', 'muted');
+    body.append(listNote);
+    if (satToken) satApi('lists/validate', { query: rfc }).then(result => {
+      listNote.textContent = result.matches.length ?
+        '⚠ Consta en listados: ' + result.matches.map(match => match.label + ' (' + match.detail + ')').join(' · ') :
+        'Sin coincidencias en los listados oficiales cargados.';
+    }).catch(() => { listNote.textContent = ''; });
+    const seeInvoices = n('button', 'Ver sus CFDI', 'soft');
+    seeInvoices.onclick = () => { setInvoiceTerm(rfc); navigate('invoices'); };
+    body.append(seeInvoices);
+  };
+  select.onchange = fill;
+  panelEl.append(select, body);
+  if (parties.size) fill();
+  return panelEl;
+}
+function setInvoiceTerm(value) {
+  /* El buscador de Facturas filtra por UUID/RFC: se reutiliza el
+     mismo estado que usa el buscador global. */
+  term = value; invoiceState = ''; invoiceKind = ''; month = ''; invoicePage = 0;
+}
+/* Conciliación: movimientos (CSV: fecha, concepto, cargo, abono) contra
+   facturas y pagos. Función pura reutilizable por Bancos (1.6.19). */
+function reconcileMovements(movements, paidBy) {
+  const results = movements.map(movement => ({ movement, match: null }));
+  const usedInvoices = new Set();
+  for (const result of results) {
+    const amount = movementAmountCents(result.movement);
+    if (!amount) continue;
+    const candidates = invoices.filter(row => row.kind === 'I' && !usedInvoices.has(row.id) &&
+      Math.abs(Number(totalCents(row)) - Math.abs(amount)) === 0 &&
+      Math.abs(Date.parse(row.date) - Date.parse(result.movement.date)) <= 45 * 86400000);
+    if (candidates.length === 1) { result.match = candidates[0]; usedInvoices.add(candidates[0].id); }
+  }
+  return results;
+}
+function movementAmountCents(movement) {
+  if (movement.amountCents !== undefined) return movement.amountCents;
+  const charge = moneyCents(movement.charge || ''), credit = moneyCents(movement.credit || '');
+  return charge ? -Number(charge) : Number(credit);
+}
+function renderReconcile(out, movements, paidBy) {
+  const results = reconcileMovements(movements, paidBy);
+  out.replaceChildren();
+  const matched = results.filter(result => result.match).length;
+  out.append(n('p', 'Movimientos: ' + results.length + ' · conciliados con factura: ' + matched + ' · sin factura: ' + (results.length - matched)));
+  for (const result of results.slice(0, 100)) {
+    const row = n('div', undefined, 'cp-row');
+    const amountLabel = result.movement.amountCents !== undefined ? '$' + centsLabel(BigInt(result.movement.amountCents)) :
+      (result.movement.charge ? 'cargo ' + result.movement.charge : 'abono ' + result.movement.credit);
+    row.append(statusPill(result.match ? 'ok' : 'warn', result.match ? 'Con factura' : 'Sin factura'),
+      n('span', result.movement.date + ' · ' + (result.movement.concept || '') + ' · ' + amountLabel +
+        (result.match ? ' → ' + result.match.id.slice(0, 13) + '…' : '')));
+    out.append(row);
+  }
+  const unpaid = invoices.filter(row => row.kind === 'I' && balanceOf(row, paidBy).balance > 0n &&
+    !results.some(result => result.match?.id === row.id));
+  out.append(n('p', 'Facturas con saldo que ningún movimiento cubre: ' + unpaid.length + ' (detalle en Por cobrar / Por pagar).', 'muted'));
+}
+function reconcilePanel(paidBy) {
+  const panelEl = panel('Conciliación bancaria', 'Cruza movimientos con tus facturas por importe y fecha: qué está pagado, qué pago no tiene factura y qué factura sigue sin pago. Los movimientos salen de un CSV o de los estados archivados en Bancos.');
+  const file = input('file', { accept: '.csv,text/csv' });
+  file.hidden = true;
+  const out = n('div');
+  const btn = n('button', 'Importar movimientos CSV', 'soft');
+  btn.onclick = () => file.click();
+  panelEl.append(btn, file);
+  /* Alimentación desde Bancos (1.6.19): los movimientos de los
+     estados archivados entran por el mismo cruceta. */
+  if (satToken) {
+    const fromBank = n('button', 'Usar movimientos de Bancos', 'soft');
+    fromBank.onclick = async () => {
+      try {
+        const data = await satApi('banks/movements');
+        check(data.movements.length, 'Aún no hay movimientos: sube primero los estados en la pantalla Bancos.');
+        const movements = data.movements.map(movement => ({ date: movement.date, concept: movement.concept,
+          amountCents: Number(moneyCents(movement.amount)), charge: '', credit: '' }));
+        renderReconcile(out, movements, paidBy);
+      } catch (error) { toast(error.message, 'error'); }
+    };
+    panelEl.append(fromBank);
+  }
+  file.onchange = async () => {
+    if (!file.files[0]) return;
+    try {
+      const text = new TextDecoder('utf-8').decode(await file.files[0].arrayBuffer()).replace(/^\ufeff/, '');
+      const rows = splitCsvText(text);
+      const header = rows[0].map(cell => cell.normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase());
+      const ci = { date: header.findIndex(c => /fecha/.test(c)), concept: header.findIndex(c => /concepto|descripcion/.test(c)),
+        charge: header.findIndex(c => /cargo|retiro|egreso/.test(c)), credit: header.findIndex(c => /abono|ingreso|deposito/.test(c)) };
+      check(ci.date >= 0 && (ci.charge >= 0 || ci.credit >= 0), 'No se reconocen las columnas: hace falta fecha y cargo o abono.');
+      const movements = rows.slice(1).map(row => ({ date: row[ci.date], concept: ci.concept >= 0 ? row[ci.concept] : '',
+        charge: ci.charge >= 0 ? row[ci.charge] : '', credit: ci.credit >= 0 ? row[ci.credit] : '' }))
+        .filter(movement => /^\d{4}-\d{2}-\d{2}/.test(movement.date || ''));
+      renderReconcile(out, movements, paidBy);
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  panelEl.append(out);
+  return panelEl;
+}

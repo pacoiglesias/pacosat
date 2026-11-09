@@ -9,6 +9,12 @@ const screens = {
   lists: ['Listas negras', 'Listados oficiales del SAT cruzados con tus contrapartes: quién consta, desde cuándo y cuánto te ha facturado.', 'Actualizar listados'],
   backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
   diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV'],
+  salidas: ['Salidas', 'Reportes, IVA del mes, comparativas, cierre de mes, correo desde la app e informes automáticos.', 'Exportación completa'],
+  dinero: ['Dinero', 'Por cobrar y por pagar con antigüedad, facturas esperadas, expediente 360 y conciliación bancaria.', 'Abrir Salidas'],
+  cumplimiento: ['Cumplimiento', 'Calendario fiscal con semáforo, detector de errores y duplicados, anomalías, reglas de clasificación y paquete de defensa.', 'Crear paquete de defensa'],
+  bancos: ['Bancos', 'Estados de cuenta archivados por banco y mes, con lectura de saldos, cadena verificada, faltantes y posición total.', 'Añadir cuenta'],
+  preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Preguntar'],
+  offline: ['Sin conexión', 'Tu copia cifrada de los últimos 3 meses con los informes pregenerados, para consultar cuando no haya red.', 'Sincronizar ahora'],
   settings: ['Ajustes', 'Nombre, logo, color de acento y remitente de los correos de esta instalación.', 'Guardar ajustes'],
   capacidades: ['Qué incluye PacoSAT', 'El documento vivo de capacidades: qué está incluido, qué está en construcción y qué viene después.', 'Ir a Ajustes']
 };
@@ -349,24 +355,37 @@ function diotGroups() {
   for (const row of invoices) {
     if (!roles(row).received) continue;
     const key = row.date.slice(0, 7) + '|' + row.from.rfc;
-    if (!groups.has(key)) groups.set(key, { month: row.date.slice(0, 7), rfc: row.from.rfc, name: row.from.name || '', count: 0, cents: 0n, foreign: 0 });
+    if (!groups.has(key)) groups.set(key, { month: row.date.slice(0, 7), rfc: row.from.rfc, name: row.from.name || '', count: 0, cents: 0n, foreign: 0,
+      baseCents: 0n, ivaCents: 0n, withheldCents: 0n, withFiscal: 0 });
     const group = groups.get(key);
     group.count++;
     if (row.currency && row.currency !== 'MXN') group.foreign++;
     else group.cents += totalCents(row);
+    /* Desglose fiscal (1.6.16): valor de actos e IVA por proveedor
+       desde el desglose persistido; sin desglose, no se estima nada. */
+    const base = invoiceIvaBaseCents(row), iva = invoiceIvaCents(row);
+    if (base !== null && iva !== null) {
+      group.withFiscal++;
+      if (!row.currency || row.currency === 'MXN') {
+        group.baseCents += base; group.ivaCents += iva;
+        for (const w of row.fiscal.withheld) group.withheldCents += moneyCents(w.amount);
+      }
+    }
     if (!group.name && row.from.name) group.name = row.from.name;
   }
   return [...groups.values()].sort((a, b) => b.month.localeCompare(a.month) || a.rfc.localeCompare(b.rfc));
 }
 function diotScreen() {
   const wrap = panel('Totales por proveedor y mes · CFDI recibidos');
-  wrap.append(n('p', 'Base de trabajo para la contadora, no la declaración. Suma el total de los CFDI recibidos por RFC emisor y mes' +
-    (scope ? ' para ' + scope : ' de todos tus RFC') + '. El importador no guarda el desglose de IVA: la DIOT formal requiere los ajustes de la contadora (valor de actos, IVA acreditable y retenciones).'));
+  wrap.append(n('p', 'Base de trabajo para la contadora, no la declaración. Suma por RFC emisor y mes el total, el valor de actos y el IVA de los CFDI recibidos' +
+    (scope ? ' para ' + scope : ' de todos tus RFC') + '. El desglose sale del XML guardado: si un CFDI aún no tiene desglose, reprocésalo desde Salidas; la DIOT formal sigue requiriendo los ajustes de la contadora.'));
   const rows = diotGroups();
   if (!rows.length) { wrap.append(empty('Sin CFDI recibidos', 'Importa comprobantes recibidos para construir la base por proveedor.')); return [wrap]; }
   wrap.querySelector('.panel-head').append(action('Exportar CSV', exportDiotCsv, 'metric-link', 'down'));
-  wrap.append(grid(['Mes', 'RFC proveedor', 'Proveedor', 'CFDI', 'Total MXN'], rows.slice(0, 200).map(group => [
+  wrap.append(grid(['Mes', 'RFC proveedor', 'Proveedor', 'CFDI', 'Valor de actos', 'IVA', 'Total MXN'], rows.slice(0, 200).map(group => [
     group.month.slice(5, 7) + '/' + group.month.slice(0, 4), group.rfc, group.name || '—', number.format(group.count),
+    group.withFiscal ? '$' + centsLabel(group.baseCents) : 'sin desglose',
+    group.withFiscal ? '$' + centsLabel(group.ivaCents) : '—',
     cell('$' + centsLabel(group.cents), group.foreign ? group.foreign + ' en otra moneda sin sumar' : '')
   ])));
   if (rows.length > 200) wrap.append(n('p', 'Se muestran las primeras 200 filas; la exportación CSV incluye todas.'));
@@ -378,8 +397,8 @@ function diotCsv() {
     const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
     return '"' + safe.replaceAll('"', '""') + '"';
   };
-  const rows = [['Mes', 'RFC proveedor', 'Proveedor', 'CFDI recibidos', 'Total MXN', 'En otra moneda sin sumar']];
-  for (const group of diotGroups()) rows.push([group.month, group.rfc, group.name, group.count, centsPlain(group.cents), group.foreign]);
+  const rows = [['Mes', 'RFC proveedor', 'Proveedor', 'CFDI recibidos', 'Valor de actos MXN', 'IVA trasladado MXN', 'Retenciones MXN', 'Total MXN', 'CFDI con desglose', 'En otra moneda sin sumar']];
+  for (const group of diotGroups()) rows.push([group.month, group.rfc, group.name, group.count, centsPlain(group.baseCents), centsPlain(group.ivaCents), centsPlain(group.withheldCents), centsPlain(group.cents), group.withFiscal, group.foreign]);
   return rows.map(row => row.map(escape).join(',')).join('\r\n');
 }
 function exportDiotCsv() {
@@ -620,7 +639,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();
@@ -891,6 +910,21 @@ function invoiceScreen() {
     download(zipStore(entries), 'CFDI-seleccionados.zip');
     announce(entries.length + ' XML descargados en un ZIP.');
   }, undefined, 'down');
+  /* Impresión por lote (1.6.16): todos los seleccionados en un solo
+     documento imprimible, cada uno con su representación completa. */
+  const printButton = action('Imprimir seleccionados', async () => {
+    let printed = 0;
+    for (const id of invoiceSelection) {
+      const row = invoices.find(item => item.id === id);
+      const file = await readStore('files', 'xml:' + id);
+      if (!row || !file) continue;
+      cfdiPrint(row, parseCfdiFull(bytes(await file.blob.arrayBuffer())), { append: printed > 0, print: false });
+      printed++;
+    }
+    check(printed, 'Ninguno de los seleccionados tiene XML guardado.');
+    setTimeout(() => window.print(), 80);
+    announce(printed + ' comprobantes listos para imprimir en un solo documento.');
+  }, undefined, 'print');
   const chips = n('div', undefined, 'filter-chips');
   const clearFilters = () => {
     term = ''; month = ''; invoiceKind = ''; invoiceState = ''; direction = 'Todos'; invoicePage = 0; render();
@@ -900,6 +934,7 @@ function invoiceScreen() {
     const rows = invoiceRows();
     exportButton.disabled = !rows.length;
     zipButton.disabled = !invoiceSelection.size;
+    printButton.disabled = !invoiceSelection.size;
     /* Chips de filtros activos con su ✕ (UX-04): lo aplicado se ve y
        se quita sin cazar controles; y «Limpiar filtros» siempre a mano. */
     chips.replaceChildren();
@@ -935,6 +970,7 @@ function invoiceScreen() {
       pick.onchange = () => {
         if (pick.checked) invoiceSelection.add(row.id); else invoiceSelection.delete(row.id);
         zipButton.disabled = !invoiceSelection.size;
+    printButton.disabled = !invoiceSelection.size;
       };
       return [pick, cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
         dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)];
@@ -946,7 +982,7 @@ function invoiceScreen() {
   type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
   state.onchange = () => { invoiceState = state.value; invoicePage = 0; update(); };
   order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
-  controls.append(search, period, type, state, order, exportButton, zipButton);
+  controls.append(search, period, type, state, order, exportButton, zipButton, printButton);
   list.append(tabs, controls, chips, result);
   update();
   return [list];
@@ -1022,6 +1058,7 @@ function backupScreen() {
     'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de PacoSAT, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
   const options = n('div', undefined, 'actions');
   options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
+  options.append(action('Respaldo partido por RFC y año', splitBackupDialog, undefined, 'down'));
   help.append(desc, options);
   const screens = [help];
   if (satToken) {

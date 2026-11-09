@@ -1,4 +1,7 @@
-const satToken = document.querySelector('meta[name="pacosat-token"]')?.content;
+let satToken = document.querySelector('meta[name="pacosat-token"]')?.content ||
+  sessionStorage.getItem('pacosat-guest-token') || undefined;
+const guestMode = Boolean(document.querySelector('meta[name="pacosat-guest"]')) ||
+  Boolean(sessionStorage.getItem('pacosat-guest-token'));
 let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
 let satError = '', satPolling = false, cloudRevision;
 const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada' };
@@ -114,10 +117,14 @@ function fillSat(target = $('sat-live')) {
       }), action('Hasta…', () => pauseUntilDialog(row)));
       if (row.unlocked && !restingProfile) buttons.append(action('Descargar ahora', async () => {
         /* UX-06: fuerza el ciclo de este RFC al momento (el servidor
-           aplica los mismos frenos: descanso o bloqueo lo impiden). */
-        satData = await satApi('run-now', { rfc: row.rfc });
-        fillSat(); announce('Revisión inmediata de ' + row.rfc + ' ejecutada: solicitudes programadas y paquetes al día.');
-        soundCue('success');
+           aplica los mismos frenos: descanso o bloqueo lo impiden).
+           Sin conexión (1.7.0) queda en cola como intención 5002. */
+        const data = await requestRunNow(row.rfc);
+        if (data) {
+          satData = data;
+          fillSat(); announce('Revisión inmediata de ' + row.rfc + ' ejecutada: solicitudes programadas y paquetes al día.');
+          soundCue('success');
+        }
       }, undefined, 'sync'));
       return [
         cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma') +
@@ -338,6 +345,7 @@ async function pollSat() {
   try {
     satData = await satApi('status');
     satError = '';
+    flushOfflineQueue().catch(() => {});
     if (satData.settings) {
       /* La identidad del servidor manda sobre la copia local (1.6.6). */
       appSettings = { ...appSettings, ...satData.settings, logoData: appSettings.logoData };

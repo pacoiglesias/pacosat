@@ -49,3 +49,9 @@ El respaldo programado de PacoSAT escribe, además de la copia principal, una co
 ## Acceso por la red local (sin internet ni túnel)
 
 PacoSAT también debe poder abrirse desde casa por la red local del NAS, con la misma autenticación, cuando no haya internet o el túnel de Cloudflare esté caído. El diseño completo (nombre local y mismo proxy Caddy sirviendo en LAN) se documenta con la ronda 1.7.0 (modo offline); la regla es que la credencial y la clave de proxy son las mismas que en la vía pública y que nada de la configuración sale del NAS.
+
+Concretamente (1.7.0): el mismo Caddy que atiende `pacosat.iglesiasmurrieta.com` puede servir además un nombre local (por ejemplo `pacosat.lan`) o la IP del NAS con el mismo bloque de proxy inverso hacia el contenedor: la app recibe idénticas cabeceras (`X-PacoSAT-Proxy`), la sesión y la autenticación no cambian, y la PWA instalada abre igual por esa vía. En el `config.json` del NAS, `origin` debe ser la dirección pública; el acceso LAN funciona porque el proxy reenvía el mismo origen interno al contenedor. Si no hay red en absoluto, la copia sin conexión de la app (pantalla «Sin conexión») permite consultar los últimos 3 meses desde el propio dispositivo.
+
+## Acceso invitado de solo lectura (1.7.0)
+
+La app admite una credencial de invitado, separada y DESACTIVADA por defecto: se activa en Ajustes (interruptor + contraseña propia) y la entrada es la misma dirección con `/invitado` al final. El invitado solo puede leer (el servidor rechaza cualquier cambio) y cada entrada, consulta e intento queda en la bitácora de accesos, visible en Ajustes. No hay nada que configurar en el NAS: vive en el estado del servidor, no en secretos.

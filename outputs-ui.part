@@ -1,0 +1,331 @@
+/* ===== Centro de salidas (1.6.16) =====
+   Reportes con el desglose fiscal persistido, IVA del mes por RFC,
+   comparativas año contra año, cierre de mes guiado, correo desde la
+   app con su bitácora, informes automáticos (mensual a la contadora y
+   resumen semanal) y la exportación completa legible. Todo se calcula
+   con los datos del expediente: lo que no tiene desglose se dice, no
+   se estima. */
+const OUT = { month: new Date().toISOString().slice(0, 7), cp: '' };
+function outMonthInvoices(month) {
+  return invoices.filter(row => row.date.startsWith(month) && (!scope || row.from.rfc === scope || row.to.rfc === scope));
+}
+function ivaRows(month) {
+  return people.map(person => {
+    let issuedIva = 0n, receivedIva = 0n, issuedCount = 0, receivedCount = 0, missing = 0;
+    for (const row of invoices) {
+      if (!row.date.startsWith(month) || row.kind !== 'I' || (row.currency && row.currency !== 'MXN')) continue;
+      const iva = invoiceIvaCents(row);
+      if (row.from.rfc === person.id) { issuedCount++; if (iva === null) missing++; else issuedIva += iva; }
+      if (row.to.rfc === person.id) { receivedCount++; if (iva === null) missing++; else receivedIva += iva; }
+    }
+    return { rfc: person.id, name: person.name, issuedIva, receivedIva, issuedCount, receivedCount, missing,
+      balance: issuedIva - receivedIva };
+  }).filter(row => row.issuedCount || row.receivedCount);
+}
+function salidasScreen() {
+  const wrap = n('div');
+  /* IVA del mes */
+  const ivaPanel = panel('IVA del mes por RFC', 'IVA trasladado (lo que cobraste) e IVA acreditable (lo que te facturaron), desde el desglose guardado de cada XML. Si falta desglose, reprocésalo abajo: nunca se estima a ojo.');
+  const monthRow = n('div', undefined, 'filterbar');
+  const monthInput = input('month', { value: OUT.month, 'aria-label': 'Mes' });
+  monthInput.onchange = () => { OUT.month = monthInput.value || OUT.month; render(); };
+  monthRow.append(n('label', 'Mes '), monthInput);
+  ivaPanel.append(monthRow);
+  const rows = ivaRows(OUT.month);
+  if (!rows.length) ivaPanel.append(n('p', 'Sin CFDI de ingreso en ese mes para tus RFC.', 'empty'));
+  else ivaPanel.append(grid(['RFC', 'IVA trasladado', 'IVA acreditable', 'Saldo del mes', 'CFDI sin desglose'],
+    rows.map(row => [cell(row.name || row.rfc, row.rfc),
+      '$' + centsLabel(row.issuedIva), '$' + centsLabel(row.receivedIva),
+      (row.balance >= 0n ? 'A pagar ≈ $' : 'A favor ≈ $') + centsLabel(row.balance < 0n ? -row.balance : row.balance),
+      row.missing ? row.missing + ' (reprocesa)' : '—'])));
+  const reparseBtn = n('button', 'Reprocesar XML guardados (completar desglose)', 'soft');
+  reparseBtn.onclick = async () => {
+    reparseBtn.disabled = true; reparseBtn.textContent = 'Reprocesando…';
+    try {
+      if (satToken) {
+        const result = await satApi('reparse', {});
+        toast('Re-parseo: ' + result.updated + ' completados, ' + result.skipped + ' ya tenían desglose, ' + result.failed + ' sin XML guardado.', 'ok');
+        await refresh();
+      } else {
+        let updated = 0;
+        const files = await readStore('files');
+        const byId = new Map(files.map(file => [file.id, file]));
+        const changed = [];
+        for (const row of invoices) {
+          if (row.fiscal && (row.kind !== 'P' || row.fiscal.payments !== undefined)) continue;
+          const file = byId.get('xml:' + row.id);
+          if (!file?.blob) continue;
+          const before = row.fiscal;
+          withFiscal(row, new Uint8Array(await file.blob.arrayBuffer()));
+          if (row.fiscal !== before && row.fiscal) { changed.push(row); updated++; }
+        }
+        if (changed.length) await writeBatch({ invoices: changed });
+        toast('Re-parseo local: ' + updated + ' CFDI completados con su desglose.', 'ok');
+        await refresh();
+      }
+      render();
+    } catch (error) { toast(error.message, 'error'); reparseBtn.disabled = false; reparseBtn.textContent = 'Reprocesar XML guardados (completar desglose)'; }
+  };
+  ivaPanel.append(reparseBtn);
+  wrap.append(ivaPanel);
+  /* Reporte del periodo */
+  const reportPanel = panel('Reporte del periodo', 'Totales del mes por sentido y por contraparte, con su IVA. Se puede imprimir, bajar en CSV o enviar por correo desde aquí.');
+  const cpInput = input('search', { placeholder: 'Filtrar por contraparte (nombre o RFC)…', value: OUT.cp, 'aria-label': 'Contraparte' });
+  cpInput.onchange = () => { OUT.cp = cpInput.value; render(); };
+  reportPanel.append(cpInput);
+  const monthInvoices = outMonthInvoices(OUT.month).filter(row =>
+    !OUT.cp || (row.from.name + row.from.rfc + row.to.name + row.to.rfc).toLowerCase().includes(OUT.cp.toLowerCase()));
+  let issuedTotal = 0n, receivedTotal = 0n, issuedIva = 0n, receivedIva = 0n;
+  for (const row of monthInvoices) {
+    if (row.currency && row.currency !== 'MXN') continue;
+    const role = roles(row), iva = invoiceIvaCents(row);
+    if (role.issued) { issuedTotal += totalCents(row); if (iva !== null) issuedIva += iva; }
+    if (role.received) { receivedTotal += totalCents(row); if (iva !== null) receivedIva += iva; }
+  }
+  reportPanel.append(grid(['Concepto', 'Importe'], [
+    ['CFDI emitidos (' + monthInvoices.filter(row => roles(row).issued).length + ')', '$' + centsLabel(issuedTotal)],
+    ['IVA trasladado del mes', '$' + centsLabel(issuedIva)],
+    ['CFDI recibidos (' + monthInvoices.filter(row => roles(row).received).length + ')', '$' + centsLabel(receivedTotal)],
+    ['IVA acreditable del mes', '$' + centsLabel(receivedIva)]
+  ]));
+  const reportActions = n('div', undefined, 'sat-actions');
+  const printBtn = n('button', 'Imprimir reporte', 'soft');
+  printBtn.onclick = () => printPeriodReport(OUT.month, monthInvoices, { issuedTotal, receivedTotal, issuedIva, receivedIva });
+  const csvBtn = n('button', 'Descargar CSV del mes', 'soft');
+  csvBtn.onclick = () => download(new Blob(['\uFEFF', periodCsv(OUT.month)], { type: 'text/csv;charset=utf-8' }), 'reporte-' + OUT.month + '.csv');
+  const mailBtn = n('button', 'Enviar por correo', 'soft');
+  mailBtn.onclick = () => composeMailDialog({ subject: 'PacoSAT · Reporte ' + OUT.month,
+    text: 'Adjunto el reporte del mes ' + OUT.month + ' generado por PacoSAT.',
+    attachments: [{ filename: 'reporte-' + OUT.month + '.csv', content: encode64(new TextEncoder().encode(periodCsv(OUT.month))) }] });
+  reportActions.append(printBtn, csvBtn, mailBtn);
+  reportPanel.append(reportActions);
+  wrap.append(reportPanel);
+  /* Comparativas año contra año */
+  wrap.append(yoyPanel());
+  /* Cierre de mes guiado */
+  wrap.append(monthClosePanel(OUT.month));
+  /* Correo e informes automáticos (servidor) */
+  if (satToken) { wrap.append(mailPanel()); wrap.append(autoReportsPanel()); }
+  else wrap.append(panel('Correo e informes automáticos', 'En modo local sin servidor, el correo automático no está disponible: conecta PacoSAT en modo servidor (NAS) para enviar informes y correos desde la app.'));
+  /* Exportación completa */
+  const exportPanel = panel('Exportación completa legible', 'Todos tus XML y PDF en carpetas por RFC y año, con su índice CSV. Independiente del respaldo cifrado: tus datos salen enteros cuando quieras.');
+  const exportActions = n('div', undefined, 'sat-actions');
+  const exportAll = n('button', 'Exportar todo', 'soft');
+  exportAll.onclick = () => exportFull('');
+  const yearNow = new Date().getFullYear();
+  const exportYear = n('button', 'Exportar ' + yearNow, 'soft');
+  exportYear.onclick = () => exportFull(String(yearNow));
+  exportActions.append(exportAll, exportYear);
+  exportPanel.append(exportActions);
+  wrap.append(exportPanel);
+  return [wrap];
+}
+function periodCsv(month) {
+  const escape = value => '"' + String(value ?? '').replaceAll('"', '""') + '"';
+  const rows = [['UUID', 'Fecha', 'Tipo', 'Emisor RFC', 'Emisor', 'Receptor RFC', 'Receptor', 'Subtotal', 'IVA', 'Total', 'Moneda', 'Método de pago']];
+  for (const row of outMonthInvoices(month)) {
+    const iva = invoiceIvaCents(row);
+    rows.push([row.id, row.date, row.kind, row.from.rfc, row.from.name, row.to.rfc, row.to.name,
+      row.fiscal?.subtotal || '', iva === null ? '' : centsPlain(iva), centsPlain(totalCents(row)), row.currency || 'MXN', row.fiscal?.paymentMethod || '']);
+  }
+  return rows.map(row => row.map(escape).join(',')).join('\r\n');
+}
+function printPeriodReport(month, rows, totals) {
+  const section = $('print-report');
+  section.replaceChildren();
+  const head = n('div', undefined, 'report-head');
+  head.append(n('h1', 'Reporte del periodo ' + month), n('p', installName + (scope ? ' · ' + scope : ' · Todos los RFC')));
+  const body = n('div', undefined, 'report-body');
+  body.append(n('p', 'Emitidos: $' + centsLabel(totals.issuedTotal) + ' (IVA trasladado $' + centsLabel(totals.issuedIva) +
+    ') · Recibidos: $' + centsLabel(totals.receivedTotal) + ' (IVA acreditable $' + centsLabel(totals.receivedIva) + ').'));
+  const table = n('table');
+  const thead = n('thead'); const htr = n('tr');
+  for (const label of ['Fecha', 'UUID', 'Contraparte', 'Tipo', 'Total']) htr.append(n('th', label));
+  thead.append(htr); table.append(thead);
+  const tbody = n('tbody');
+  for (const row of rows.slice(0, 500)) {
+    const role = roles(row);
+    const tr = n('tr');
+    tr.append(n('td', row.date), n('td', row.id.slice(0, 13) + '…'),
+      n('td', (role.issued ? row.to.name : row.from.name) || ''), n('td', row.kind), n('td', money(row.total)));
+    tbody.append(tr);
+  }
+  table.append(tbody);
+  body.append(table);
+  body.append(n('p', 'Generado por PacoSAT desde el expediente local. Los importes de IVA salen del desglose guardado de cada XML.'));
+  section.append(head, body);
+  setTimeout(() => window.print(), 80);
+}
+function yoyPanel() {
+  const panelEl = panel('Comparativas año contra año', 'Quién te factura más que el año pasado y qué se está disparando: totales recibidos y emitidos por contraparte, año actual contra anterior (solo MXN).');
+  const year = new Date().getFullYear();
+  const totals = new Map();
+  for (const row of invoices) {
+    if ((row.currency && row.currency !== 'MXN') || row.kind !== 'I') continue;
+    const y = row.date.slice(0, 4);
+    if (y !== String(year) && y !== String(year - 1)) continue;
+    for (const [rfc, name, field] of [[row.from.rfc, row.from.name, 'received'], [row.to.rfc, row.to.name, 'issued']]) {
+      if (scope && rfc === scope) continue;
+      const key = rfc;
+      if (!totals.has(key)) totals.set(key, { name: name || rfc, rfc, receivedNow: 0n, receivedPrev: 0n, issuedNow: 0n, issuedPrev: 0n });
+      const item = totals.get(key);
+      item[field + (y === String(year) ? 'Now' : 'Prev')] += totalCents(row);
+    }
+  }
+  const rows = [...totals.values()].map(item => ({ ...item,
+    delta: (item.receivedNow - item.receivedPrev) + (item.issuedNow - item.issuedPrev) }))
+    .filter(item => item.receivedNow || item.receivedPrev || item.issuedNow || item.issuedPrev)
+    .sort((a, b) => (b.delta < a.delta ? -1 : b.delta > a.delta ? 1 : 0)).slice(0, 15);
+  if (!rows.length) { panelEl.append(n('p', 'Aún no hay dos años de datos para comparar.', 'empty')); return panelEl; }
+  panelEl.append(grid(['Contraparte', 'Recibido ' + (year - 1), 'Recibido ' + year, 'Emitido ' + (year - 1), 'Emitido ' + year, 'Cambio'],
+    rows.map(item => [cell(item.name, item.rfc), '$' + centsLabel(item.receivedPrev), '$' + centsLabel(item.receivedNow),
+      '$' + centsLabel(item.issuedPrev), '$' + centsLabel(item.issuedNow),
+      (item.delta >= 0n ? '+$' : '−$') + centsLabel(item.delta < 0n ? -item.delta : item.delta)])));
+  return panelEl;
+}
+function monthClosePanel(month) {
+  const panelEl = panel('Cierre de mes guiado · ' + month, 'La lista de comprobación del mes, en orden: cada paso dice cómo está y te lleva a donde se resuelve.');
+  const list = n('div');
+  panelEl.append(list);
+  const step = (level, title, detail, actionLabel, go) => {
+    const row = n('div', undefined, 'cp-row');
+    row.append(statusPill(level, level === 'ok' ? 'Hecho' : level === 'warn' ? 'Revisar' : level === 'bad' ? 'Pendiente' : '—'),
+      n('div', undefined, 'cp-main'));
+    row.lastChild.append(n('strong', title), n('span', detail, 'muted'));
+    if (go) { const btn = n('button', actionLabel, 'soft'); btn.onclick = go; row.append(btn); }
+    list.append(row);
+  };
+  const monthRows = outMonthInvoices(month);
+  step(monthRows.length ? 'ok' : 'warn', '1 · CFDI del mes en el expediente',
+    monthRows.length ? monthRows.length + ' CFDI con fecha del mes.' : 'No hay CFDI con fecha de ese mes.',
+    'Ver facturas', () => navigate('invoices'));
+  const missingFiscal = monthRows.filter(row => !row.fiscal).length;
+  step(missingFiscal ? 'warn' : 'ok', '2 · Desglose fiscal completo',
+    missingFiscal ? missingFiscal + ' CFDI del mes aún sin desglose (la DIOT y el IVA los necesitan).' : 'Todos los CFDI del mes tienen desglose.',
+    'Ir arriba', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
+  if (satToken) {
+    const sb = satData?.scheduledBackup || {};
+    step(sb.last && Date.now() - sb.last < 10 * 86400000 ? 'ok' : 'bad', '3 · Respaldo reciente',
+      sb.last ? 'Último respaldo: ' + localDateTime(sb.last) + (sb.secondary ? (sb.secondaryStale ? ' · la copia externa lleva más de 7 días' : ' · copia externa al día') : '') : 'Sin respaldo programado registrado.',
+      'Ver operaciones', () => navigate('operations'));
+    step('dim', '4 · Constancias y listas al día', 'Se revisan en sus pantallas: constancias en el Centro SAT y listados en Listas negras.',
+      'Listas negras', () => navigate('lists'));
+  } else step('dim', '3 · Respaldo y constancias', 'En modo local se revisan en Operaciones y en el expediente.', 'Ver operaciones', () => navigate('operations'));
+  step('dim', '5 · Informe a la contadora', satToken ? 'El paquete del mes se envía desde «Informes automáticos» aquí abajo o solo el día programado.' : 'Descarga el paquete mensual desde Operaciones y envíalo por tu correo.',
+    'Ver operaciones', () => navigate('operations'));
+  return panelEl;
+}
+function composeMailDialog(preset = {}) {
+  const to = input('text', { placeholder: 'destinatario@ejemplo.com, otro@ejemplo.com', value: preset.to || '' });
+  const subject = input('text', { placeholder: 'Asunto', value: preset.subject || '' });
+  const text = n('textarea', preset.text || '');
+  text.rows = 6;
+  const controls = [field('Para', to), field('Asunto', subject), field('Mensaje', text)];
+  if (preset.attachments?.length) controls.push(n('p', 'Adjuntos: ' + preset.attachments.map(item => item.filename).join(', '), 'muted'));
+  dialog('Enviar correo desde PacoSAT', controls, async () => {
+    await satApi('mail/send', { to: to.value, subject: subject.value, text: text.value, attachments: preset.attachments || [] });
+    toast('Correo enviado y anotado en la bitácora.', 'ok');
+    if (page === 'salidas') render();
+  }, 'Enviar correo');
+}
+function mailPanel() {
+  const panelEl = panel('Correo desde la app', 'Envía CFDI, reportes o constancias sin salir de PacoSAT. Cada envío queda anotado abajo.');
+  const compose = n('button', 'Escribir correo', 'primary');
+  compose.onclick = () => composeMailDialog();
+  panelEl.append(compose);
+  const log = n('div');
+  panelEl.append(log);
+  (async () => {
+    try {
+      const data = await satApi('mail/log');
+      log.replaceChildren();
+      if (!data.sends.length) { log.append(n('p', 'Todavía no se ha enviado ningún correo desde la app.', 'muted')); return; }
+      for (const send of data.sends.slice(0, 20)) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill(send.ok ? 'ok' : 'bad', send.ok ? 'Enviado' : 'Falló'),
+          n('span', localDateTime(send.at), 'muted'),
+          n('span', send.subject + ' → ' + send.recipients + (send.error ? ' · ' + send.error : '')));
+        log.append(row);
+      }
+    } catch { /* sin servidor */ }
+  })();
+  return panelEl;
+}
+function autoReportsPanel() {
+  const panelEl = panel('Informes automáticos', 'El paquete mensual a la contadora (con base DIOT, novedades de listas y PPD) y el resumen semanal de los lunes. Se configuran una vez y salen solos.');
+  const body = n('div');
+  panelEl.append(body);
+  const fill = async data => {
+    const config = data || await satApi('reports/config');
+    body.replaceChildren();
+    const build = (key, title, withDay) => {
+      const item = config[key] || {};
+      const form = n('div', undefined, 'satdoc-form');
+      const enabled = input('checkbox', { checked: Boolean(item.enabled) });
+      const label = n('label', undefined, 'switch-line');
+      label.append(enabled, n('span', title));
+      form.append(label);
+      let dayInput = null;
+      if (withDay) { dayInput = input('number', { value: item.day || 3, min: 1, max: 28, 'aria-label': 'Día' }); form.append(n('span', 'Día '), dayInput); }
+      const hourInput = input('number', { value: item.hour ?? 9, min: 0, max: 23, 'aria-label': 'Hora' });
+      form.append(n('span', ' a las '), hourInput, n('span', ':00'));
+      const recipients = input('text', { value: item.recipients || '', placeholder: 'Destinatarios (vacío = tu correo de avisos)' });
+      form.append(recipients);
+      const save = n('button', 'Guardar', 'soft');
+      save.onclick = async () => {
+        const next = { ...config, [key]: { enabled: enabled.checked, day: dayInput ? Number(dayInput.value) : 3,
+          hour: Number(hourInput.value), recipients: recipients.value } };
+        try { fill(await satApi('reports/config', next)); toast('Informe automático guardado.', 'ok'); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      form.append(save);
+      return form;
+    };
+    body.append(build('nora', 'Informe mensual a la contadora', true), build('weekly', 'Resumen semanal (lunes)', false));
+    const nowBtn = n('button', 'Enviar ahora el paquete del mes pasado', 'soft');
+    nowBtn.onclick = async () => {
+      const prev = new Date(); prev.setMonth(prev.getMonth() - 1);
+      const month = prev.toISOString().slice(0, 7);
+      try {
+        const result = await satApi('reports/send-now', { month });
+        toast('Paquete de ' + month + ' enviado a ' + result.recipients + ' (' + result.counts.invoices + ' CFDI).', 'ok');
+        render();
+      } catch (error) { toast(error.message, 'error'); }
+    };
+    body.append(nowBtn);
+  };
+  fill();
+  return panelEl;
+}
+async function exportFull(year) {
+  try {
+    if (satToken) {
+      toast('Preparando la exportación…', 'ok');
+      const data = await satApi('export-full', { year });
+      download(new Blob([decode64(data.content)], { type: 'application/zip' }), data.name);
+      toast('Exportación lista: ' + data.files + ' archivos.', 'ok');
+      return;
+    }
+    const files = await readStore('files');
+    const byId = new Map(files.map(file => [file.id, file]));
+    const entries = [];
+    const index = [['UUID', 'Fecha', 'Emisor RFC', 'Receptor RFC', 'Tipo', 'Total']];
+    for (const row of invoices) {
+      const y = row.date.slice(0, 4);
+      if (year && y !== year) continue;
+      index.push([row.id, row.date, row.from.rfc, row.to.rfc, row.kind, row.total]);
+      const file = byId.get('xml:' + row.id);
+      if (file?.blob) entries.push({ name: row.from.rfc + '/' + y + '/' + row.id + '.xml', data: new Uint8Array(await file.blob.arrayBuffer()) });
+    }
+    for (const doc of documents) {
+      const y = String(doc.date || '').slice(0, 4);
+      if (year && y !== year) continue;
+      const file = byId.get(doc.id);
+      if (file?.blob) entries.push({ name: doc.rfc + '/' + y + '/documentos/' + (doc.name || doc.id), data: new Uint8Array(await file.blob.arrayBuffer()) });
+    }
+    const escape = value => '"' + String(value ?? '').replaceAll('"', '""') + '"';
+    entries.unshift({ name: 'indice.csv', data: new TextEncoder().encode('﻿' + index.map(row => row.map(escape).join(',')).join('\r\n')) });
+    download(new Blob([zipStore(entries)], { type: 'application/zip' }), 'PacoSAT-exportacion' + (year ? '-' + year : '-completa') + '.zip');
+    toast('Exportación lista: ' + (entries.length - 1) + ' archivos.', 'ok');
+  } catch (error) { toast(error.message, 'error'); }
+}

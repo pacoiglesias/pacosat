@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>PacoSAT</title>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0e2a47">
 <style>/*STYLES*/</style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -50,12 +50,19 @@
     <button data-view="lists"><svg><use href="#i-shield"/></svg> Listas negras</button>
     <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
     <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>
+    <button data-view="salidas"><svg><use href="#i-down"/></svg> Salidas</button>
+    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
+    <button data-view="cumplimiento"><svg><use href="#i-check"/></svg> Cumplimiento</button>
+    <button data-view="bancos"><svg><use href="#i-shield"/></svg> Bancos</button>
+    <button data-view="preguntas"><svg><use href="#i-search"/></svg> Preguntas</button>
+    <button data-view="offline"><svg><use href="#i-moon"/></svg> Sin conexión</button>
     <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
     <button data-view="capacidades"><svg><use href="#i-file"/></svg> Qué incluye PacoSAT</button>
   </nav>
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
   <div class="side-version" id="side-version"></div>
 </aside>
+<div id="offline-banner" class="offline-banner" hidden></div>
 <main>
   <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, folio fiscal o RFC…" aria-label="Buscador global de CFDI" title="Buscador global (Ctrl+K)"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
   <div class="page">

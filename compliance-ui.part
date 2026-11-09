@@ -1,0 +1,227 @@
+/* ===== Cumplimiento (1.6.18) =====
+   Calendario fiscal con semáforo, detector de errores y duplicados,
+   aviso de anomalías, reglas de clasificación automática y paquete
+   de defensa por periodo. En modo servidor los datos salen de las
+   rutas /api/fiscal/*; en modo local se calculan de la copia local. */
+function fiscalLocalEvents() {
+  const events = [];
+  const today = new Date();
+  const monthKey = today.toISOString().slice(0, 7);
+  for (const person of people) {
+    const due17 = today.getDate() <= 17 ? monthKey + '-17' :
+      new Date(today.getFullYear(), today.getMonth() + 1, 17).toISOString().slice(0, 10);
+    events.push({ rfc: person.id, kind: 'mensual', title: 'Pago provisional y DIOT (día 17)', date: due17 });
+    const annualYear = today.getMonth() < 3 || (today.getMonth() === 2 && today.getDate() <= 31) ? today.getFullYear() : today.getFullYear() + 1;
+    events.push({ rfc: person.id, kind: 'anual', title: 'Declaración anual (31 de marzo)', date: annualYear + '-03-31' });
+  }
+  for (const item of JSON.parse(localStorage.getItem('pacosat-fiscal-events') || '[]'))
+    events.push({ rfc: item.rfc || '', kind: 'manual', title: item.title, date: item.date, id: item.id });
+  for (const event of events) event.daysLeft = Math.round((Date.parse(event.date + 'T12:00:00') - Date.now()) / 86400000);
+  return events.sort((a, b) => a.date.localeCompare(b.date));
+}
+function fiscalLocalIssues() {
+  const issues = [];
+  const own = new Set(people.map(person => person.id));
+  const byFolio = new Map();
+  for (const row of invoices) {
+    if (row.fiscal?.serie || row.fiscal?.folio) {
+      const key = row.from.rfc + '|' + (row.fiscal.serie || '') + '|' + (row.fiscal.folio || '');
+      if (byFolio.has(key) && byFolio.get(key) !== row.id)
+        issues.push({ id: row.id, kind: 'folio-duplicado', detail: 'Mismo emisor, serie y folio que otro CFDI con distinto UUID.' });
+      else byFolio.set(key, row.id);
+    }
+    if (row.kind === 'I' && row.to?.rfc && !own.has(row.to.rfc) && !own.has(row.from.rfc))
+      issues.push({ id: row.id, kind: 'receptor-ajeno', detail: 'Ni el emisor ni el receptor son perfiles de PacoSAT.' });
+    const fiscal = row.fiscal;
+    if (fiscal?.subtotal) {
+      const expected = moneyCents(fiscal.subtotal) - moneyCents(fiscal.discount) + moneyCents(fiscal.totalTransferred) - moneyCents(fiscal.totalWithheld);
+      if (Math.abs(Number(expected - totalCents(row))) > 5)
+        issues.push({ id: row.id, kind: 'totales-no-cuadran', detail: 'El desglose suma $' + centsLabel(expected) + ' y el total dice $' + centsLabel(totalCents(row)) + '.' });
+    }
+  }
+  return issues.slice(0, 200);
+}
+function anomalyRows() {
+  /* Importe inusual por emisor (mediana) y duplicado aproximado:
+     mismo emisor e importe con fechas a ≤3 días y UUID distinto. */
+  const anomalies = [];
+  const byEmitter = new Map();
+  for (const row of invoices) {
+    if (row.kind !== 'I') continue;
+    if (!byEmitter.has(row.from.rfc)) byEmitter.set(row.from.rfc, []);
+    byEmitter.get(row.from.rfc).push(row);
+  }
+  for (const [rfc, rows] of byEmitter) {
+    if (rows.length >= 4) {
+      const totals = rows.map(row => Number(totalCents(row))).sort((a, b) => a - b);
+      const median = totals[Math.floor(totals.length / 2)];
+      for (const row of rows)
+        if (median > 0 && Number(totalCents(row)) > median * 3 && Number(totalCents(row)) - median > 100000)
+          anomalies.push({ id: row.id, kind: 'importe-inusual', detail: (row.from.name || rfc) + ': $' + centsLabel(totalCents(row)) + ' frente a su mediana de $' + centsLabel(BigInt(Math.round(median))) + '.' });
+    }
+    const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
+    for (let i = 1; i < sorted.length; i++) {
+      const prev = sorted[i - 1], current = sorted[i];
+      if (totalCents(prev) === totalCents(current) && prev.id !== current.id &&
+          Math.abs(Date.parse(current.date) - Date.parse(prev.date)) <= 3 * 86400000)
+        anomalies.push({ id: current.id, kind: 'duplicado-aproximado', detail: 'Mismo emisor e importe que ' + prev.id.slice(0, 13) + '… a menos de 3 días. ¿Duplicado?' });
+    }
+  }
+  return anomalies.slice(0, 100);
+}
+function cumplimientoScreen() {
+  const wrap = n('div');
+  /* Calendario */
+  const calendar = panel('Calendario fiscal', 'Lo que vence, con semáforo: rojo vencido o hoy, ámbar en 7 días, verde con margen. El sistema avisa por correo 3 días antes.');
+  const calBody = n('div');
+  calendar.append(calBody);
+  const drawEvents = events => {
+    calBody.replaceChildren();
+    if (!events.length) calBody.append(n('p', 'Sin vencimientos registrados.', 'empty'));
+    for (const event of events.slice(0, 30)) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill(event.daysLeft < 0 ? 'bad' : event.daysLeft <= 7 ? 'warn' : 'ok',
+          event.daysLeft < 0 ? 'Venció hace ' + (-event.daysLeft) + ' días' : event.daysLeft === 0 ? 'Vence HOY' : 'En ' + event.daysLeft + ' días'),
+        n('span', event.date + ' · ' + (event.rfc ? event.rfc + ' · ' : '') + event.title));
+      if (event.kind === 'manual' && event.id) {
+        const del = n('button', 'Quitar', 'soft small');
+        del.onclick = async () => {
+          if (satToken) await satApi('fiscal/events', { delete: event.id });
+          else localStorage.setItem('pacosat-fiscal-events', JSON.stringify(JSON.parse(localStorage.getItem('pacosat-fiscal-events') || '[]').filter(item => item.id !== event.id)));
+          announce('Vencimiento eliminado.'); refresh();
+        };
+        row.append(del);
+      }
+      calBody.append(row);
+    }
+  };
+  if (satToken) satApi('fiscal/calendar').then(data => drawEvents(data.events)).catch(() => drawEvents(fiscalLocalEvents()));
+  else drawEvents(fiscalLocalEvents());
+  const form = n('div', undefined, 'sat-form');
+  const fRfc = input('text', { placeholder: 'RFC (opcional)' });
+  const fTitle = input('text', { placeholder: 'Qué vence (p. ej. Renovación CSD)' });
+  const fDate = input('date');
+  const add = n('button', 'Añadir vencimiento', 'soft');
+  add.onclick = async () => {
+    try {
+      const payload = { rfc: fRfc.value.trim().toUpperCase(), title: fTitle.value.trim(), date: fDate.value };
+      check(payload.title.length >= 3 && payload.date, 'Escribe qué vence y su fecha.');
+      if (satToken) await satApi('fiscal/events', payload);
+      else { const list = JSON.parse(localStorage.getItem('pacosat-fiscal-events') || '[]');
+        list.push({ id: Date.now().toString(36), ...payload }); localStorage.setItem('pacosat-fiscal-events', JSON.stringify(list)); }
+      announce('Vencimiento añadido al calendario.'); soundCue('success'); refresh();
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  form.append(fieldWrap('RFC', fRfc), fieldWrap('Vencimiento', fTitle), fieldWrap('Fecha', fDate), add);
+  calendar.append(form);
+  wrap.append(calendar);
+  /* Detector */
+  const detector = panel('Detector de errores y duplicados', 'Folio repetido con otro UUID, receptor que no es ningún perfil y totales que no cuadran con su desglose. Se revisa sobre lo ya guardado, sin tocar al SAT.');
+  const detBody = n('div');
+  detector.append(detBody);
+  const drawIssues = issues => {
+    detBody.replaceChildren();
+    if (!issues.length) detBody.append(n('p', 'Sin problemas detectados en los CFDI guardados. Buen orden.', 'empty'));
+    for (const issue of issues) {
+      const row = n('div', undefined, 'cp-row clickable');
+      row.append(statusPill('bad', issue.kind), n('span', issue.detail + ' (' + issue.id.slice(0, 13) + '…)'));
+      const found = invoices.find(item => item.id === issue.id);
+      if (found) row.onclick = () => invoiceDetail(found);
+      detBody.append(row);
+    }
+  };
+  if (satToken) satApi('fiscal/issues').then(data => drawIssues(data.issues)).catch(() => drawIssues(fiscalLocalIssues()));
+  else drawIssues(fiscalLocalIssues());
+  wrap.append(detector);
+  /* Anomalías */
+  const anomalies = panel('Anomalías', 'Importes muy por encima de lo habitual de ese emisor y posibles duplicados aproximados (mismo importe a menos de 3 días). Son avisos para mirar, no acusaciones.');
+  const found = anomalyRows();
+  if (!found.length) anomalies.append(n('p', 'Nada raro: ningún importe inusual ni duplicado aproximado.', 'empty'));
+  for (const item of found) {
+    const row = n('div', undefined, 'cp-row');
+    row.append(statusPill('warn', item.kind), n('span', item.detail));
+    anomalies.append(row);
+  }
+  wrap.append(anomalies);
+  wrap.append(classRulesPanel());
+  /* Paquete de defensa */
+  const defense = panel('Paquete de defensa por periodo', 'Un ZIP con los XML del mes, el índice, la validación de listas de cada contraparte y las constancias/opiniones vigentes: lo que pediría una revisión, en un clic.');
+  const dMonth = input('month', { value: previousMonthKey() });
+  const dBtn = n('button', 'Crear paquete de defensa', 'soft');
+  dBtn.onclick = async () => {
+    try {
+      const month = dMonth.value;
+      check(/^\d{4}-\d{2}$/.test(month), 'Elige el mes del paquete.');
+      if (satToken) {
+        const blob = await satApiBlob('fiscal/defense', { month });
+        const url = URL.createObjectURL(blob);
+        const link = n('a', 'Descargar paquete de defensa ' + month);
+        link.href = url; link.download = 'paquete-defensa-' + month + '.zip';
+        defense.append(link); link.click();
+      } else {
+        const entries = [];
+        const rows = [['uuid', 'fecha', 'emisor', 'receptor', 'total'].join(',')];
+        const byId = new Map(files.map(file => [file.id, file]));
+        for (const row of invoices.filter(item => item.date.startsWith(month))) {
+          rows.push([row.id, row.date, row.from.rfc, row.to.rfc, row.total].join(','));
+          const file = byId.get('xml:' + row.id);
+          if (file) entries.push({ name: 'xml/' + row.id + '.xml', data: new TextEncoder().encode(String(file.content)) });
+        }
+        entries.push({ name: 'indice.csv', data: new TextEncoder().encode(rows.join('\r\n')) });
+        await download('paquete-defensa-' + month + '.zip', new Uint8Array(await zipStore(entries)), 'application/zip');
+      }
+      announce('Paquete de defensa creado.'); logEvent('Paquete de defensa ' + month + ' creado.');
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  defense.append(fieldWrap('Mes', dMonth), dBtn);
+  wrap.append(defense);
+  return [wrap];
+}
+function classRulesPanel() {
+  const panelEl = panel('Reglas de clasificación automática', 'Si el emisor o el concepto coincide, la factura recibe la categoría. Sirve para ordenar el gasto sin tocar factura por factura.');
+  const rules = JSON.parse(localStorage.getItem('pacosat-class-rules') || '[]');
+  const list = n('div');
+  const draw = () => {
+    list.replaceChildren();
+    const current = JSON.parse(localStorage.getItem('pacosat-class-rules') || '[]');
+    if (!current.length) list.append(n('p', 'Sin reglas todavía.', 'empty'));
+    current.forEach((rule, index) => {
+      const row = n('div', undefined, 'cp-row');
+      row.append(n('span', 'Si contiene «' + rule.match + '» → ' + rule.category));
+      const del = n('button', 'Quitar', 'soft small');
+      del.onclick = () => { current.splice(index, 1); localStorage.setItem('pacosat-class-rules', JSON.stringify(current)); draw(); };
+      row.append(del);
+      list.append(row);
+    });
+  };
+  draw();
+  const form = n('div', undefined, 'sat-form');
+  const mInput = input('text', { placeholder: 'RFC o texto del concepto' });
+  const cInput = input('text', { placeholder: 'Categoría (Renta, Servicios…)' });
+  const add = n('button', 'Añadir regla', 'soft');
+  add.onclick = () => {
+    const current = JSON.parse(localStorage.getItem('pacosat-class-rules') || '[]');
+    check(mInput.value.trim().length >= 3 && cInput.value.trim().length >= 2, 'Completa el texto a buscar y la categoría.');
+    current.push({ match: mInput.value.trim(), category: cInput.value.trim() });
+    localStorage.setItem('pacosat-class-rules', JSON.stringify(current));
+    draw(); announce('Regla añadida.');
+  };
+  const apply = n('button', 'Aplicar reglas a las facturas', 'soft');
+  apply.onclick = async () => {
+    const current = JSON.parse(localStorage.getItem('pacosat-class-rules') || '[]');
+    check(current.length, 'Primero crea alguna regla.');
+    const updated = [];
+    for (const row of invoices) {
+      const haystack = (row.from.rfc + ' ' + row.from.name + ' ' + row.id).toLocaleLowerCase('es-MX');
+      const hit = current.find(rule => haystack.includes(rule.match.toLocaleLowerCase('es-MX')));
+      if (hit && row.category !== hit.category) updated.push({ ...row, category: hit.category });
+    }
+    if (updated.length) await writeBatch({ invoices: updated });
+    announce(updated.length ? updated.length + ' facturas clasificadas.' : 'Ninguna factura nueva que clasificar.');
+    soundCue('success');
+  };
+  form.append(fieldWrap('Coincide con', mInput), fieldWrap('Categoría', cInput), add, apply);
+  panelEl.append(list, form);
+  void rules;
+  return panelEl;
+}
