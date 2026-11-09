@@ -4,9 +4,13 @@
      SAT (wu1agsprosta001.blob.core.windows.net), con la situación de
      cada contribuyente dentro del propio archivo completo.
    - Art. 69 (supuestos): paquete oficial «Contribuyentes incumplidos»
-     del SAT en datos.gob.mx (descargas CSV por supuesto). El minisitio
-     enlaza para estos supuestos un XLS combinado no legible por
-     máquina; el paquete de datos.gob.mx es la vía CSV oficial.
+     del SAT en datos.gob.mx, servido desde el repositorio oficial de
+     la ATDT (repodatos.atdt.gob.mx/api_update/sat/…): son los CSV que
+     el propio portal de datos abiertos enlaza por supuesto. Los
+     endpoints «download» de datos.gob.mx responden HTTP 403 a las
+     peticiones de un servidor (verificado el 9 nov 2026 desde la VM y
+     desde el NAS); el repositorio ATDT sí los sirve, con cabeceras de
+     navegador (la descarga las manda: ver refreshList).
    - CSD sin efectos y Reducción art. 74: sin CSV oficial verificado a
      esta fecha — entran por importación manual del archivo (la semilla
      que Paco ya guarda), y el motor los trata igual que a los demás.
@@ -14,22 +18,22 @@
 import { csvRows, cleanName } from './sat-monitor.mjs';
 
 const BLOB = 'https://wu1agsprosta001.blob.core.windows.net/agsc-publicaciones/';
-const DATOS = 'https://www.datos.gob.mx/dataset/382fc296-5e90-4880-b0ca-4ed688f591ef/resource/';
+const REPO = 'https://repodatos.atdt.gob.mx/api_update/sat/contribuyentes_incumplidos/';
 export const LIST_CATALOG = [
   { id: '69b', label: 'Art. 69-B · Operaciones inexistentes', kind: 'situaciones',
     url: BLOB + 'Datos_abiertos/Documents_AGAFF/Listado_completo_69-B.csv' },
   { id: '69b-bis', label: 'Art. 69-B Bis · Pérdidas fiscales transmitidas', kind: 'situaciones',
     url: BLOB + 'Datos_abiertos/Documents_AGGC/Listado_69_B_Bis_Completo.csv' },
   { id: '69-firmes', label: 'Art. 69 · Créditos firmes', kind: 'supuesto', supuesto: 'Firmes',
-    url: DATOS + '29a7c943-1f77-42b2-95da-d3dc53549c94/download/sat_5_firmes.csv' },
+    url: REPO + 'SAT_5_Firmes.csv' },
   { id: '69-exigibles', label: 'Art. 69 · Créditos exigibles', kind: 'supuesto', supuesto: 'Exigibles',
-    url: DATOS + '6301fffe-2388-489a-85e1-5c5ffcda4ce0/download/sat_6_exigibles.csv' },
+    url: REPO + 'SAT_6_Exigibles.csv' },
   { id: '69-no-localizados', label: 'Art. 69 · No localizados', kind: 'supuesto', supuesto: 'No localizados',
-    url: DATOS + '83fa79b9-357b-4ada-b0a4-950c97c50461/download/sat_4_nolocalizados.csv' },
+    url: REPO + 'SAT_4_Nolocalizados.csv' },
   { id: '69-cancelados', label: 'Art. 69 · Créditos cancelados (146-A)', kind: 'supuesto', supuesto: 'Cancelados',
-    url: DATOS + '1b04d73d-faea-4056-bbab-81df9de5188f/download/sat_7_cancelados.csv' },
+    url: REPO + 'SAT_7_Cancelados.csv' },
   { id: '69-sentencias', label: 'Art. 69 · Sentencias condenatorias', kind: 'supuesto', supuesto: 'Sentencias',
-    url: DATOS + '4e0f0456-484c-4332-a63a-a6f2d3138dd5/download/sat_3_sentencias.csv' },
+    url: REPO + 'SAT_3_Sentencias.csv' },
   { id: '69-entes-omisos', label: 'Art. 69 · Entes públicos omisos', kind: 'supuesto', supuesto: 'Entes públicos omisos',
     url: 'https://repodatos.atdt.gob.mx/api_update/sat/contribuyentes_incumplidos/SAT_2_EntespublicosydeGobiernoomisos.csv' },
   { id: '69-csd', label: 'Art. 69 · CSD sin efectos', kind: 'supuesto', supuesto: 'CSD sin efectos', url: null },
@@ -77,11 +81,14 @@ export function parseList(content, source) {
   const rows = csvRows(content);
   const header = rows.findIndex(row => row.some(cell => cleanName(cell) === 'rfc'));
   if (header < 0) throw new Error('No se reconoce la columna RFC del listado.');
-  const columns = rows[header].map(cleanName);
+  /* Los CSV del repositorio ATDT usan guion bajo (razon_social,
+     fechas_primera_publicacion): se normaliza a espacios para que las
+     mismas reglas lean todos los formatos oficiales. */
+  const columns = rows[header].map(cell => cleanName(cell).replace(/_/g, ' '));
   const rfcColumn = columns.indexOf('rfc');
   const nameColumn = columns.findIndex(value => /nombre|razon social|denominacion/.test(value));
   const situationColumn = columns.findIndex(value => value.startsWith('situacion'));
-  const dateColumn = columns.findIndex(value => /fecha de primera publicacion|fecha de publicacion/.test(value));
+  const dateColumn = columns.findIndex(value => /publicacion/.test(value));
   const entries = new Map();
   for (const row of rows.slice(header + 1)) {
     const rfc = text(row[rfcColumn]).trim().toUpperCase();

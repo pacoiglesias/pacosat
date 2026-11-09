@@ -6,6 +6,16 @@
    significa que el SAT publicó ese RFC en un listado oficial. */
 const LISTS_VIEW = { data: null };
 const listStatePill = source => {
+  /* Fallo digno (ronda de correcciones, 9 nov 2026): si la descarga de
+     hoy falla pero existe una última copia buena, la tarjeta lo dice
+     así — con su fecha y sus registros — y el cruce sigue con esa
+     copia. El error desnudo solo aparece si nunca hubo copia. */
+  if (source.count > 0 && source.fetched) {
+    if (source.error) return statusPill('warn', 'Última copia válida del ' +
+      new Date(source.fetched).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' }));
+    if (Date.now() - source.fetched > 48 * 3600 * 1000) return statusPill('warn', 'Desactualizado');
+    return statusPill('ok', 'Al día');
+  }
   if (source.error) return statusPill('bad', 'Con error');
   if (!source.fetched) return statusPill('dim', source.manual ? 'Sin cargar' : 'Pendiente');
   if (Date.now() - source.fetched > 48 * 3600 * 1000) return statusPill('warn', 'Desactualizado');
@@ -33,7 +43,10 @@ function listsScreen() {
     if (source.declared) meta.append(n('span', 'La fuente declara: ' + source.declared));
     if (source.manual) meta.append(n('span', 'Este listado no tiene descarga automática oficial: se carga su archivo a mano.'));
     card.append(head, meta);
-    if (source.error) card.append(n('p', 'Último intento: ' + source.error, 'error-text'));
+    if (source.error && source.count > 0 && source.fetched)
+      card.append(n('p', 'La actualización de hoy falló (' + source.error + ') El cruce sigue usando la última copia válida, del ' +
+        localDateTime(source.fetched) + '.', 'muted'));
+    else if (source.error) card.append(n('p', 'Último intento: ' + source.error, 'error-text'));
     const actions = n('div', undefined, 'sat-actions');
     if (source.url) {
       const update = n('button', 'Actualizar ahora', 'soft');

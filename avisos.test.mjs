@@ -86,15 +86,17 @@ const invoice = (id, date, from, to, total, method = 'PPD') => ({ id, date, kind
     assert.match(intento.falta, /sigue constando un saldo/);
     notices = await (await call('/api/notices')).json();
     assert.ok(notices.avisos.some(item => item.id === aviso.id), 'El aviso sigue abierto tras la falsa corrección.');
-    /* «Marcar pagado a mano» exige nota y cierra el saldo. */
+    /* Cierre rápido (ronda de correcciones, 9 nov 2026): SIN nota
+       también pasa — si ya se pagó, un toque y cerrado; la bitácora
+       registra sola el cierre (fecha, manual, origen). */
     const sinNota = await call('/api/notices/answer', { id: aviso.id, respuesta: 'si', nota: '' });
-    assert.equal(sinNota.status, 400);
-    await call('/api/notices/answer', { id: aviso.id, respuesta: 'si', nota: 'Pagado con Konfío el 11 de noviembre', fecha: '2026-11-11' });
+    assert.equal(sinNota.status, 200);
     notices = await (await call('/api/notices')).json();
-    assert.ok(!notices.avisos.some(item => item.id === aviso.id), 'El aviso pagado a mano sale de los abiertos.');
+    assert.ok(!notices.avisos.some(item => item.id === aviso.id), 'El aviso cerrado sin nota sale de los abiertos.');
     const cerrado = notices.historial.find(item => item.id === aviso.id);
     assert.ok(cerrado, 'El aviso queda en el historial.');
-    assert.match(cerrado.resolucion, /Konfío/);
+    assert.match(cerrado.resolucion, /Pagado a mano/);
+    assert.match(cerrado.resolucion, /sin nota/);
     const money = await (await call('/api/money')).json();
     assert.equal(money.balances.find(item => item.id === R1).balance, '0.00');
     /* Segunda vía de solventar: enlazar el complemento de pago. */
@@ -183,6 +185,82 @@ const invoice = (id, date, from, to, total, method = 'PPD') => ({ id, date, kind
     assert.ok(!notices.avisos.some(aviso => aviso.kind === 'estado'));
     assert.ok(notices.historial.some(aviso => aviso.kind === 'solicitud-estado' && /archivado en Bancos/.test(aviso.resolucion)));
     console.log('avisos.test · solicitud interna solventada al aportar el estado: ok');
+  } finally { await service.close(); }
+}
+/* --- Escenario D: acciones por lote (ronda de correcciones) --- */
+{
+  let time = Date.parse('2026-11-12T15:00:00Z');
+  const sent = [];
+  const service = makeService(sent, () => time);
+  const { call, init } = client(service);
+  try {
+    await init();
+    await setup(call);
+    /* Dos saldos por pagar vencidos por la regla general (30 días). */
+    const P1 = 'LOTE0001-1111-1111-1111-111111111111';
+    const P2 = 'LOTE0002-2222-2222-2222-222222222222';
+    await call('/api/storage', { batch: { invoices: [
+      invoice(P1, '2026-09-01', 'LOTE030303AAA', OWN, '700.00'),
+      invoice(P2, '2026-09-01', 'LOTE030303AAA', OWN, '300.00')] } });
+    /* Un aviso que NO es de saldo: la solicitud interna de un estado. */
+    const banks = await (await call('/api/banks/accounts', { bank: 'Konfio', name: 'Cuenta', kind: 'cuenta' })).json();
+    const account = banks.accounts[0];
+    const pdf64 = Buffer.from('%PDF-1.7 estado de juguete ' + 'x'.repeat(120)).toString('base64');
+    await call('/api/banks/statements', { accountId: account.id, month: '2026-09', content: pdf64 });
+    let notices = await (await call('/api/notices')).json();
+    const saldos = notices.avisos.filter(aviso => aviso.kind === 'saldo');
+    assert.equal(saldos.length, 2);
+    const solicitud = notices.avisos.find(aviso => aviso.kind === 'solicitud-estado');
+    assert.ok(solicitud, 'Hay un aviso que no es de saldo para el lote mixto.');
+    /* La nota sigue valiendo cuando SÍ se escribe. */
+    const conNota = await call('/api/notices/answer',
+      { id: saldos[0].id, respuesta: 'si', nota: 'Pagado con Konfío el 12 de noviembre', fecha: '2026-11-12' });
+    assert.equal(conNota.status, 200);
+    notices = await (await call('/api/notices')).json();
+    assert.match(notices.historial.find(aviso => aviso.id === saldos[0].id).resolucion, /Konfío/);
+    /* Lote vacío: no hace nada. */
+    const vacio = await (await call('/api/notices/batch', { ids: [], accion: 'pagadas' })).json();
+    assert.equal(vacio.aplicados, 0);
+    assert.equal(vacio.saltados, 0);
+    notices = await (await call('/api/notices')).json();
+    assert.equal(notices.avisos.filter(aviso => aviso.kind === 'saldo').length, 1, 'El lote vacío no tocó nada.');
+    /* Lote mixto «pagadas»: aplica al saldo y salta la solicitud. */
+    const restante = notices.avisos.find(aviso => aviso.kind === 'saldo');
+    const lote = await (await call('/api/notices/batch',
+      { ids: [restante.id, solicitud.id], accion: 'pagadas' })).json();
+    assert.equal(lote.aplicados, 1);
+    assert.equal(lote.saltados, 1);
+    assert.equal(lote.motivos[0].id, solicitud.id);
+    notices = await (await call('/api/notices')).json();
+    assert.ok(!notices.avisos.some(aviso => aviso.kind === 'saldo'), 'El saldo del lote quedó cerrado.');
+    assert.match(notices.historial.find(aviso => aviso.id === restante.id).resolucion, /en lote/);
+    assert.ok(notices.avisos.some(aviso => aviso.id === solicitud.id), 'La solicitud saltada sigue abierta.');
+    const money = await (await call('/api/money')).json();
+    assert.equal(money.balances.find(item => item.id === P1).balance, '0.00');
+    assert.equal(money.balances.find(item => item.id === P2).balance, '0.00');
+    /* «Cerrar» en lote: la solicitud va al historial como cerrada. */
+    const cierre = await (await call('/api/notices/batch', { ids: [solicitud.id], accion: 'cerrar' })).json();
+    assert.equal(cierre.aplicados, 1);
+    assert.equal(cierre.saltados, 0);
+    notices = await (await call('/api/notices')).json();
+    assert.ok(notices.historial.some(aviso => aviso.id === solicitud.id && /en lote/.test(aviso.resolucion)));
+    assert.ok(!notices.avisos.some(aviso => aviso.id === solicitud.id));
+    /* «Borrar» (descartar): ni abiertos ni historial, y NO resucita. */
+    const P3 = 'LOTE0003-3333-3333-3333-333333333333';
+    await call('/api/storage', { batch: { invoices: [invoice(P3, '2026-09-01', 'LOTE030303AAA', OWN, '900.00')] } });
+    notices = await (await call('/api/notices')).json();
+    const tercero = notices.avisos.find(aviso => aviso.kind === 'saldo');
+    assert.ok(tercero, 'Nace el tercer saldo para descartarlo.');
+    const descarte = await (await call('/api/notices/batch', { ids: [tercero.id], accion: 'borrar' })).json();
+    assert.equal(descarte.aplicados, 1);
+    notices = await (await call('/api/notices')).json();
+    assert.ok(!notices.avisos.some(aviso => aviso.id === tercero.id));
+    assert.ok(!notices.historial.some(aviso => aviso.id === tercero.id), 'Lo descartado no va al historial.');
+    await service.tick();
+    notices = await (await call('/api/notices')).json();
+    assert.ok(!notices.avisos.some(aviso => aviso.kind === 'saldo'),
+      'El aviso descartado NO resucita en la siguiente sincronización.');
+    console.log('avisos.test · lote mixto, cerrar y descartar sin resurrección: ok');
   } finally { await service.close(); }
 }
 console.log('avisos.test: ok');

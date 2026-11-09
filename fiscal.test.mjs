@@ -59,6 +59,24 @@ try {
   const issues = await (await call('/api/fiscal/issues')).json();
   assert.ok(issues.issues.some(issue => issue.kind === 'folio-duplicado'), JSON.stringify(issues));
   assert.ok(issues.issues.some(issue => issue.kind === 'totales-no-cuadran' && issue.id === bad.id), JSON.stringify(issues));
+  /* Ronda de correcciones (9 nov 2026): el patrón de los bancos NO es
+     duplicado — BBVA usa como folio el nº de cuenta, idéntico los 12
+     meses, con fechas e importes distintos → cero avisos nuevos. El
+     par genuino de arriba (misma fecha E importe) sigue siendo el
+     ÚNICO folio-duplicado. */
+  const bankInvoices = [];
+  for (let m = 1; m <= 12; m++)
+    bankInvoices.push(seedInvoice('BBBBBBBB-' + String(m).padStart(4, '0') + '-1111-1111-111111111111',
+      { date: '2025-' + String(m).padStart(2, '0') + '-15',
+        from: { rfc: 'BBA830831LJ2', name: 'BBVA MEXICO' },
+        total: (100 + m * 7) + '.50',
+        fiscal: { serie: '', folio: '012650004443925908' } }));
+  assert.equal((await call('/api/storage', { batch: { invoices: bankInvoices } })).status, 200);
+  const issues2 = await (await call('/api/fiscal/issues')).json();
+  const folioIssues = issues2.issues.filter(issue => issue.kind === 'folio-duplicado');
+  assert.equal(folioIssues.length, 1, JSON.stringify(folioIssues));
+  assert.equal(folioIssues[0].id, dup2.id);
+  assert.match(folioIssues[0].detail, /coincide la fecha de emisión/);
   /* Paquete de defensa del mes. */
   const defense = await call('/api/fiscal/defense', { month: '2026-11' });
   assert.equal(defense.status, 200);

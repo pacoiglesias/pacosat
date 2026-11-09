@@ -7,7 +7,12 @@
    Pieza 2 (punto 17): el Centro de Avisos vive en el servidor (NAS): tres
    clases siempre visibles — LO QUE ESTÁ MAL, LO QUE FALTA y LO QUE EL
    SISTEMA NECESITA DE TI — con solventar real («Ya lo corregí» re-comprueba;
-   «Marcar pagado a mano» exige nota) y un solo correo-resumen configurable. */
+   «Ya se pagó · Cerrar» sin formulario obligatorio) y un solo correo-resumen
+   configurable.
+   Ronda de correcciones (9 nov 2026): la nota del pago manual pasa a
+   OPCIONAL (cierre con un toque; la bitácora registra sola el cierre)
+   y llega la selección múltiple con barra por lote: «Marcar pagadas»,
+   «Cerrar» y «Borrar» (descartar), con confirmación y conteo. */
 
 let activityState = null;
 function activityStart(label, total = 0) {
@@ -60,6 +65,9 @@ $('activity-result-close').onclick = () => { $('activity-result').hidden = true;
 let avisosCache = null;
 let avisosInflight = null;
 let avisosFetchedAt = 0;
+/* Selección múltiple para acciones por lote (ronda de correcciones). */
+const avisosSeleccion = new Set();
+let avisosVisibles = [];
 const AVISOS_CLASES = [
   ['necesita', 'Lo que el sistema necesita de ti', 'alert'],
   ['mal', 'Lo que está mal', 'x'],
@@ -178,6 +186,10 @@ function avisosScreen() {
   update.onclick = () => refreshAvisos(true);
   strip.append(update);
   resumen.append(strip);
+  /* Barra por lote: selección múltiple sobre los avisos visibles. */
+  avisosVisibles = data.avisos.map(aviso => aviso.id);
+  for (const id of [...avisosSeleccion]) if (!avisosVisibles.includes(id)) avisosSeleccion.delete(id);
+  if (data.counts.total) resumen.append(avisosBatchBar());
   wrap.append(resumen);
   wrap.append(avisosConfigPanel(data.config));
   for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
@@ -220,10 +232,83 @@ function avisosConfigPanel(config) {
   el.append(form);
   return el;
 }
+/* Barra de acciones por lote: casilla «seleccionar visibles», conteo
+   y las tres acciones. Antes de aplicar, confirmación con el conteo;
+   al terminar, el servidor reporta aplicados y saltados. */
+function avisosBatchBar() {
+  const bar = n('div', undefined, 'traffic-strip');
+  const selLabel = n('label', ' Seleccionar visibles');
+  const selAll = input('checkbox', { 'aria-label': 'Seleccionar los avisos visibles' });
+  selAll.id = 'avisos-batch-all';
+  selAll.checked = avisosVisibles.length > 0 && avisosVisibles.every(id => avisosSeleccion.has(id));
+  selAll.onchange = () => {
+    if (selAll.checked) for (const id of avisosVisibles) avisosSeleccion.add(id);
+    else for (const id of avisosVisibles) avisosSeleccion.delete(id);
+    paintAvisosBatch();
+  };
+  selLabel.prepend(selAll);
+  const count = n('span', '', 'muted');
+  count.id = 'avisos-batch-count';
+  const paid = n('button', 'Marcar pagadas', 'primary small');
+  paid.id = 'avisos-batch-paid';
+  paid.onclick = () => avisoBatch('pagadas');
+  const close = n('button', 'Cerrar', 'soft small');
+  close.id = 'avisos-batch-close';
+  close.onclick = () => avisoBatch('cerrar');
+  const discard = n('button', 'Borrar', 'danger-soft small');
+  discard.id = 'avisos-batch-discard';
+  discard.onclick = () => avisoBatch('borrar');
+  bar.append(selLabel, count, paid, close, discard);
+  setTimeout(paintAvisosBatch, 0);
+  return bar;
+}
+function paintAvisosBatch() {
+  const count = $('avisos-batch-count');
+  if (!count) return;
+  const elegidos = avisosSeleccion.size;
+  count.textContent = elegidos ? number.format(elegidos) + ' seleccionado' + (elegidos === 1 ? '' : 's') : 'Ninguno seleccionado';
+  for (const id of ['avisos-batch-paid', 'avisos-batch-close', 'avisos-batch-discard']) {
+    const btn = $(id);
+    if (btn) btn.disabled = !elegidos;
+  }
+  const all = $('avisos-batch-all');
+  if (all) all.checked = avisosVisibles.length > 0 && avisosVisibles.every(id => avisosSeleccion.has(id));
+  document.querySelectorAll('.aviso-check').forEach(el => { el.checked = avisosSeleccion.has(Number(el.dataset.avisoId)); });
+}
+function avisoBatch(accion) {
+  const ids = [...avisosSeleccion];
+  if (!ids.length) return;
+  const textos = {
+    pagadas: ['Marcar pagadas', '¿Marcar pagadas ' + number.format(ids.length) + ' avisos? Solo se aplica a los avisos de saldo; los demás se saltan y al terminar te digo cuántos fueron.', 'Marcar pagadas'],
+    cerrar: ['Cerrar avisos', '¿Cerrar ' + number.format(ids.length) + ' avisos? Quedan en el historial como cerrados por ti, sin re-comprobación.', 'Cerrar avisos'],
+    borrar: ['Borrar avisos', '¿Borrar ' + number.format(ids.length) + ' avisos? Dejan de aparecer y no vuelven a salir; el descarte queda registrado en la bitácora.', 'Borrar avisos']
+  };
+  const [titulo, texto, boton] = textos[accion];
+  dialog(titulo, [n('p', texto)], async () => {
+    try {
+      const result = await satApi('notices/batch', { ids, accion });
+      avisosSeleccion.clear();
+      avisosCache = result;
+      avisosFetchedAt = Date.now();
+      paintAvisosBadge(result.counts.total);
+      toast('Lote terminado: ' + number.format(result.aplicados) + ' aplicados, ' + number.format(result.saltados) + ' saltados.', 'ok');
+      soundCue('success');
+      render();
+    } catch (error) { toast(error.message, 'error'); }
+  }, boton);
+}
 function avisoCard(aviso) {
   const card = n('div', undefined, 'aviso-card');
   const head = n('div', undefined, 'aviso-head');
-  head.append(avisoPill(aviso), n('strong', aviso.titulo));
+  const check = input('checkbox', { 'aria-label': 'Seleccionar este aviso' });
+  check.classList.add('aviso-check');
+  check.dataset.avisoId = String(aviso.id);
+  check.checked = avisosSeleccion.has(aviso.id);
+  check.onchange = () => {
+    if (check.checked) avisosSeleccion.add(aviso.id); else avisosSeleccion.delete(aviso.id);
+    paintAvisosBatch();
+  };
+  head.append(check, avisoPill(aviso), n('strong', aviso.titulo));
   card.append(head);
   if (aviso.detalle) card.append(n('p', aviso.detalle));
   card.append(n('p', avisoMeta(aviso), 'muted'));
@@ -235,7 +320,7 @@ function avisoCard(aviso) {
     no.onclick = () => avisoConfirmNo(aviso);
     actions.append(si, no);
   } else if (aviso.kind === 'saldo') {
-    const paid = n('button', 'Marcar pagado a mano', 'primary small');
+    const paid = n('button', 'Ya se pagó · Cerrar', 'primary small');
     paid.onclick = () => avisoMarkPaidDialog(aviso);
     const fixed = n('button', 'Ya lo corregí', 'soft small');
     fixed.onclick = () => avisoResolve(aviso);
@@ -262,17 +347,21 @@ async function avisoAfterChange(message) {
   render();
 }
 function avisoMarkPaidDialog(aviso) {
+  /* Cierre rápido (ronda de correcciones): sin formulario obligatorio.
+     La nota va en un desplegable OPCIONAL; la bitácora registra sola
+     el cierre (fecha, manual, origen). */
   const nota = input('text', { placeholder: 'Ej. Pagado con Konfío el 8 de noviembre' });
   const hoy = new Date();
   const fecha = input('date', { value: hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0') });
-  dialog('Marcar pagado a mano',
-    [n('p', 'Vas a dar por pagado «' + aviso.titulo + '». Queda registrado en la bitácora con tu nota: si mañana llega el complemento de pago, PacoSAT lo enlaza igual.'),
-     field('Fecha del pago', fecha), field('Nota (obligatoria): medio y detalle', nota)],
+  const notaOpcional = n('details');
+  notaOpcional.append(n('summary', 'Añadir una nota (opcional)'), field('Nota', nota));
+  dialog('Ya se pagó · Cerrar',
+    [n('p', 'Vas a dar por pagado «' + aviso.titulo + '» y el aviso se cierra con un toque. Queda registrado en la bitácora con la fecha y que el cierre fue manual; si mañana llega el complemento de pago, PacoSAT lo enlaza igual.'),
+     field('Fecha del pago', fecha), notaOpcional],
     async () => {
-      check(nota.value.trim().length >= 4, 'Escribe la nota del pago: medio y detalle (ej. «Pagado con Konfío»).');
       await satApi('notices/answer', { id: aviso.id, respuesta: 'si', nota: nota.value.trim(), fecha: fecha.value });
-      await avisoAfterChange('Pago registrado a mano. El aviso quedó en el historial.');
-    }, 'Registrar el pago');
+      await avisoAfterChange('Pago registrado. El aviso quedó en el historial.');
+    }, 'Ya se pagó · Cerrar');
 }
 function avisoConfirmNo(aviso) {
   dialog('Confirmar',

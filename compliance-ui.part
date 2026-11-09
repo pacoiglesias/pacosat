@@ -26,9 +26,20 @@ function fiscalLocalIssues() {
   for (const row of invoices) {
     if (row.fiscal?.serie || row.fiscal?.folio) {
       const key = row.from.rfc + '|' + (row.fiscal.serie || '') + '|' + (row.fiscal.folio || '');
-      if (byFolio.has(key) && byFolio.get(key) !== row.id)
-        issues.push({ id: row.id, kind: 'folio-duplicado', detail: 'Mismo emisor, serie y folio que otro CFDI con distinto UUID.' });
-      else byFolio.set(key, row.id);
+      /* Mismo criterio que el servidor (ronda de correcciones, 9 nov
+         2026): folio repetido solo es sospechoso si además coincide
+         la fecha de emisión o el importe total; los bancos repiten el
+         folio (nº de cuenta/contrato) cada mes y no son duplicados. */
+      const diaEmision = String(row.date || '').slice(0, 10);
+      const total = totalCents(row);
+      const group = byFolio.get(key) || [];
+      const clash = group.find(other => other.id !== row.id &&
+        ((diaEmision && other.dia === diaEmision) || (total > 0n && other.total === total)));
+      if (clash)
+        issues.push({ id: row.id, kind: 'folio-duplicado', detail: 'Mismo emisor, serie y folio que otro CFDI con distinto UUID, y además coincide ' +
+          (diaEmision && clash.dia === diaEmision ? 'la fecha de emisión' : 'el importe total') + ': patrón de reemisión con el mismo folio.' });
+      group.push({ id: row.id, dia: diaEmision, total });
+      byFolio.set(key, group);
     }
     if (row.kind === 'I' && row.to?.rfc && !own.has(row.to.rfc) && !own.has(row.from.rfc))
       issues.push({ id: row.id, kind: 'receptor-ajeno', detail: 'Ni el emisor ni el receptor son perfiles de PacoSAT.' });
