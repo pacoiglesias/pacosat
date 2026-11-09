@@ -126,7 +126,7 @@ async function collect(stream) {
   /* Paquete mensual (1.6.5): el ZIP se escribe con zipStore y se relee
      con el propio zipXml; el manifiesto nombra el contenido exacto. */
   const wfSource = fs.readFileSync('workflows.part', 'utf8');
-  vm.runInContext(wfSource.slice(wfSource.indexOf('function zipStore'), wfSource.indexOf('function restoreDialog')), context);
+  vm.runInContext(wfSource.slice(wfSource.indexOf('function zipStore'), wfSource.indexOf('async function restoreDialog')), context);
   const manifest = context.monthlyPackageManifest('XAXX010101000', '2026-10',
     ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt'], '8/11/2026, 10:00');
   assert.ok(manifest.includes('RFC: XAXX010101000') && manifest.includes('Mes: 2026-10') && manifest.includes('- base-diot.csv'));

@@ -45,7 +45,8 @@ $('dialog').addEventListener('close', () => {
 });
 
 async function importInvoicePdf(file) {
-  check(ready && people.length, 'Agrega un contribuyente antes de importar una factura PDF.');
+  await requireStorage();
+  check(people.length, 'Agrega un contribuyente antes de importar una factura PDF.');
   check(await pdfOk(file), 'Elige un PDF válido de hasta 15 MB.');
   let result = { uuids: [], rfcs: [], hasText: false }, failure = '';
   if (satToken) {

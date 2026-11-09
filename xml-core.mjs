@@ -70,18 +70,32 @@ let db;
 
 function check(condition, message) { if (!condition) throw new Error(message); }
 function bytes(value) { return new Uint8Array(value); }
+/* Estado de bloqueo del almacén local (1.6.8): «bloqueado» no es un
+   fallo. Otra pestaña tiene la base abierta y la petición de apertura
+   sigue viva; cuando esa pestaña se cierra, el navegador dispara
+   onsuccess sobre la MISMA petición y la apertura se completa sola.
+   Hasta la 1.6.7, onblocked rechazaba la promesa: el arranque quedaba
+   muerto, `ready` nunca pasaba a true y cada acción se rendía con «El
+   almacenamiento todavía no está disponible.», sin recuperación posible
+   en esa sesión. Ahora el bloqueo se registra (isStorageBlocked) y la
+   promesa espera; el error de verdad (onerror) sí rechaza. */
+let storageBlocked = false;
+function isStorageBlocked() { return storageBlocked; }
 function openDatabase(name = 'faro-fiscal-v2') {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open(name, 1);
+    let request;
+    try { request = indexedDB.open(name, 1); }
+    catch (error) { reject(error); return; }
     request.onupgradeneeded = () => {
       for (const store of STORES) request.result.createObjectStore(store, { keyPath: 'id' });
     };
     request.onsuccess = () => {
+      storageBlocked = false;
       request.result.onversionchange = () => request.result.close();
       resolve(request.result);
     };
-    request.onerror = () => reject(request.error);
-    request.onblocked = () => reject(new Error('Cierra otras ventanas de PacoSAT y vuelve a abrirlo.'));
+    request.onerror = () => reject(request.error || new Error('El navegador no dejó abrir el almacenamiento local.'));
+    request.onblocked = () => { storageBlocked = true; };
   });
 }
 function readStore(store, key) {
