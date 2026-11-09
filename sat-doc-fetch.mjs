@@ -246,6 +246,23 @@ function divErrorText(html) {
   return decodeEntities(match[1].replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim().slice(0, 200);
 }
 const isPdf = body => Buffer.isBuffer(body) && body.length > 512 && body.subarray(0, 5).toString('latin1') === '%PDF-';
+export { fail as failure, isPdf as isPdfBuffer };
+
+/* Resolvedor de credenciales compartido con la ruta de navegador
+   (sat-doc-browser.mjs): misma validación local y, además del Fiel,
+   el material que el formulario del portal necesita (llave y
+   contraseña solo dentro de este proceso, nunca fuera de él). */
+export function createSatDocCredentialResolver({ storage,
+  loadSdk = () => import('@nodecfdi/sat-ws-descarga-masiva'), now = Date.now } = {}) {
+  if (!storage) throw new Error('createSatDocCredentialResolver necesita el almacenamiento de e.firma.');
+  return async function resolveSatDocCredentials(profile) {
+    const rfc = String(profile?.rfc || '');
+    const resolved = await resolveCredentials({ storage, loadSdk, now }, rfc);
+    const index = storage.readIndex() || {};
+    return { ...resolved, rfc, key: storage.readFile(rfc, '.key'),
+      password: index[rfc]?.password || '' };
+  };
+}
 const isLoginPage = html => /privatekeypassword|acceso por contraseña/i.test(html);
 
 /* ------------------------- Credenciales --------------------------- */

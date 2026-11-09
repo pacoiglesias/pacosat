@@ -34,7 +34,7 @@ try {
   /* Invitado desactivado: ni login ni lectura. */
   assert.equal((await call('/api/guest/login', { password: 'la-que-sea-123' })).status, 403);
   let config = await (await call('/api/guest/config', { password: 'clave-invitado-1', enabled: true })).json();
-  assert.deepEqual(config, { enabled: true, hasPassword: true });
+  assert.deepEqual(config, { enabled: true, hasPassword: true, rfcs: [] });
   assert.equal((await call('/api/guest/login', { password: 'incorrecta' })).ok, false);
   const login = await (await call('/api/guest/login', { password: 'clave-invitado-1' })).json();
   assert.ok(login.token);

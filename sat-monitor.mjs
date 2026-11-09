@@ -29,10 +29,20 @@ export function lookupFields(value) {
   }
   return { id, emitter, receiver, total, seal };
 }
+/* Normalización de la expresión impresa (barrido de comunidades,
+   9 nov 2026; documentación de CfdiUtils): el total debe ir SIN
+   ceros no significativos — «0.99», «1.0», «0.0» — porque un total
+   con otro formato (p. ej. seis decimales fijos) produce N-601
+   aunque el comprobante sea válido y vigente. El UUID ya va en
+   mayúsculas y los RFC tal como vienen en el XML (lookupFields). */
+export function normalizeTotalForQuery(total) {
+  const [integer, decimals = ''] = String(total).split('.');
+  const trimmed = decimals.replace(/0+$/, '');
+  return BigInt(integer).toString() + '.' + (trimmed || '0');
+}
 export function soapQuery(input) {
   const value = lookupFields(input);
-  const [integer, decimals = ''] = value.total.split('.');
-  const total = BigInt(integer).toString() + '.' + decimals.padEnd(6, '0');
+  const total = normalizeTotalForQuery(value.total);
   const param = new URLSearchParams({ id: value.id, re: value.emitter, rr: value.receiver, tt: total });
   if (value.seal) param.set('fe', value.seal);
   const expression = ('?' + param.toString()).replaceAll('&', '&amp;');
@@ -54,16 +64,18 @@ export async function querySat(input, request = fetch) {
   const val = name => acuse.getElementsByTagNameNS('http://schemas.datacontract.org/2004/07/Sat.Cfdi.Negocio.ConsultaCfdi.Servicio', name)[0]?.textContent.trim() || '';
   const code = val('CodigoEstatus');
   const state = val('Estado');
-  /* N-601 y N-602 son RESPUESTA del SAT, no un fallo de transporte: el
-     servicio no validó/localizó el comprobante con su expresión
-     impresa. Tratarlos como error transitorio (el comportamiento
-     anterior) dejaba cada CFDI reintentando cada hora para siempre y
-     la pantalla entera en «pendiente de reintento»: comprobado en vivo
-     el 9 nov 2026 con CFDI reales de 2024 y de noviembre de 2026 y con
-     ocho variantes de formato de la expresión — el SAT respondió
-     N-601 a todas. Como respuesta guardada, el vigilante la rechequea
-     a los 30 días, no cada hora. */
-  if (/^N\s*-?\s*60[12]\b/i.test(code)) return { state: 'No encontrado', code, cancellation: '', cancelable: '', efos: '' };
+  /* N-601 y N-602 son RESPUESTA del SAT, no un fallo de transporte.
+     Se guardan como respuesta (rechequeo a los 30 días, no cada
+     hora: tratarlos como error transitorio dejaba la pantalla en
+     «pendiente de reintento» para siempre), pero NO son lo mismo y
+     la pantalla los distingue (barrido de comunidades, 9 nov 2026):
+     N-602 = el SAT no localizó el comprobante; N-601 = el SAT
+     rechazó el FORMATO de la consulta — la única causa documentada
+     es el formato del total en la expresión impresa, que desde la
+     1.9.0 se normaliza antes de consultar (normalizeTotalForQuery).
+     Ninguna fuente revisada respalda bloqueo por volumen/IP. */
+  if (/^N\s*-?\s*602\b/i.test(code)) return { state: 'No encontrado', code, cancellation: '', cancelable: '', efos: '' };
+  if (/^N\s*-?\s*601\b/i.test(code)) return { state: 'Formato rechazado', code, cancellation: '', cancelable: '', efos: '' };
   if (!/^S\b/i.test(code) || !['Vigente','Cancelado'].includes(state)) throw new Error('El SAT no confirmó el estado: ' + (code || 'respuesta incompleta').slice(0, 150));
   return { state, code, cancellation: val('EstatusCancelacion'), cancelable: val('EsCancelable'), efos: val('ValidacionEFOS') };
 }
@@ -146,9 +158,11 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
       const result = await checkSat(item);
       db.exec('BEGIN IMMEDIATE');
       try {
-        /* «No encontrado» es una respuesta firme del SAT: se rechequea
-           al mes, no a diario ni cada hora. El resto, a diario. */
-        const next = result.state === 'No encontrado' ? time + 30 * DAY : time + DAY;
+        /* «No encontrado» y «Formato rechazado» son respuestas
+           firmes del SAT: se rechequean al mes, no a diario ni cada
+           hora. El resto, a diario. */
+        const next = (result.state === 'No encontrado' || result.state === 'Formato rechazado')
+          ? time + 30 * DAY : time + DAY;
         db.prepare("UPDATE cfdi_watch SET checked=?,result=?,next=?,error='' WHERE id=?").run(time, JSON.stringify(result), next, item.id);
         if (result.state === 'Cancelado') db.prepare('INSERT OR IGNORE INTO cancellation_alert(id,due) VALUES (?,?)').run(item.id, time);
         db.exec('COMMIT');
@@ -189,7 +203,7 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
      selección (no solo sobre la página visible). La coincidencia 69-B
      manda sobre el estado, como en el anillo de estados. */
   function summary(ids) {
-    const counts = { total: 0, vigentes: 0, cancelados: 0, noEncontrados: 0, enListado69B: 0,
+    const counts = { total: 0, vigentes: 0, cancelados: 0, noEncontrados: 0, formatoRechazado: 0, enListado69B: 0,
       sinRevisar: 0, conProblema: 0, revisados: 0, ultimaRevision: 0 };
     const affected = new Map();
     const get = db.prepare('SELECT * FROM cfdi_watch WHERE id=?');
@@ -212,6 +226,7 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
       if (state === 'Vigente') counts.vigentes++;
       else if (state === 'Cancelado') counts.cancelados++;
       else if (state === 'No encontrado') counts.noEncontrados++;
+      else if (state === 'Formato rechazado') counts.formatoRechazado++;
       else counts.conProblema++;
     }
     return { counts, masAfectados: [...affected.entries()].map(([rfc, count]) => ({ rfc, count }))

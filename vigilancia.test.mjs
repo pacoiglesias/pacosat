@@ -20,15 +20,19 @@ const acuse = (code, state) =>
 const fakeFetch = xml => async () => ({ ok: true, status: 200, body: (async function* () { yield Buffer.from(xml); })() });
 const cfdi = { id: '12345678-1234-1234-1234-1234567890AB', emitter: 'AAA010101AAA', receiver: 'XAXX010101000', total: '80.50', seal: '+/abcd==' };
 
-/* 1) La regresión: N-601 es RESPUESTA del SAT («No encontrado»), no
-   un error que reintentar cada hora. Antes de la reparación,
-   querySat lanzaba «El SAT no confirmó el estado: N - 601…» y la
-   fila quedaba en «pendiente de reintento» para siempre. */
-assert.equal((await querySat(cfdi, fakeFetch(acuse('N - 601: La expresión impresa proporcionada no es válida.', 'No Encontrado')))).state, 'No encontrado');
+/* 1) La regresión: N-601 es RESPUESTA del SAT, no un error que
+   reintentar cada hora. Antes de la reparación, querySat lanzaba
+   «El SAT no confirmó el estado: N - 601…» y la fila quedaba en
+   «pendiente de reintento» para siempre. En la 1.9.0 se guarda
+   como «Formato rechazado», distinto del «No encontrado» (N-602). */
+/* 1.9.0 (barrido de comunidades): N-601 se distingue de N-602 — es
+   el SAT rechazando el FORMATO de la consulta (la causa documentada:
+   el total con ceros no significativos), no un «no encontrado». */
+assert.equal((await querySat(cfdi, fakeFetch(acuse('N - 601: La expresión impresa proporcionada no es válida.', 'No Encontrado')))).state, 'Formato rechazado');
 assert.equal((await querySat(cfdi, fakeFetch(acuse('N - 602: Comprobante no encontrado.', 'No Encontrado')))).state, 'No encontrado');
 assert.equal((await querySat(cfdi, fakeFetch(acuse('S - 601: La expresión impresa proporcionada es válida.', 'Vigente')))).state, 'Vigente');
 await assert.rejects(() => querySat(cfdi, fakeFetch(acuse('N - 999: Otra cosa.', 'No Encontrado'))), /no confirmó/);
-console.log('OK: N-601/N-602 se guardan como «No encontrado»; S sigue dando el estado; lo demás sigue siendo error.');
+console.log('OK: N-601 se guarda como «Formato rechazado» (distinto de N-602 «No encontrado»); S sigue dando el estado; lo demás sigue siendo error.');
 
 /* 2) «No encontrado» no se rechequea a la hora ni al día: al mes. */
 {

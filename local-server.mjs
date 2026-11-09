@@ -13,7 +13,9 @@ import { createMonitor } from './sat-monitor.mjs';
 import { LIST_CATALOG, parseList, declaredDate, listSeverity, SEVERITY_ORDER } from './sat-lists.mjs';
 import { parseStatementText, extractPdfTextLines, moneyToCents } from './bank-statement.mjs';
 import { encryptBackupBuffer, decryptBackupBuffer } from './backup-core.mjs';
-import { createSatDocFetch, createFileEfirmaStorage } from './sat-doc-fetch.mjs';
+import { createSatDocFetch, createFileEfirmaStorage, createSatDocCredentialResolver } from './sat-doc-fetch.mjs';
+import { createSatDocBrowserFetch, createSatDocPipelineFetch, createPlaywrightDriverFactory } from './sat-doc-browser.mjs';
+import { createSatDeclFetch } from './sat-declaraciones.mjs';
 
 /* El RFC se valida con validateRfc (xml-core): un solo criterio en todo el sistema. */
 const DAY = 86400000;
@@ -106,7 +108,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null, extractText = extractPdfTextLines }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null, satDeclFetch = null, extractText = extractPdfTextLines }) {
   const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
   /* synchronous=FULL (1.6.15, mejora nº 4): en WAL el defecto es NORMAL
@@ -195,6 +197,29 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       detected TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL DEFAULT 0, UNIQUE(accountId, month));
     CREATE TABLE IF NOT EXISTS bank_movements (id TEXT PRIMARY KEY, statementId TEXT NOT NULL, date TEXT NOT NULL DEFAULT '',
       concept TEXT NOT NULL DEFAULT '', amountCents INTEGER NOT NULL DEFAULT 0, balanceCents INTEGER);
+    /* Declaraciones y acuses (1.9.0, punto 7): cada documento
+       recuperado del portal —declaración y acuse como documentos
+       DISTINTOS— con su ejercicio, periodo, fecha de presentación
+       y número de operación; el PDF vive en Expedientes (records). */
+    CREATE TABLE IF NOT EXISTS declaraciones (id TEXT PRIMARY KEY, rfc TEXT NOT NULL, tipo TEXT NOT NULL DEFAULT 'mensual',
+      clase TEXT NOT NULL DEFAULT 'acuse', ejercicio INTEGER NOT NULL DEFAULT 0, periodo TEXT NOT NULL DEFAULT '',
+      fechaPresentacion TEXT NOT NULL DEFAULT '', operacion TEXT NOT NULL DEFAULT '',
+      fileId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'auto',
+      created INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+    /* Conciliación asistida (1.9.0, punto 5 del plan): la decisión
+       de vincular un movimiento con uno o varios CFDI queda
+       REGISTRADA y se puede deshacer; deshacer no borra la fila,
+       la marca, para que el historial diga qué pasó. */
+    CREATE TABLE IF NOT EXISTS bank_matches (id TEXT PRIMARY KEY, movementId TEXT NOT NULL,
+      invoices TEXT NOT NULL DEFAULT '[]', mode TEXT NOT NULL DEFAULT 'total',
+      amountCents INTEGER NOT NULL DEFAULT 0, why TEXT NOT NULL DEFAULT '',
+      estado TEXT NOT NULL DEFAULT 'activo', created INTEGER NOT NULL DEFAULT 0,
+      undone INTEGER NOT NULL DEFAULT 0);
+    /* Movimientos marcados a mano como «sin factura legítimo»
+       (comisión, impuesto, traspaso): salen de los sin identificar
+       del cierre sin fingir una conciliación. */
+    CREATE TABLE IF NOT EXISTS bank_movement_marks (movementId TEXT PRIMARY KEY,
+      estado TEXT NOT NULL DEFAULT '', nota TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS mail_sends (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, recipients TEXT NOT NULL DEFAULT '',
       subject TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL DEFAULT 0,
       error TEXT NOT NULL DEFAULT '');
@@ -262,6 +287,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   /* Calendario de pago por contraparte (1.7.4, criterio 6): día de
      pago del mes (payDay) y/o plazo en días desde la factura
      (payTerms). Migración guardada, como la de records.rev. */
+  /* Centro de Avisos por RFC (1.9.0, punto 4 del plan): cada aviso
+     sabe de qué RFC propio es, quién lo resuelve, cuándo vence y
+     cuál es la siguiente acción — como datos, no escondidos en el
+     texto. */
+  const avisosCols = db.prepare('PRAGMA table_info(avisos)').all().map(row => row.name);
+  if (!avisosCols.includes('rfc')) db.exec("ALTER TABLE avisos ADD COLUMN rfc TEXT NOT NULL DEFAULT ''");
+  if (!avisosCols.includes('responsable')) db.exec("ALTER TABLE avisos ADD COLUMN responsable TEXT NOT NULL DEFAULT ''");
+  if (!avisosCols.includes('vence')) db.exec('ALTER TABLE avisos ADD COLUMN vence INTEGER');
+  if (!avisosCols.includes('accion')) db.exec("ALTER TABLE avisos ADD COLUMN accion TEXT NOT NULL DEFAULT ''");
   const counterpartCols = db.prepare('PRAGMA table_info(counterparts)').all();
   if (!counterpartCols.some(row => row.name === 'payDay'))
     db.exec('ALTER TABLE counterparts ADD COLUMN payDay INTEGER');
@@ -682,7 +716,13 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       });
       await transport.verify();
     } catch { need(false, 'No se pudo verificar SMTP. Revisa el servidor, el puerto y las credenciales.', 422); }
-    mail = { transport, from: x.from, recipient: x.recipient, instance: token.slice(0, 16) };
+    /* El identificador de instancia de los Message-ID era un
+       fragmento del token de administrador (auditoría 1.9.0): ahora
+       es un valor aleatorio independiente y persistente, sin
+       relación con ninguna credencial. */
+    let mailInstance = getState('mail-instance');
+    if (!mailInstance) { mailInstance = randomBytes(8).toString('hex'); setState('mail-instance', mailInstance); }
+    mail = { transport, from: x.from, recipient: x.recipient, instance: mailInstance };
   }
 
   function overview() {
@@ -882,12 +922,25 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['cancellation_alert', ['id', 'due', 'sent']],
     ['efos_alert', ['key', 'rfc', 'due', 'sent']],
     ['efos_meta', ['id', 'fetched', 'next', 'error']],
-    ['counterparts', ['rfc', 'name', 'kind', 'note', 'source', 'updated']],
+    ['counterparts', ['rfc', 'name', 'kind', 'note', 'source', 'updated', 'payDay', 'payTerms']],
     ['blacklist_meta', ['listId', 'fetched', 'next', 'count', 'declared', 'error']],
     ['list_events', ['id', 'at', 'listId', 'rfc', 'change', 'detail']],
     ['sat_documents', ['id', 'rfc', 'kind', 'issuedAt', 'fileId', 'source', 'created', 'error']],
     ['package_attempts', ['job', 'remoteId', 'attempts']],
-    ['mail_sends', ['id', 'at', 'recipients', 'subject', 'kind', 'ok', 'error']]
+    ['mail_sends', ['id', 'at', 'recipients', 'subject', 'kind', 'ok', 'error']],
+    /* Bancos y Avisos en el respaldo (1.9.0, punto 2 del plan): hasta
+       la 1.8.0 el respaldo NO los incluía — una restauración perdía
+       cuentas, estados, movimientos, conciliaciones y el historial
+       de avisos solventados. Desde la 1.9.0 viajan completos. */
+    ['bank_accounts', ['id', 'bank', 'name', 'last4', 'kind', 'created']],
+    ['bank_statements', ['id', 'accountId', 'month', 'fileId', 'openingCents', 'closingCents', 'creditsCents', 'chargesCents', 'movements', 'state', 'detected', 'created']],
+    ['bank_movements', ['id', 'statementId', 'date', 'concept', 'amountCents', 'balanceCents']],
+    ['bank_matches', ['id', 'movementId', 'invoices', 'mode', 'amountCents', 'why', 'estado', 'created', 'undone']],
+    ['bank_movement_marks', ['movementId', 'estado', 'nota', 'at']],
+    ['avisos', ['id', 'ref', 'kind', 'clase', 'estado', 'severidad', 'titulo', 'detalle', 'contraparte', 'nombre', 'importe', 'enlace', 'datos', 'baseline', 'creado', 'actualizado', 'resuelto', 'resolucion', 'correo', 'rfc', 'responsable', 'vence', 'accion']],
+    ['avisos_acciones', ['id', 'aviso', 'at', 'accion', 'nota']],
+    ['manual_payments', ['uuid', 'at', 'nota', 'importe']],
+    ['declaraciones', ['id', 'rfc', 'tipo', 'clase', 'ejercicio', 'periodo', 'fechaPresentacion', 'operacion', 'fileId', 'source', 'created', 'error']]
   ];
   const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   function dumpOperations() {
@@ -1952,23 +2005,246 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const eventRows = [['Fecha', 'Listado', 'RFC', 'Cambio', 'Detalle']];
     for (const event of events) eventRows.push([new Date(event.at).toISOString(), event.listId, event.rfc, event.change, event.detail]);
     entries.push({ name: 'listas-novedades.csv', buffer: Buffer.from(csvText(eventRows)) });
-    /* Por cobrar/pagar base: PPD del mes aún sin complemento (el
-       detalle fino de saldos llega con la ronda de dinero). */
-    const pending = invoices.filter(invoice => invoice.fiscal?.paymentMethod === 'PPD' && invoice.kind === 'I');
-    const pendingRows = [['UUID', 'Fecha', 'Sentido', 'Contraparte', 'Total']];
-    for (const invoice of pending) pendingRows.push([invoice.id, invoice.date,
-      profileRfcs.has(invoice.from?.rfc) ? 'Por cobrar (emitida PPD)' : 'Por pagar (recibida PPD)',
-      profileRfcs.has(invoice.from?.rfc) ? invoice.to?.name : invoice.from?.name, invoice.total]);
+    /* ===== Ampliación 1.9.0 (punto 4 del plan + barrido de
+       comunidades del 9 nov 2026): el paquete pasa a cerrar el mes
+       de verdad — conciliación, pendientes reales por saldo y las
+       revisiones PUE/PPD que el SAT está observando por Buzón. */
+    const allInvoices = recordInvoices();
+    const byUuid = new Map(allInvoices.map(invoice => [invoice.id, invoice]));
+    const balances = new Map(moneyBalances().map(balance => [balance.id, balance]));
+    const paidBy = moneyPaidBy();
+    const sentido = invoice => profileRfcs.has(invoice.from?.rfc) ? 'Por cobrar (emitida)' : 'Por pagar (recibida)';
+    /* PPD del mes con su saldo REAL (la 1.8.0 listaba todos los PPD
+       como si debieran el complemento aunque ya estuvieran pagados). */
+    const pendingRows = [['UUID', 'Fecha', 'Sentido', 'Contraparte', 'Total', 'Pagado', 'Saldo pendiente']];
+    const complementPendingRows = [['UUID', 'Fecha', 'Sentido', 'Contraparte', 'Total', 'Pagado', 'Saldo pendiente', 'Nota']];
+    let pendingComplements = 0;
+    for (const invoice of invoices.filter(item => item.fiscal?.paymentMethod === 'PPD' && item.kind === 'I')) {
+      const balance = balances.get(invoice.id);
+      const paid = balance ? balance.total - balance.balance : 0n;
+      const saldo = balance ? balance.balance : centsOf(invoice.total);
+      pendingRows.push([invoice.id, invoice.date, sentido(invoice),
+        profileRfcs.has(invoice.from?.rfc) ? invoice.to?.name : invoice.from?.name,
+        invoice.total, moneyText(paid), moneyText(saldo)]);
+      if (saldo > 0n) { pendingComplements++;
+        complementPendingRows.push([invoice.id, invoice.date, sentido(invoice),
+          profileRfcs.has(invoice.from?.rfc) ? invoice.to?.name : invoice.from?.name,
+          invoice.total, moneyText(paid), moneyText(saldo),
+          'Si el pago llegó en ' + monthKey + ', su complemento vence a más tardar el día 5 del mes siguiente (regla 2.7.1.32).']);
+      }
+    }
     entries.push({ name: 'ppd-del-mes.csv', buffer: Buffer.from(csvText(pendingRows)) });
+    entries.push({ name: 'complementos-pendientes.csv', buffer: Buffer.from(csvText(complementPendingRows)) });
+    /* Complementos del mes, revisados uno a uno contra su factura
+       (barrido C.5): UUID, importe, fecha y forma del pago, y si la
+       factura relacionada es PUE — la combinación que el SAT está
+       avisando por Buzón Tributario (barrido C.1, meta: cero). */
+    const complementRows = [['UUID complemento', 'Fecha complemento', 'UUID factura', 'Fecha de pago', 'Importe pagado', 'Forma de pago', 'Método de la factura', 'Revisión']];
+    const pueWithComplement = new Map();
+    for (const payment of invoices.filter(item => item.kind === 'P' && item.fiscal?.payments)) {
+      for (const pago of payment.fiscal.payments.pagos || []) for (const doc of pago.documentos || []) {
+        const target = byUuid.get(doc.idDocumento);
+        const revision = !target ? 'La factura relacionada no está en el expediente' :
+          target.fiscal?.paymentMethod === 'PUE' ? 'OJO: la factura es PUE y tiene complemento (combinación observada por el SAT)' :
+          target.fiscal?.paymentMethod !== 'PPD' ? 'La factura no es PPD: revisar' : 'Correcto: complemento de una PPD';
+        complementRows.push([payment.id, payment.date, doc.idDocumento, pago.fechaPago || '',
+          doc.impPagado, pago.formaPago || '', target?.fiscal?.paymentMethod || '', revision]);
+        if (target?.fiscal?.paymentMethod === 'PUE') pueWithComplement.set(target.id, target);
+      }
+    }
+    /* También cuentan los PUE del mes con complemento de OTRO mes. */
+    for (const payment of allInvoices.filter(item => item.kind === 'P' && item.fiscal?.payments))
+      for (const pago of payment.fiscal.payments.pagos || []) for (const doc of pago.documentos || []) {
+        const target = byUuid.get(doc.idDocumento);
+        if (target && target.fiscal?.paymentMethod === 'PUE' && String(target.date || '').startsWith(monthKey))
+          pueWithComplement.set(target.id, target);
+      }
+    entries.push({ name: 'complementos-del-mes.csv', buffer: Buffer.from(csvText(complementRows)) });
+    const pueRows = [['UUID', 'Fecha', 'Emisor', 'Receptor', 'Total', 'Aviso']];
+    for (const invoice of pueWithComplement.values()) pueRows.push([invoice.id, invoice.date,
+      invoice.from?.name, invoice.to?.name, invoice.total,
+      'CFDI emitido como PUE con complemento de pago asociado: es la combinación que el SAT está observando por Buzón Tributario y puede duplicar el ingreso en la precarga de Declaraciones y Pagos.']);
+    entries.push({ name: 'pue-con-complemento.csv', buffer: Buffer.from(csvText(pueRows)) });
+    /* PUE del mes sin evidencia de pago al cierre y PUE cuyo pago
+       llegó con forma distinta a la registrada (regla 2.7.1.39 del
+       barrido: cancelar y reexpedir según el caso). */
+    const matchedUuids = new Set();
+    for (const match of db.prepare("SELECT invoices FROM bank_matches WHERE estado='activo'").all())
+      for (const inv of JSON.parse(match.invoices || '[]')) matchedUuids.add(inv.uuid);
+    const pueReviewRows = [['UUID', 'Fecha', 'Contraparte', 'Total', 'Tipo de revisión', 'Detalle']];
+    for (const invoice of invoices.filter(item => item.kind === 'I' && item.fiscal?.paymentMethod === 'PUE')) {
+      const hasPaymentEvidence = matchedUuids.has(invoice.id) || db.prepare('SELECT 1 AS x FROM manual_payments WHERE uuid=?').get(invoice.id);
+      if (!hasPaymentEvidence && !pueWithComplement.has(invoice.id))
+        pueReviewRows.push([invoice.id, invoice.date, invoice.to?.name || invoice.from?.name, invoice.total,
+          'PUE sin evidencia de pago al cierre del mes',
+          'Si el pago no llegó a más tardar el último día del mes, la regla 2.7.1.39 pide cancelar y reexpedir como PPD (forma 99, relación de sustitución) y emitir los complementos por los pagos recibidos.']);
+      for (const payment of allInvoices.filter(item => item.kind === 'P' && item.fiscal?.payments))
+        for (const pago of payment.fiscal.payments.pagos || [])
+          if ((pago.documentos || []).some(doc => doc.idDocumento === invoice.id) &&
+              pago.formaPago && invoice.fiscal?.paymentForm && pago.formaPago !== invoice.fiscal.paymentForm)
+            pueReviewRows.push([invoice.id, invoice.date, invoice.to?.name || invoice.from?.name, invoice.total,
+              'PUE pagado con forma distinta a la registrada',
+              'La factura dice forma ' + invoice.fiscal.paymentForm + ' y el pago llegó con forma ' + pago.formaPago +
+              ': la regla 2.7.1.39 pide cancelar y reexpedir señalando la forma correcta.']);
+    }
+    entries.push({ name: 'pue-revision.csv', buffer: Buffer.from(csvText(pueReviewRows)) });
+    /* Inconsistencias de forma de pago detectables (barrido C.4,
+       error CFDI40105): PPD con forma distinta de 99 y PUE con 99. */
+    const formaRows = [['UUID', 'Fecha', 'Método', 'Forma registrada', 'Inconsistencia']];
+    for (const invoice of invoices.filter(item => item.kind === 'I' && item.fiscal)) {
+      if (invoice.fiscal.paymentMethod === 'PPD' && invoice.fiscal.paymentForm && invoice.fiscal.paymentForm !== '99')
+        formaRows.push([invoice.id, invoice.date, 'PPD', invoice.fiscal.paymentForm, 'Un PPD debe llevar forma 99 (por definir); con otra forma el timbrado da el error CFDI40105.']);
+      if (invoice.fiscal.paymentMethod === 'PUE' && invoice.fiscal.paymentForm === '99')
+        formaRows.push([invoice.id, invoice.date, 'PUE', '99', 'Un PUE debe llevar la forma real de pago, no 99 (por definir).']);
+    }
+    entries.push({ name: 'inconsistencias-forma.csv', buffer: Buffer.from(csvText(formaRows)) });
+    /* Cancelaciones del mes, con la señal grave: cancelada YA pagada. */
+    const cancelRows = [['UUID', 'Fecha', 'Emisor', 'Receptor', 'Total', 'Ya pagada', 'Nota']];
+    let cancelledPaid = 0;
+    for (const invoice of invoices.filter(item => String(item.state || '').toLowerCase().startsWith('cancel'))) {
+      const paid = (paidBy.get(invoice.id) || 0n) > 0n;
+      if (paid) cancelledPaid++;
+      cancelRows.push([invoice.id, invoice.date, invoice.from?.name, invoice.to?.name, invoice.total,
+        paid ? 'SÍ' : 'No', paid ? 'Cancelada con pago enlazado: revisar con la contadora antes de darla por cerrada.' : '']);
+    }
+    entries.push({ name: 'cancelaciones.csv', buffer: Buffer.from(csvText(cancelRows)) });
+    /* Conciliación bancaria del mes y movimientos sin identificar. */
+    const movements = db.prepare('SELECT m.*, s.accountId FROM bank_movements m JOIN bank_statements s ON s.id=m.statementId').all()
+      .filter(mv => String(mv.date || '').startsWith(monthKey));
+    const activeMatches = db.prepare("SELECT * FROM bank_matches WHERE estado='activo'").all();
+    const matchByMovement = new Map(activeMatches.map(match => [match.movementId, match]));
+    const marks = new Set(db.prepare('SELECT movementId FROM bank_movement_marks').all().map(row => row.movementId));
+    const accountsById = new Map(banksOverview().accounts.map(account => [account.id, account]));
+    const reconcileRows = [['Fecha', 'Concepto', 'Importe', 'Modo', 'Facturas', 'Por qué se propuso']];
+    const unmatchedRows = [['Fecha', 'Cuenta', 'Concepto', 'Importe']];
+    for (const mv of movements) {
+      const match = matchByMovement.get(mv.id);
+      if (match) reconcileRows.push([mv.date, mv.concept, moneyText(BigInt(mv.amountCents)), match.mode,
+        JSON.parse(match.invoices || '[]').map(inv => inv.uuid).join(' + '), match.why]);
+      else if (!marks.has(mv.id)) { const account = accountsById.get(mv.accountId);
+        unmatchedRows.push([mv.date, account ? (account.bank + ' ' + (account.name || '')) : mv.accountId, mv.concept, moneyText(BigInt(mv.amountCents))]); }
+    }
+    entries.push({ name: 'conciliaciones.csv', buffer: Buffer.from(csvText(reconcileRows)) });
+    entries.push({ name: 'movimientos-sin-identificar.csv', buffer: Buffer.from(csvText(unmatchedRows)) });
+    /* Faltantes: XML no guardados y estados de cuenta del mes. */
+    const missingRows = [['Tipo', 'Detalle']];
+    for (const invoice of invoices) if (!readFileRecord('xml:' + invoice.id))
+      missingRows.push(['XML no guardado', invoice.id + ' · ' + (invoice.from?.name || '') + ' · ' + invoice.total]);
+    for (const account of banksOverview().accounts)
+      if (account.missing.includes(monthKey))
+        missingRows.push(['Estado de cuenta faltante', account.bank + ' ' + (account.name || '') + ' · ' + monthKey]);
+    entries.push({ name: 'faltantes.csv', buffer: Buffer.from(csvText(missingRows)) });
+    /* Bitácora del mes: avisos (Buzón interno) y correos enviados —
+       las invitaciones del SAT también llegan por correo (C.3). */
+    const avisoRows = [['Creado', 'Clase', 'Título', 'RFC', 'Responsable', 'Estado', 'Resolución']];
+    for (const aviso of db.prepare('SELECT * FROM avisos WHERE creado>=? AND creado<? ORDER BY creado').all(monthStart, monthStart + 32 * DAY))
+      avisoRows.push([new Date(aviso.creado).toISOString(), aviso.clase, aviso.titulo, aviso.rfc || '', aviso.responsable || '', aviso.estado, aviso.resolucion || '']);
+    entries.push({ name: 'avisos-del-mes.csv', buffer: Buffer.from(csvText(avisoRows)) });
+    const mailRows = [['Fecha', 'Destinatarios', 'Asunto', 'Tipo', 'Enviado', 'Error']];
+    for (const send of db.prepare('SELECT * FROM mail_sends WHERE at>=? AND at<? ORDER BY at').all(monthStart, monthStart + 32 * DAY))
+      mailRows.push([new Date(send.at).toISOString(), send.recipients, send.subject, send.kind, send.ok ? 'sí' : 'no', send.error || '']);
+    entries.push({ name: 'correos-del-mes.csv', buffer: Buffer.from(csvText(mailRows)) });
+    /* Conciliación PUE vs declarado (base, barrido C.3): el IVA de
+       los PUE emitidos es lo que el SAT cruza contra la declaración;
+       la cifra declarada la aporta la contadora — aquí va la base
+       exacta, por RFC, para conciliar en un vistazo. */
+    let pueIva = 0n, pueTotal = 0n;
+    for (const invoice of invoices.filter(item => item.kind === 'I' && item.fiscal?.paymentMethod === 'PUE' && profileRfcs.has(item.from?.rfc))) {
+      pueTotal += centsOf(invoice.total);
+      for (const t of invoice.fiscal?.transferred || []) if (t.tax === '002') pueIva += centsOf(t.amount);
+    }
+    /* Lista de revisión para la contadora, con las cifras del mes. */
+    const checklist = ['PacoSAT · Lista de revisión del cierre ' + monthKey, '',
+      '1. CFDI del mes en el expediente: ' + invoices.length + ' (indice.csv, con sus XML en /xml).',
+      '2. Conciliación bancaria: ' + (reconcileRows.length - 1) + ' movimiento(s) conciliados (conciliaciones.csv) y ' +
+        (unmatchedRows.length - 1) + ' sin identificar (movimientos-sin-identificar.csv).',
+      '3. Complementos pendientes por saldo real: ' + pendingComplements + ' (complementos-pendientes.csv). ' +
+        'Ojo al plazo: el complemento de un pago recibido en el mes vence a más tardar el día 5 del mes siguiente.',
+      '4. Complementos del mes revisados uno a uno (complementos-del-mes.csv): ' + (complementRows.length - 1) + '.',
+      '5. CFDI PUE con complemento asociado: ' + pueWithComplement.size + ' (pue-con-complemento.csv). La meta es cero: ' +
+        'es la combinación que el SAT está observando por Buzón Tributario.',
+      '6. PUE a revisar (sin evidencia de pago al cierre o pagados con otra forma): ' + (pueReviewRows.length - 1) + ' (pue-revision.csv).',
+      '7. Inconsistencias de forma de pago PUE/PPD: ' + (formaRows.length - 1) + ' (inconsistencias-forma.csv).',
+      '8. Cancelaciones del mes: ' + (cancelRows.length - 1) + ', de ellas ya pagadas: ' + cancelledPaid + ' (cancelaciones.csv).',
+      '9. Faltantes (XML sin guardar, estados sin archivar): ' + (missingRows.length - 1) + ' (faltantes.csv).',
+      '10. IVA trasladado de los CFDI PUE emitidos del mes: $' + moneyText(pueIva) + ' sobre $' + moneyText(pueTotal) +
+        ' — es la cifra que el SAT cruza contra lo declarado; concíliala con la declaración antes de que llegue la invitación.',
+      '11. Base DIOT por proveedor: base-diot.csv · Novedades de listados: listas-novedades.csv.',
+      '12. Avisos y correos del mes: avisos-del-mes.csv y correos-del-mes.csv (las invitaciones del SAT también llegan por correo; la aclaración se presenta en Mi Portal).'].join('\n');
+    entries.push({ name: 'revision-contadora.txt', buffer: Buffer.from(checklist) });
     const summary = ['PacoSAT · Paquete mensual ' + monthKey, '',
       'CFDI del mes: ' + invoices.length,
       'Total emitido (tus RFC): $' + moneyText(issued),
       'Total recibido (tus RFC): $' + moneyText(received),
       'Documentos PDF del mes incluidos en /documentos.',
+      'Conciliados: ' + (reconcileRows.length - 1) + ' · Sin identificar: ' + (unmatchedRows.length - 1) +
+        ' · Complementos pendientes: ' + pendingComplements + ' · PUE con complemento: ' + pueWithComplement.size +
+        ' · Cancelaciones: ' + (cancelRows.length - 1) + ' · Faltantes: ' + (missingRows.length - 1),
+      'La lista de revisión paso a paso va en revision-contadora.txt.',
       'Base DIOT con desglose: base-diot.csv · Novedades de listas: listas-novedades.csv · PPD del mes: ppd-del-mes.csv'].join('\n');
     entries.push({ name: 'resumen.txt', buffer: Buffer.from(summary) });
     return { buffer: zipStoreBuffers(entries), filename: 'PacoSAT-paquete-' + monthKey + '.zip',
-      counts: { invoices: invoices.length, events: events.length } };
+      counts: { invoices: invoices.length, events: events.length, pendingComplements,
+        pueWithComplement: pueWithComplement.size, unmatchedMovements: unmatchedRows.length - 1,
+        cancelled: cancelRows.length - 1, missing: missingRows.length - 1 } };
+  }
+  /* Lista de cierre del mes calculada en el SERVIDOR (1.9.0): la
+     pantalla ya no trae pasos «sin comprobar» — cada renglón trae su
+     cifra real y su nivel, y es la misma verdad que va dentro del
+     ZIP en revision-contadora.txt. */
+  function monthChecklist(monthKey, time) {
+    const invoices = recordInvoices().filter(invoice => String(invoice.date || '').startsWith(monthKey));
+    const items = [];
+    const push = (id, label, level, detail) => items.push({ id, label, level, detail });
+    push('cfdi', 'CFDI del mes en el expediente', invoices.length ? 'ok' : 'dim',
+      invoices.length ? invoices.length + ' comprobantes de ' + monthKey + '.' : 'Aún no hay comprobantes de ' + monthKey + '.');
+    const sinDesglose = invoices.filter(invoice => invoice.kind === 'I' && !invoice.fiscal).length;
+    push('desglose', 'Desglose fiscal completo', sinDesglose ? 'warn' : 'ok',
+      sinDesglose ? sinDesglose + ' CFDI de ingreso sin desglose: la base DIOT sale incompleta.' : 'Todos los CFDI de ingreso traen desglose.');
+    const movements = db.prepare('SELECT m.id FROM bank_movements m JOIN bank_statements s ON s.id=m.statementId WHERE m.date LIKE ?').all(monthKey + '%');
+    const matched = new Set(db.prepare("SELECT movementId FROM bank_matches WHERE estado='activo'").all().map(row => row.movementId));
+    const marked = new Set(db.prepare('SELECT movementId FROM bank_movement_marks').all().map(row => row.movementId));
+    const sinIdentificar = movements.filter(mv => !matched.has(mv.id) && !marked.has(mv.id)).length;
+    push('conciliacion', 'Conciliación bancaria del mes', movements.length === 0 ? 'dim' : sinIdentificar ? 'warn' : 'ok',
+      movements.length === 0 ? 'Sin movimientos bancarios archivados de ' + monthKey + '.' :
+        sinIdentificar ? sinIdentificar + ' movimiento(s) sin identificar de ' + movements.length + '.' : 'Todos los movimientos del mes están conciliados o marcados.');
+    const balances = new Map(moneyBalances().map(balance => [balance.id, balance]));
+    const pendientes = invoices.filter(invoice => invoice.fiscal?.paymentMethod === 'PPD' && invoice.kind === 'I' &&
+      (balances.get(invoice.id)?.balance || 0n) > 0n).length;
+    push('complementos', 'Complementos de pago pendientes', pendientes ? 'warn' : 'ok',
+      pendientes ? pendientes + ' PPD del mes con saldo: su complemento vence a más tardar el día 5 del mes siguiente.' : 'Ningún PPD del mes queda con saldo.');
+    const byUuid = new Map(recordInvoices().map(invoice => [invoice.id, invoice]));
+    let pueComp = 0;
+    for (const payment of recordInvoices().filter(invoice => invoice.kind === 'P' && invoice.fiscal?.payments))
+      for (const pago of payment.fiscal.payments.pagos || []) for (const doc of pago.documentos || []) {
+        const target = byUuid.get(doc.idDocumento);
+        if (target?.fiscal?.paymentMethod === 'PUE' && String(target.date || '').startsWith(monthKey)) pueComp++;
+      }
+    push('pue', 'CFDI PUE con complemento (meta: cero)', pueComp ? 'bad' : 'ok',
+      pueComp ? pueComp + ' caso(s): es la combinación que el SAT observa por Buzón Tributario.' : 'Ningún PUE del mes tiene complemento asociado.');
+    const paidBy = moneyPaidBy();
+    const canceladas = invoices.filter(invoice => String(invoice.state || '').toLowerCase().startsWith('cancel'));
+    const cancelPagadas = canceladas.filter(invoice => (paidBy.get(invoice.id) || 0n) > 0n).length;
+    push('cancelaciones', 'Cancelaciones del mes', cancelPagadas ? 'bad' : canceladas.length ? 'warn' : 'ok',
+      canceladas.length ? canceladas.length + ' cancelada(s)' + (cancelPagadas ? ', ' + cancelPagadas + ' ya pagada(s): revisar ya.' : '.') : 'Sin cancelaciones en el mes.');
+    const xmlFaltantes = invoices.filter(invoice => !readFileRecord('xml:' + invoice.id)).length;
+    const estadosFaltantes = banksOverview().accounts.filter(account => account.missing.includes(monthKey)).length;
+    push('faltantes', 'Faltantes de descarga y archivo', (xmlFaltantes || estadosFaltantes) ? 'warn' : 'ok',
+      (xmlFaltantes || estadosFaltantes) ? xmlFaltantes + ' XML sin guardar y ' + estadosFaltantes + ' estado(s) de cuenta faltante(s) del mes.' : 'Nada falta: XML y estados del mes están archivados.');
+    const backup = overview().scheduledBackup;
+    const respaldoOk = backup.last && time - backup.last < 10 * DAY;
+    push('respaldo', 'Respaldo reciente', respaldoOk ? 'ok' : 'warn',
+      backup.last ? 'Último respaldo: ' + new Date(backup.last).toISOString().slice(0, 10) + '.' : 'Aún no hay respaldo ejecutado.');
+    const docsView = satDocsOverview(time);
+    const sinConstancia = docsView.filter(profile => !profile.constancia || !profile.opinion).length;
+    push('constancias', 'Constancias y opinión al día', sinConstancia ? 'warn' : 'ok',
+      sinConstancia ? sinConstancia + ' perfil(es) sin constancia u opinión archivada.' : 'Constancias y opiniones archivadas por perfil.');
+    let noraMonth = '';
+    try { noraMonth = JSON.parse(getState('reports-state') || '{}').noraMonth || ''; } catch { noraMonth = ''; }
+    push('informe', 'Informe a la contadora', noraMonth === monthKey ? 'ok' : 'dim',
+      noraMonth === monthKey ? 'El paquete de ' + monthKey + ' ya salió a la contadora.' :
+        'El paquete de ' + monthKey + ' aún no consta enviado (sale el día fijado del mes siguiente o a mano desde Salidas).');
+    return { month: monthKey, items };
   }
   const mxFormat = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Mexico_City', weekday: 'short',
     day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', hourCycle: 'h23' });
@@ -2057,15 +2333,18 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const existing = db.prepare('SELECT * FROM avisos WHERE ref=?').get(row.ref);
     if (existing) {
       if (existing.estado !== 'solventado')
-        db.prepare('UPDATE avisos SET titulo=?,detalle=?,importe=?,actualizado=? WHERE id=?')
-          .run(row.titulo, row.detalle, row.importe || '', time, existing.id);
+        db.prepare('UPDATE avisos SET titulo=?,detalle=?,importe=?,actualizado=?,rfc=?,vence=?,accion=? WHERE id=?')
+          .run(row.titulo, row.detalle, row.importe || '', time,
+            row.rfc || existing.rfc || '', row.vence ?? existing.vence ?? null,
+            row.accion || existing.accion || '', existing.id);
       return existing;
     }
-    db.prepare('INSERT INTO avisos(ref,kind,clase,estado,severidad,titulo,detalle,contraparte,nombre,importe,enlace,datos,baseline,creado,actualizado,correo) ' +
-      'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    db.prepare('INSERT INTO avisos(ref,kind,clase,estado,severidad,titulo,detalle,contraparte,nombre,importe,enlace,datos,baseline,creado,actualizado,correo,rfc,responsable,vence,accion) ' +
+      'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(row.ref, row.kind, row.clase, row.estado, row.severidad, row.titulo, row.detalle,
         row.contraparte || '', row.nombre || '', row.importe || '', row.enlace || '',
-        JSON.stringify(row.datos || {}), baseline ? 1 : 0, time, time, row.correo ? 1 : 0);
+        JSON.stringify(row.datos || {}), baseline ? 1 : 0, time, time, row.correo ? 1 : 0,
+        row.rfc || '', row.responsable || 'Paco', row.vence ?? null, row.accion || '');
     const created = db.prepare('SELECT * FROM avisos WHERE ref=?').get(row.ref);
     avisoLog(created.id, 'creado', row.titulo, time);
     return created;
@@ -2152,6 +2431,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           ', total $' + moneyShow(balance.total) + '). ' + (cobrar ? '¿Ya pagaron?' : '¿Ya se pagó?') +
           ' Si ya se pagó, ciérralo aquí mismo con un toque («Ya se pagó · Cerrar»; la nota es opcional); si llegó el complemento de pago, enlázalo en Dinero y este aviso se cierra solo.',
         contraparte: cpRfc || '', nombre: cpName, importe: moneyText(balance.balance), enlace: 'dinero',
+        rfc: (cobrar ? balance.from?.rfc : balance.to?.rfc) || '', responsable: 'Paco',
+        vence: Date.parse(due + 'T12:00:00Z') || null,
+        accion: cobrar ? 'Confirmar si la contraparte ya pagó o registrar el pago' : 'Confirmar si ya se pagó o registrar el pago',
         datos: { direccion: cobrar ? 'cobrar' : 'pagar', uuid: balance.id, vence: due } }, time, baseline);
     }
     /* (b) Facturas esperadas que no han llegado (desde el día 10). */
@@ -2162,6 +2444,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         detalle: (item.name || item.rfc) + ' facturó en ' + item.monthsActive + ' de los últimos 6 meses, pero en ' + item.month +
           ' aún no consta ningún CFDI suyo en PacoSAT. Si era un gasto fijo, puede haberse perdido o no haberse emitido.',
         contraparte: item.rfc, nombre: item.name || '', importe: '', enlace: 'sat',
+        responsable: 'Paco', accion: 'Comprobar si la factura llegó por otro canal o pedírsela al proveedor',
         datos: { rfc: item.rfc, month: item.month } }, time, baseline);
     for (const aviso of db.prepare("SELECT * FROM avisos WHERE kind='esperada' AND estado<>'solventado'").all()) {
       const datos = avisoDatos(aviso);
@@ -2180,6 +2463,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         detalle: 'En Bancos no está archivado el estado de ' + account.bank + ' (' + (account.name || 'cuenta') + ') del mes ' + mes +
           '. Sin él no se cierra la cadena de saldos ni se concilia ese mes.',
         contraparte: '', nombre: account.bank, importe: '', enlace: 'bancos',
+        responsable: 'Paco', accion: 'Subir el estado de cuenta de ' + mes + ' en Bancos',
         datos: { banco: account.bank, mes, accountId: account.id } }, time, baseline);
       avisoEnsure({ ref: 'solicitud:' + account.id + ':' + mes, kind: 'solicitud-estado', clase: 'necesita',
         estado: 'abierto', severidad: 'media',
@@ -2187,6 +2471,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         detalle: 'Para conciliar los pagos de ' + mes + ' me falta el estado de ' + account.bank + ' (' + (account.name || 'cuenta') +
           '). Súbelo aquí mismo, en esta tarjeta: se procesa al momento y los avisos que dependen de él se solventan solos.',
         contraparte: '', nombre: account.bank, importe: '', enlace: 'bancos',
+        responsable: 'Paco', accion: 'Subir el estado de cuenta de ' + mes + ' aquí mismo, en esta tarjeta',
         datos: { banco: account.bank, mes, accountId: account.id } }, time, baseline);
     }
     for (const aviso of db.prepare("SELECT * FROM avisos WHERE kind IN ('estado','solicitud-estado') AND estado<>'solventado'").all()) {
@@ -2204,6 +2489,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         detalle: 'Coincide en: ' + cp.hits.map(hit => hit.label + (hit.detail ? ' (' + hit.detail + ')' : '')).join(' · ') +
           '. Revisa los comprobantes relacionados antes de seguir operando con esta contraparte.',
         contraparte: cp.rfc, nombre: cp.name || '', importe: '', enlace: 'lists',
+        responsable: 'Contadora', accion: 'Revisar los comprobantes de esta contraparte con la contadora antes de seguir operando',
         datos: { rfc: cp.rfc } }, time, baseline);
     }
     /* (e) Espejo de las alertas internas históricas (respaldo, SAT,
@@ -2219,6 +2505,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       'list-transition': ['mal', 'media', 'lists'], 'nora-report-fail': ['mal', 'media', 'operaciones'],
       'weekly-fail': ['mal', 'media', 'operaciones'], 'satdoc-fail': ['mal', 'media', 'docs'],
       'watch-fail': ['mal', 'media', 'operaciones'], 'watch-incidents': ['mal', 'media', 'operaciones'],
+      'decl-fail': ['mal', 'media', 'docs'],
       'tick-stuck': ['mal', 'media', 'operaciones'],
       'cert-expiry': ['necesita', 'media', 'sat'], 'fiscal-due': ['necesita', 'media', 'cumplimiento'],
       'satdoc-mail': ['necesita', 'media', 'docs'],
@@ -2232,6 +2519,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       avisoEnsure({ ref: 'alerta:' + alert.id, kind: 'general', clase: mapa[0], estado: 'abierto', severidad: mapa[1],
         titulo: String(alert.subject || '').replace(/^PacoSAT · /, ''), detalle: alert.body || '',
         contraparte: '', nombre: '', importe: '', enlace: mapa[2], correo: alert.sent ? 1 : 0,
+        responsable: mapa[2] === 'cumplimiento' ? 'Contadora' : 'Paco',
+        accion: 'Abrir la pantalla enlazada y corregir la causa; después, «Ya lo corregí»',
         datos: { alerta: alert.id, alertaKind: alert.kind } }, time, 0);
     }
     if (first) setState('avisos:baseline-done', '1');
@@ -2275,10 +2564,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       estado: row.estado, severidad: row.severidad, titulo: row.titulo, detalle: row.detalle, contraparte: row.contraparte,
       nombre: row.nombre, importe: row.importe, enlace: row.enlace, baseline: Boolean(row.baseline), creado: row.creado,
       resuelto: row.resuelto, resolucion: row.resolucion, direccion: datos.direccion || '',
+      rfc: row.rfc || '', responsable: row.responsable || 'Paco', vence: row.vence || null,
+      accion: row.accion || '', actualizado: row.actualizado,
       solicitud: row.kind === 'solicitud-estado' ? { banco: datos.banco || '', mes: datos.mes || '' } : null }; };
     const counts = { total: open.length, mal: 0, falta: 0, necesita: 0, porConfirmar: 0 };
-    for (const row of open) { counts[row.clase] = (counts[row.clase] || 0) + 1; if (row.estado === 'por-confirmar') counts.porConfirmar++; }
-    return { avisos: open.map(serialize), historial: history.map(serialize), counts, config: avisosConfig() };
+    const porRfc = {};
+    for (const row of open) { counts[row.clase] = (counts[row.clase] || 0) + 1; if (row.estado === 'por-confirmar') counts.porConfirmar++;
+      if (row.rfc) porRfc[row.rfc] = (porRfc[row.rfc] || 0) + 1; }
+    return { avisos: open.map(serialize), historial: history.map(serialize), counts, porRfc, config: avisosConfig() };
   }
 
   /* ===== Dinero (1.6.17) =====
@@ -2362,6 +2655,22 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
   function guestSessions() {
     try { return JSON.parse(getState('guest-sessions') || '{}'); } catch { return {}; }
+  }
+  /* Alcance por RFC del invitado (1.9.0, auditoría de seguridad):
+     la configuración puede limitar la lectura a unos RFC propios;
+     vacío = sin límite (comportamiento histórico). Con alcance,
+     las rutas de bancos y el paquete sin conexión quedan fuera:
+     los bancos son del titular, no de un RFC concreto. */
+  function guestScopeRfcs() {
+    const config = guestConfig();
+    return Array.isArray(config.rfcs) && config.rfcs.length
+      ? new Set(config.rfcs.map(rfc => String(rfc).toUpperCase())) : null;
+  }
+  const guestLoginFails = [];
+  function guestLoginThrottled() {
+    const cutoff = now() - 10 * 60 * 1000;
+    while (guestLoginFails.length && guestLoginFails[0] < cutoff) guestLoginFails.shift();
+    return guestLoginFails.length >= 8;
   }
   const GUEST_GET = ['/api/status', '/api/storage', '/api/storage/rev', '/api/lists', '/api/money', '/api/notices',
     '/api/fiscal/calendar', '/api/fiscal/issues', '/api/banks', '/api/banks/movements', '/api/offline-bundle', '/api/reports/config'];
@@ -2487,6 +2796,174 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     result.position.total = moneyText(global);
     for (const [bank, total] of bankTotals) result.position.byBank[bank] = moneyText(total);
     return result;
+  }
+
+  /* ===== Conciliación bancaria asistida (1.9.0, punto 3) =====
+     El sistema PROPONE vínculos movimiento↔CFDI↔complemento y dice
+     por qué (importe contra total o saldo, suma de dos saldos,
+     complemento que cubre la factura, fecha, moneda, mención de la
+     contraparte en el concepto). Nada se aplica sin la decisión de
+     Paco: confirmar persiste el vínculo (bank_matches), deshacer lo
+     marca — no lo borra — y un movimiento puede declararse «sin
+     factura legítimo» (comisión, impuesto, traspaso). */
+  function reconcileOverview() {
+    const movements = db.prepare('SELECT m.*, s.accountId FROM bank_movements m JOIN bank_statements s ON s.id=m.statementId ORDER BY m.date, m.id').all();
+    const active = db.prepare("SELECT * FROM bank_matches WHERE estado='activo'").all();
+    const matchByMovement = new Map(active.map(match => [match.movementId, match]));
+    const marks = new Map(db.prepare('SELECT * FROM bank_movement_marks').all().map(row => [row.movementId, row]));
+    const byUuid = new Map(recordInvoices().map(invoice => [invoice.id, invoice]));
+    const usedByMatches = new Map();
+    for (const match of active) for (const inv of JSON.parse(match.invoices || '[]'))
+      usedByMatches.set(inv.uuid, (usedByMatches.get(inv.uuid) || 0n) + BigInt(inv.amountCents || 0));
+    /* Las canceladas no son candidatas: conciliar un movimiento
+       contra un CFDI cancelado escondería el problema. */
+    const balances = moneyBalances().filter(balance => balance.balance > 0n &&
+      !String(byUuid.get(balance.id)?.state || '').toLowerCase().startsWith('cancel'));
+    const effective = balance => balance.balance - (usedByMatches.get(balance.id) || 0n);
+    const brief = invoice => invoice ? { uuid: invoice.id, date: invoice.date, total: invoice.total,
+      currency: invoice.currency || 'MXN', from: invoice.from, to: invoice.to, method: invoice.fiscal?.paymentMethod || '' } : null;
+    const suggestions = [];
+    for (const mv of movements) {
+      if (matchByMovement.has(mv.id) || marks.has(mv.id)) continue;
+      const amount = BigInt(mv.amountCents);
+      if (amount === 0n) continue;
+      const abs = amount < 0n ? -amount : amount;
+      const concept = String(mv.concept || '').toUpperCase();
+      const candidates = [];
+      const scoreFor = (invoice, why) => {
+        let score = why.length * 10;
+        const days = Math.abs(Math.round((Date.parse(invoice.date) - Date.parse(mv.date)) / DAY));
+        if (Number.isFinite(days) && days <= 45) { why.push('fecha a ' + days + ' días del movimiento'); score += 5; }
+        if ((invoice.currency || 'MXN') === 'MXN') { why.push('moneda MXN'); score += 2; }
+        const names = [invoice.from?.name, invoice.to?.name, invoice.from?.rfc, invoice.to?.rfc].filter(Boolean);
+        if (names.some(name => String(name).length >= 4 && concept.includes(String(name).toUpperCase().slice(0, 12)))) {
+          why.push('el concepto del movimiento menciona a la contraparte'); score += 15; }
+        if (concept.includes(invoice.id.slice(0, 8).toUpperCase())) { why.push('el concepto trae el inicio del folio fiscal'); score += 20; }
+        return score;
+      };
+      for (const balance of balances) {
+        const invoice = byUuid.get(balance.id);
+        if (!invoice) continue;
+        const eff = effective(balance);
+        if (eff <= 0n) continue;
+        if (eff === abs) {
+          const why = [eff === balance.total ? 'el importe iguala el total de la factura' : 'el importe iguala el saldo pendiente de la factura'];
+          candidates.push({ mode: eff === balance.total ? 'total' : 'parcial', score: scoreFor(invoice, why),
+            why, invoices: [{ ...brief(invoice), amount: moneyText(abs) }] });
+        } else if (balance.total === abs && eff < balance.total) {
+          const why = ['el importe iguala el TOTAL de la factura, que ya tiene pagos parciales enlazados'];
+          candidates.push({ mode: 'total', score: scoreFor(invoice, why), why,
+            invoices: [{ ...brief(invoice), amount: moneyText(abs) }] });
+        }
+      }
+      for (const payment of recordInvoices().filter(invoice => invoice.kind === 'P')) {
+        if (centsOf(payment.total) !== abs) continue;
+        const docs = (payment.fiscal?.payments?.pagos || []).flatMap(pago => pago.documentos || []);
+        if (!docs.length) continue;
+        candidates.push({ mode: 'complemento', score: 30, paymentUuid: payment.id,
+          why: ['el importe iguala el total del complemento de pago ' + payment.id.slice(0, 8) + '…, que cubre ' + docs.length + ' factura(s)'],
+          invoices: docs.map(doc => ({ ...brief(byUuid.get(doc.idDocumento)), uuid: doc.idDocumento, amount: moneyText(centsOf(doc.impPagado)) })) });
+      }
+      if (!candidates.length) {
+        const open = balances.filter(balance => effective(balance) > 0n);
+        outer: for (let i = 0; i < open.length; i++) for (let j = i + 1; j < open.length; j++) {
+          if (effective(open[i]) + effective(open[j]) === abs) {
+            const a = byUuid.get(open[i].id), b = byUuid.get(open[j].id);
+            candidates.push({ mode: 'multiple', score: 18,
+              why: ['la suma de los saldos pendientes de estas dos facturas iguala el importe del movimiento'],
+              invoices: [{ ...brief(a), amount: moneyText(effective(open[i])) }, { ...brief(b), amount: moneyText(effective(open[j])) }] });
+            break outer;
+          }
+        }
+      }
+      if (candidates.length) {
+        candidates.sort((a, b) => b.score - a.score);
+        suggestions.push({ movement: { id: mv.id, date: mv.date, concept: mv.concept,
+            amount: moneyText(amount), accountId: mv.accountId },
+          candidates: candidates.slice(0, 3).map(({ score, ...rest }) => rest) });
+      }
+    }
+    const confirmed = db.prepare('SELECT * FROM bank_matches ORDER BY created DESC LIMIT 100').all().map(match => {
+      const mv = movements.find(item => item.id === match.movementId);
+      return { id: match.id, movementId: match.movementId, mode: match.mode, estado: match.estado,
+        amount: moneyText(BigInt(match.amountCents)), why: match.why, created: match.created, undone: match.undone,
+        movement: mv ? { date: mv.date, concept: mv.concept } : null,
+        invoices: JSON.parse(match.invoices || '[]').map(inv => ({ ...brief(byUuid.get(inv.uuid)), uuid: inv.uuid, amount: moneyText(BigInt(inv.amountCents || 0)) })) };
+    });
+    return { suggestions, confirmed,
+      counts: { movements: movements.length, matched: matchByMovement.size,
+        unmatched: movements.filter(mv => !matchByMovement.has(mv.id) && !marks.has(mv.id)).length, ignored: marks.size } };
+  }
+
+  /* ===== Declaraciones y acuses (1.9.0, punto 7) =====
+     DECLARACIÓN y ACUSE son documentos distintos en Expedientes,
+     con su ejercicio, periodo, fecha de presentación y número de
+     operación; la vista dice qué hay recuperado y qué falta. */
+  const DECL_LABEL = { 'mensual:declaracion': 'Declaración mensual', 'mensual:acuse': 'Acuse de declaración mensual',
+    'anual:declaracion': 'Declaración anual', 'anual:acuse': 'Acuse de declaración anual' };
+  function archiveDeclaracion(rfc, doc, time) {
+    const label = DECL_LABEL[doc.tipo + ':' + doc.clase] || 'Declaración';
+    const existing = db.prepare("SELECT id FROM declaraciones WHERE rfc=? AND tipo=? AND clase=? AND ejercicio=? AND periodo=? AND operacion=? AND fileId<>''")
+      .get(rfc, doc.tipo, doc.clase, doc.ejercicio, doc.periodo || '', doc.operacion || '');
+    if (existing) return false;
+    const fileId = 'pdf:' + randomUUID();
+    const name = label + ' ' + (doc.periodo || doc.ejercicio) + (doc.operacion ? ' · op. ' + doc.operacion : '') + ' · ' + rfc + '.pdf';
+    tx(db, () => {
+      db.prepare("INSERT OR REPLACE INTO records(store,id,value,data,mime) VALUES ('files',?,NULL,?,'application/pdf')")
+        .run(fileId, doc.content);
+      db.prepare("INSERT OR REPLACE INTO records(store,id,value) VALUES ('documents',?,?)")
+        .run(fileId, JSON.stringify({ id: fileId, rfc, kind: label,
+          date: /^\d{4}-\d{2}-\d{2}/.test(doc.fechaPresentacion || '') ? doc.fechaPresentacion.slice(0, 10) : new Date(time).toISOString().slice(0, 10),
+          period: doc.periodo || '', name }));
+      db.prepare('INSERT INTO declaraciones(id,rfc,tipo,clase,ejercicio,periodo,fechaPresentacion,operacion,fileId,source,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+        .run(randomUUID(), rfc, doc.tipo, doc.clase, doc.ejercicio, doc.periodo || '',
+          doc.fechaPresentacion || '', doc.operacion || '', fileId, 'auto', time);
+    });
+    return true;
+  }
+  async function runDeclaracionesAttempt(rfc, query, time) {
+    try {
+      if (!satDeclFetch) throw new Error('La recuperación automática de declaraciones no está disponible en esta instalación: el navegador interno no está configurado.');
+      const result = await satDeclFetch({ rfc }, query);
+      let saved = 0;
+      for (const doc of result.documents || [])
+        if (archiveDeclaracion(rfc, { ...doc, tipo: query.tipo }, time)) saved++;
+      return { ok: true, found: result.found || 0, saved, warnings: result.warnings || [] };
+    } catch (error) {
+      db.prepare('INSERT INTO declaraciones(id,rfc,tipo,clase,ejercicio,periodo,created,error) VALUES (?,?,?,?,?,?,?,?)')
+        .run(randomUUID(), rfc, query.tipo, '', Number(query.ejercicio) || 0, String(query.periodo || ''), time, message(error));
+      queueAlert('decl-fail', 'decl:' + rfc + ':' + query.tipo + ':' + Math.floor(time / DAY),
+        'PacoSAT · No se pudieron recuperar declaraciones de ' + rfc,
+        'El intento de recuperación de declaraciones ' + (query.tipo === 'anual' ? 'anuales' : 'mensuales') +
+        ' de ' + query.ejercicio + ' falló: ' + message(error), time);
+      return { ok: false, error: message(error) };
+    }
+  }
+  function declaracionesOverview(rfc, ejercicio, time) {
+    const rows = db.prepare("SELECT * FROM declaraciones WHERE rfc=? AND fileId<>'' ORDER BY created DESC").all(rfc);
+    const mine = rows.filter(row => row.ejercicio === ejercicio);
+    const monthOf = time => new Date(time).toISOString().slice(0, 7);
+    const currentMonth = monthOf(time);
+    const mensuales = [];
+    for (let m = 1; m <= 12; m++) {
+      const periodo = ejercicio + '-' + String(m).padStart(2, '0');
+      const docs = mine.filter(row => row.tipo === 'mensual' && row.periodo === periodo);
+      const futuro = periodo >= currentMonth;
+      mensuales.push({ periodo, futuro,
+        declaracion: docs.some(row => row.clase === 'declaracion'),
+        acuse: docs.some(row => row.clase === 'acuse'),
+        estado: docs.length ? 'recuperada' : futuro ? 'aun-no-toca' : 'sin-recuperar' });
+    }
+    const anualDocs = mine.filter(row => row.tipo === 'anual');
+    const lastError = db.prepare("SELECT error,created FROM declaraciones WHERE rfc=? AND error<>'' ORDER BY created DESC LIMIT 1").get(rfc);
+    return { rfc, ejercicio, configured: Boolean(satDeclFetch), mensuales,
+      anual: { declaracion: anualDocs.some(row => row.clase === 'declaracion'),
+        acuse: anualDocs.some(row => row.clase === 'acuse'),
+        estado: anualDocs.length ? 'recuperada' : 'sin-recuperar' },
+      documentos: mine.map(row => ({ id: row.id, tipo: row.tipo, clase: row.clase, ejercicio: row.ejercicio,
+        periodo: row.periodo, fechaPresentacion: row.fechaPresentacion, operacion: row.operacion,
+        fileId: row.fileId, created: row.created, label: DECL_LABEL[row.tipo + ':' + row.clase] || 'Declaración' })),
+      lastError: lastError ? { error: lastError.error, at: lastError.created } : null };
   }
 
   /* ===== Cumplimiento (1.6.18) =====
@@ -2836,10 +3313,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       if (req.method === 'GET' && url.pathname === '/sw.js') {
         res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Service-Worker-Allowed': '/' });
-        return res.end("const C='pacosat-shell-v1';self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.add('/')).then(()=>self.skipWaiting()))});" +
-          "self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});" +
-          "self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.pathname.startsWith('/api/'))return;" +
-          "e.respondWith(fetch(e.request).then(r=>{if(u.pathname==='/'){const copy=r.clone();caches.open(C).then(c=>c.put('/',copy)).catch(()=>{})}return r}).catch(()=>caches.match('/')))});");
+        /* 1.9.0 (auditoría de seguridad): el SW YA NO cachea «/». La
+           página lleva el token de administrador en una meta y la
+           v1 lo persistía en Cache Storage — también en el navegador
+           de una invitada, cuyo login registraba el mismo SW. Este
+           SW solo purga las cachés viejas (incluida la v1 con token)
+           y reclama los clientes; la app funciona sin copia offline
+           de la cáscara (el paquete sin conexión va por su ruta). */
+        return res.end("self.addEventListener('install',e=>{self.skipWaiting()});" +
+          "self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(ks=>Promise.all(ks.map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});" +
+          "self.addEventListener('fetch',e=>{});");
       }
       /* Entrada del invitado (1.7.0): la misma app con una meta que la
          pone en modo invitado; el token llega tras el login. */
@@ -2852,10 +3335,18 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(req.headers.origin === origin, 'Origen inválido.', 403);
         const config = guestConfig();
         need(config.enabled && config.hash && config.salt, 'El acceso de invitado está desactivado.', 403);
+        /* Límite de intentos (1.9.0): 8 fallos en 10 minutos
+           bloquean nuevos intentos hasta que la ventana se vacía. */
+        need(!guestLoginThrottled(), 'Demasiados intentos fallidos: espera unos minutos e inténtalo de nuevo.', 429);
         const x = await body(req);
         const candidate = scryptSync(String(x.password || ''), config.salt, 32);
         const expected = Buffer.from(config.hash, 'hex');
-        need(candidate.length === expected.length && timingSafeEqual(candidate, expected), 'Contraseña de invitado incorrecta.');
+        if (!(candidate.length === expected.length && timingSafeEqual(candidate, expected))) {
+          guestLoginFails.push(now());
+          logAccess('guest-login-failed', 'Contraseña de invitado incorrecta');
+          need(false, 'Contraseña de invitado incorrecta.');
+        }
+        guestLoginFails.length = 0;
         const sessions = guestSessions();
         const sessionToken = randomBytes(24).toString('hex');
         sessions[sessionToken] = now() + 12 * 3600 * 1000;
@@ -2873,14 +3364,29 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (presented && sessions[presented] > now()) guest = true;
         else need(false, 'Sesión local inválida.', 403);
       }
+      const gScope = guest ? guestScopeRfcs() : null;
       if (guest) {
         const allowed = (req.method === 'GET' && GUEST_GET.includes(url.pathname)) ||
           (req.method === 'POST' && url.pathname === '/api/lists/validate');
         if (!allowed) { logAccess('guest-blocked', req.method + ' ' + url.pathname); need(false, 'El acceso de invitado es de solo lectura.', 403); }
+        if (gScope && ['/api/banks', '/api/banks/movements', '/api/offline-bundle'].includes(url.pathname)) {
+          logAccess('guest-blocked', req.method + ' ' + url.pathname + ' (fuera de su alcance por RFC)');
+          need(false, 'Esa información no forma parte del alcance de este acceso de invitado.', 403);
+        }
         if (url.pathname !== '/api/status') logAccess('guest', req.method + ' ' + url.pathname);
       }
       if (req.method === 'POST') need(req.headers.origin === origin, 'Origen inválido.', 403);
-      if (req.method === 'GET' && url.pathname === '/api/status') return json(res, overview());
+      if (req.method === 'GET' && url.pathname === '/api/status') {
+        const data = overview();
+        if (gScope) {
+          const inScope = row => !row?.rfc || gScope.has(String(row.rfc).toUpperCase());
+          if (Array.isArray(data.profiles)) data.profiles = data.profiles.filter(inScope);
+          if (Array.isArray(data.jobs)) data.jobs = data.jobs.filter(inScope);
+          if (Array.isArray(data.coverage)) data.coverage = data.coverage.filter(inScope);
+          if (Array.isArray(data.inbox)) data.inbox = data.inbox.filter(inScope);
+        }
+        return json(res, data);
+      }
       /* Restauración del estado operativo (1.6.4): la hace el diálogo de
          restauración tras volcar las tiendas del expediente, con la
          sección `operations` del mismo .faro ya descifrado. Disponible
@@ -3255,7 +3761,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       if (req.method === 'GET' && url.pathname === '/api/guest/config') {
         const config = guestConfig();
-        return json(res, { enabled: Boolean(config.enabled), hasPassword: Boolean(config.hash) });
+        return json(res, { enabled: Boolean(config.enabled), hasPassword: Boolean(config.hash),
+          rfcs: Array.isArray(config.rfcs) ? config.rfcs : [] });
       }
       if (req.method === 'POST' && url.pathname === '/api/guest/config') {
         need(!guest, 'Solo el administrador configura el acceso de invitado.', 403);
@@ -3267,18 +3774,27 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           config.hash = scryptSync(String(x.password), config.salt, 32).toString('hex');
         }
         if (typeof x.enabled === 'boolean') config.enabled = x.enabled;
+        if (Array.isArray(x.rfcs)) {
+          need(x.rfcs.length <= 24, 'Demasiados RFC en el alcance del invitado.');
+          config.rfcs = [...new Set(x.rfcs.map(rfc => String(rfc).toUpperCase().trim()).filter(rfc => /^[A-ZÑ&0-9]{12,13}$/.test(rfc)))];
+        }
         setState('guest-config', JSON.stringify(config));
-        logAccess('guest-config', config.enabled ? 'Invitado activado' : 'Invitado desactivado');
-        return json(res, { enabled: Boolean(config.enabled), hasPassword: Boolean(config.hash) });
+        logAccess('guest-config', (config.enabled ? 'Invitado activado' : 'Invitado desactivado') +
+          (config.rfcs?.length ? ' · alcance: ' + config.rfcs.join(', ') : ' · sin límite por RFC'));
+        return json(res, { enabled: Boolean(config.enabled), hasPassword: Boolean(config.hash),
+          rfcs: Array.isArray(config.rfcs) ? config.rfcs : [] });
       }
       if (req.method === 'GET' && url.pathname === '/api/banks') {
         return json(res, banksOverview());
       }
       if (req.method === 'GET' && url.pathname === '/api/banks/movements') {
-        const rows = db.prepare('SELECT m.date,m.concept,m.amountCents,s.accountId FROM bank_movements m ' +
+        const rows = db.prepare('SELECT m.id,m.date,m.concept,m.amountCents,s.accountId FROM bank_movements m ' +
           'JOIN bank_statements s ON s.id=m.statementId ORDER BY m.date').all();
-        return json(res, { movements: rows.map(row => ({ date: row.date, concept: row.concept,
-          amount: moneyText(BigInt(row.amountCents)), accountId: row.accountId })) });
+        const matched = new Set(db.prepare("SELECT movementId FROM bank_matches WHERE estado='activo'").all().map(row => row.movementId));
+        const marked = new Set(db.prepare('SELECT movementId FROM bank_movement_marks').all().map(row => row.movementId));
+        return json(res, { movements: rows.map(row => ({ id: row.id, date: row.date, concept: row.concept,
+          amount: moneyText(BigInt(row.amountCents)), accountId: row.accountId,
+          conciliado: matched.has(row.id), sinFactura: marked.has(row.id) })) });
       }
       if (req.method === 'POST' && url.pathname === '/api/banks/accounts') {
         const x = await body(req);
@@ -3383,15 +3899,49 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (req.method === 'GET' && url.pathname === '/api/money') {
         /* Saldos y esperadas para la pantalla Dinero (el cliente hace
            el mismo cálculo en modo local). */
-        const balances = moneyBalances().filter(item => item.balance > 0n || item.method === 'PPD');
+        let balances = moneyBalances().filter(item => item.balance > 0n || item.method === 'PPD');
+        let expected = expectedInvoices(now());
+        if (gScope) {
+          balances = balances.filter(item => gScope.has(String(item.from?.rfc || '').toUpperCase()) ||
+            gScope.has(String(item.to?.rfc || '').toUpperCase()));
+          expected = []; /* las esperadas se calculan entre todos los RFC: fuera del alcance */
+        }
         return json(res, { balances: balances.map(item => ({ ...item, total: moneyText(item.total),
             paid: moneyText(item.paid), balance: moneyText(item.balance) })),
-          expected: expectedInvoices(now()) });
+          expected });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/money/mark-paid') {
+        /* «Marcar como pagado» directo (1.9.0, visor de comprobantes):
+           registra el pago manual por el saldo vivo, igual que el
+           cierre rápido del Centro de Avisos pero sin pasar por un
+           aviso. Queda en manual_payments y alimenta los saldos. */
+        const x = await body(req);
+        const balance = moneyBalances().find(item => item.id === String(x.uuid || ''));
+        need(balance, 'Ese comprobante no está en el expediente.', 404);
+        need(balance.balance > 0n, 'Ese comprobante ya no tiene saldo pendiente.');
+        const notaFinal = (x.fecha ? String(x.fecha) + ' · ' : '') +
+          (String(x.nota || '').trim() || 'Pago marcado desde el Visor de comprobantes (' + day(now()) + ')');
+        db.prepare('INSERT INTO manual_payments(uuid,at,nota,importe) VALUES (?,?,?,?) ' +
+          'ON CONFLICT(uuid) DO UPDATE SET at=excluded.at,nota=excluded.nota,importe=excluded.importe')
+          .run(balance.id, now(), notaFinal.slice(0, 300), moneyText(balance.balance));
+        const after = moneyBalances().find(item => item.id === balance.id);
+        return json(res, { ok: true, balance: after ? moneyText(after.balance) : '0.00' });
       }
       /* ===== Centro de Avisos (1.7.4): leer, responder, solventar ===== */
       if (req.method === 'GET' && url.pathname === '/api/notices') {
         avisosSync(now());
-        return json(res, avisosOverview());
+        const data = avisosOverview();
+        if (gScope) {
+          const inScope = aviso => !aviso.rfc || gScope.has(String(aviso.rfc).toUpperCase());
+          data.avisos = data.avisos.filter(inScope);
+          data.historial = data.historial.filter(inScope);
+          data.counts = { total: data.avisos.length, mal: 0, falta: 0, necesita: 0, porConfirmar: 0 };
+          for (const aviso of data.avisos) { data.counts[aviso.clase] = (data.counts[aviso.clase] || 0) + 1;
+            if (aviso.estado === 'por-confirmar') data.counts.porConfirmar++; }
+          data.porRfc = {};
+          for (const aviso of data.avisos) if (aviso.rfc) data.porRfc[aviso.rfc] = (data.porRfc[aviso.rfc] || 0) + 1;
+        }
+        return json(res, data);
       }
       if (req.method === 'POST' && url.pathname === '/api/notices/answer') {
         /* Respuesta a un «por confirmar» (criterio 7): «sí» registra
@@ -3471,6 +4021,80 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         setSetting('avisos', JSON.stringify({ correo: x.correo, hora }));
         return json(res, avisosConfig());
       }
+      if (req.method === 'POST' && url.pathname === '/api/notices/responsable') {
+        /* Responsable del aviso (1.9.0): quién lo resuelve — Paco o
+           la contadora — queda registrado y en bitácora. */
+        const x = await body(req);
+        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado NOT IN ('solventado','descartado')").get(Number(x.id));
+        need(aviso, 'Ese aviso ya no está abierto.');
+        need(['Paco', 'Contadora'].includes(x.responsable), 'Responsable inválido: Paco o Contadora.');
+        db.prepare('UPDATE avisos SET responsable=?,actualizado=? WHERE id=?').run(x.responsable, now(), aviso.id);
+        avisoLog(aviso.id, 'responsable', 'Responsable asignado: ' + x.responsable, now());
+        avisosSync(now());
+        return json(res, avisosOverview());
+      }
+      if (req.method === 'GET' && url.pathname === '/api/reconcile') {
+        return json(res, reconcileOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/reconcile/confirm') {
+        /* Confirmar una propuesta (o un vínculo armado a mano): la
+           decisión queda registrada con su porqué y se puede deshacer. */
+        const x = await body(req);
+        const movement = db.prepare('SELECT * FROM bank_movements WHERE id=?').get(String(x.movementId || ''));
+        need(movement, 'Ese movimiento ya no existe.', 404);
+        need(!db.prepare("SELECT 1 AS x FROM bank_matches WHERE movementId=? AND estado='activo'").get(movement.id),
+          'Ese movimiento ya está conciliado: deshaz primero el vínculo actual.');
+        const invoicesIn = (Array.isArray(x.invoices) ? x.invoices : []).slice(0, 20)
+          .map(inv => ({ uuid: String(inv.uuid || ''), amountCents: Math.round(Number(inv.amountCents) || 0) }));
+        need(invoicesIn.length && invoicesIn.every(inv => inv.uuid && inv.amountCents > 0), 'El vínculo no trae facturas válidas.');
+        const known = new Set(recordInvoices().map(invoice => invoice.id));
+        need(invoicesIn.every(inv => known.has(inv.uuid)), 'Una de las facturas del vínculo no está en el expediente.');
+        const total = invoicesIn.reduce((sum, inv) => sum + inv.amountCents, 0);
+        db.prepare('INSERT INTO bank_matches(id,movementId,invoices,mode,amountCents,why,estado,created) VALUES (?,?,?,?,?,?,?,?)')
+          .run(randomUUID(), movement.id, JSON.stringify(invoicesIn),
+            ['total', 'parcial', 'multiple', 'complemento', 'manual'].includes(x.mode) ? x.mode : 'manual',
+            total, String(x.why || 'Vínculo confirmado por ti.').slice(0, 300), 'activo', now());
+        return json(res, reconcileOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/reconcile/undo') {
+        const x = await body(req);
+        const match = db.prepare("SELECT * FROM bank_matches WHERE id=? AND estado='activo'").get(String(x.matchId || ''));
+        need(match, 'Ese vínculo ya no está activo.');
+        db.prepare("UPDATE bank_matches SET estado='deshecho',undone=? WHERE id=?").run(now(), match.id);
+        return json(res, reconcileOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/reconcile/ignore') {
+        /* «Sin factura legítimo»: el movimiento sale de los sin
+           identificar del cierre, con su nota, sin fingir vínculo. */
+        const x = await body(req);
+        const movement = db.prepare('SELECT * FROM bank_movements WHERE id=?').get(String(x.movementId || ''));
+        need(movement, 'Ese movimiento ya no existe.', 404);
+        db.prepare("INSERT INTO bank_movement_marks(movementId,estado,nota,at) VALUES (?,'sin-factura',?,?) " +
+          'ON CONFLICT(movementId) DO UPDATE SET estado=excluded.estado,nota=excluded.nota,at=excluded.at')
+          .run(movement.id, String(x.nota || 'Sin factura (marcado por ti)').slice(0, 300), now());
+        return json(res, reconcileOverview());
+      }
+      if (req.method === 'GET' && url.pathname === '/api/declaraciones') {
+        const rfc = String(url.searchParams.get('rfc') || '');
+        need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        const ejercicio = Number(url.searchParams.get('ejercicio')) || Number(new Date(now()).toISOString().slice(0, 4));
+        return json(res, declaracionesOverview(rfc, ejercicio, now()));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/declaraciones/run') {
+        const x = await body(req);
+        need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(String(x.rfc || '')), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        need(['mensual', 'anual'].includes(x.tipo), 'Tipo de declaración inválido.');
+        const ejercicio = Number(x.ejercicio);
+        need(Number.isInteger(ejercicio) && ejercicio >= 2015 && ejercicio <= 2100, 'Ejercicio inválido.');
+        const result = await runDeclaracionesAttempt(String(x.rfc),
+          { tipo: x.tipo, ejercicio, periodo: String(x.periodo || '') }, now());
+        return json(res, { result, view: declaracionesOverview(String(x.rfc), ejercicio, now()) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/reports/checklist') {
+        const month = String(url.searchParams.get('month') || mxParts(now()).monthKey);
+        need(/^\d{4}-\d{2}$/.test(month), 'Mes inválido.');
+        return json(res, monthChecklist(month, now()));
+      }
       if (req.method === 'POST' && url.pathname === '/api/pdf-analyze') {
         const { data } = await body(req, 21 * 1024 * 1024);
         need(typeof data === 'string' && data.length <= 20 * 1024 * 1024, 'PDF demasiado grande.');
@@ -3486,18 +4110,39 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         /* Sync por diferencias (1.7.0): con ?since=<rev> solo viajan
            los registros nuevos/cambiados y los borrados desde esa
            marca; sin since, la tienda completa de siempre. */
+        /* Alcance por RFC del invitado (1.9.0): la tienda se filtra
+           en el servidor; fuera de su alcance, un registro no existe. */
+        const scopeRows = rows => {
+          if (!gScope) return rows;
+          const up = value => String(value || '').toUpperCase();
+          if (store === 'people') return rows.filter(row => gScope.has(up(row.id)));
+          if (store === 'invoices') return rows.filter(row => gScope.has(up(row.from?.rfc)) || gScope.has(up(row.to?.rfc)));
+          if (store === 'documents') return rows.filter(row => gScope.has(up(row.rfc)));
+          if (store === 'activity') return [];
+          if (store === 'files') {
+            const invoiceIds = new Set(db.prepare("SELECT id,value FROM records WHERE store='invoices'").all()
+              .map(row => { try { return JSON.parse(row.value); } catch { return null; } })
+              .filter(row => row && (gScope.has(up(row.from?.rfc)) || gScope.has(up(row.to?.rfc)))).map(row => row.id));
+            const docIds = new Set(db.prepare("SELECT id,value FROM records WHERE store='documents'").all()
+              .map(row => { try { return JSON.parse(row.value); } catch { return null; } })
+              .filter(row => row && gScope.has(up(row.rfc))).map(row => row.id));
+            return rows.filter(row => (row.id.startsWith('xml:') && invoiceIds.has(row.id.slice(4))) || docIds.has(row.id));
+          }
+          return rows;
+        };
         const since = url.searchParams.get('since');
         if (id === null && since !== null && /^\d+$/.test(since)) {
           const changed = db.prepare('SELECT id,value,data,mime FROM records WHERE store=? AND rev>?').all(store, Number(since));
-          const rows = changed.map(row => row.data ? { id: row.id, mime: row.mime, content: Buffer.from(row.data).toString('base64') } : JSON.parse(row.value));
+          const rows = scopeRows(changed.map(row => row.data ? { id: row.id, mime: row.mime, content: Buffer.from(row.data).toString('base64') } : JSON.parse(row.value)));
           const deleted = db.prepare('SELECT id FROM record_tombstones WHERE store=? AND rev>?').all(store, Number(since)).map(row => row.id);
-          return json(res, { rev: recordRev, rows, deleted });
+          return json(res, { rev: recordRev, rows, deleted: gScope && store !== 'people' ? [] :
+            gScope ? deleted.filter(rowId => gScope.has(String(rowId).toUpperCase())) : deleted });
         }
         const records = id === null ? db.prepare('SELECT id,value,data,mime FROM records WHERE store=?').all(store) :
           db.prepare('SELECT id,value,data,mime FROM records WHERE store=? AND id=?').all(store,id);
         need(records.reduce((size, item) => size + (item.data?.byteLength || 0), 0) <= 100 * 1024 * 1024,
           'El respaldo supera el límite de 100 MB.', 413);
-        const rows = records.map(row => row.data ? { id: row.id, mime: row.mime, content: Buffer.from(row.data).toString('base64') } : JSON.parse(row.value));
+        const rows = scopeRows(records.map(row => row.data ? { id: row.id, mime: row.mime, content: Buffer.from(row.data).toString('base64') } : JSON.parse(row.value)));
         return json(res, id === null ? rows : rows[0] || null);
       }
       if (cloud && req.method === 'POST' && url.pathname === '/api/storage') {
@@ -3855,11 +4500,29 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
        PACOSAT_EFIRMA_DIR o <datos>/efirma). Sin credenciales válidas
        el propio descargador devuelve el error claro que toca; nunca
        sale al portal con una e.firma caducada. */
-    satDocFetch: createSatDocFetch({ storage: createFileEfirmaStorage(
-      process.env.PACOSAT_EFIRMA_DIR || join(path, 'efirma')) }),
+    satDocFetch: createSatDocPipelineFetch({
+      httpFetch: createSatDocFetch({ storage: createFileEfirmaStorage(
+        process.env.PACOSAT_EFIRMA_DIR || join(path, 'efirma')) }),
+      /* Ruta principal 1.9.0: navegador real interno (sidecar). El
+         intento HTTP queda como paso previo barato; cuando se
+         detiene en el paso en pantalla de siempre, el navegador
+         completa el flujo firmando el reto dentro del portal. */
+      browserFetch: createSatDocBrowserFetch({
+        resolveCredentials: createSatDocCredentialResolver({ storage: createFileEfirmaStorage(
+          process.env.PACOSAT_EFIRMA_DIR || join(path, 'efirma')) }),
+        launchDriver: createPlaywrightDriverFactory({
+          executablePath: process.env.PACOSAT_CHROMIUM_PATH || '/usr/bin/chromium' }),
+        timeoutMs: 90_000 }) }),
+    /* Declaraciones y acuses (1.9.0, punto 7): dos conectores
+       (mensuales y anuales) sobre la misma sesión del navegador. */
+    satDeclFetch: createSatDeclFetch({
+      resolveCredentials: createSatDocCredentialResolver({ storage: createFileEfirmaStorage(
+        process.env.PACOSAT_EFIRMA_DIR || join(path, 'efirma')) }),
+      launchDriver: createPlaywrightDriverFactory({
+        executablePath: process.env.PACOSAT_CHROMIUM_PATH || '/usr/bin/chromium' }) }),
     buildModified: statSync(new URL('./Faro-Fiscal.html', import.meta.url)).mtimeMs });
   const server = createServer(service.handle);
-  server.requestTimeout = 90000;
+  server.requestTimeout = 300000;
   server.on('error', error => {
     console.error(error.code === 'EADDRINUSE' ? 'El puerto local ya está ocupado. Si PacoSAT está abierto, usa su ventana actual.' : 'No se pudo iniciar PacoSAT: ' + message(error));
     service.close();

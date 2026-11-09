@@ -1,0 +1,95 @@
+/* ===== Declaraciones y acuses recuperados (1.9.0, punto 7) =====
+   Sección del Centro SAT: con la misma sesión de e.firma del
+   descargador, PacoSAT busca en el portal las declaraciones
+   PRESENTADAS y baja la declaración y su acuse como documentos
+   DISTINTOS (quedan así en Expedientes). La rejilla por ejercicio
+   dice de un vistazo qué periodos ya están recuperados, cuáles
+   faltan y cuáles aún no tocan. Dos conectores separados en el
+   servidor: mensuales (búsqueda + acuses) y anual (su PDF). */
+let declEjercicio = new Date().getFullYear();
+let declCache = null;
+function declaracionesSection() {
+  const section = panel('Declaraciones y acuses',
+    'Recupera del SAT las declaraciones que ya presentaste y sus acuses: la declaración y el acuse se guardan como documentos distintos en Expedientes, con su ejercicio, periodo y número de operación. Lo que falte se ve en la rejilla, en lenguaje llano.');
+  const body = n('div');
+  section.append(body);
+  const fill = async data => {
+    const view = data || (scope ? await satApi('declaraciones?rfc=' + encodeURIComponent(scope) + '&ejercicio=' + declEjercicio) : null);
+    body.replaceChildren();
+    if (!satToken) {
+      body.append(n('p', 'La recuperación vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para usarla.', 'empty'));
+      return;
+    }
+    if (!scope) {
+      body.append(n('p', 'Elige arriba el RFC del que quieres ver y recuperar declaraciones.', 'empty'));
+      return;
+    }
+    declCache = view;
+    const head = n('div', undefined, 'sat-card-head');
+    head.append(n('strong', 'RFC ' + scope));
+    const yearPicker = select(
+      [0, 1, 2, 3, 4].map(back => { const y = new Date().getFullYear() - back; return [String(y), 'Ejercicio ' + y]; }),
+      String(declEjercicio), 'Ejercicio');
+    yearPicker.onchange = () => { declEjercicio = Number(yearPicker.value); fill(); };
+    head.append(yearPicker);
+    const runMensuales = n('button', 'Recuperar mensuales del ejercicio', 'primary small');
+    runMensuales.onclick = () => declRun('mensuales', fill, runMensuales);
+    const runAnual = n('button', 'Recuperar la anual', 'soft small');
+    runAnual.onclick = () => declRun('anual', fill, runAnual);
+    head.append(runMensuales, runAnual);
+    body.append(head);
+    if (view.lastError) body.append(n('p', 'Último intento: ' + view.lastError, 'error-text'));
+    /* Rejilla de periodos: recuperada / sin recuperar / aún no toca. */
+    const grid = n('div', undefined, 'decl-grid');
+    for (const month of view.months) {
+      const cell = n('div', undefined, 'decl-cell decl-' + month.status);
+      cell.append(n('strong', month.label),
+        n('span', month.status === 'recuperada' ? '✓ recuperada' :
+          month.status === 'sin-recuperar' ? 'sin recuperar' : 'aún no toca'));
+      grid.append(cell);
+    }
+    body.append(grid);
+    const anual = n('p', view.annual
+      ? 'Declaración anual ' + view.exercise + ': ✓ recuperada' + (view.annual.operacion ? ' (operación ' + view.annual.operacion + ')' : '') + '.'
+      : 'Declaración anual ' + view.exercise + ': sin recuperar.', 'muted');
+    body.append(anual);
+    /* Documentos recuperados: declaración y acuse, distinguidos. */
+    if (!view.documents.length) {
+      body.append(empty('Nada recuperado todavía para este ejercicio',
+        'Pulsa «Recuperar mensuales del ejercicio» o «Recuperar la anual»: PacoSAT entra al portal con tu e.firma y archiva aquí lo que encuentre presentado.'));
+      return;
+    }
+    const list = n('div');
+    for (const doc of view.documents) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill(doc.clase === 'acuse' ? 'warn' : 'ok', doc.clase === 'acuse' ? 'Acuse' : 'Declaración'),
+        n('span', doc.kind + ' · ' + (doc.periodo ? 'periodo ' + doc.periodo : 'ejercicio ' + doc.exercise) +
+          (doc.presentada ? ' · presentada el ' + doc.presentada : '') +
+          (doc.operacion ? ' · operación ' + doc.operacion : '')));
+      const open = n('button', 'Ver en Expedientes', 'soft small');
+      open.onclick = () => navigate('docs');
+      row.append(open);
+      list.append(row);
+    }
+    body.append(list);
+  };
+  fill().catch(error => { body.replaceChildren(n('p', error.message, 'error-text')); });
+  return section;
+}
+async function declRun(kind, fill, button) {
+  button.disabled = true;
+  const original = button.textContent;
+  button.textContent = 'Entrando al portal con tu e.firma…';
+  try {
+    const data = await satApi('declaraciones/run', { rfc: scope, ejercicio: declEjercicio, kind });
+    const found = (data.found || []).length;
+    const warnings = (data.warnings || []).length;
+    toast(found
+      ? 'Recuperados ' + found + ' documento(s) del portal y archivados en Expedientes.'
+      : 'El portal no devolvió documentos nuevos para este ejercicio' + (warnings ? ' (' + warnings + ' aviso(s) en el detalle).' : '.'),
+      found ? 'ok' : 'error');
+    await refresh();
+    fill(data.overview);
+  } catch (error) { toast(error.message, 'error'); fill(); }
+  finally { button.disabled = false; button.textContent = original; }
+}

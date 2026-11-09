@@ -41,6 +41,8 @@ function monitorStateInfo(row) {
       '. Si ya lo pagaste o lo dedujiste, avisa a tu contadora.' };
   if (item?.sat?.state === 'No encontrado') return { badge: 'No localizado', state: 'No encontrado',
     text: 'El SAT no lo localiza con los datos del comprobante. Pasa con comprobantes muy antiguos o cuando el servicio del SAT no lo tiene a mano: no es un error tuyo y no hay nada que hacer.' };
+  if (item?.sat?.state === 'Formato rechazado') return { badge: 'Formato rechazado', state: 'Formato rechazado',
+    text: 'El SAT rechazó el formato de la consulta (respuesta N-601), no el comprobante: desde la 1.9.0 la expresión impresa se normaliza antes de consultar (total sin ceros sobrantes, folio en mayúsculas) y se volverá a revisar al mes. No significa que el CFDI no exista ni que esté cancelado.' };
   if (item?.sat) return { badge: item.sat.state, state: item.sat.state, text: 'El SAT respondió: ' + item.sat.state + '.' };
   if (item?.error) return { badge: 'No se pudo consultar', state: 'Error', text: monitorErrorText(item.error) };
   return { badge: 'Sin revisar todavía', state: 'Sin consulta',
@@ -282,8 +284,10 @@ function monitorScreen() {
     const kpis = n('div', undefined, 'kpis');
     const affected = monitorSummary.masAfectados?.[0];
     const affectedName = affected ? (selection.find(row => row.from.rfc === affected.rfc)?.from.name || affected.rfc) : '';
+    const formatoRechazado = counts.formatoRechazado || 0;
     const problemNote = [
       counts.noEncontrados ? number.format(counts.noEncontrados) + ' no localizados por el SAT' : '',
+      formatoRechazado ? number.format(formatoRechazado) + ' con el formato de la consulta rechazado (N-601)' : '',
       counts.conProblema ? number.format(counts.conProblema) + ' con problema de conexión al consultar' : ''
     ].filter(Boolean).join(' · ') || 'Sin problemas de consulta.';
     kpis.append(
@@ -298,8 +302,8 @@ function monitorScreen() {
           'Ningún emisor tuyo está en el listado.', counts.enListado69B ? 'bad' : ''),
       monitorKpi('Aún sin revisar', 'clock', number.format(counts.sinRevisar),
         counts.sinRevisar ? 'El sistema los revisa solo, por tandas. No tienes que hacer nada.' : 'No queda ninguno en la cola.', counts.sinRevisar ? 'warn' : ''),
-      monitorKpi('Con problema al consultar', 'alert', number.format(counts.noEncontrados + counts.conProblema),
-        problemNote, (counts.noEncontrados + counts.conProblema) ? 'warn' : '')
+      monitorKpi('Con problema al consultar', 'alert', number.format(counts.noEncontrados + formatoRechazado + counts.conProblema),
+        problemNote, (counts.noEncontrados + formatoRechazado + counts.conProblema) ? 'warn' : '')
     );
     summaryPanel.append(kpis);
     const truth = n('div', undefined, 'monitor-truth');
@@ -324,7 +328,7 @@ function monitorScreen() {
     if (monitorFilter === 'all') return true;
     if (monitorFilter === 'cancelled') return info.state === 'Cancelado';
     if (monitorFilter === 'efos') return info.state === '69-B';
-    return ['Cancelado', '69-B', 'No encontrado', 'Error'].includes(info.state);
+    return ['Cancelado', '69-B', 'No encontrado', 'Formato rechazado', 'Error'].includes(info.state);
   });
   const filters = n('div', undefined, 'filters');
   const picker = select([['attention','Requieren atención'],['cancelled','Cancelados'],['efos','En el listado 69-B'],['all','Todos los CFDI']], monitorFilter, 'Filtrar vigilancia');
