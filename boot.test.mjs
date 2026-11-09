@@ -11,7 +11,13 @@
    orden exacto que recibe el navegador) y lo ejecuta en una VM con un
    DOM mínimo: afirma que la carga inicial completa sin excepciones,
    que la preparación del almacenamiento corre y termina, y que el
-   refresh() de esa preparación no muere por TDZ. */
+   refresh() de esa preparación no muere por TDZ. Afirma también el
+   sello del pie (requisito expreso de Paco): «PacoSAT {versión} ·
+   Modificado el {fecha} a las {hora} · Creado por Paco Iglesias»
+   pintado desde la primera carga — primero con la versión, y con la
+   fecha y hora en cuanto el servidor aporta la mtime del artefacto
+   servido (buildModified de /api/status); si la mtime no llega, el
+   sello muestra la versión y omite la fecha, como está diseñado. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
@@ -92,7 +98,13 @@ const storageStub = () => {
   };
 };
 
-function makeBootContext(server) {
+/* La mtime que el servidor real adjunta a /api/status es la del
+   Faro-Fiscal.html servido (statSync(...).mtimeMs en local-server.mjs),
+   y overview() incluye SIEMPRE settings y buildModified: el auxiliar
+   reproduce esa forma. Instante fijo: 9 nov 2026, 09:52 CST. */
+const STATUS_MTIME_MS = Date.UTC(2026, 10, 9, 15, 52, 0);
+
+function makeBootContext(server, { withModified = true } = {}) {
   const byId = new Map();
   const metas = server
     ? { 'meta[name="pacosat-token"]': { content: 'token-de-prueba' }, 'meta[name="pacosat-cloud"]': { content: '1' } }
@@ -122,7 +134,12 @@ function makeBootContext(server) {
     let body = {};
     if (target.includes('storage/rev')) body = { rev: 1 };
     else if (target.includes('storage?')) body = [];
-    else if (target.includes('/api/status')) body = { profiles: [], jobs: [], inbox: [], mail: {} };
+    else if (target.includes('/api/status')) body = {
+      settings: { installName: 'PacoSAT', hasLogo: false },
+      buildModified: withModified ? STATUS_MTIME_MS : null,
+      cloudRevision: null,
+      profiles: [], jobs: [], inbox: [], mail: {}
+    };
     return {
       ok: true,
       status: 200,
@@ -179,6 +196,19 @@ const settle = async () => {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
 };
 
+/* El sello del pie, tal y como lo compone applySettings(): la versión
+   sale del package.json del artefacto y la fecha/hora se formatean
+   con la misma expresión (es-MX, hora de Ciudad de México). */
+const APP_VERSION = JSON.parse(fs.readFileSync('package.json', 'utf8')).version;
+const sealWithoutDate = () => 'PacoSAT ' + APP_VERSION + ' · Creado por Paco Iglesias';
+const sealWithDate = mtimeMs => {
+  const modified = new Date(mtimeMs);
+  return 'PacoSAT ' + APP_VERSION + ' · Modificado el ' +
+    modified.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
+    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) +
+    ' · Creado por Paco Iglesias';
+};
+
 test('arranque en modo servidor: el bloque generado carga entero, la preparación termina y refresh() no muere por TDZ', async () => {
   const { context, byId, fetchCalls } = makeBootContext(true);
   /* Con el defecto, esta línea lanzaba ReferenceError (TDZ de satData)
@@ -190,6 +220,11 @@ test('arranque en modo servidor: el bloque generado carga entero, la preparació
   assert.equal(vm.runInContext('typeof startup', context), 'object');
   /* El render inicial pintó el Resumen (no quedó el esqueleto). */
   assert.ok(byId.get('body').children.length > 0, 'el render inicial dejó contenido en #body');
+  /* El sello ya se ve desde la primera carga: versión y autoría. La
+     fecha aún no va: la aporta el servidor con su estado, y hasta que
+     no llega se omite (no se inventa), como está diseñado. */
+  assert.equal(byId.get('app-footer').textContent, sealWithoutDate(),
+    'desde la primera carga el pie muestra el sello con la versión');
   /* beginReadiness() corrió en la carga y su refresh() terminó: la
      promesa readiness se resuelve y ready queda en true. Si refresh()
      muriera por TDZ, readiness rechazaría con ReferenceError. */
@@ -201,6 +236,24 @@ test('arranque en modo servidor: el bloque generado carga entero, la preparació
   /* refresh() leyó las cuatro tiendas por la vía del servidor. */
   const storeReads = fetchCalls.filter(url => url.includes('/api/storage')).length;
   assert.ok(storeReads >= 4, `refresh() leyó las tiendas (llamadas a /api/storage: ${storeReads})`);
+  /* El sondeo de estado corrió y, con la mtime que el servidor aporta,
+     applySettings() repintó el pie con el sello COMPLETO y poblado:
+     versión, fecha y hora reales formateadas, sin marcadores. */
+  assert.ok(fetchCalls.some(url => url.includes('/api/status')), 'el sondeo de estado (/api/status) corrió');
+  const footer = byId.get('app-footer').textContent;
+  assert.equal(footer, sealWithDate(STATUS_MTIME_MS), 'el pie termina con el sello completo y poblado');
+  assert.ok(!footer.includes('{'), 'el sello no deja marcadores sin rellenar');
+});
+
+test('arranque en modo servidor sin mtime: el sello muestra la versión y omite la fecha, sin romper el arranque', async () => {
+  const { context, byId } = makeBootContext(true, { withModified: false });
+  vm.runInContext(generatedScript(), context, { filename: 'Faro-Fiscal.html#script' });
+  const readiness = vm.runInContext('readiness', context);
+  await readiness;
+  await settle();
+  assert.equal(vm.runInContext('ready', context), true);
+  assert.equal(byId.get('app-footer').textContent, sealWithoutDate(),
+    'sin mtime el pie muestra versión y autoría, y omite la fecha');
 });
 
 test('arranque en modo local: el bloque generado carga entero y la preparación se resuelve sin excepciones', async () => {
@@ -218,4 +271,8 @@ test('arranque en modo local: el bloque generado carga entero y la preparación 
   assert.equal(await readiness, false);
   await settle();
   assert.equal(vm.runInContext('ready', context), false);
+  /* Sin servidor no hay mtime que mostrar: el sello queda con la
+     versión y la autoría, y la fecha se omite (no se inventa). */
+  assert.equal(byId.get('app-footer').textContent, sealWithoutDate(),
+    'en modo local el pie muestra el sello con la versión, sin fecha');
 });
