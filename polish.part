@@ -92,3 +92,5 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .seal-details pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:130px;overflow:auto}
 .print-seals{font-size:9.5px;overflow-wrap:anywhere}
 .print-seals p{margin:3px 0}
+.cap-row{display:flex;gap:9px;align-items:flex-start;padding:5px 0}
+.cap-row .tag{flex:none;margin-top:1px}

@@ -278,5 +278,33 @@ async function collect(stream) {
   assert.equal(sinTimbre.pagos, null);
   assert.equal(sinTimbre.conceptos.length, 2);
   assert.equal(sinTimbre.total, '1160.00');
-  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados, paquete mensual, paleta AA, sellos de la copia y visor CFDI completo.');
+  /* CSP estricta (1.6.9): ni la meta del artefacto ni el servidor
+     contienen unsafe-inline; las huellas SHA-256 de la meta coinciden
+     con los bloques reales de estilo y script, y la cabecera que el
+     servidor calcula desde el mismo archivo lleva esas huellas. */
+  const { createHash } = require('node:crypto');
+  const hashOf = text => "'sha256-" + createHash('sha256').update(text, 'utf8').digest('base64') + "'";
+  const styleBlockOf = source => source.match(/<style>([\s\S]*?)<\/style>/)[1];
+  const scriptBlockOf = source => source.match(/<script>([\s\S]*?)<\/script>/)[1];
+  const metaPolicy = html.match(/<meta http-equiv="Content-Security-Policy" content="([^"]*)">/)[1];
+  assert.ok(!metaPolicy.includes('unsafe-inline'), 'La meta CSP no debe contener unsafe-inline.');
+  assert.ok(metaPolicy.includes('style-src ' + hashOf(styleBlockOf(html))), 'La huella de estilo de la meta no coincide con el bloque servido.');
+  assert.ok(metaPolicy.includes('script-src ' + hashOf(scriptBlockOf(html))), 'La huella de script de la meta no coincide con el bloque servido.');
+  assert.ok(!fs.readFileSync('local-server.mjs', 'utf8').includes('unsafe-inline'),
+    'El servidor no debe emitir unsafe-inline en ninguna política.');
+  const { cspForHtml } = await import('./local-server.mjs');
+  const headerPolicy = cspForHtml(html);
+  assert.ok(!headerPolicy.includes('unsafe-inline') && headerPolicy.includes(hashOf(styleBlockOf(html))) &&
+    headerPolicy.includes(hashOf(scriptBlockOf(html))), 'La cabecera CSP del servidor no coincide con las huellas del artefacto.');
+  /* Pantalla «Qué incluye PacoSAT» (1.6.9): nace de docs/CAPACIDADES.md
+     en build; el artefacto lleva las secciones del documento y la
+     fecha de actualización declarada en su cabecera. */
+  const capacidadesInHtml = JSON.parse(html.match(/PACOSAT_CAPACIDADES = (\{.*?\});\n/)[1]);
+  const capacidadesSource = fs.readFileSync('docs/CAPACIDADES.md', 'utf8');
+  assert.equal(capacidadesInHtml.updated,
+    (capacidadesSource.match(/\*\*Última modificación:\s*([^*]+)\*\*/) || [])[1].trim());
+  assert.ok(capacidadesInHtml.sections.length >= 8, 'Faltan secciones de capacidades en el artefacto.');
+  assert.ok(capacidadesInHtml.sections.some(section => section.blocks.some(block => block.type === 'item')),
+    'El documento de capacidades debe llevar capacidades con estado.');
+  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados, paquete mensual, paleta AA, sellos de la copia, visor CFDI completo, CSP estricta por huellas y documento de capacidades generado.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -593,6 +593,7 @@ $('primary').onclick = handle(async () => {
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
   if (page === 'coverage') { await pollSat(); render(); return; }
   if (page === 'settings') { await saveAppSettings(); return; }
+  if (page === 'capacidades') { navigate('settings'); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });

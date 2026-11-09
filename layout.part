@@ -50,6 +50,7 @@
     <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
     <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>
     <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
+    <button data-view="capacidades"><svg><use href="#i-file"/></svg> Qué incluye PacoSAT</button>
   </nav>
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
 </aside>
