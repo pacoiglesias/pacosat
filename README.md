@@ -1,6 +1,6 @@
 # PacoSAT · satfacturas
 
-Versión 1.6.2 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.6.3 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
 La instancia en modo servidor se publica tras un proxy HTTPS con autenticación; consulta [SERVIDOR.md](SERVIDOR.md).
 
 ## Inicio en Windows
@@ -32,7 +32,7 @@ Abre http://127.0.0.1:43729. Abrir solo el HTML no activa el servicio SAT.
 - Reporte mensual por RFC listo para imprimir o guardar en PDF desde el navegador: totales y conteos por contribuyente, más cancelados y coincidencias 69-B del mes según la última vigilancia.
 - **Base para la DIOT**: vista y CSV con totales por RFC proveedor y mes desde los CFDI recibidos. Es base de trabajo para la contadora, no la declaración (el importador no guarda el desglose de IVA).
 - Archivo de CFDI con filtro por estado SAT (vigente, cancelado, con 69-B o sin consulta).
-- En modo servidor: **carpeta vigilada** que importa sola todo XML/ZIP/PDF que reciba (los válidos pasan a `procesados`, los fallidos a `errores` con aviso por correo) y **respaldo cifrado programado** diario o semanal con formato idéntico al manual, con aviso por correo si falla.
+- En modo servidor: **carpeta vigilada** que importa sola todo XML/ZIP/PDF que reciba, recorriendo también las subcarpetas (los válidos pasan a `procesados` conservando su ruta, los fallidos a `errores` con aviso por correo) y **respaldo cifrado programado** diario o semanal con formato idéntico al manual, con aviso por correo si falla.
 - Respaldo cifrado de expedientes y restauración.
 - Modo servidor con SQLite, proxy HTTPS y configuración privada; consulta [SERVIDOR.md](SERVIDOR.md).
 

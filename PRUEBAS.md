@@ -14,5 +14,6 @@
 12. Activa el respaldo programado: al vencimiento debe aparecer `PacoSAT-AAAA-MM-DD.faro` en la carpeta indicada y debe poder restaurarse con la contraseña del respaldo usando la interfaz; con la carpeta inaccesible debe llegar el aviso de fallo.
 13. En el navegador: cambia entre modo claro y oscuro, desactiva el sonido y recarga (la preferencia persiste), genera el reporte mensual e imprímelo a PDF, y exporta la base DIOT en CSV para compararla con los totales del Resumen.
 14. Blindaje 5002: solicita un periodo ya solicitado y comprueba que PacoSAT avisa antes de enviar («última disponible»), que al confirmar se envía una vez más y que el tercer intento queda bloqueado ofreciendo mover el inicio 1 segundo; la solicitud nueva debe mostrar el estado de su criterio en «Solicitudes recientes».
+15. Carpeta vigilada con subcarpetas: deja XML/PDF dentro de subcarpetas anidadas de la carpeta vigilada (no solo en la raíz): en los ciclos siguientes deben importarse igual, moverse a `procesados/AAAA-MM-DD` conservando su ruta relativa y, si alguno está dañado, a `errores` con su ruta; los archivos que ya estén en `procesados` o `errores` no deben reimportarse.
 
 Registra fecha, RFC de prueba, resultado esperado/obtenido y error. No publiques credenciales ni comprobantes en issues del repositorio público.
