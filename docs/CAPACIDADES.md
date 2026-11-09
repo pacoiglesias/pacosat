@@ -1,6 +1,6 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Última modificación: 8 nov 2026, 22:16 CST**
+**Última modificación: 8 nov 2026, 22:34 CST**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro (pantalla «Qué incluye PacoSAT») y se actualiza en cada ronda y cada despliegue, junto con el sello de versión y hora de creación.
@@ -19,11 +19,14 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - ✅ Perfiles multi-RFC con cadencia propia (Mano Fil: cada 360 min, ventana 7 días, ambas direcciones).
 - ✅ Vigilancia de estado de cada CFDI cada 24 h y de cancelaciones.
 - ✅ Escudo de criterios 5002 (registro de criterios ya enviados; nunca repetir un criterio idéntico).
-- 🔄 Solicitudes Metadata (hasta 1.000.000 de registros ligeros por petición) para reconciliar cobertura.
-- 🔄 Recibidos SIN filtro de «solo vigentes», registrando el estado inicial de cada CFDI.
+- ✅ Solicitudes Metadata (hasta 1.000.000 de registros ligeros por petición) para reconciliar cobertura (1.6.10): automáticas una al día por RFC y a petición por periodo; los CFDI que el SAT conoce y faltan en XML se listan en Cobertura.
+- ✅ Recibidos SIN filtro de «solo vigentes», registrando el estado inicial de cada CFDI (1.6.10): el conector ya no envía filtro de estado y el estado inicial llega de los metadatos al detalle del CFDI.
 - 🔄 Blindaje: intención registrada ANTES de enviar («presunto enviado» al arrancar), base de datos con synchronous=FULL a prueba de cortes, timeout duro de 60 s en llamadas al SAT con vigilante del ciclo, y contador de descargas por paquete con tope 5008 y estado terminal claro.
 - ✅ Carpeta vigilada recursiva: todo CFDI que caiga en la carpeta entra solo.
+- ✅ Solicitudes frecuentes EN UN CLIC (1.6.10) («mes pasado completo», «este trimestre», «este año») sin teclear fechas: menos errores y menos criterios 5002 quemados por un dedo mal puesto.
+- ✅ AVISO DE SILENCIO **CONFIGURABLE** + MODO DESCANSO CON **INTERRUPTOR ON/OFF** (petición expresa de Paco: visual, práctico e intuitivo): un interruptor grande y visible — general en la pantalla «Hoy» y uno por RFC — para encender/apagar la vigilancia en un toque, con el estado siempre claro («Vigilando» / «Descansando») y opción de «descansar hasta el [fecha]». Si pasan los días que Paco defina sin entrar ningún CFDI, aviso de posible fallo; durante el descanso no hay descargas ni avisos, y al reanudar el sistema se pone al día solo. El sistema también descansa.
 - ✅ Respaldo cifrado programado. 🔄 Respaldo partido por RFC y año, sin techo de 100 MB.
+- 🔄 COPIA EXTERNA AUTOMÁTICA del respaldo: cada respaldo cifrado se copia solo a un segundo destino FUERA del NAS, con semáforo de antigüedad de la copia — si el NAS muriera, el archivo fiscal no muere con él. **DESTINO DECIDIDO (Paco, 8 nov 2026): Google Drive, vía Cloud Sync nativo del NAS; la carpeta secundaria del respaldo vive dentro de la carpeta sincronizada (p. ej. «PacoSAT Respaldos»). A Drive solo llega el archivo CIFRADO.**
 
 ## 3. Listas negras (art. 69, 69-B y 69-B Bis)
 - ✅ Hoy (manual, ya verificado): cruce de contrapartes contra los 16 listados oficiales guardados en ~/workspace/pacosat-listas-sat/.
@@ -48,8 +51,12 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - 🔄 Centro de reportes PDF por periodo, contraparte o concepto, con la identidad de la app.
 - 🔄 Impresión cuidada de todas las pantallas e impresión por lote de CFDI en un solo PDF.
 - 🔄 Exportaciones Excel/CSV con formato, también programables.
+- 🔄 EXPORTACIÓN COMPLETA LEGIBLE en un clic: todos los XML y PDF con su índice, en carpetas por RFC y año, sin depender del formato de respaldo — tus datos son tuyos y salen enteros cuando quieras.
+- 🔄 Comparativas AÑO CONTRA AÑO por contraparte y en total: de un vistazo, quién te factura más que antes y qué gasto se está disparando.
 - 🔄 Correo DENTRO de la app: enviar CFDI, reportes y constancias con plantillas, bitácora de envíos y botón de correo de prueba.
 - 🔄 Informe mensual AUTOMÁTICO a Nora: paquete del mes, base DIOT con desglose, novedades de listas negras y cuentas por cobrar.
+- 🔄 CIERRE DE MES GUIADO: asistente paso a paso (descargar → conciliar → listas → informe a Nora → respaldo) con semáforo por paso: el mes se cierra siguiendo la lista, sin olvidar nada.
+- 🔄 Resumen semanal ejecutivo por correo (lunes): la foto de la semana — CFDI nuevos, cancelaciones, por cobrar/pagar y próximos vencimientos.
 
 ## 7. Dinero
 - 🔄 Conciliación bancaria automática CFDI ↔ estados de cuenta (BBVA/Santander): pagado/no pagado, pagos sin factura y facturas sin pago.
@@ -64,9 +71,12 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - 🔄 IVA del mes estimado por RFC (trasladado y acreditable desde el desglose persistido): la foto fiscal del mes antes de que la arme la contadora.
 - 🔄 Paquete de defensa por periodo en un clic: CFDI con índice, constancias de validación y opiniones, listo para SAT o banco.
 - ✅ Validador de RFC con estructura y fecha (al dar de alta un contribuyente).
+- 🔄 Reglas de clasificación automática por contraparte/concepto (categoría y deducibilidad editables por Paco) y aviso de ANOMALÍAS: importe inusual de un proveedor recurrente o posible duplicado aproximado.
 
 ## 9. Experiencia de uso
 - ✅ Panel de salud (e.firma y su caducidad, correo, respaldos, vigilancia) y bitácora.
+- 🔄 Botón «PROBAR TODO»: autodiagnóstico completo en un clic (e.firma válida, correo operativo, listas al día, respaldo reciente, SAT alcanzable) con un semáforo por prueba.
+- ✅ Bitácora básica de movimientos del sistema. 🔄 BITÁCORA COMPLETA Y CLICABLE: cada entrada (descarga, verificación, alerta, respaldo, correo, acceso) abre el objeto al que se refiere; filtros por tipo, RFC y resultado; y RESUMEN DE ACTIVIDAD — qué hizo el sistema solo, por día y por semana — consultable y exportable.
 - 🔄 Semáforos verde/ámbar/rojo en todo el sistema, con fila de semáforos abriendo el Resumen.
 - 🔄 Sonidos discretos configurables por evento (éxito, aviso, alerta, error) con interruptor y volumen en Ajustes.
 - 🔄 Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente; los correos de alerta llevan enlace.
@@ -78,13 +88,20 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - 🔄 Escala: sincronización por diferencias, paginación y caché de cobertura para miles de CFDI.
 - ✅/🔄 Sello en el pie y en Ajustes: «PacoSAT {versión} · Modificado el {fecha} a las {hora}» + «Creado por Paco Iglesias» — mantenido y verificado en CADA despliegue.
 
+## 9 bis. Principios de experiencia (regla de diseño de Paco)
+- 🔄 INTUITIVO: lenguaje llano; cada término del SAT explicado en una línea; botones con verbos claros («Descargar ahora», «Solicitar este hueco»); ninguna pantalla sin siguiente paso visible.
+- 🔄 PROACTIVO: el sistema habla primero — pantalla de inicio «HOY EN PacoSAT» con el resumen del día, los pendientes con semáforo y el SIGUIENTE PASO sugerido; avisos antes de que las cosas venzan o se rompan, no después.
+- 🔄 AMIGABLE: mensajes en tono cercano y claro; estados vacíos que enseñan qué hacer; errores que dicen qué pasó y cómo se arregla, sin códigos crípticos.
+- 🔄 ÚTIL: cada pantalla termina en una acción posible; nada de información que no lleve a ninguna parte.
+
 ## 10. Seguridad y privacidad
 - ✅ Todo corre en el NAS de Paco, tras su túnel y su contraseña; los datos no salen salvo al SAT (descargas con e.firma) y al correo que él configure.
 - ✅ CSP estricta sin unsafe-inline (1.6.9): la política autoriza por huella SHA-256 los únicos bloques de estilo y script de la copia; el servidor calcula la misma política desde el archivo servido.
 - ✅ La e.firma vive solo en la carpeta protegida; el SAT se contacta únicamente por el Web Service oficial, con disciplina 5002.
+- 🔄 Acceso invitado de SOLO LECTURA (pensado para la contadora): credencial separada, sin capacidad de cambiar ni descargar masivamente, desactivado por defecto y con registro de accesos.
 
 ## Fuera de alcance (decidido por Paco)
 - Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT).
 
 ## Cierre del proyecto
-- 📋 Despliegue conjunto final al NAS con todo lo construido, prueba del SAT de ventana corta (una sola vez) y examen de Paco: entrar y agregar el RFC sin ningún aviso.
+- 📋 **VERSIÓN FINAL A ENTREGAR: 1.7.0** — despliegue conjunto final al NAS con todo lo construido, prueba del SAT de ventana corta (una sola vez) y examen de Paco: entrar y agregar el RFC sin ningún aviso.

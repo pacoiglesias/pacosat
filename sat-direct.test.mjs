@@ -5,11 +5,13 @@ const rfc = 'XAXX010101000';
 const status = { isAccepted: () => true };
 const archive = Buffer.alloc(22);
 archive.writeUInt32LE(0x06054b50);
+let statusFilterCalls = 0;
+const requestTypes = [];
 const query = {
   withPeriod() { return this; },
   withDownloadType() { return this; },
-  withRequestType() { return this; },
-  withDocumentStatus() { return this; },
+  withRequestType(kind) { requestTypes.push(kind); return this; },
+  withDocumentStatus() { statusFilterCalls++; return this; },
   validate() { return []; }
 };
 let remote = 'InProgress';
@@ -30,7 +32,7 @@ const sdk = {
   QueryParameters: { create: () => query },
   DateTimePeriod: { createFromValues(from, to) { periodArgs = [from, to]; } },
   DownloadType: { issued() {}, received() {} },
-  RequestType: { xml() {} },
+  RequestType: { xml: () => 'xml', metadata: () => 'metadata' },
   DocumentStatus: { active() {} }
 };
 const settings = { rfc, certificate: Buffer.alloc(0), privateKey: Buffer.alloc(0), password: 'fake' };
@@ -69,3 +71,12 @@ assert.equal(exhausted.satCode, 5002);
 remoteCode = undefined;
 console.log('OK: solicitud, RFC, validación, espera, descarga, reintento y expiración con SAT simulado.');
 console.log('OK: hora de inicio desplazable y propagación del CodigoEstadoSolicitud (5002) al avanzar la solicitud.');
+/* 1.6.10: recibidos SIN filtro de estado y solicitudes Metadata. */
+assert.equal(statusFilterCalls, 0, 'Ninguna solicitud debe filtrar por estado (hallazgo #5).');
+await connector.request({ start: '2026-11-01', end: '2026-11-08', direction: 'received' });
+assert.equal(statusFilterCalls, 0);
+assert.equal(requestTypes.at(-1), 'xml');
+await connector.request({ start: '2026-11-01', end: '2026-11-08', direction: 'issued', type: 'metadata' });
+assert.equal(requestTypes.at(-1), 'metadata');
+await assert.rejects(connector.request({ start: '2026-11-01', end: '2026-11-08', type: 'otro' }), /Tipo de solicitud/);
+console.log('OK: recibidos sin filtro de estado y tipo Metadata llegan al SDK sin tocar el filtro de estado.');

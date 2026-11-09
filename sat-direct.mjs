@@ -42,16 +42,21 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
     'La e.firma debe corresponder al RFC del expediente.');
   const service = new sdk.Service(new sdk.FielRequestBuilder(fiel), new sdk.HttpsWebClient(), sdk.ServiceEndpoints.cfdi());
   return {
-    async request({ start, end, startTime = '00:00:00', endTime = '23:59:59', direction = 'received' }) {
+    async request({ start, end, startTime = '00:00:00', endTime = '23:59:59', direction = 'received', type = 'cfdi' }) {
       ensure(validDate(start) && validDate(end) && start <= end, 'Periodo inválido.');
       ensure(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(startTime), 'Hora de inicio inválida.');
       ensure(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(endTime), 'Hora de cierre inválida.');
       ensure(direction === 'received' || direction === 'issued', 'Dirección inválida.');
-      let query = sdk.QueryParameters.create()
+      ensure(type === 'cfdi' || type === 'metadata', 'Tipo de solicitud inválido.');
+      /* Sin filtro de estado (1.6.10, hallazgo #5 de la auditoría
+         profunda): antes los recibidos se pedían SOLO vigentes
+         (DocumentStatus.active) y un CFDI cancelado antes de la primera
+         descarga nunca aparecía. Ahora se pide todo y el estado inicial
+         de cada CFDI se registra al importarlo (desde los metadatos). */
+      const query = sdk.QueryParameters.create()
         .withPeriod(sdk.DateTimePeriod.createFromValues(start + ' ' + startTime, end + ' ' + endTime))
         .withDownloadType(direction === 'received' ? sdk.DownloadType.received() : sdk.DownloadType.issued())
-        .withRequestType(sdk.RequestType.xml());
-      if (direction === 'received') query = query.withDocumentStatus(sdk.DocumentStatus.active());
+        .withRequestType(type === 'metadata' ? sdk.RequestType.metadata() : sdk.RequestType.xml());
       const errors = query.validate();
       ensure(!errors.length, errors.join(' · '));
       const result = accepted(await service.query(query), 'El SAT rechazó la solicitud');

@@ -103,13 +103,13 @@ try {
   time += 5 * 60000;
   await service.tick();
   state = await (await call('/api/status')).json();
-  assert.equal(state.jobs.length, 2);
+  assert.equal(state.jobs.length, 3); /* 1.6.10: CFDI + Metadata diario + siguiente CFDI */
   assert.equal(state.inbox.filter(row => row.newCount).length, 0);
   assert.equal(sent.length, 1);
   assert.equal((await call('/api/lock', { rfc })).status, 200);
   time += 60 * 60000;
   await service.tick();
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3); /* 1.6.10: dos CFDI y un Metadata */
   async function alertHarness(connector) {
     const svc = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TOKEN-->', origin, now: () => time,
       makeConnector: async () => ({ parser: FixtureParser, connector }),
@@ -301,7 +301,7 @@ try {
   assert.equal((await clashApiB.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
     password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
   await clashB.tick();
-  assert.equal(clashCalls.length, 2);
+  assert.equal(clashCalls.length, 3); /* 1.6.10: el Metadata diario se suma a las dos de CFDI */
   assert.equal(clashCalls[1].startTime, '00:00:01');
   assert.equal(clashCalls[1].endTime, '10:00:00');
   const activityRows = await (await clashApiB.call('/api/storage?store=activity')).json();
@@ -366,12 +366,16 @@ try {
 
 // --- Espera creciente en la verificación de solicitudes (1.6.4) ---
 let backTime = Date.parse('2026-11-09T15:00:00Z');
-let backChecks = 0;
+let backReqCounter = 0;
+const backCheckCounts = new Map();
 const backService = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TOKEN-->', origin,
   proxyKey: 'f'.repeat(64), now: () => backTime,
   makeConnector: async () => ({ parser: FixtureParser, connector: {
-    request: async () => 'back-req-1',
-    check: async () => { backChecks++; return backChecks <= 4 ? { status: 'pending', packages: [] } : { status: 'finished', packages: [] }; },
+    request: async () => 'back-req-' + (++backReqCounter),
+    /* Conteo por solicitud (1.6.10): el job diario de Metadata del mismo
+       perfil no debe desalinear la espera creciente del job de CFDI. */
+    check: async id => { const n = (backCheckCounts.get(id) || 0) + 1; backCheckCounts.set(id, n);
+      return n <= 4 ? { status: 'pending', packages: [] } : { status: 'finished', packages: [] }; },
     download: async () => valid } }),
   makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
 const backApi = harness(backService, 'f'.repeat(64));
@@ -383,7 +387,7 @@ try {
   const waits = [];
   for (let round = 0; round < 4; round++) {
     let state = await (await backApi.call('/api/status')).json();
-    const job = state.jobs.find(row => row.status === 'pending');
+    const job = state.jobs.find(row => row.status === 'pending' && row.kind === 'cfdi');
     assert.ok(job, 'la solicitud sigue pendiente en la ronda ' + round);
     backTime = job.due;
     await backService.tick();
@@ -397,7 +401,7 @@ try {
   const activityRows = await (await backApi.call('/api/storage?store=activity')).json();
   assert.ok(activityRows.some(row => /espera entre consultas queda en su tope de 60 minutos/.test(row.event || '')));
   let state = await (await backApi.call('/api/status')).json();
-  backTime = state.jobs.find(row => row.status === 'pending').due;
+  backTime = state.jobs.find(row => row.status === 'pending' && row.kind === 'cfdi').due;
   await backService.tick();
   state = await (await backApi.call('/api/status')).json();
   assert.equal(state.jobs.find(row => row.id === 1).status, 'finished');

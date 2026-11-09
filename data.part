@@ -296,7 +296,7 @@ async function inflate(raw, size) {
     return out;
   } finally { await reader.cancel().catch(() => {}); }
 }
-async function* zipXml(raw) {
+async function* zipEntries(raw, extension) {
   check(raw.length >= 22 && raw.length <= 80 * MB, 'ZIP vacío o mayor de 80 MB.');
   const d = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   const u16 = p => d.getUint16(p, true);
@@ -327,7 +327,7 @@ async function* zipXml(raw) {
     check(next <= limit, 'Directorio ZIP truncado.');
     const name = new TextDecoder().decode(raw.subarray(p + 46, p + 46 + len)).split(/[\\/]/).at(-1);
     p = next;
-    if (!/\.xml$/i.test(name)) continue;
+    if (!extension.test(name)) continue;
     expanded += size;
     check(!(flags & 1) && (method === 0 || method === 8) && size <= 8 * MB && expanded <= 180 * MB &&
       start + 30 <= centralStart && u32(start) === 0x04034b50 && u16(start + 8) === method,
@@ -335,10 +335,18 @@ async function* zipXml(raw) {
     const offset = start + 30 + u16(start + 26) + u16(start + 28);
     check(offset + compressed <= centralStart, 'Archivo ZIP truncado.');
     const data = raw.subarray(offset, offset + compressed);
-    const xml = method === 8 ? await inflate(data, size) : data;
-    check(xml.length === size && crc32(xml) === checksum, 'La verificación de integridad del ZIP falló.');
-    yield { name, xml };
+    const content = method === 8 ? await inflate(data, size) : data;
+    check(content.length === size && crc32(content) === checksum, 'La verificación de integridad del ZIP falló.');
+    yield { name, content };
   }
+}
+async function* zipXml(raw) {
+  for await (const entry of zipEntries(raw, /\.xml$/i)) yield { name: entry.name, xml: entry.content };
+}
+/* Paquetes Metadata del SAT (1.6.10): el ZIP trae un .txt con los
+   registros separados por tuberías, no XML. Mismo lector, otra extensión. */
+async function* zipText(raw) {
+  for await (const entry of zipEntries(raw, /\.txt$/i)) yield { name: entry.name, text: decodeXml(entry.content) };
 }
 async function pdfOk(blob) {
   return blob instanceof Blob && blob.size <= 15 * MB && await blob.slice(0, 5).text() === '%PDF-';

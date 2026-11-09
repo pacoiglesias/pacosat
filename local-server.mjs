@@ -7,7 +7,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
-import { parseXml, zipXml, validateRfc } from './xml-core.mjs';
+import { parseXml, zipXml, zipText, validateRfc } from './xml-core.mjs';
 import { analyzeInvoicePdf } from './pdf-invoice.mjs';
 import { createMonitor } from './sat-monitor.mjs';
 import { encryptBackupBuffer, decryptBackupBuffer } from './backup-core.mjs';
@@ -136,7 +136,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     CREATE INDEX IF NOT EXISTS criteria_key_idx ON criteria(key);
     CREATE TABLE IF NOT EXISTS criteria_exhausted (key TEXT PRIMARY KEY,
       learnedAt INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '');
-    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');`);
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
+    /* Metadatos del SAT (1.6.10): registros ligeros de las solicitudes
+       tipo Metadata, para reconciliar cobertura sin descargar XML. El
+       estado (1 vigente / 0 cancelado) es el que el SAT reportaba en el
+       paquete: sirve de estado inicial de cada CFDI. */
+    CREATE TABLE IF NOT EXISTS metadata_records (uuid TEXT PRIMARY KEY, rfc TEXT NOT NULL,
+      direction TEXT NOT NULL, emitter TEXT NOT NULL DEFAULT '', receiver TEXT NOT NULL DEFAULT '',
+      issuedAt TEXT NOT NULL DEFAULT '', total TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT '',
+      cancelDate TEXT NOT NULL DEFAULT '', seenAt INTEGER NOT NULL DEFAULT 0);`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
@@ -215,7 +223,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      criteria_exhausted, sin tocar las filas del libro. */
   const insertCriteria = db.prepare('INSERT INTO criteria(key,rfc,direction,type,emitter,receiver,startAt,endAt,requestId,origin,sentAt) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
   function criteriaFromJob(job) {
-    return { rfc: job.rfc, direction: job.direction, type: 'cfdi', emitter: '', receiver: '',
+    return { rfc: job.rfc, direction: job.direction, type: job.kind === 'metadata' ? 'metadata' : 'cfdi', emitter: '', receiver: '',
       startAt: job.startAt || job.periodStart + ' 00:00:00',
       endAt: job.endAt || job.periodEnd + ' 23:59:59' };
   }
@@ -255,6 +263,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     /* 1.6.4: contador de verificaciones pendientes por solicitud, para la
        espera creciente (backoff) de verifyJobs. */
     if (!jobColumns.includes('checks')) db.exec("ALTER TABLE jobs ADD COLUMN checks INTEGER NOT NULL DEFAULT 0");
+    /* 1.6.10: tipo de solicitud (cfdi | metadata) y pausa por perfil
+       (modo descanso: interruptor y «hasta» programado). */
+    if (!jobColumns.includes('kind')) db.exec("ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'cfdi'");
+    const profileColumnsPre = db.prepare('PRAGMA table_info(profiles)').all().map(row => row.name);
+    if (!profileColumnsPre.includes('paused')) db.exec("ALTER TABLE profiles ADD COLUMN paused INTEGER NOT NULL DEFAULT 0");
+    if (!profileColumnsPre.includes('pauseUntil')) db.exec("ALTER TABLE profiles ADD COLUMN pauseUntil INTEGER NOT NULL DEFAULT 0");
     /* 1.6.5: caducidad real del certificado de la e.firma por perfil
        (epoch ms); NULL cuando nunca se pudo leer: «sin dato», jamás una
        fecha inventada. */
@@ -372,9 +386,18 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
       profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc),
         lastSatSuccess: db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(row.rfc)?.last || null })),
-      jobs: db.prepare('SELECT id,rfc,direction,periodStart,periodEnd,startAt,endAt,status,due,created,error,checks FROM jobs ORDER BY id DESC LIMIT 35').all()
+      jobs: db.prepare('SELECT id,rfc,direction,kind,periodStart,periodEnd,startAt,endAt,status,due,created,error,checks FROM jobs ORDER BY id DESC LIMIT 35').all()
         .map(row => { const info = criteriaInfo(criteriaFromJob(row));
           return { ...row, criteriaState: info.state, criteriaCount: info.count }; }),
+      rest: { until: restUntil(), active: resting(now()) },
+      silenceDays: Number(getSetting('silenceDays') || 0),
+      metadata: (() => {
+        const total = db.prepare('SELECT COUNT(*) AS n FROM metadata_records').get()?.n || 0;
+        const missing = db.prepare(`SELECT m.uuid,m.emitter,m.receiver,m.issuedAt,m.total,m.status FROM metadata_records m
+          WHERE NOT EXISTS (SELECT 1 FROM discovered d WHERE d.rfc=m.rfc AND d.uuid=m.uuid) ORDER BY m.issuedAt DESC LIMIT 100`).all();
+        const lastSeen = db.prepare('SELECT MAX(seenAt) AS last FROM metadata_records').get()?.last || null;
+        return { records: total, missing, lastSeen };
+      })(),
       inbox: db.prepare('SELECT id,rfc,newCount,review FROM packages WHERE archive IS NOT NULL ORDER BY id LIMIT 50').all(),
       mail: { enabled: Boolean(mail), recipient: mail?.recipient || '', error: db.prepare("SELECT error FROM notices WHERE sent IS NULL AND error<>'' ORDER BY id DESC LIMIT 1").get()?.error || '' },
       watchFolder: { enabled: Boolean(inbox.dir), lastScan: inboxStatus.lastScan, imported: inboxStatus.imported,
@@ -418,11 +441,81 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       if (cloud) putMetadata('activity', { id: 'sat:' + job.id + ':' + id, name: ('SAT · ' + job.rfc).slice(0, 180),
         date: new Date(now()).toISOString(), added: count, duplicates: valid.length - count, review, issues });
+      if (count && job.direction === 'received') setState('news:last:' + job.rfc, String(now()));
       const record = insertPackage.run(job.id, id, job.rfc, !cloud && (count || review) ? archive : null, count, review);
       if (mail && count && job.direction === 'received') {
         db.prepare('INSERT INTO notices(package,rfc,recipient,count,due) VALUES (?,?,?,?,?)')
           .run(record.lastInsertRowid, job.rfc, mail.recipient, count, now());
       }
+    });
+  }
+
+  /* Solicitudes Metadata (1.6.10): el paquete trae un .txt con una fila
+     por CFDI (columnas separadas por «|», con cabecera). Se guardan los
+     registros ligeros y se reconcilian contra lo descargado: lo que el
+     SAT conoce y PacoSAT no tiene en XML queda listado como faltante en
+     la cobertura, y el estado del registro queda como estado inicial
+     de los CFDI ya importados. Nada de esto envía solicitudes nuevas. */
+  const METADATA_COLUMNS = ['uuid', 'rfcemisor', 'nombreemisor', 'rfcreceptor', 'nombrereceptor', 'fechaemision',
+    'fechacertificacion', 'paccertifico', 'monto', 'efectocomprobante', 'estatus', 'fechacancelacion'];
+  function parseMetadataText(text) {
+    const lines = String(text || '').split(/\r?\n/).filter(line => line.trim());
+    if (!lines.length) return [];
+    let header = null, start = 0;
+    const first = lines[0].split('|').map(value => value.trim().toLowerCase().replace(/[^a-z]/g, ''));
+    if (first.includes('uuid')) { header = first; start = 1; }
+    const records = [];
+    for (let i = start; i < lines.length; i++) {
+      const cells = lines[i].split('|').map(value => value.trim());
+      const get = name => {
+        const index = header ? header.indexOf(name) : METADATA_COLUMNS.indexOf(name);
+        return index >= 0 ? (cells[index] || '') : '';
+      };
+      const uuid = get('uuid').toUpperCase();
+      if (!/^[0-9A-F-]{36}$/.test(uuid)) continue;
+      records.push({ uuid, emitter: get('rfcemisor').toUpperCase(), receiver: get('rfcreceptor').toUpperCase(),
+        issuedAt: get('fechaemision'), total: get('monto'), status: get('estatus'), cancelDate: get('fechacancelacion') });
+    }
+    return records;
+  }
+  function patchInitialState(uuid, status) {
+    if (!cloud) return;
+    const row = db.prepare("SELECT value FROM records WHERE store='invoices' AND id=?").get(uuid);
+    if (!row?.value) return;
+    try {
+      const invoice = JSON.parse(row.value);
+      const label = status === '0' ? 'Cancelado' : status === '1' ? 'Vigente' : '';
+      if (!label || invoice.initialState === label) return;
+      invoice.initialState = label;
+      db.prepare("UPDATE records SET value=? WHERE store='invoices' AND id=?").run(JSON.stringify(invoice), uuid);
+      storageRevision++;
+    } catch { /* fila ilegible: el estado inicial es informativo, no crítico */ }
+  }
+  async function inspectMetadataPackage(job, id, archive) {
+    if (packageLookup.get(job.id, id)) return;
+    let found = [], review = 0;
+    try {
+      for await (const entry of zipText(archive)) found = found.concat(parseMetadataText(entry.text));
+    } catch { review++; }
+    const time = now();
+    tx(db, () => {
+      if (packageLookup.get(job.id, id)) return;
+      let count = 0;
+      const upsert = db.prepare(`INSERT INTO metadata_records(uuid,rfc,direction,emitter,receiver,issuedAt,total,status,cancelDate,seenAt)
+        VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(uuid) DO UPDATE SET status=excluded.status,
+        cancelDate=excluded.cancelDate, seenAt=excluded.seenAt`);
+      for (const record of found) {
+        const known = db.prepare('SELECT 1 FROM metadata_records WHERE uuid=?').get(record.uuid);
+        upsert.run(record.uuid, job.rfc, job.direction, record.emitter, record.receiver, record.issuedAt,
+          record.total, record.status, record.cancelDate, time);
+        if (!known) count++;
+        patchInitialState(record.uuid, record.status);
+      }
+      if (cloud) putMetadata('activity', { id: 'satmeta:' + job.id + ':' + id, name: ('SAT Metadatos · ' + job.rfc).slice(0, 180),
+        date: new Date(time).toISOString(), added: count, duplicates: found.length - count, review,
+        issues: [], event: 'Paquete de metadatos: ' + found.length + ' registros del SAT para ' + job.rfc +
+          ' (' + (job.direction === 'received' ? 'recibidos' : 'emitidos') + ', ' + job.periodStart + ' a ' + job.periodEnd + ').' });
+      insertPackage.run(job.id, id, job.rfc, null, count, review);
     });
   }
 
@@ -454,8 +547,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      (los registros ya llevan RFC y fecha; el estado operativo, pequeño,
      iría completo en cada parte) — queda documentado, no implementado. */
   const OPERATIONS_TABLES = [
-    ['profiles', ['rfc', 'minutes', 'days', 'direction', 'nextRun', 'error', 'certExpires']],
-    ['jobs', ['id', 'rfc', 'direction', 'periodStart', 'periodEnd', 'startAt', 'endAt', 'requestId', 'status', 'imported', 'due', 'created', 'error', 'checks']],
+    ['profiles', ['rfc', 'minutes', 'days', 'direction', 'nextRun', 'error', 'certExpires', 'paused', 'pauseUntil']],
+    ['jobs', ['id', 'rfc', 'direction', 'kind', 'periodStart', 'periodEnd', 'startAt', 'endAt', 'requestId', 'status', 'imported', 'due', 'created', 'error', 'checks']],
     ['packages', ['id', 'job', 'remoteId', 'rfc', 'newCount', 'review']],
     ['notices', ['id', 'package', 'rfc', 'recipient', 'count', 'due', 'sent', 'error']],
     ['criteria', ['id', 'key', 'rfc', 'direction', 'type', 'emitter', 'receiver', 'startAt', 'endAt', 'requestId', 'origin', 'sentAt']],
@@ -494,7 +587,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       for (const [name, columns] of present) {
         if (!tableExists(name)) continue;
         const insert = db.prepare('INSERT INTO ' + name + '(' + columns.join(',') + ') VALUES (' + columns.map(() => '?').join(',') + ')');
-        for (const row of operations[name]) insert.run(...columns.map(column => row[column] === undefined ? null : row[column]));
+        /* Columnas con NOT NULL añadidas tras 1.6.4 (kind, paused,
+           pauseUntil en 1.6.10): un respaldo viejo no las trae y su
+           valor por defecto es el de la propia columna. */
+        const defaults = { kind: 'cfdi', paused: 0, pauseUntil: 0 };
+        for (const row of operations[name]) insert.run(...columns.map(column =>
+          row[column] === undefined || row[column] === null ? (defaults[column] ?? null) : row[column]));
       }
     });
     /* Las sesiones de e.firma viven solo en memoria y NO se restauran:
@@ -820,9 +918,24 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     } finally { watchBusy = false; }
   }
 
+  const profilePaused = (profile, time) => Boolean(profile.paused) || (profile.pauseUntil || 0) > time;
+  const restUntil = () => Number(getSetting('restUntil') || 0);
+  const resting = time => restUntil() > time;
+
   async function schedule(profile, service, time) {
+    if (profilePaused(profile, time)) {
+      /* Modo descanso por RFC (1.6.10): ni solicitudes ni avisos; la
+         próxima revisión queda para cuando termine la pausa y al
+         reanudar se calcula la ventana pendiente (catch-up). */
+      db.prepare('UPDATE profiles SET nextRun=? WHERE rfc=?')
+        .run(Math.max(profile.pauseUntil || 0, time + profile.minutes * MIN), profile.rfc);
+      return;
+    }
     const directions = profile.direction === 'both' ? ['received', 'issued'] : [profile.direction];
-    const end = day(time), start = day(time - (profile.days - 1) * DAY);
+    const end = day(time);
+    const catchupFrom = Number(getState('catchup:' + profile.rfc) || 0);
+    const start = catchupFrom ? day(Math.max(Math.min(catchupFrom, time), time - 92 * DAY)) : day(time - (profile.days - 1) * DAY);
+    if (catchupFrom) setState('catchup:' + profile.rfc, '');
     db.prepare('UPDATE profiles SET nextRun=?,error=? WHERE rfc=?').run(time + profile.minutes * MIN, '', profile.rfc);
     for (const direction of directions) {
       try {
@@ -862,6 +975,43 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
   }
 
+  /* Metadatos programados (1.6.10): una solicitud Metadata por RFC y
+     sentido al día como máximo, con la misma ventana de la revisión y
+     el mismo blindaje de criterios (tipo 'metadata': no consume los
+     criterios de CFDI). Sirve para reconciliar cobertura y registrar
+     estados sin descargar XML. Si el criterio no está disponible, se
+     espera al siguiente ciclo: los metadatos nunca fuerzan un envío. */
+  async function scheduleMetadata(profile, service, time) {
+    if (profilePaused(profile, time)) return;
+    const last = Number(getState('metadata:last:' + profile.rfc) || 0);
+    if (time - last < DAY) return;
+    const directions = profile.direction === 'both' ? ['received', 'issued'] : [profile.direction];
+    const end = day(time), start = day(time - (profile.days - 1) * DAY);
+    let sent = false;
+    for (const direction of directions) {
+      try {
+        if (db.prepare("SELECT 1 FROM jobs WHERE rfc=? AND direction=? AND kind='metadata' AND status='pending'").get(profile.rfc, direction)) continue;
+        let startAt = start + ' 00:00:00';
+        const endAt = end + ' ' + clock.format(time);
+        const criteria = { rfc: profile.rfc, direction, type: 'metadata', emitter: '', receiver: '', startAt, endAt };
+        let info = criteriaInfo(criteria);
+        let shifts = 0;
+        while (info.state !== 'disponible' && shifts < 10) {
+          startAt = pacosatShiftSecond(startAt); shifts++;
+          info = criteriaInfo({ ...criteria, startAt });
+        }
+        if (info.state !== 'disponible') continue;
+        const requestId = await service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction, type: 'metadata' });
+        db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+          .run(profile.rfc, direction, 'metadata', start, end, startAt, endAt, requestId, 'pending', time + 5 * MIN, time);
+        insertCriteria.run(pacosatCriteriaKey({ ...criteria, startAt }), profile.rfc, direction, 'metadata', '', '',
+          startAt, endAt, requestId, 'scheduled', time);
+        sent = true;
+      } catch { /* metadatos: si el SAT no responde, se reintenta en el siguiente ciclo sin ensuciar el perfil */ }
+    }
+    if (sent) setState('metadata:last:' + profile.rfc, String(time));
+  }
+
   /* Espera creciente entre verificaciones (1.6.4): 5, 10, 20, 40 y 60 min
      como tope. Sustituye el ritmo fijo de 5 min sin tope (hallazgo M-4 de
      la ronda 2): una solicitud que el SAT tarda en atender ya no se
@@ -880,7 +1030,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         .run(JSON.stringify(next.imported || []), next.status, '', job.id);
       try {
         const advanced = await advanceSatJob(active.connector, { ...job, imported: JSON.parse(job.imported) }, save,
-          ({ id, archive }) => inspectPackage(job, id, archive, active.parser));
+          ({ id, archive }) => job.kind === 'metadata' ? inspectMetadataPackage(job, id, archive) :
+            inspectPackage(job, id, archive, active.parser));
         db.prepare('UPDATE jobs SET error=? WHERE id=?').run('', job.id);
         if (advanced?.satCode === 5002) learnCriteria5002(job, time);
       } catch (error) { db.prepare('UPDATE jobs SET error=? WHERE id=?').run(message(error), job.id); }
@@ -1032,32 +1183,79 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       } catch { db.prepare('UPDATE alerts SET error=? WHERE id=?').run('El servidor SMTP no aceptó el envío. Revisa la configuración y las credenciales.', item.id); }
     }
   }
+  /* Aviso de silencio (1.6.10): si el umbral configurable está activo y
+     un RFC lleva más días que el umbral sin CFDI recibidos nuevos, se
+     avisa una sola vez por episodio (la referencia incluye la fecha del
+     último CFDI: cuando llega uno nuevo, el episodio se reinicia). */
+  function checkSilence(time) {
+    const threshold = Number(getSetting('silenceDays') || 0);
+    if (!threshold) return;
+    if (getState('silence:day') === day(time)) return;
+    setState('silence:day', day(time));
+    for (const profile of db.prepare('SELECT * FROM profiles').all()) {
+      if (profilePaused(profile, time)) continue;
+      const last = Number(getState('news:last:' + profile.rfc) || 0) ||
+        db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(profile.rfc)?.last || time;
+      if (time - last <= threshold * DAY) continue;
+      queueAlert('silence', 'silence:' + profile.rfc + ':' + last,
+        'PacoSAT · Silencio de CFDI en ' + profile.rfc,
+        'El RFC ' + profile.rfc + ' lleva ' + Math.floor((time - last) / DAY) + ' días sin CFDI recibidos nuevos y tu umbral de aviso es de ' +
+        threshold + ' días. Puede ser normal (sin operaciones) o la señal de una factura esperada que no llegó: revísalo en el Centro SAT.', time);
+    }
+  }
+
   async function tick() {
     if (busy) return;
     busy = true;
     try {
       const time = now();
-      for (const profile of db.prepare('SELECT * FROM profiles').all()) {
-        const active = unlocked.get(profile.rfc);
-        if (!active) continue;
-        const outcome = await verifyJobs(profile, active, time);
-        for (const job of outcome.terminal) queueAlert('job-terminal', 'job:' + job.id,
-          'PacoSAT · Una solicitud al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus),
-          'La solicitud del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
-          (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT y no entregará paquetes. Crea una solicitud nueva para un periodo ' +
-          'distinto desde el Centro SAT; no reintentes la misma, porque el SAT limita las solicitudes por periodo.', time);
-        const scheduleAttempted = profile.nextRun <= time;
-        if (scheduleAttempted) await schedule(profile, active.connector, time);
-        const profileError = scheduleAttempted ? (db.prepare('SELECT error FROM profiles WHERE rfc=?').get(profile.rfc)?.error || '') : '';
-        noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
-          Boolean(profileError) || outcome.stuck > 0, time);
+      /* Modo descanso general (1.6.10): con el descanso activo no se
+         envía NADA al SAT ni se genera ningún aviso; la carpeta vigilada
+         y el respaldo (operaciones locales) siguen su curso. Al vencer
+         la fecha, todo se reanuda solo. */
+      const isResting = resting(time);
+      if (!isResting && getState('rest:since')) {
+        /* El descanso venció solo: se reanuda con ventana pendiente. */
+        const since = Number(getState('rest:since'));
+        setState('rest:since', '');
+        setSetting('restUntil', '');
+        for (const profile of db.prepare('SELECT rfc FROM profiles').all())
+          if (!getState('catchup:' + profile.rfc)) setState('catchup:' + profile.rfc, String(since));
       }
-      reconcileCoverageGaps(time);
-      checkCertExpiries(time);
+      if (!isResting) {
+        for (const profile of db.prepare('SELECT * FROM profiles').all()) {
+          const active = unlocked.get(profile.rfc);
+          if (!active || profilePaused(profile, time)) continue;
+          const outcome = await verifyJobs(profile, active, time);
+          for (const job of outcome.terminal) {
+            const isMeta = job.kind === 'metadata';
+            queueAlert('job-terminal', 'job:' + job.id,
+              isMeta ? 'PacoSAT · Una solicitud de metadatos al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus) :
+                'PacoSAT · Una solicitud al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus),
+              isMeta ?
+                'La solicitud de metadatos del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
+                (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT. La reconciliación de ese periodo se reintentará en el siguiente ciclo diario de metadatos.' :
+                'La solicitud del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
+                (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT y no entregará paquetes. Crea una solicitud nueva para un periodo ' +
+                'distinto desde el Centro SAT; no reintentes la misma, porque el SAT limita las solicitudes por periodo.', time);
+          }
+          const scheduleAttempted = profile.nextRun <= time;
+          if (scheduleAttempted) await schedule(profile, active.connector, time);
+          if (scheduleAttempted) await scheduleMetadata(profile, active.connector, time);
+          const profileError = scheduleAttempted ? (db.prepare('SELECT error FROM profiles WHERE rfc=?').get(profile.rfc)?.error || '') : '';
+          noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
+            Boolean(profileError) || outcome.stuck > 0, time);
+        }
+        reconcileCoverageGaps(time);
+        checkCertExpiries(time);
+        checkSilence(time);
+      }
       await scanWatchFolder(time);
       await runScheduledBackup(time);
-      await notify(time);
-      await sendAlerts(time);
+      if (!isResting) {
+        await notify(time);
+        await sendAlerts(time);
+      }
     } finally { busy = false; }
   }
 
@@ -1246,6 +1444,53 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         unlocked.delete(x.rfc);
         return json(res, overview());
       }
+      /* Modo descanso por RFC (1.6.10): interruptor y «hasta» en un solo
+         gesto. Al pausar se anota desde cuándo; al reanudar, la agenda
+         calcula la ventana pendiente desde ese instante (catch-up). */
+      if (req.method === 'POST' && url.pathname === '/api/pause') {
+        const x = await body(req);
+        const profile = db.prepare('SELECT * FROM profiles WHERE rfc=?').get(x.rfc);
+        need(profile, 'RFC no configurado.', 404);
+        const time = now();
+        if (x.paused === true || Number(x.until) > time) {
+          if (!profilePaused(profile, time)) setState('pause:since:' + x.rfc, String(time));
+          db.prepare('UPDATE profiles SET paused=?,pauseUntil=? WHERE rfc=?')
+            .run(x.paused === true && !x.until ? 1 : 0, Number(x.until) > time ? Number(x.until) : 0, x.rfc);
+        } else if (x.paused === false || x.until !== undefined) {
+          const since = Number(getState('pause:since:' + x.rfc) || 0);
+          if (since) { setState('catchup:' + x.rfc, String(since)); setState('pause:since:' + x.rfc, ''); }
+          db.prepare("UPDATE profiles SET paused=0,pauseUntil=0,nextRun=0,error='' WHERE rfc=?").run(x.rfc);
+        } else need(false, 'Indica paused o until.', 400);
+        return json(res, overview());
+      }
+      /* Descanso general (1.6.10): hasta una fecha (epoch ms) o 0 para
+         reactivar todo de inmediato. Al reactivar, cada RFC retoma con
+         ventana pendiente desde que empezó el descanso. */
+      if (req.method === 'POST' && url.pathname === '/api/rest') {
+        const x = await body(req);
+        const until = Number(x.until) || 0;
+        need(until === 0 || (until > now() && until < now() + 366 * DAY), 'Fecha de reactivación inválida.');
+        if (until) {
+          if (!getState('rest:since')) setState('rest:since', String(now()));
+          setSetting('restUntil', String(until));
+        } else {
+          const since = Number(getState('rest:since') || 0);
+          setSetting('restUntil', '');
+          setState('rest:since', '');
+          if (since) for (const profile of db.prepare('SELECT rfc FROM profiles').all())
+            if (!getState('catchup:' + profile.rfc)) setState('catchup:' + profile.rfc, String(since));
+          db.prepare('UPDATE profiles SET nextRun=0').run();
+        }
+        return json(res, overview());
+      }
+      /* Umbral del aviso de silencio (1.6.10): días sin CFDI recibidos
+         nuevos antes de avisar; 0 lo desactiva. */
+      if (req.method === 'POST' && url.pathname === '/api/silence') {
+        const x = await body(req);
+        need(Number.isInteger(x.days) && x.days >= 0 && x.days <= 365, 'El umbral debe ser de 0 a 365 días.');
+        setSetting('silenceDays', x.days ? String(x.days) : '');
+        return json(res, overview());
+      }
       if (req.method === 'POST' && url.pathname === '/api/retry') {
         const x = await body(req);
         need(Number.isSafeInteger(x.id) && x.id > 0, 'Solicitud inválida.');
@@ -1264,6 +1509,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(validDate(x.start) && validDate(x.end) && x.start <= x.end && x.end <= day(now()), 'Selecciona un periodo válido hasta hoy.');
         need(Date.parse(x.end) - Date.parse(x.start) <= 92 * DAY, 'Selecciona un periodo de hasta 93 días.');
         need(['received', 'issued'].includes(x.direction), 'Dirección inválida.');
+        need(x.type === undefined || ['cfdi', 'metadata'].includes(x.type), 'Tipo de solicitud inválido.');
+        const kind = x.type === 'metadata' ? 'metadata' : 'cfdi';
         need(!busy, 'PacoSAT está procesando otra solicitud. Intenta en unos segundos.', 409);
         /* Guardia previa del blindaje 5002: se compara el criterio exacto
            (con segundos) contra el libro antes de enviar nada al SAT. */
@@ -1271,7 +1518,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         let startAt = x.start + ' 00:00:00';
         if (x.shiftStart === true) startAt = pacosatShiftSecond(startAt);
         const endAt = x.end + ' ' + endTime;
-        const criteria = { rfc: x.rfc, direction: x.direction, type: 'cfdi', emitter: '', receiver: '', startAt, endAt };
+        const criteria = { rfc: x.rfc, direction: x.direction, type: kind, emitter: '', receiver: '', startAt, endAt };
         const info = criteriaInfo(criteria);
         if (info.state === 'agotado') throw guardError(info, criteria,
           'Este criterio ya agotó sus solicitudes ante el SAT: una más recibiría el error 5002 ' +
@@ -1282,13 +1529,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           'repetirla gasta la última disponible y una tercera recibiría el error 5002.');
         busy = true;
         try {
-          const prior = db.prepare("SELECT id FROM jobs WHERE rfc=? AND direction=? AND startAt=? AND endAt=? AND status='pending'")
-            .get(x.rfc, x.direction, startAt, endAt);
+          const prior = db.prepare("SELECT id FROM jobs WHERE rfc=? AND direction=? AND kind=? AND startAt=? AND endAt=? AND status='pending'")
+            .get(x.rfc, x.direction, kind, startAt, endAt);
           need(!prior, 'Ese criterio ya tiene una solicitud en curso.', 409);
-          const requestId = await active.connector.request({ start: x.start, end: x.end, startTime: startAt.slice(11), endTime, direction: x.direction });
-          db.prepare('INSERT INTO jobs(rfc,direction,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?)')
-            .run(x.rfc, x.direction, x.start, x.end, startAt, endAt, requestId, 'pending', now() + 5 * MIN, now());
-          insertCriteria.run(info.key, x.rfc, x.direction, 'cfdi', '', '', startAt, endAt, requestId, 'manual', now());
+          const requestId = await active.connector.request({ start: x.start, end: x.end, startTime: startAt.slice(11), endTime, direction: x.direction,
+            ...(kind === 'metadata' ? { type: 'metadata' } : {}) });
+          db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+            .run(x.rfc, x.direction, kind, x.start, x.end, startAt, endAt, requestId, 'pending', now() + 5 * MIN, now());
+          insertCriteria.run(info.key, x.rfc, x.direction, kind, '', '', startAt, endAt, requestId, 'manual', now());
         } finally { busy = false; }
         return json(res, overview());
       }
@@ -1304,7 +1552,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         ...(error.guard ? { guard: error.guard } : {}) }, error.status || 502);
     }
   }
-  return { handle, tick, monitorTick: monitor.tick, inboxTick: (time = now()) => scanWatchFolder(time),
+  return { handle, tick, monitorTick: (time = now()) => resting(time) ? Promise.resolve() : monitor.tick(time), inboxTick: (time = now()) => scanWatchFolder(time),
     backupTick: (time = now()) => runScheduledBackup(time), bootstrap, close: () => db.close() };
 }
 
