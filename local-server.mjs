@@ -149,6 +149,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     CREATE INDEX IF NOT EXISTS criteria_key_idx ON criteria(key);
     CREATE TABLE IF NOT EXISTS criteria_exhausted (key TEXT PRIMARY KEY,
       learnedAt INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '');
+    /* Rescate 5002 (ronda anti-5002): criterios quemados cuyo contenido
+       se recuperó por el canal aparte del portal web del SAT y entró por
+       la carpeta vigilada. El criterio sigue agotado ante el SAT; lo que
+       cambia es que su contenido ya está en el expediente. */
+    CREATE TABLE IF NOT EXISTS criteria_rescued (key TEXT PRIMARY KEY,
+      rescuedAt INTEGER NOT NULL, count INTEGER NOT NULL DEFAULT 0, detail TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');
     /* Metadatos del SAT (1.6.10): registros ligeros de las solicitudes
        tipo Metadata, para reconciliar cobertura sin descargar XML. El
@@ -301,14 +307,35 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const row = db.prepare('SELECT COUNT(*) AS count, MIN(CASE WHEN sentAt>0 THEN sentAt END) AS first FROM criteria WHERE key=?').get(key);
     const count = row?.count || 0;
     const exhausted = Boolean(db.prepare('SELECT 1 FROM criteria_exhausted WHERE key=?').get(key));
-    return { key, count, firstSentAt: row?.first || null, exhausted,
-      state: exhausted || count >= 2 ? 'agotado' : count === 1 ? 'ultima' : 'disponible' };
+    const rescuedRow = db.prepare('SELECT rescuedAt,count FROM criteria_rescued WHERE key=?').get(key);
+    const rescued = rescuedRow ? { at: rescuedRow.rescuedAt, count: rescuedRow.count } : null;
+    /* Estados (ronda anti-5002): «rescatado» es un agotado cuyo contenido
+       ya entró por el portal; «ultima» ya no invita a gastar la última
+       solicitud repitiendo — la guardia bloquea el duplicado y ofrece la
+       variante de cierre +1 s. */
+    return { key, count, firstSentAt: row?.first || null, exhausted, rescued,
+      state: exhausted ? (rescued ? 'rescatado' : 'agotado') : count >= 2 ? 'agotado' : count === 1 ? 'ultima' : 'disponible' };
   }
   function guardError(info, criteria, text) {
     return Object.assign(new Error(text), { status: 409, guard: {
       state: info.state, count: info.count, firstSentAt: info.firstSentAt,
+      rfc: criteria.rfc, direction: criteria.direction, type: criteria.type || 'cfdi',
       startAt: criteria.startAt, endAt: criteria.endAt,
-      shiftedStartAt: pacosatShiftSecond(criteria.startAt), message: text } });
+      shiftedStartAt: pacosatShiftSecond(criteria.startAt),
+      shiftedEndAt: pacosatShiftSecond(criteria.endAt),
+      rescuedAt: info.rescued?.at || null, rescuedCount: info.rescued?.count || 0,
+      message: text } });
+  }
+  /* Marcar un criterio como quemado (5002): lo aprende la verificación
+     posterior o la propia llamada de envío cuando el SAT la rechaza.
+     Solo se quema ESA combinación exacta — ni el RFC, ni la e.firma,
+     ni otras fechas — y el libro lo muestra «agotado» hasta que el
+     rescate por el portal lo marque «rescatado». */
+  function markCriteriaExhausted(criteria, time, detail) {
+    const key = pacosatCriteriaKey(criteria);
+    db.prepare('INSERT OR IGNORE INTO criteria_exhausted(key,learnedAt,detail) VALUES (?,?,?)')
+      .run(key, time, detail);
+    return key;
   }
   /* Blindaje 5002 a prueba de cortes (1.6.15, mejora nº 1): la fila
      del libro se escribe en estado «enviando» (sentAt 0, sin
@@ -321,6 +348,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      esta solicitud (el cupo lo gastaron las filas anteriores, que ya
      están en el libro). */
   async function sendSatRequest(send, criteria, origin, time) {
+    /* Última línea de defensa (ronda anti-5002): NINGUNA solicitud sale
+       con un criterio idéntico a uno ya registrado para ese RFC, venga
+       de la ruta que venga. Las rutas ya lo comprueban antes (guardia
+       manual y planificador; auto-desplazamiento en la programación);
+       esto lo garantiza aunque una ruta futura lo olvide. La fila
+       «enviando» (sentAt 0) también cuenta: un envío interrumpido a
+       mitad jamás habilita un reenvío idéntico a ciegas. */
+    const prior = criteriaInfo(criteria);
+    if (prior.count > 0 || prior.exhausted) throw guardError(prior, criteria,
+      'Ese criterio exacto ya consta en el libro de PacoSAT: no se envía un duplicado.');
     const intent = insertCriteria.run(pacosatCriteriaKey(criteria), criteria.rfc, criteria.direction,
       criteria.type, criteria.emitter || '', criteria.receiver || '', criteria.startAt, criteria.endAt,
       '', origin, 0);
@@ -330,20 +367,97 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         .run(requestId, time, intent.lastInsertRowid);
       return requestId;
     } catch (error) {
-      if (error?.code === 5002 || /5002/.test(message(error)))
+      if (error?.code === 5002 || /5002/.test(message(error))) {
         db.prepare('DELETE FROM criteria WHERE id=?').run(intent.lastInsertRowid);
+        /* El 5002 en la propia llamada también se aprende: el criterio
+           queda quemado en el libro aunque el gasto viniera de otra
+           aplicación, y la guardia lo bloqueará desde ya con sus
+           salidas (variante +1 s o rescate por el portal). */
+        markCriteriaExhausted(criteria, time, 'envío rechazado');
+        queueAlert('criteria-5002', 'criteria:' + pacosatCriteriaKey(criteria),
+          'PacoSAT · El SAT agotó las solicitudes de un periodo (5002)',
+          'Al enviar la solicitud del RFC ' + criteria.rfc + ' (' + criteria.startAt + ' a ' + criteria.endAt + ', ' +
+          (criteria.direction === 'received' ? 'recibidos' : 'emitidos') + (criteria.type === 'metadata' ? ', metadatos' : '') +
+          '), el SAT devolvió el código 5002: las solicitudes con ese mismo criterio están agotadas de por vida, ' +
+          'aunque el gasto viniera de otra aplicación. El criterio quedó marcado «quemado» en el libro: lo quemado es ' +
+          'solo esa combinación exacta — ni el RFC ni la e.firma —. Salidas: el mismo periodo cerrando 1 segundo ' +
+          'más tarde, o el rescate por el portal web (Libro de criterios, en el Centro SAT).', time);
+      }
       throw error;
     }
   }
   function learnCriteria5002(job, time) {
-    const info = criteriaInfo(criteriaFromJob(job));
-    db.prepare('INSERT OR IGNORE INTO criteria_exhausted(key,learnedAt,detail) VALUES (?,?,?)')
-      .run(info.key, time, job.requestId);
+    const criteria = criteriaFromJob(job);
+    const info = criteriaInfo(criteria);
+    markCriteriaExhausted(criteria, time, job.requestId);
     queueAlert('criteria-5002', 'criteria:' + info.key, 'PacoSAT · El SAT agotó las solicitudes de un periodo (5002)',
       'Al verificar la solicitud ' + job.requestId + ' del RFC ' + job.rfc + ' (' + job.periodStart + ' a ' + job.periodEnd +
       ', ' + (job.direction === 'received' ? 'recibidos' : 'emitidos') + '), el SAT devolvió el código 5002: las solicitudes ' +
-      'con ese mismo criterio están agotadas de por vida, aunque el gasto viniera de otra aplicación. PacoSAT ya no enviará ' +
-      'ese criterio; para ese periodo usa una ventana desplazada al menos un segundo o revisa el histórico con metadatos.', time);
+      'con ese mismo criterio están agotadas de por vida, aunque el gasto viniera de otra aplicación. Lo quemado es solo ' +
+      'esa combinación exacta — ni el RFC ni la e.firma ni otras fechas —. PacoSAT ya no enviará ese criterio; salidas: ' +
+      'el mismo periodo cerrando 1 segundo más tarde, o el rescate por el portal web (Libro de criterios, en el Centro SAT).', time);
+  }
+  /* Libro de criterios visible por RFC (ronda anti-5002, componente 5):
+     una entrada por criterio exacto con sus envíos (cuándo, con qué
+     folio del SAT y desde qué ruta) y su estado: disponible, ya usado
+     (no se repite), quemado (5002) o rescatado por el portal. Incluye
+     los quemados sin envíos propios — el gasto vino de otra aplicación
+     y la intención se retiró —: sus datos salen de la propia clave. */
+  function criteriaBook(limit = 300) {
+    const byKey = new Map();
+    const ensure = (key, fields) => {
+      let entry = byKey.get(key);
+      if (!entry) { entry = { key, ...fields, sends: [] }; byKey.set(key, entry); }
+      return entry;
+    };
+    for (const row of db.prepare('SELECT * FROM criteria ORDER BY id').all())
+      ensure(row.key, { rfc: row.rfc, direction: row.direction, type: row.type, emitter: row.emitter,
+        receiver: row.receiver, startAt: row.startAt, endAt: row.endAt })
+        .sends.push({ requestId: row.requestId, origin: row.origin, sentAt: row.sentAt });
+    const exhausted = new Map(db.prepare('SELECT * FROM criteria_exhausted').all().map(row => [row.key, row]));
+    const rescued = new Map(db.prepare('SELECT * FROM criteria_rescued').all().map(row => [row.key, row]));
+    for (const key of exhausted.keys()) if (!byKey.has(key)) {
+      try { const [rfc, direction, type, emitter, receiver, startAt, endAt] = JSON.parse(key);
+        ensure(key, { rfc, direction, type, emitter, receiver, startAt, endAt }); }
+      catch { /* clave ilegible: no se inventa ninguna entrada */ }
+    }
+    const entries = [...byKey.values()].map(entry => {
+      const burned = exhausted.get(entry.key), saved = rescued.get(entry.key);
+      return { ...entry,
+        count: entry.sends.length,
+        firstSentAt: entry.sends.reduce((min, s) => s.sentAt > 0 && (min === null || s.sentAt < min) ? s.sentAt : min, null),
+        lastSentAt: entry.sends.reduce((max, s) => Math.max(max, s.sentAt || 0), 0) || null,
+        presumed: entry.sends.some(s => !s.sentAt),
+        state: burned ? (saved ? 'rescatado' : 'agotado') : entry.sends.length >= 2 ? 'agotado' : entry.sends.length === 1 ? 'ultima' : 'disponible',
+        exhaustedAt: burned?.learnedAt || null, exhaustedDetail: burned?.detail || '',
+        rescuedAt: saved?.rescuedAt || null, rescuedCount: saved?.count || 0 };
+    });
+    entries.sort((a, b) => (b.lastSentAt || b.exhaustedAt || 0) - (a.lastSentAt || a.exhaustedAt || 0));
+    return entries.slice(0, limit);
+  }
+  /* Variante automática para las rutas programadas (ronda anti-5002):
+     busca el criterio libre más cercano desplazando primero el CIERRE
+     +1 s en +1 s (el inicio nunca se mueve: no se pierde ningún CFDI
+     del primer segundo ni se abren micro-huecos al principio de la
+     ventana), sin cruzar al día siguiente; solo si el cierre está en
+     el último segundo del día se recurre a desplazar el inicio, como
+     hacía el blindaje 1.6.15. Devuelve null si no hay criterio libre. */
+  function freeCriteria(criteria) {
+    let candidate = { ...criteria };
+    let info = criteriaInfo(candidate);
+    let endShifts = 0;
+    while (info.state !== 'disponible' && endShifts < 10) {
+      const shifted = pacosatShiftSecond(candidate.endAt);
+      if (shifted.slice(0, 10) !== candidate.endAt.slice(0, 10)) break;
+      candidate = { ...candidate, endAt: shifted }; endShifts++;
+      info = criteriaInfo(candidate);
+    }
+    let startShifts = 0;
+    while (info.state !== 'disponible' && startShifts < 10) {
+      candidate = { ...candidate, startAt: pacosatShiftSecond(candidate.startAt) }; startShifts++;
+      info = criteriaInfo(candidate);
+    }
+    return info.state === 'disponible' ? { criteria: candidate, endShifts, startShifts } : null;
   }
   /* Migración suave: las solicitudes previas a 1.6.2 solo guardaban fechas.
      Se reconstruyen los segundos con la misma regla con la que se enviaron
@@ -569,7 +683,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         secondaryStale: Boolean(backupJob?.secondaryDir) &&
           now() - (Number(getState('backup:secondaryOk') || 0) || startedAt) > 7 * DAY,
         verify: (() => { try { return JSON.parse(getState('backup:verify') || 'null'); } catch { return null; } })() },
-      coverage: computeCoverage()
+      coverage: computeCoverage(),
+      criteriaBook: criteriaBook()
     };
   }
 
@@ -718,6 +833,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['notices', ['id', 'package', 'rfc', 'recipient', 'count', 'due', 'sent', 'error']],
     ['criteria', ['id', 'key', 'rfc', 'direction', 'type', 'emitter', 'receiver', 'startAt', 'endAt', 'requestId', 'origin', 'sentAt']],
     ['criteria_exhausted', ['key', 'learnedAt', 'detail']],
+    ['criteria_rescued', ['key', 'rescuedAt', 'count', 'detail']],
     ['alerts', ['id', 'kind', 'ref', 'subject', 'body', 'due', 'sent', 'error']],
     ['alert_state', ['key', 'failures', 'alerted']],
     ['automation_state', ['key', 'value']],
@@ -951,6 +1067,39 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (!existsSync(target)) return target;
     }
   }
+  /* Rescate 5002 (ronda anti-5002): los XML recuperados a mano desde el
+     portal del SAT llegan por la carpeta vigilada — el canal aparte —.
+     Si un CFDI recién importado cae dentro de la ventana de un criterio
+     quemado de su RFC y sentido, ese criterio pasa a «rescatado»: el
+     contenido ya está en el expediente, aunque el SAT siga sin aceptar
+     ese criterio exacto. Solo cuentan los CFDI NUEVOS (los duplicados
+     no rescatan nada) y solo criterios CFDI (los XML no rescatan un
+     criterio de metadatos). */
+  function markRescuedCriteria(imported, time) {
+    for (const { key } of db.prepare('SELECT key FROM criteria_exhausted').all()) {
+      let fields; try { fields = JSON.parse(key); } catch { continue; }
+      const [rfc, direction, type] = fields;
+      if (type !== 'cfdi') continue;
+      const startAt = fields[5], endAt = fields[6];
+      const matches = imported.filter(row => {
+        if (direction === 'received' ? row.to.rfc !== rfc : row.from.rfc !== rfc) return false;
+        const at = String(row.date || '').replace('T', ' ');
+        return at >= startAt && at <= endAt;
+      });
+      if (!matches.length) continue;
+      const was = db.prepare('SELECT 1 FROM criteria_rescued WHERE key=?').get(key);
+      db.prepare(`INSERT INTO criteria_rescued(key,rescuedAt,count,detail) VALUES (?,?,?,?)
+        ON CONFLICT(key) DO UPDATE SET rescuedAt=excluded.rescuedAt,
+        count=criteria_rescued.count+excluded.count, detail=excluded.detail`)
+        .run(key, time, matches.length, 'carpeta vigilada');
+      if (!was) queueAlert('criteria-rescued', 'rescued:' + key,
+        'PacoSAT · Un periodo quemado (5002) quedó rescatado por el portal',
+        'Entraron ' + matches.length + ' CFDI por la carpeta vigilada dentro del periodo ' + startAt + ' a ' + endAt +
+        ' de ' + rfc + ' (' + (direction === 'received' ? 'recibidos' : 'emitidos') + '), que estaba quemado ante el SAT ' +
+        '(5002): su contenido ya está en el expediente y el criterio queda marcado «rescatado» en el libro. ' +
+        'El SAT sigue sin aceptar ese criterio exacto, pero ya no hace falta pedirlo.', time);
+    }
+  }
   async function scanWatchFolder(time) {
     if (!cloud || !inbox.dir || watchBusy) return;
     watchBusy = true;
@@ -999,6 +1148,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       const peopleIds = new Set(db.prepare("SELECT value FROM records WHERE store='people'").all().map(row => JSON.parse(row.value).id));
       const okDir = join(inbox.dir, 'procesados', day(time));
       const badDir = join(inbox.dir, 'errores');
+      const addedRows = [];
       const importXml = raw => {
         const row = parseXml(raw, Parser);
         need(peopleIds.has(row.from.rfc) || peopleIds.has(row.to.rfc), 'Los RFC del comprobante no están registrados.');
@@ -1007,6 +1157,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         putMetadata('invoices', row);
         monitor.register({ id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
           seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal) ? row.seal : '' });
+        addedRows.push(row);
         return 'added';
       };
       let added = 0, duplicates = 0, review = 0;
@@ -1089,6 +1240,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           date: new Date(time).toISOString(), added, duplicates, review, issues });
         storageRevision++;
       }
+      /* Lo recién importado puede rescatar criterios quemados (5002)
+         recuperados a mano desde el portal: se marcan en el libro. */
+      if (addedRows.length) markRescuedCriteria(addedRows, time);
     } finally { watchBusy = false; }
   }
 
@@ -1114,35 +1268,33 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const direction of directions) {
       try {
         if (db.prepare("SELECT 1 FROM jobs WHERE rfc=? AND direction=? AND status='pending'").get(profile.rfc, direction)) continue;
-        let startAt = start + ' 00:00:00';
+        const startAt = start + ' 00:00:00';
         const endAt = end + ' ' + clock.format(time);
         const criteria = { rfc: profile.rfc, direction, type: 'cfdi', emitter: '', receiver: '', startAt, endAt };
-        let info = criteriaInfo(criteria);
-        if (info.state !== 'disponible') {
-          /* Red de seguridad del blindaje 5002 en la programación: las
-             ventanas avanzan y no deberían colisionar nunca; si el criterio
-             ya se solicitó, se desplaza el inicio +1 s (las veces que haga
-             falta), se anota en la bitácora y se sigue. Jamás se envía un
-             duplicado en silencio ni se detiene la programación sin rastro. */
-          const original = startAt;
-          let shifts = 0;
-          while (info.state !== 'disponible' && shifts < 10) {
-            startAt = pacosatShiftSecond(startAt); shifts++;
-            info = criteriaInfo({ ...criteria, startAt });
-          }
-          need(info.state === 'disponible', 'No se encontró un criterio libre para la descarga programada.');
+        /* Red de seguridad anti-5002 en la programación: las ventanas
+           avanzan y no deberían colisionar nunca; si el criterio exacto
+           ya se solicitó, se usa la variante de cierre +1 s (el inicio
+           no se mueve: ningún CFDI del primer segundo se queda fuera),
+           se anota en la bitácora y se sigue. Jamás se envía un
+           duplicado en silencio ni se detiene la programación sin rastro. */
+        const free = freeCriteria(criteria);
+        need(free, 'No se encontró un criterio libre para la descarga programada.');
+        if (free.endShifts || free.startShifts) {
           putMetadata('activity', { id: 'guard5002:' + profile.rfc + ':' + direction + ':' + time,
             name: 'Blindaje SAT 5002 · ' + profile.rfc, date: new Date(time).toISOString(),
             added: 0, duplicates: 0, review: 0, issues: [],
-            event: 'La descarga programada coincidía con un criterio ya solicitado (' + original + ' a ' + endAt +
-              '); el inicio se desplazó a ' + startAt + ' (+' + shifts + ' s) para no agotar las solicitudes del SAT (error 5002).' });
+            event: 'La descarga programada coincidía con un criterio ya solicitado (' + startAt + ' a ' + endAt +
+              '); ' + (free.endShifts
+                ? 'el cierre se desplazó a ' + free.criteria.endAt + ' (+' + free.endShifts + ' s)'
+                : 'el inicio se desplazó a ' + free.criteria.startAt + ' (+' + free.startShifts + ' s)') +
+              ' para no repetir el criterio ni agotar las solicitudes del SAT (error 5002).' });
           storageRevision++;
         }
         const requestId = await sendSatRequest(
-          () => service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction }),
-          { ...criteria, startAt }, 'scheduled', time);
+          () => service.request({ start, end: free.criteria.endAt.slice(0, 10), startTime: free.criteria.startAt.slice(11), endTime: free.criteria.endAt.slice(11), direction }),
+          free.criteria, 'scheduled', time);
         db.prepare('INSERT INTO jobs(rfc,direction,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?)')
-          .run(profile.rfc, direction, start, end, startAt, endAt, requestId, 'pending', time + 5 * MIN, time);
+          .run(profile.rfc, direction, start, free.criteria.endAt.slice(0, 10), free.criteria.startAt, free.criteria.endAt, requestId, 'pending', time + 5 * MIN, time);
       } catch (error) {
         db.prepare('UPDATE profiles SET error=? WHERE rfc=?').run(message(error), profile.rfc);
       }
@@ -1165,21 +1317,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const direction of directions) {
       try {
         if (db.prepare("SELECT 1 FROM jobs WHERE rfc=? AND direction=? AND kind='metadata' AND status='pending'").get(profile.rfc, direction)) continue;
-        let startAt = start + ' 00:00:00';
+        const startAt = start + ' 00:00:00';
         const endAt = end + ' ' + clock.format(time);
         const criteria = { rfc: profile.rfc, direction, type: 'metadata', emitter: '', receiver: '', startAt, endAt };
-        let info = criteriaInfo(criteria);
-        let shifts = 0;
-        while (info.state !== 'disponible' && shifts < 10) {
-          startAt = pacosatShiftSecond(startAt); shifts++;
-          info = criteriaInfo({ ...criteria, startAt });
-        }
-        if (info.state !== 'disponible') continue;
+        /* Misma variante anti-5002 que en CFDI: cierre +1 s hasta dar
+           con un criterio libre; si no lo hay, se espera al siguiente
+           ciclo — los metadatos nunca fuerzan un envío duplicado. */
+        const free = freeCriteria(criteria);
+        if (!free) continue;
         const requestId = await sendSatRequest(
-          () => service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction, type: 'metadata' }),
-          { ...criteria, startAt }, 'scheduled', time);
+          () => service.request({ start, end: free.criteria.endAt.slice(0, 10), startTime: free.criteria.startAt.slice(11), endTime: free.criteria.endAt.slice(11), direction, type: 'metadata' }),
+          free.criteria, 'scheduled', time);
         db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-          .run(profile.rfc, direction, 'metadata', start, end, startAt, endAt, requestId, 'pending', time + 5 * MIN, time);
+          .run(profile.rfc, direction, 'metadata', start, free.criteria.endAt.slice(0, 10), free.criteria.startAt, free.criteria.endAt, requestId, 'pending', time + 5 * MIN, time);
         sent = true;
       } catch { /* metadatos: si el SAT no responde, se reintenta en el siguiente ciclo sin ensuciar el perfil */ }
     }
@@ -1220,7 +1370,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
               'El paquete ' + remoteId + ' de la solicitud ' + job.requestId + ' (' + job.rfc + ', ' +
               job.periodStart + ' a ' + job.periodEnd + ') ya se intentó descargar dos veces sin éxito y el SAT no ' +
               'permite más descargas de ese paquete (error 5008). La solicitud quedó cerrada con este aviso, no ' +
-              'pendiente para siempre. Salida: solicita el mismo periodo desplazando el inicio un segundo desde ' +
+              'pendiente para siempre. Salida: solicita el mismo periodo cerrando un segundo más tarde desde ' +
               '«Solicitar un periodo» en el Centro SAT.', time);
             return false;
           } });
@@ -3073,6 +3223,62 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         db.prepare('UPDATE jobs SET due=?,error=? WHERE id=?').run(now(), '', job.id);
         return json(res, overview());
       }
+      /* Planificador anti-5002 (componente 3): lectura seca del libro —
+         NUNCA envía nada —. Dice si el criterio exacto ya consta (y
+         entonces la vía es la variante de cierre +1 s, nunca el
+         duplicado) y, para un rango CFDI amplio nunca pedido, propone
+         explorar primero con Metadatos antes de gastar la solicitud. */
+      if (req.method === 'POST' && url.pathname === '/api/plan') {
+        const x = await body(req);
+        need(unlocked.has(x.rfc), 'Desbloquea la e.firma de este RFC.');
+        need(validDate(x.start) && validDate(x.end) && x.start <= x.end && x.end <= day(now()), 'Selecciona un periodo válido hasta hoy.');
+        need(['received', 'issued'].includes(x.direction), 'Dirección inválida.');
+        need(x.type === undefined || ['cfdi', 'metadata'].includes(x.type), 'Tipo de solicitud inválido.');
+        const kind = x.type === 'metadata' ? 'metadata' : 'cfdi';
+        const endTime = x.end === day(now()) ? clock.format(now()) : '23:59:59';
+        const criteria = { rfc: x.rfc, direction: x.direction, type: kind, emitter: '', receiver: '',
+          startAt: x.start + ' 00:00:00', endAt: x.end + ' ' + endTime };
+        const info = criteriaInfo(criteria);
+        const spanDays = Math.round((Date.parse(x.end) - Date.parse(x.start)) / DAY) + 1;
+        let recommendation = 'send', reason = 'Criterio nuevo: esta combinación exacta nunca se ha solicitado.';
+        if (info.state === 'ultima') { recommendation = 'variant';
+          reason = 'Este criterio ya se pidió una vez: no se repetirá. La variante es el mismo periodo cerrando 1 segundo más tarde.'; }
+        else if (info.state === 'agotado') { recommendation = 'variant';
+          reason = 'Criterio quemado (5002): solo cabe la variante de cierre +1 segundo o el rescate por el portal.'; }
+        else if (info.state === 'rescatado') { recommendation = 'variant';
+          reason = 'Este periodo ya se quemó (5002) y se rescató por el portal: los XML ya están en el expediente.'; }
+        else if (kind === 'cfdi' && spanDays > 31) { recommendation = 'metadata-first';
+          reason = 'Rango amplio (' + spanDays + ' días) nunca pedido: para explorar sin gastar la solicitud de CFDI, ' +
+            'pide primero los Metadatos de este rango — ves qué CFDI hay — y descarga después solo lo que falte.'; }
+        return json(res, { state: info.state, count: info.count, firstSentAt: info.firstSentAt,
+          startAt: criteria.startAt, endAt: criteria.endAt, shiftedEndAt: pacosatShiftSecond(criteria.endAt),
+          spanDays, recommendation, reason });
+      }
+      /* Rescate 5002 asistido (componente 4): prepara la recuperación
+         por el portal web del SAT — canal aparte del servicio de
+         descarga, con su propio cupo de 2.000 XML al día —: la lista
+         exacta de folios pendientes del periodo quemado (de los
+         metadatos guardados, descontando los ya descargados) y las
+         instrucciones paso a paso. Solo lee; no envía nada al SAT. */
+      if (req.method === 'POST' && url.pathname === '/api/rescue') {
+        const x = await body(req);
+        need(typeof x.rfc === 'string' && x.rfc.length >= 12 && x.rfc.length <= 13, 'RFC inválido.');
+        need(['received', 'issued'].includes(x.direction), 'Dirección inválida.');
+        const stampOk = value => /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value || '');
+        need(stampOk(x.startAt) && stampOk(x.endAt) && x.startAt <= x.endAt, 'Periodo inválido.');
+        const stampOf = value => String(value || '').replace('T', ' ').slice(0, 19);
+        const folios = db.prepare(`SELECT m.uuid,m.emitter,m.receiver,m.issuedAt,m.total,m.status FROM metadata_records m
+          WHERE m.rfc=? AND m.direction=? AND NOT EXISTS (SELECT 1 FROM discovered d WHERE d.rfc=m.rfc AND d.uuid=m.uuid)
+          ORDER BY m.issuedAt`).all(x.rfc, x.direction)
+          .filter(row => { const at = stampOf(row.issuedAt); return at >= x.startAt && at <= x.endAt; });
+        return json(res, { rfc: x.rfc, direction: x.direction, startAt: x.startAt, endAt: x.endAt, folios,
+          instructions: [
+            'Entra al portal del SAT (www.sat.gob.mx) → «Factura electrónica» → «Recupera tus facturas» e inicia sesión con la e.firma o la contraseña (CIEC) de ' + x.rfc + '. Este portal es un canal aparte del servicio de descarga: tiene su propio cupo y no gasta solicitudes.',
+            'Elige «Consultar facturas ' + (x.direction === 'received' ? 'recibidas' : 'emitidas') + '» y captura el periodo exacto, con segundos: del ' + x.startAt + ' al ' + x.endAt + '.',
+            'Descarga los XML' + (folios.length ? ' de los ' + folios.length + ' folios de la lista de abajo' : ' del periodo') + ' (el portal permite hasta 2.000 XML al día por esta vía).',
+            'Guarda los archivos descargados (los XML sueltos o el ZIP del portal) en la carpeta vigilada de PacoSAT: se importan solos y este criterio pasará a marcarse «rescatado» en el libro.',
+            'Recuerda qué se quemó: solo esta combinación exacta (RFC, sentido, tipo CFDI y fechas con segundos). Ni el RFC ni la e.firma están quemados: los demás periodos, y este mismo con el cierre 1 segundo más tarde, siguen disponibles.' ] });
+      }
       if (req.method === 'POST' && url.pathname === '/api/request') {
         const x = await body(req);
         const active = unlocked.get(x.rfc);
@@ -3083,32 +3289,59 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(x.type === undefined || ['cfdi', 'metadata'].includes(x.type), 'Tipo de solicitud inválido.');
         const kind = x.type === 'metadata' ? 'metadata' : 'cfdi';
         need(!busy, 'PacoSAT está procesando otra solicitud. Intenta en unos segundos.', 409);
-        /* Guardia previa del blindaje 5002: se compara el criterio exacto
-           (con segundos) contra el libro antes de enviar nada al SAT. */
+        /* Guardia previa anti-5002: se compara el criterio exacto (con
+           segundos) contra el libro antes de enviar nada al SAT. Un
+           criterio ya usado NO se repite jamás — confirmRepeat quedó
+           retirado: ya no se gasta «la última» duplicando —; la única
+           vía es la variante de cerrar el periodo más tarde, segundo a
+           segundo (shiftEnd = nº de segundos sobre el cierre), que ante
+           el SAT es un criterio nuevo y en la práctica no deja entrar
+           ningún CFDI extra. shiftStart se mantiene por compatibilidad. */
         const endTime = x.end === day(now()) ? clock.format(now()) : '23:59:59';
         let startAt = x.start + ' 00:00:00';
         if (x.shiftStart === true) startAt = pacosatShiftSecond(startAt);
-        const endAt = x.end + ' ' + endTime;
+        let endAt = x.end + ' ' + endTime;
+        const endShifts = x.shiftEnd === true ? 1 : Number.isSafeInteger(x.shiftEnd) && x.shiftEnd > 0 ? Math.min(x.shiftEnd, 10) : 0;
+        for (let i = 0; i < endShifts; i++) endAt = pacosatShiftSecond(endAt);
         const criteria = { rfc: x.rfc, direction: x.direction, type: kind, emitter: '', receiver: '', startAt, endAt };
         const info = criteriaInfo(criteria);
         if (info.state === 'agotado') throw guardError(info, criteria,
-          'Este criterio ya agotó sus solicitudes ante el SAT: una más recibiría el error 5002 ' +
-          '(«Se han agotado las solicitudes de por vida»). No se envió nada.');
-        if (info.state === 'ultima' && x.confirmRepeat !== true) throw guardError(info, criteria,
+          'Este criterio ya agotó las solicitudes que el SAT admite para esta combinación exacta ' +
+          '(error 5002: «Se han agotado las solicitudes de por vida»). Lo quemado es solo esta combinación: ' +
+          'ni el RFC, ni la e.firma, ni otras fechas. No se envió nada.');
+        if (info.state === 'rescatado') throw guardError(info, criteria,
+          'Este periodo ya se quemó ante el SAT (5002) y se rescató por el portal web: los XML recuperados ' +
+          'ya están en el expediente. Pedirlo otra vez con el mismo criterio no aporta nada. No se envió nada.');
+        if (info.state === 'ultima') throw guardError(info, criteria,
           'Este criterio ya se solicitó el ' + new Date(info.firstSentAt).toISOString().slice(0, 10) +
-          '. Según el criterio de la comunidad técnica, el SAT admite dos solicitudes con el mismo criterio: ' +
-          'repetirla gasta la última disponible y una tercera recibiría el error 5002.');
+          ' y PacoSAT no repite criterios exactos: la segunda copia no aporta nada y acercaría el error 5002. ' +
+          'La salida es el mismo periodo cerrando 1 segundo más tarde: ante el SAT es un criterio nuevo y en ' +
+          'la práctica no entra ningún CFDI extra. No se envió nada.');
         busy = true;
         try {
           const prior = db.prepare("SELECT id FROM jobs WHERE rfc=? AND direction=? AND kind=? AND startAt=? AND endAt=? AND status='pending'")
             .get(x.rfc, x.direction, kind, startAt, endAt);
           need(!prior, 'Ese criterio ya tiene una solicitud en curso.', 409);
-          const requestId = await sendSatRequest(
-            () => active.connector.request({ start: x.start, end: x.end, startTime: startAt.slice(11), endTime, direction: x.direction,
-              ...(kind === 'metadata' ? { type: 'metadata' } : {}) }),
-            criteria, 'manual', now());
+          let requestId;
+          try {
+            requestId = await sendSatRequest(
+              () => active.connector.request({ start: x.start, end: endAt.slice(0, 10), startTime: startAt.slice(11), endTime: endAt.slice(11), direction: x.direction,
+                ...(kind === 'metadata' ? { type: 'metadata' } : {}) }),
+              criteria, 'manual', now());
+          } catch (error) {
+            /* 5002 en la propia llamada: el criterio quedó aprendido
+               como quemado en el libro; se responde con la guardia (409)
+               y sus salidas — variante +1 s o rescate — en vez de un
+               502 seco que no explica nada. */
+            if (!error.guard && (error?.code === 5002 || /5002/.test(message(error))))
+              throw guardError(criteriaInfo(criteria), criteria,
+                'El SAT rechazó el envío con el error 5002: este criterio exacto ya había agotado sus ' +
+                'solicitudes de por vida (el gasto pudo venir de otra aplicación). Quedó marcado «quemado» ' +
+                'en el libro. No se envió nada más.');
+            throw error;
+          }
           db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-            .run(x.rfc, x.direction, kind, x.start, x.end, startAt, endAt, requestId, 'pending', now() + 5 * MIN, now());
+            .run(x.rfc, x.direction, kind, x.start, endAt.slice(0, 10), startAt, endAt, requestId, 'pending', now() + 5 * MIN, now());
         } finally { busy = false; }
         return json(res, overview());
       }

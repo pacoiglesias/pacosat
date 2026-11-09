@@ -38,7 +38,7 @@ function coverageScreen() {
   const gaps = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
   if (!gaps.length) gapsPanel.append(n('p', 'Sin huecos: en cada RFC y sentido, los tramos descargados forman una cadena continua.'));
   else {
-    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Con «Solicitar este hueco» el diálogo se abre ya rellenado con el RFC, el sentido y los extremos exactos; si el criterio exacto ya se envió, desplaza un extremo un segundo.'));
+    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Con «Solicitar este hueco» el diálogo se abre ya rellenado con el RFC, el sentido y los extremos exactos; si el criterio exacto ya se envió, PacoSAT ofrece cerrar el periodo un segundo más tarde en vez de repetirlo.'));
     const duration = seconds => seconds < 90 ? seconds + ' s' : seconds < 5400 ? Math.round(seconds / 60) + ' min' :
       seconds < 172800 ? (seconds / 3600).toFixed(1).replace('.', ',') + ' h' : Math.round(seconds / 86400) + ' días';
     gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo', 'Acción'], gaps.map(gap => [gap.rfc,

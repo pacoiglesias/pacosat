@@ -78,12 +78,16 @@ try {
   const guarded = await api.call('/api/request', criteria);
   assert.equal(guarded.status, 409);
   assert.equal((await guarded.json()).guard.state, 'ultima');
-  /* Respuesta 5002 del SAT en la llamada: la intención se RETIRA —
-     repetir no choca con la guardia (vuelve a intentarse: 502). */
+  /* Respuesta 5002 del SAT en la llamada: la intención se RETIRA, pero
+     el criterio se APRENDE como quemado (ronda anti-5002): la respuesta
+     es la guardia 409 «agotado» con sus salidas, y repetir tampoco
+     vuelve a enviar nada. */
   mode = '5002';
   const other = { rfc: RFC, start: '2026-09-01', end: '2026-09-30', direction: 'received' };
-  assert.equal((await api.call('/api/request', other)).status, 502);
-  assert.equal((await api.call('/api/request', other)).status, 502);
+  const burned = await api.call('/api/request', other);
+  assert.equal(burned.status, 409);
+  assert.equal((await burned.json()).guard.state, 'agotado');
+  assert.equal((await api.call('/api/request', other)).status, 409);
   /* Envío correcto: queda registrado y también cuenta para la guardia. */
   mode = 'ok';
   const third = { rfc: RFC, start: '2026-08-01', end: '2026-08-31', direction: 'received' };
