@@ -80,3 +80,15 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .swatch[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--ok-ink)}
 .swatch-dot{width:15px;height:15px;border-radius:50%;display:inline-block;border:1px solid var(--border)}
 .logo-preview{width:52px;height:52px;object-fit:contain;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+
+/* Visor CFDI profesional (1.6.7) y datos «Acerca de» (1.6.6). */
+.cfdi-dialog{width:min(940px,calc(100% - 24px))}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px;margin:10px 0}
+.facts>div{display:grid;gap:2px;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;min-width:0}
+.facts small{color:var(--muted);font-size:10.5px;font-weight:700;letter-spacing:.08em}
+.facts strong{font-size:13.5px;overflow-wrap:anywhere}
+.seal-details{margin:8px 0;border:1px solid var(--border);border-radius:9px;padding:9px 11px}
+.seal-details summary{cursor:pointer;font-weight:650}
+.seal-details pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:130px;overflow:auto}
+.print-seals{font-size:9.5px;overflow-wrap:anywhere}
+.print-seals p{margin:3px 0}
