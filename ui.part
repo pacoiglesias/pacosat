@@ -8,7 +8,8 @@ const screens = {
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
   backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
   diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV'],
-  settings: ['Ajustes', 'Nombre, logo, color de acento y remitente de los correos de esta instalación.', 'Guardar ajustes']
+  settings: ['Ajustes', 'Nombre, logo, color de acento y remitente de los correos de esta instalación.', 'Guardar ajustes'],
+  capacidades: ['Qué incluye PacoSAT', 'El documento vivo de capacidades: qué está incluido, qué está en construcción y qué viene después.', 'Ir a Ajustes']
 };
 const portals = [
   ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
@@ -569,7 +570,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen, settings: settingsScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();

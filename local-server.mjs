@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -21,6 +21,21 @@ const clock = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Mexico_City'
 const email = /^[a-z0-9.!#$%&'*+/=?^_\x60{|}~-]+@[a-z0-9.-]+\.[a-z]{2,63}$/i;
 const MAX_BODY = 192 * 1024;
 const validDate = input => /^\d{4}-\d{2}-\d{2}$/.test(input || '') && Number.isFinite(Date.parse(input)) && new Date(input).toISOString().slice(0, 10) === input;
+
+/* CSP estricta sin comodín en línea (1.6.9): la política se calcula desde
+   el HTML servido, autorizando por huella SHA-256 el único bloque
+   <style> y el único bloque <script> de la copia — exactamente la
+   misma política que build.mjs incrusta como meta en el artefacto
+   (verify.cjs comprueba que coinciden y que no queda comodín en línea).
+   La sustitución del token al servir no toca esos bloques. */
+export function cspForHtml(html) {
+  const blockHash = tag => {
+    const match = html.match(new RegExp('<' + tag + '>([\\s\\S]*?)</' + tag + '>'));
+    return match ? "'sha256-" + createHash('sha256').update(match[1], 'utf8').digest('base64') + "'" : "'none'";
+  };
+  return "default-src 'none'; style-src " + blockHash('style') + "; script-src " + blockHash('script') +
+    "; img-src data: blob:; frame-src blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+}
 
 /* Blindaje 5002 (1.6.2). El SAT documenta oficialmente el error 5002
    («Se han agotado las solicitudes de por vida» / límite «con el mismo
@@ -88,6 +103,7 @@ async function productionConnector(credentials) {
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
   analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null }) {
+  const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
   db.exec(`
@@ -1049,7 +1065,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; frame-src blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    res.setHeader('Content-Security-Policy', cspHeader);
     try {
       need(req.headers.host === host, 'Host inválido.', 403);
       if (cloud) need(req.headers['x-pacosat-proxy'] === proxyKey, 'Acceso reservado al proxy HTTPS.', 403);

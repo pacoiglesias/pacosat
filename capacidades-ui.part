@@ -1,0 +1,39 @@
+/* Qué incluye PacoSAT (1.6.9): pantalla generada en build desde la
+   FUENTE docs/CAPACIDADES.md (constante PACOSAT_CAPACIDADES que inyecta
+   build.mjs). Nada de texto duplicado a mano aquí: si el documento vivo
+   cambia, la pantalla cambia con él en el siguiente build. Muestra la
+   fecha de última actualización del documento y el sello de versión
+   vigente (versión y creación desde PACOSAT_META). */
+const CAPACIDAD_STATE_LABELS = { '✅': 'Incluido y verificado', '🔄': 'En construcción', '📋': 'Planificado' };
+function capacidadesScreen() {
+  const panels = [];
+  const head = panel('Todo lo que tendrá PacoSAT');
+  const body = n('div', undefined, 'portal');
+  const facts = n('div', undefined, 'facts');
+  const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
+  facts.append(fact('Versión instalada', 'PacoSAT ' + PACOSAT_META.version),
+    fact('Creación del software', stampText(PACOSAT_META.created)),
+    fact('Documento actualizado', PACOSAT_CAPACIDADES.updated || 'Sin fecha registrada'));
+  body.append(facts, n('p', 'Este listado es el documento vivo de capacidades de PacoSAT: su fuente es docs/CAPACIDADES.md del repositorio y esta pantalla se genera desde esa fuente en cada versión. Los estados se actualizan al cerrar cada ronda de mejora.'));
+  const counts = { '✅': 0, '🔄': 0, '📋': 0 };
+  for (const section of PACOSAT_CAPACIDADES.sections)
+    for (const block of section.blocks) if (block.type === 'item' && counts[block.state] !== undefined) counts[block.state]++;
+  body.append(n('p', counts['✅'] + ' capacidades incluidas y verificadas · ' + counts['🔄'] +
+    ' en construcción · ' + counts['📋'] + ' planificadas.'));
+  head.append(body);
+  panels.push(head);
+  for (const section of PACOSAT_CAPACIDADES.sections) {
+    const panelNode = panel(section.title);
+    const list = n('div', undefined, 'portal');
+    for (const block of section.blocks) {
+      if (block.type === 'p') { list.append(n('p', block.text)); continue; }
+      const row = n('div', undefined, 'cap-row');
+      const chip = n('span', (block.state || '•') + ' ' + (CAPACIDAD_STATE_LABELS[block.state] || 'Nota'), 'tag');
+      row.append(chip, n('span', block.text));
+      list.append(row);
+    }
+    panelNode.append(list);
+    panels.push(panelNode);
+  }
+  return panels;
+}
