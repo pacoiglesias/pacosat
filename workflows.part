@@ -819,6 +819,14 @@ function beginReadiness() {
 }
 async function waitReadiness(waitMs) {
   if (ready) return true;
+  /* `readiness` solo existe si el arranque ya ejecutó beginReadiness()
+     (al final de este guion). Una acción puede llegar antes de eso — en
+     Safari iOS le pasó a Paco al tocar «Agregar RFC» — o el arranque
+     puede haberse quedado a medias, y la preparación se inicia entonces
+     aquí mismo, perezosamente: la conducta es esperar, no reventar
+     evaluando `.then` sobre undefined («undefined is not an object
+     (evaluating 'readiness.then')» en JavaScriptCore). */
+  if (!readiness) beginReadiness();
   let timer;
   const timeout = new Promise(resolve => { timer = setTimeout(() => resolve(false), waitMs); });
   const settled = readiness.then(() => ready, () => ready);
