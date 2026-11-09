@@ -68,6 +68,11 @@ function operationsScreen() {
     (sb.verify ? ' · prueba de restauración: ' + (sb.verify.ok ? 'íntegra' : 'CON FALLO') : '') : 'Respaldo programado sin configurar']);
   healthRows.push(['Expediente', number.format(people.length) + ' RFC · ' + number.format(invoices.length) + ' CFDI · ' +
     number.format(documents.length) + ' documentos · ' + number.format(activity.length) + ' registros de bitácora']);
+  /* Copia externa a Google Drive (1.6.15): antigüedad con semáforo —
+     verde si la última copia buena tiene 7 días o menos. */
+  if (satToken && sb.secondary) healthRows.push(['Copia externa (Google Drive)',
+    sb.secondaryLastOk ? (sb.secondaryStale ? '⚠ Lleva más de 7 días: última buena el ' : 'Al día: última buena el ') +
+      localDateTime(sb.secondaryLastOk) : '⚠ Aún no consta ninguna copia buena en el destino externo']);
   sysHealth.append(grid(['Elemento', 'Estado'], healthRows));
   return [health, sysHealth, alerts, reconcile];
 }
