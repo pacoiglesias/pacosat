@@ -850,7 +850,20 @@ async function requireStorage(waitMs = STORAGE_WAIT_MS) {
   throw new Error(storageAdvice());
 }
 /* Fin de la preparación del almacenamiento (1.6.8). */
-render();
+/* Arranque (corregido en la 1.7.2): aquí SOLO arranca la preparación.
+   El render inicial NO va en este punto del bloque: render() lee
+   enlaces let de fragmentos posteriores (satData y satToken, en
+   sat-ui.part) que aquí siguen en zona muerta (TDZ) — llamarlo aquí
+   lanzaba ReferenceError y abortaba el resto del bloque entero, con
+   lo que ni esta preparación ni las declaraciones posteriores
+   llegaban a ejecutarse (defecto hasta la 1.7.1). El render inicial
+   vive al final de capacidades-ui.part, el último fragmento, cuando
+   todas las declaraciones ya corrieron. El orden visual no cambia:
+   las continuaciones de esta promesa se resuelven cuando el bloque
+   completo ya se evaluó, así que el primer pintado sigue siendo el
+   esqueleto de este render y los datos llegan después, como siempre.
+   `startup` sí nace aquí porque sat-ui.part y monitor-ui.part se
+   suscriben a él a nivel superior (startup.then(...)) al cargarse. */
 const startup = beginReadiness().then(opened => { if (!opened) announce(storageAdvice(), true); })
   .catch(error => announce(error.message, true));
 startup.then(() => { computeNews(); if (newsCount && page === 'home') render(); });

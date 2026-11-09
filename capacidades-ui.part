@@ -37,3 +37,20 @@ function capacidadesScreen() {
   }
   return panels;
 }
+/* ===== Arranque: el render inicial (1.7.2) =====
+   Este es el último fragmento del bloque <script> generado: al llegar
+   aquí, TODAS las declaraciones de nivel superior de todos los
+   fragmentos ya se ejecutaron, y es el primer punto donde el render
+   inicial puede correr sin tocar ningún enlace en zona muerta (TDZ).
+   render() lee enlaces let de otros fragmentos (satData y satToken de
+   sat-ui.part, entre otros); hasta la 1.7.1 la llamada vivía al final
+   de workflows.part, lanzaba ReferenceError a mitad del bloque y la
+   app nacía rota: sin preparación de almacenamiento, con el Resumen
+   en esqueleto y Centro SAT en blanco. La preparación
+   (beginReadiness/startup) arranca antes, en workflows.part, pero sus
+   continuaciones son promesas que se resuelven con el bloque ya
+   evaluado, así que el orden visual no cambia: primero este pintado,
+   después los datos y el repintado. Regresión: boot.test.mjs ejecuta
+   este bloque entero, en su orden real, y afirma que la carga
+   completa sin excepciones. */
+render();

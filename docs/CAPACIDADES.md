@@ -1,8 +1,8 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Versión del software que describe este documento: 1.7.1**
+**Versión del software que describe este documento: 1.7.2**
 
-**Última modificación: 9 nov 2026, 09:50 CST**
+**Última modificación: 9 nov 2026, 10:05 CST**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del repositorio (la FUENTE del listado: la app lo muestra dentro, en la pantalla «Qué incluye PacoSAT», generada desde él en cada build) y `~/workspace/pacosat-capacidades.md` (copia de trabajo). Al tocar una, se toca la otra en el mismo cambio. Se actualiza en cada ronda y cada despliegue, junto con el sello de versión.
@@ -115,4 +115,4 @@ Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del reposito
 - Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT).
 
 ## Cierre del proyecto
-- ✅ **VERSIÓN ACTUAL: 1.7.1** — la 1.7.0 se fusionó (PR #24, commit 6486841) y se desplegó en el NAS el 9 nov 2026; la 1.7.1 suma el blindaje anti-5002 (PR #25) y el arreglo de la preparación del almacenamiento en Safari (PR #26), fusionada el 9 nov 2026 y con el despliegue al NAS a continuación. Pendientes del cierre: la prueba del SAT de ventana corta (una sola vez), el examen de Paco (entrar y agregar el RFC sin ningún aviso, repetido tras el arreglo de Safari) y la prueba de restauración del respaldo.
+- ✅ **VERSIÓN ACTUAL: 1.7.2** — hotfix de arranque (9 nov 2026): el render inicial se movió al final del bloque generado, a capacidades-ui.part, el último fragmento; hasta la 1.7.1 vivía a mitad del bloque (al final de workflows.part) y moría por zona muerta (TDZ) al leer satData/satToken, declarados después: la carga se abortaba, la preparación del almacenamiento nunca corría y la app nacía con el Resumen en esqueleto y Centro SAT en blanco. La regresión queda cubierta por boot.test.mjs, que ejecuta el bloque generado entero en su orden real. **La 1.7.2 sustituye al paquete 1.7.1, que NO debe desplegarse.** La 1.7.1 sumaba el blindaje anti-5002 (PR #25) y el arreglo de la preparación del almacenamiento en Safari (PR #26) sobre la 1.7.0 (PR #24, commit 6486841, desplegada en el NAS el 9 nov 2026). Pendientes del cierre: la prueba del SAT de ventana corta (una sola vez), el examen de Paco (entrar y agregar el RFC sin ningún aviso) y la prueba de restauración del respaldo.
