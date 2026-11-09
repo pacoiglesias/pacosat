@@ -362,7 +362,7 @@ async function inflate(raw, size) {
     return out;
   } finally { await reader.cancel().catch(() => {}); }
 }
-async function* zipEntries(raw, extension) {
+async function* zipEntries(raw, extension, meta) {
   check(raw.length >= 22 && raw.length <= 80 * MB, 'ZIP vacío o mayor de 80 MB.');
   const d = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   const u16 = p => d.getUint16(p, true);
@@ -375,6 +375,21 @@ async function* zipEntries(raw, extension) {
   check(end >= Math.max(0, raw.length - 65557), 'El ZIP no contiene un directorio válido.');
   const count = u16(end + 10);
   let p = u32(end + 16);
+  /* Total de entradas que casan con la extensión, contado en una
+     primera pasada por el directorio (sin descomprimir nada): es el
+     «N» del contador «procesando X de N» de la importación visible
+     (1.7.4, pieza 1). El meta es opcional y no cambia la lectura. */
+  if (meta) {
+    let scan = p, matched = 0;
+    const scanLimit = p + u32(end + 12);
+    for (let i = 0; i < count && scan + 46 <= scanLimit && u32(scan) === 0x02014b50; i++) {
+      const len = u16(scan + 28);
+      const name = new TextDecoder().decode(raw.subarray(scan + 46, scan + 46 + len)).split(/[\\/]/).at(-1);
+      if (extension.test(name)) matched++;
+      scan += 46 + len + u16(scan + 30) + u16(scan + 32);
+    }
+    meta.total = matched;
+  }
   const centralStart = p;
   const limit = p + u32(end + 12);
   check(u16(end + 4) === 0 && u16(end + 6) === 0 && u16(end + 8) === count && count <= 12000 &&
@@ -406,8 +421,8 @@ async function* zipEntries(raw, extension) {
     yield { name, content };
   }
 }
-async function* zipXml(raw) {
-  for await (const entry of zipEntries(raw, /\.xml$/i)) yield { name: entry.name, xml: entry.content };
+async function* zipXml(raw, meta) {
+  for await (const entry of zipEntries(raw, /\.xml$/i, meta)) yield { name: entry.name, xml: entry.content };
 }
 /* Paquetes Metadata del SAT (1.6.10): el ZIP trae un .txt con los
    registros separados por tuberías, no XML. Mismo lector, otra extensión. */

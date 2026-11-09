@@ -1,0 +1,331 @@
+/* ===== Indicador de actividad global + Centro de Avisos (1.7.4) =====
+   Pieza 1 (puntos 12 y 16): ninguna acción larga queda «en silencio».
+   Un panel fijo y visible dice QUÉ se está haciendo, con contador real
+   («procesando X de N») y barra; al terminar una importación grande, el
+   resumen «✓ Procesado» queda FIJO en pantalla hasta que el usuario lo
+   cierra: nuevos, duplicados, por revisar y qué hacer con cada problema.
+   Pieza 2 (punto 17): el Centro de Avisos vive en el servidor (NAS): tres
+   clases siempre visibles — LO QUE ESTÁ MAL, LO QUE FALTA y LO QUE EL
+   SISTEMA NECESITA DE TI — con solventar real («Ya lo corregí» re-comprueba;
+   «Marcar pagado a mano» exige nota) y un solo correo-resumen configurable. */
+
+let activityState = null;
+function activityStart(label, total = 0) {
+  activityState = { label, done: 0, total: Math.max(0, total | 0) };
+  const dock = $('activity-dock');
+  dock.hidden = false;
+  $('activity-label').textContent = label;
+  $('activity-detail').textContent = '';
+  activityPaint();
+}
+function activitySetTotal(total) {
+  if (!activityState) return;
+  activityState.total = Math.max(activityState.total, total | 0);
+  activityPaint();
+}
+function activityProgress(done, detail) {
+  if (!activityState) return;
+  activityState.done = Math.max(activityState.done, done | 0);
+  if (detail !== undefined) $('activity-detail').textContent = detail;
+  activityPaint();
+}
+function activityPaint() {
+  if (!activityState) return;
+  const { done, total } = activityState;
+  $('activity-count').textContent = total ? 'Procesando ' + number.format(done) + ' de ' + number.format(total) : '';
+  const bar = $('activity-bar');
+  bar.max = 100;
+  bar.value = total ? Math.min(100, Math.round(done * 100 / total)) : 0;
+  if (!total) bar.removeAttribute('value');
+}
+function activityFinish() {
+  activityState = null;
+  $('activity-dock').hidden = true;
+}
+function activityDone(title, lines) {
+  activityFinish();
+  $('activity-result-title').textContent = title;
+  $('activity-result-text').replaceChildren(...lines.map(line =>
+    typeof line === 'string' ? n('p', line) : line));
+  $('activity-result').hidden = false;
+  $('activity-result').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function activityFail(title, message) {
+  activityFinish();
+  activityDone('⚠ ' + title, [message]);
+}
+$('activity-result-close').onclick = () => { $('activity-result').hidden = true; };
+
+/* ---------- Centro de Avisos ---------- */
+let avisosCache = null;
+let avisosInflight = null;
+let avisosFetchedAt = 0;
+const AVISOS_CLASES = [
+  ['necesita', 'Lo que el sistema necesita de ti', 'alert'],
+  ['mal', 'Lo que está mal', 'x'],
+  ['falta', 'Lo que falta', 'clock']
+];
+const AVISOS_ENLACES = {
+  dinero: ['dinero', 'Ir a Dinero'], bancos: ['bancos', 'Ir a Bancos'],
+  lists: ['lists', 'Ir a Listas negras'], monitor: ['monitor', 'Ir a Vigilancia SAT'],
+  sat: ['sat', 'Ir al Centro SAT'], backup: ['backup', 'Ir a Respaldos'],
+  docs: ['docs', 'Ir a Expedientes'], operaciones: ['operations', 'Ir a Operaciones'],
+  cumplimiento: ['cumplimiento', 'Ir a Cumplimiento']
+};
+function avisosDisponibles() { return typeof satToken !== 'undefined' && Boolean(satToken); }
+async function refreshAvisos(force = false) {
+  if (!avisosDisponibles()) { paintAvisosBadge(0); return null; }
+  if (avisosInflight) return avisosInflight;
+  if (!force && avisosCache && Date.now() - avisosFetchedAt < 20000) return avisosCache;
+  avisosInflight = (async () => {
+    try {
+      avisosCache = await satApi('notices');
+      avisosFetchedAt = Date.now();
+      paintAvisosBadge(avisosCache.counts.total);
+      paintAvisosHoy();
+      if (page === 'avisos') render();
+    } catch { /* sin servidor alcanzable: no se inventa ningún conteo */ }
+    avisosInflight = null;
+    return avisosCache;
+  })();
+  return avisosInflight;
+}
+function paintAvisosBadge(count) {
+  const badge = $('avisos-badge');
+  if (!badge) return;
+  badge.hidden = !count;
+  badge.textContent = count ? number.format(count) : '';
+}
+function avisoFecha(ts) {
+  return new Date(ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+}
+function avisoMeta(aviso) {
+  const bits = [];
+  if (aviso.nombre) bits.push(aviso.nombre + (aviso.contraparte ? ' · ' + aviso.contraparte : ''));
+  else if (aviso.contraparte) bits.push(aviso.contraparte);
+  if (aviso.importe) bits.push('$' + money(aviso.importe));
+  if (aviso.baseline) bits.push('línea base (histórico)');
+  bits.push('desde el ' + avisoFecha(aviso.creado));
+  return bits.join(' · ');
+}
+function avisoPill(aviso) {
+  if (aviso.estado === 'por-confirmar') return statusPill('warn', 'Por confirmar');
+  if (aviso.severidad === 'alta') return statusPill('bad', 'Importante');
+  if (aviso.severidad === 'baja') return statusPill('dim', 'Menor');
+  return statusPill('warn', 'Atención');
+}
+/* Panel en «Hoy»: el resumen del Centro, siempre a la vista. */
+function avisosHoyPanel() {
+  const wrap = panel('Centro de Avisos', 'Lo que está mal, lo que falta y lo que el sistema necesita de ti. Todo se solventa aquí dentro; el correo es solo un resumen.');
+  const box = n('div');
+  box.id = 'avisos-hoy-body';
+  wrap.append(box);
+  if (!avisosDisponibles()) {
+    box.append(n('p', 'El Centro de Avisos vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para verlo y solventarlo. En esta copia local tus facturas siguen en Dinero.', 'muted'));
+  } else {
+    box.append(n('p', 'Consultando tus avisos…', 'muted'));
+    refreshAvisos();
+    if (avisosCache) paintAvisosHoy();
+  }
+  return wrap;
+}
+function paintAvisosHoy() {
+  const box = $('avisos-hoy-body');
+  if (!box || !avisosCache) return;
+  const { counts } = avisosCache;
+  box.replaceChildren();
+  if (!counts.total) {
+    box.append(n('p', '✓ Nada pendiente: no hay avisos abiertos. Cuando algo necesite tu atención aparecerá aquí y en la pantalla Avisos.', 'ok-text'));
+    return;
+  }
+  const strip = n('div', undefined, 'traffic-strip');
+  for (const [clase, etiqueta] of AVISOS_CLASES)
+    if (counts[clase]) strip.append(statusPill(clase === 'mal' ? 'bad' : 'warn', etiqueta + ': ' + number.format(counts[clase])));
+  if (counts.porConfirmar) strip.append(statusPill('warn', number.format(counts.porConfirmar) + ' por confirmar'));
+  box.append(strip);
+  const primeros = avisosCache.avisos.slice(0, 3);
+  for (const aviso of primeros) {
+    const row = n('div', undefined, 'cp-row');
+    row.append(avisoPill(aviso), n('span', aviso.titulo));
+    box.append(row);
+  }
+  const go = action('Ver y solventar avisos', () => navigate('avisos'), 'soft', 'arrow');
+  box.append(go);
+}
+/* Pantalla propia del Centro. */
+function avisosScreen() {
+  const wrap = n('div');
+  if (!avisosDisponibles()) {
+    wrap.append(panel('Centro de Avisos', 'El Centro vive en el servidor de tu casa (el NAS), donde corre el motor de avisos. Abre PacoSAT desde el servidor para verlo; en esta copia local puedes seguir trabajando con tus facturas en Dinero.'));
+    return [wrap];
+  }
+  if (!avisosCache) {
+    const loading = panel('Centro de Avisos', 'Consultando el servidor…');
+    wrap.append(loading);
+    refreshAvisos(true);
+    return [wrap];
+  }
+  const data = avisosCache;
+  /* Resumen por clases: las tres, siempre visibles. */
+  const resumen = panel('Tus avisos', data.counts.total
+    ? number.format(data.counts.total) + ' abiertos. Los de «línea base» son la foto inicial de tu histórico: están en el panel, sin correos ni atrasos retroactivos.'
+    : 'Sin avisos abiertos. Todo en orden.');
+  const strip = n('div', undefined, 'traffic-strip');
+  for (const [clase, etiqueta] of AVISOS_CLASES)
+    strip.append(statusPill(data.counts[clase] ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
+      etiqueta + ': ' + number.format(data.counts[clase] || 0)));
+  const update = n('button', 'Actualizar ahora', 'soft small');
+  update.onclick = () => refreshAvisos(true);
+  strip.append(update);
+  resumen.append(strip);
+  wrap.append(resumen);
+  wrap.append(avisosConfigPanel(data.config));
+  for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
+    const deClase = data.avisos.filter(aviso => aviso.clase === clase);
+    if (!deClase.length) continue;
+    const section = panel(etiqueta + ' (' + number.format(deClase.length) + ')');
+    for (const aviso of deClase) section.append(avisoCard(aviso));
+    wrap.append(section);
+  }
+  if (data.historial.length) {
+    const history = panel('Historial · ya solventado', 'Lo que se corrigió queda registrado aquí, con su nota.');
+    for (const aviso of data.historial) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill('ok', '✓ ' + avisoFecha(aviso.resuelto)),
+        n('span', aviso.titulo + (aviso.resolucion ? ' — ' + aviso.resolucion : '')));
+      history.append(row);
+    }
+    wrap.append(history);
+  }
+  return [wrap];
+}
+function avisosConfigPanel(config) {
+  const el = panel('Correo-resumen', 'Los avisos ya NO llegan de uno en uno: como mucho, un solo correo con el resumen. El detalle completo vive aquí, en el Centro.');
+  const form = n('div', undefined, 'sat-form');
+  const correo = n('select');
+  for (const [value, label] of [['diario', 'Un resumen cada día'], ['semanal', 'Un resumen cada lunes'], ['graves', 'Solo cuando haya algo importante'], ['no', 'Sin correo (solo el panel)']]) {
+    const option = n('option', label); option.value = value;
+    if (config.correo === value) option.selected = true;
+    correo.append(option);
+  }
+  const hora = input('number', { min: '0', max: '23', value: String(config.hora ?? 9) });
+  const save = n('button', 'Guardar', 'soft');
+  save.onclick = async () => {
+    try {
+      avisosCache.config = await satApi('notices/config', { correo: correo.value, hora: Number(hora.value) });
+      toast('Preferencia del correo-resumen guardada.', 'ok');
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  form.append(fieldWrap('Correo-resumen', correo), fieldWrap('Hora de envío', hora), save);
+  el.append(form);
+  return el;
+}
+function avisoCard(aviso) {
+  const card = n('div', undefined, 'aviso-card');
+  const head = n('div', undefined, 'aviso-head');
+  head.append(avisoPill(aviso), n('strong', aviso.titulo));
+  card.append(head);
+  if (aviso.detalle) card.append(n('p', aviso.detalle));
+  card.append(n('p', avisoMeta(aviso), 'muted'));
+  const actions = n('div', undefined, 'traffic-strip');
+  if (aviso.kind === 'saldo' && aviso.estado === 'por-confirmar') {
+    const si = n('button', aviso.direccion === 'cobrar' ? 'Sí, ya pagó' : 'Sí, ya se pagó', 'primary small');
+    si.onclick = () => avisoMarkPaidDialog(aviso);
+    const no = n('button', 'No, aún no', 'soft small');
+    no.onclick = () => avisoConfirmNo(aviso);
+    actions.append(si, no);
+  } else if (aviso.kind === 'saldo') {
+    const paid = n('button', 'Marcar pagado a mano', 'primary small');
+    paid.onclick = () => avisoMarkPaidDialog(aviso);
+    const fixed = n('button', 'Ya lo corregí', 'soft small');
+    fixed.onclick = () => avisoResolve(aviso);
+    actions.append(paid, fixed);
+  } else {
+    if (aviso.kind === 'solicitud-estado') actions.append(avisoUploadButton(aviso));
+    const fixed = n('button', 'Ya lo corregí', 'soft small');
+    fixed.onclick = () => avisoResolve(aviso);
+    actions.append(fixed);
+  }
+  const enlace = AVISOS_ENLACES[aviso.enlace];
+  if (enlace) {
+    const go = n('button', enlace[1], 'soft small');
+    go.onclick = () => navigate(enlace[0]);
+    actions.append(go);
+  }
+  card.append(actions);
+  return card;
+}
+async function avisoAfterChange(message) {
+  toast(message, 'ok');
+  soundCue('success');
+  await refreshAvisos(true);
+  render();
+}
+function avisoMarkPaidDialog(aviso) {
+  const nota = input('text', { placeholder: 'Ej. Pagado con Konfío el 8 de noviembre' });
+  const hoy = new Date();
+  const fecha = input('date', { value: hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0') });
+  dialog('Marcar pagado a mano',
+    [n('p', 'Vas a dar por pagado «' + aviso.titulo + '». Queda registrado en la bitácora con tu nota: si mañana llega el complemento de pago, PacoSAT lo enlaza igual.'),
+     field('Fecha del pago', fecha), field('Nota (obligatoria): medio y detalle', nota)],
+    async () => {
+      check(nota.value.trim().length >= 4, 'Escribe la nota del pago: medio y detalle (ej. «Pagado con Konfío»).');
+      await satApi('notices/answer', { id: aviso.id, respuesta: 'si', nota: nota.value.trim(), fecha: fecha.value });
+      await avisoAfterChange('Pago registrado a mano. El aviso quedó en el historial.');
+    }, 'Registrar el pago');
+}
+function avisoConfirmNo(aviso) {
+  dialog('Confirmar',
+    [n('p', aviso.direccion === 'cobrar'
+      ? 'Confirmas que ' + (aviso.nombre || 'la contraparte') + ' aún NO ha pagado. El aviso pasará a «Lo que está mal» como saldo vencido: en PacoSAT no consta el pago.'
+      : 'Confirmas que aún NO se ha pagado. El aviso pasará a «Lo que está mal» como saldo vencido: en PacoSAT no consta el pago.')],
+    async () => {
+      await satApi('notices/answer', { id: aviso.id, respuesta: 'no' });
+      await avisoAfterChange('Aviso de atraso creado en «Lo que está mal».');
+    }, 'Sí, aún no');
+}
+async function avisoResolve(aviso) {
+  try {
+    const result = await satApi('notices/resolve', { id: aviso.id });
+    if (result.ok) { await avisoAfterChange('Comprobado: ya está bien. Aviso cerrado y guardado en el historial.'); return; }
+    dialog('Todavía falta algo',
+      [n('p', 'PacoSAT lo volvió a comprobar y aún no está solventado:'),
+       n('p', result.falta || 'La condición del aviso sigue presente.', 'error-text'),
+       n('p', 'Cuando lo corrijas, vuelve a pulsar «Ya lo corregí» y lo verificamos otra vez.')],
+      async () => {}, 'Entendido');
+  } catch (error) { toast(error.message, 'error'); }
+}
+/* Solicitud interna (criterio 8): el estado que falta se sube AQUÍ, en
+   la propia tarjeta; al aportarlo se procesa y el aviso se solventa. */
+function avisoUploadButton(aviso) {
+  const holder = n('span');
+  const btn = n('button', 'Subir el estado aquí', 'primary small');
+  btn.onclick = async () => {
+    try {
+      const banks = await satApi('banks');
+      const solicitud = aviso.solicitud || {};
+      const account = (banks.accounts || []).find(row =>
+        row.bank.toLocaleLowerCase('es-MX') === String(solicitud.banco || '').toLocaleLowerCase('es-MX') &&
+        (row.missing || []).includes(solicitud.mes));
+      check(account, 'No encontré la cuenta de ' + (solicitud.banco || 'ese banco') + ' con ese mes faltante: súbelo desde Bancos.');
+      const form = n('div', undefined, 'sat-form');
+      const file = input('file', { accept: 'application/pdf' });
+      const up = n('button', 'Subir y procesar', 'primary small');
+      up.onclick = async () => {
+        try {
+          check(file.files?.[0], 'Elige el PDF del estado de cuenta.');
+          activityStart('Procesando el estado de ' + solicitud.banco + ' de ' + solicitud.mes, 1);
+          const content = encode64(new Uint8Array(await file.files[0].arrayBuffer()));
+          await satApi('banks/statements', { accountId: account.id, month: solicitud.mes, content });
+          activityProgress(1, 'Estado archivado y leído.');
+          activityDone('✓ Estado recibido', ['El estado de ' + solicitud.banco + ' de ' + solicitud.mes + ' quedó archivado y leído. Los avisos que dependían de él se re-comprueban solos.']);
+          await avisoAfterChange('Estado aportado: la solicitud se solventó.');
+        } catch (error) { activityFail('No se pudo procesar el estado', error.message); toast(error.message, 'error'); }
+      };
+      form.append(fieldWrap('PDF del estado · ' + solicitud.mes, file), up);
+      holder.replaceChildren(form);
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  holder.append(btn);
+  return holder;
+}

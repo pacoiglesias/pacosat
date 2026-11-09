@@ -44,7 +44,11 @@ try {
   assert.ok(calendar.events.some(event => event.kind === 'mensual'));
   assert.ok(calendar.events.some(event => event.kind === 'anual'));
   await service.tick();
-  assert.ok(sent.some(mail => /Vencimiento fiscal cercano/.test(mail.subject)), sent.map(m => m.subject).join(' | '));
+  /* 1.7.4: el vencimiento fiscal ya no manda un correo suelto: vive
+     en el Centro de Avisos y se nombra en el cuerpo del ÚNICO
+     correo-resumen del día. */
+  assert.ok(sent.some(mail => /Vencimiento fiscal cercano/.test(mail.text || '')), sent.map(m => m.subject).join(' | '));
+  assert.equal(sent.filter(mail => /Resumen de avisos/.test(mail.subject)).length, 1, sent.map(m => m.subject).join(' | '));
   /* Detector: folio duplicado y totales que no cuadran. */
   const dup1 = seedInvoice('EEEEEEEE-1111-1111-1111-111111111111', { fiscal: { serie: 'A', folio: '55', subtotal: '100.00', discount: '', totalTransferred: '16.00', totalWithheld: '' } });
   const dup2 = seedInvoice('EEEEEEEE-2222-2222-2222-222222222222', { fiscal: { serie: 'A', folio: '55', subtotal: '100.00', discount: '', totalTransferred: '16.00', totalWithheld: '' } });

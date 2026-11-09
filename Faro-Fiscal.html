@@ -1,8 +1,25 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-WODQ79/MjDQKIt2P85hBPDxJxtshOBkl0rhKd0pNA28='; script-src 'sha256-zIZBMVD0fy+SDv0xsiosF/FoXReiFpRPuHN0inItxcI='; img-src data: blob:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><!--PACOSAT_TOKEN--><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0e2a47">
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-KuKvAxTE5qOHyli1GJo9P27tSGY81XGoIMIZWxHtGAY='; script-src 'sha256-oBbUgvjjengKV1VVpI0HHu4l4AuMRy8SeSXvw2ZMR44='; img-src data: blob:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><!--PACOSAT_TOKEN--><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0e2a47">
 <style>:root{font:15px/1.48 "Segoe UI",system-ui,-apple-system,"Helvetica Neue",sans-serif;color:var(--ink);background:var(--bg)}*{box-sizing:border-box}body{margin:0}svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:none}.symbols,[hidden]{display:none!important}button,input,select,textarea{font:inherit}button,a,input,select{border-radius:8px}button{color:var(--ink);border:1px solid var(--border);background:var(--surface);padding:9px 12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-align:left}button:hover{background:var(--surface-2)}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);border-color:var(--green);color:var(--on-accent)}button.primary:hover:not(:disabled){background:var(--green-hover)}a{color:var(--green);font-weight:600;text-underline-offset:3px}input,select,textarea{border:1px solid var(--field-border);background:var(--surface);color:var(--ink);padding:9px 11px;min-width:0;max-width:100%}:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.frame{min-height:100vh;display:grid;grid-template-columns:244px minmax(0,1fr)}.sidebar{padding:24px 17px;background:var(--nav);color:var(--nav-text);display:flex;flex-direction:column;gap:27px}.brand{display:flex;align-items:center;gap:10px;color:white;font-weight:720;font-size:20px;letter-spacing:-.025em}.brand small,.local small{display:block;color:var(--nav-muted);font-size:10px;font-weight:650;letter-spacing:.11em}.logo{width:42px;height:42px;display:grid;place-items:center;color:var(--logo-ink);background:var(--logo-bg);border-radius:12px}.logo svg{width:25px;height:25px}.switcher{display:grid;gap:7px}.switcher label{color:var(--nav-muted);font-size:10px;letter-spacing:.12em;font-weight:700}.switcher select{background:var(--nav-field);border-color:var(--nav-border);color:var(--nav-text);width:100%}.sidebar nav{display:grid;gap:4px}.sidebar button{background:transparent;border-color:transparent;color:var(--nav-text);justify-content:flex-start}.sidebar button:hover{background:var(--nav-hover)}.sidebar .quiet{font-size:13px;padding:6px 4px}.sidebar nav button[aria-current]{background:var(--nav-active-bg);border-color:var(--nav-border);color:var(--nav-active-ink)}.local{display:flex;gap:10px;align-items:center;color:var(--nav-text);font-size:13px;margin-top:auto}.local small{letter-spacing:0;font-size:11px;font-weight:400}.top{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);gap:10px;font-size:13px}.top strong{color:var(--ink)}.slash{margin:0 7px;color:var(--muted)}.badge,.tag{font-size:12px;color:var(--ok-ink);background:var(--tint);display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:100px;font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:var(--green)}.page{max-width:1340px;margin:auto;padding:29px 28px 36px}.heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:23px}.eyebrow{font-weight:750;font-size:11px;letter-spacing:.14em;color:var(--green);overflow-wrap:anywhere}h1{font-size:clamp(29px,4.1vw,46px);letter-spacing:-.052em;line-height:1.12;margin:6px 0}h2{font-size:20px;letter-spacing:-.025em;margin:0}h3{font-size:16px;margin:0}p{margin:0;color:var(--muted)}.heading .primary{padding:11px 15px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:15px}.metric,.panel,.guide{background:var(--surface);border:1px solid var(--border);border-radius:13px}.metric{padding:15px;display:grid;gap:5px;min-width:0}.metric-label{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:13px}.metric-label svg{color:var(--green)}.metric strong{font-size:28px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.panel{min-width:0;overflow:hidden;margin-bottom:14px}.panel-head,.filters,.table-foot,.guide{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;flex-wrap:wrap}.filters{justify-content:flex-start}.filters input[type=search]{flex:1 1 200px}.table-foot{color:var(--muted);font-size:13px}.guide{margin-bottom:14px;background:var(--guide-bg);justify-content:space-between}.guide p{margin-top:4px}.guide ul{margin:8px 0 0;padding-left:20px}.guide .actions,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:11px 13px;border-top:1px solid var(--border);overflow-wrap:anywhere}th{font-size:12px;color:var(--muted);background:var(--surface-2)}td small{display:block;color:var(--muted);margin-top:3px}td.num{white-space:nowrap;font-variant-numeric:tabular-nums}td button{font-size:13px;padding:5px 8px;white-space:nowrap}.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--border)}.tabs button{border-color:transparent}.tabs button[aria-pressed=true]{background:var(--tint);color:var(--ok-ink)}.empty{padding:30px 15px;text-align:center}.empty p{margin:6px 0 12px}#status{margin:0 0 12px;padding:11px 13px;border-radius:8px;background:var(--tint);white-space:pre-line;overflow-wrap:anywhere;color:var(--ink)}#status[data-error=true]{background:var(--danger-bg);color:var(--danger)}dialog{width:min(520px,calc(100% - 26px));border:1px solid var(--border);border-radius:14px;padding:20px;color:var(--ink);background:var(--surface);box-shadow:0 18px 55px var(--shadow-color)}dialog::backdrop{background:var(--backdrop)}.modal-head,.modal-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}.modal-actions{justify-content:flex-end;margin-top:16px}.icon-button{padding:6px}#fields{display:grid;gap:12px;margin-top:14px}#fields label{display:grid;gap:5px;font-weight:600}#fields p{overflow-wrap:anywhere}#formError{color:var(--danger);margin-top:9px}.portal{display:grid;gap:8px;padding:14px 15px}.portal a{display:inline-block;width:max-content;max-width:100%}.import-history td:first-child{max-width:250px}.drag-active{outline:3px dashed var(--focus);outline-offset:-5px}@media(max-width:780px){.frame{grid-template-columns:1fr}.sidebar{padding:14px;gap:12px}.switcher{grid-template-columns:minmax(0,1fr) auto}.switcher label{grid-column:1/-1}.sidebar nav{display:flex;flex-wrap:wrap}.local{display:none}.top,.page{padding:14px}}@media(max-width:460px){.cards{grid-template-columns:1fr}.metric{grid-template-columns:1fr auto;align-items:center}.badge{font-size:10px}.heading .primary{width:100%}.filters input,.filters select{flex:1 1 140px}.top{gap:4px}.sidebar nav button{padding:7px 8px}}
 .xml-view{margin:0;padding:12px;max-height:45vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font:13px/1.55 Consolas,monospace;color:var(--ink)}
 .offline-banner{margin:0;padding:10px 28px;background:var(--danger-bg);color:var(--danger);font-weight:650}
+
+/* Indicador de actividad global y Centro de Avisos (1.7.4) */
+.activity-dock{position:sticky;top:8px;z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:14px;box-shadow:0 6px 24px rgba(0,0,0,.12)}
+.activity-dock-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.activity-spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--border);border-top-color:var(--green);animation:pacosat-spin 0.8s linear infinite;flex:none}
+@keyframes pacosat-spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.activity-spinner{animation:none}}
+.activity-count{color:var(--muted);font-variant-numeric:tabular-nums}
+.activity-dock meter{width:100%;height:10px;margin-top:8px}
+.activity-detail{margin:6px 0 0;color:var(--muted);font-size:.92em;word-break:break-all}
+.activity-result{background:var(--ok-bg);border:1px solid var(--border);border-radius:14px;padding:12px 16px;margin-bottom:14px}
+.activity-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.activity-result p{margin:6px 0}
+.aviso-card{border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+.aviso-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+.aviso-card p{margin:4px 0}
+.ok-text{color:var(--ok-ink)}
 
 /* PacoSAT 1.6.0 · Sistema de diseño: una sola capa de tokens para claro y oscuro.
    El tema manual vive en data-theme del documento; sin él manda prefers-color-scheme. */
@@ -108,8 +125,7 @@ body{background:radial-gradient(ellipse at 85% 0%,var(--surface-2) 0,transparent
   #print-report .panel{border:none;box-shadow:none}
 }
 @media(max-width:1080px){.dashboard-grid{grid-template-columns:1fr}}
-@media(max-width:780px){.sidebar{padding:15px}.dashboard-hero{padding:18px}.heading .actions{width:100%}.heading .actions button{flex:0 1 auto}.headin
-...[truncated 76 chars]
+@media(max-width:780px){.sidebar{padding:15px}.dashboard-hero{padding:18px}.heading .actions{width:100%}.heading .actions button{flex:0 1 auto}}
 .nav-caption{display:block;color:var(--nav-muted);font-size:10px;font-weight:750;letter-spacing:.13em;padding:3px 10px 4px}.nav-divider{margin-top:13px}.sidebar{gap:24px}.dashboard-hero{position:relative;overflow:hidden;min-height:134px;isolation:isolate}.dashboard-hero::after{content:"";z-index:-1;position:absolute;width:285px;height:285px;right:-20px;top:-120px;border-radius:50%;border:1px solid #98c9ce50;box-shadow:0 0 0 25px #a5cbdd16,0 0 0 51px #a5cbdd15,0 0 0 80px #a5cbdd0b}.metric{grid-template-columns:1fr auto;align-items:center;min-height:105px}.metric-label{grid-column:1/-1}.metric-link{background:var(--chip-bg);border:1px solid var(--border);color:var(--chip-ink);padding:6px 8px;font-size:12px}.metric-link svg{width:14px;height:14px}.period-chip{display:inline-block;max-width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:7px;background:var(--chip-bg);color:var(--chip-ink);font-size:12px;font-weight:700}.activity-bars{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:12px;padding:4px 17px 17px}.activity-day{display:grid;gap:5px;min-width:0;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}.activity-day strong{color:var(--ink);font-size:14px}.activity-day meter{width:100%;height:12px}.activity-day meter::-webkit-meter-bar{background:var(--surface-2);border:none;border-radius:8px}.activity-day meter::-webkit-meter-optimum-value{background:linear-gradient(90deg,#237570,#478e9e);border-radius:8px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:var(--surface-2);border:1px solid var(--border);padding:15px;border-radius:12px;overflow-wrap:anywhere}.invoice-summary h3{font-size:27px;letter-spacing:-.04em;margin-top:5px}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div{display:grid;gap:3px;padding:10px;background:var(--surface);border:1px solid var(--border);border-radius:9px;min-width:0}.invoice-parties small{font-size:10px;color:var(--muted);letter-spacing:.1em;font-weight:700}.invoice-parties span,.invoice-summary small{color:var(--muted)}.invoice-concepts{padding:11px 13px;border:1px solid var(--border);border-radius:9px}.invoice-concepts ul{padding-left:21px;margin:6px 0 0}.invoice-concepts li{overflow-wrap:anywhere}.table-wrap td:last-child .actions{gap:5px}@media(max-width:780px){.nav-caption{width:100%;padding:3px 5px}.nav-divider{margin-top:5px}.metric{min-height:0}.dashboard-hero{min-height:0}.activity-bars{gap:6px}}@media(max-width:390px){.invoice-parties{grid-template-columns:1fr}.activity-bars{padding-inline:9px;gap:4px}.activity-day{font-size:10px}}
 .fiscal-state{display:grid;gap:2px;justify-items:start}.fiscal-badge{display:inline-block;padding:3px 8px;border-radius:100px;color:var(--info-ink);background:var(--info-bg);font-size:12px;font-weight:700;white-space:nowrap}.fiscal-badge[data-state=Vigente]{color:var(--ok-ink);background:var(--ok-bg)}.fiscal-badge[data-state=Cancelado]{color:var(--danger);background:var(--danger-bg)}.fiscal-badge[data-state="No encontrado"]{color:var(--warn-ink);background:var(--warn-bg)}.fiscal-state small{font-size:11px}
 body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button{transition:background .15s ease,border-color .15s ease,box-shadow .15s ease}.metric{transition:box-shadow .18s ease,transform .18s ease}.metric:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.top-side{display:inline-flex;align-items:center;gap:12px;min-width:0}.header-counters{color:var(--muted);font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}.activity-list{display:grid;padding:6px 15px 10px}.activity-item{display:flex;gap:11px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--border)}.activity-item:first-child{border-top:none}.activity-kind{flex:none;margin-top:1px;padding:3px 8px;border-radius:100px;font-size:11px;font-weight:750;letter-spacing:.02em;background:var(--info-bg);color:var(--info-ink)}.activity-kind[data-kind=sat]{background:var(--tint);color:var(--ok-ink)}.activity-kind[data-kind=import]{background:var(--chip-bg);color:var(--chip-ink)}.activity-kind[data-kind=alert]{background:var(--danger-bg);color:var(--danger)}.activity-body{display:grid;gap:2px;min-width:0}.activity-body strong{font-size:13.5px;overflow-wrap:anywhere}.activity-body small{color:var(--muted);font-size:12px}.activity-body .metric-link{justify-self:start;margin-top:3px}.table-wrap::-webkit-scrollbar,.xml-view::-webkit-scrollbar{height:10px;width:10px}.table-wrap::-webkit-scrollbar-thumb,.xml-view::-webkit-scrollbar-thumb{background:var(--scroll);border-radius:8px}::selection{background:var(--selection)}@media(max-width:780px){.header-counters{display:none}}@media print{.sidebar,.top,.heading .actions,.hero-actions{display:none!important}.frame{display:block}.page{padding:0;max-width:none}}@media (prefers-reduced-motion: reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
@@ -295,6 +311,7 @@ td button{padding:7px 10px}
   <nav aria-label="Navegación principal">
     <span class="nav-caption">OPERACIÓN FISCAL</span>
     <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Resumen <span id="news-badge" class="news-badge" hidden></span></button>
+    <button data-view="avisos"><svg><use href="#i-alert"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
     <button data-view="operations"><svg><use href="#i-bell"/></svg> Operaciones y alertas</button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
@@ -326,6 +343,15 @@ td button{padding:7px 10px}
       <div class="actions"><button id="inspect"><svg><use href="#i-file"/></svg> Abrir XML</button><button id="pdf-import"><svg><use href="#i-file"/></svg> Factura PDF</button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
     </header>
     <p id="status" role="status" hidden></p>
+    <section id="activity-dock" class="activity-dock" hidden aria-live="polite">
+      <div class="activity-dock-head"><span class="activity-spinner" aria-hidden="true"></span><strong id="activity-label">Trabajando…</strong><span id="activity-count" class="activity-count"></span></div>
+      <meter id="activity-bar" min="0" max="100" value="0"></meter>
+      <p id="activity-detail" class="activity-detail"></p>
+    </section>
+    <section id="activity-result" class="activity-result" hidden>
+      <div class="activity-result-head"><strong id="activity-result-title">✓ Procesado</strong><button type="button" id="activity-result-close" class="icon-button" aria-label="Cerrar el resumen"><svg><use href="#i-close"/></svg></button></div>
+      <div id="activity-result-text"></div>
+    </section>
     <section id="body" aria-label="Contenido"></section>
     <footer class="app-footer" id="app-footer"></footer>
   </div>
@@ -342,8 +368,8 @@ td button{padding:7px 10px}
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
   <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
 </dialog>
-<script>const PACOSAT_META = {"version":"1.7.3","created":"2026-11-08T13:42:35-06:00"};
-const PACOSAT_CAPACIDADES = {"updated":"9 nov 2026, 11:40 CST","sections":[{"title":"1. Núcleo CFDI","blocks":[{"type":"item","state":"✅","text":"Importación de XML y ZIP con validación, y vinculación de PDF."},{"type":"item","state":"✅","text":"Visor CFDI profesional: datos completos, conceptos e impuestos, cadena original, Timbre Fiscal, complemento de Pagos 2.0 y representación impresa."},{"type":"item","state":"✅","text":"Vinculación PDF ↔ XML por UUID: el PDF de la factura se lee, se detecta su folio fiscal y se vincula al XML del mismo UUID (con cotejo de RFC); el importe del PDF no se compara con el del XML."},{"type":"item","state":"✅","text":"Línea de tiempo por CFDI y buscador global."},{"type":"item","state":"✅","text":"Mapa de cobertura por periodos y gráfica de estados. (En el anillo de estados, «No encontrado» se suma dentro de «Sin consulta»; el detalle de cada CFDI sí muestra «No encontrado» como estado propio.)"},{"type":"item","state":"✅","text":"Persistencia del desglose fiscal al importar (subtotal, IVA por tasa, IEPS, retenciones, método/forma de pago, uso CFDI, tipo de cambio, serie/folio) con re-parseo histórico: base de la DIOT (1.6.16; la relación de pagos se sumó en la 1.6.17)."},{"type":"item","state":"✅","text":"Detector al importar de duplicados por UUID y de CFDI cuyo RFC no corresponde al expediente; el detector de totales que no cuadran y de folios repetidos con otro UUID actúa sobre lo ya guardado (pantalla Cumplimiento, 1.6.18)."}]},{"title":"2. Descarga y vigilancia del SAT","blocks":[{"type":"item","state":"✅","text":"Descarga masiva oficial por Web Service con e.firma (SDK), por RFC y dirección (emitidos/recibidos), con paquetes ZIP."},{"type":"item","state":"✅","text":"Perfiles multi-RFC con cadencia propia (Mano Fil: cada 360 min, ventana 7 días, ambas direcciones)."},{"type":"item","state":"✅","text":"Vigilancia de estado de cada CFDI cada 24 h y de cancelaciones."},{"type":"item","state":"✅","text":"Escudo de criterios 5002 (ronda anti-5002, 1.7.1): ningún criterio (ventana con los segundos exactos + dirección + RFC + tipo de solicitud) se envía dos veces en la vida. El libro de criterios es permanente y toda ruta lo consulta antes de pedir; la única salida al SAT, `sendSatRequest`, rechaza con guardia 409 cualquier criterio con usos previos o marcado agotado, incluidas las intenciones «enviando» que quedaron a medias — la última solicitud idéntica nunca se gasta (ya no hay confirmación posible para repetirla). La salida es siempre la variante de cierre +1 s (el inicio nunca se mueve: no se pierde el primer segundo ni quedan huecos entre ventanas): la descarga programada la aplica sola y la manual la ofrece en un clic. El PLANIFICADOR ensaya cada solicitud sin gastar cupo (mismo código que construye el criterio de verdad) y, si un rango CFDI nuevo supera 31 días, propone pedir primero Metadata. El LIBRO DE CRITERIOS se ve por RFC en Centro SAT (qué se pidió, cuándo, por qué vía y en qué estado quedó: sin usar, usado, quemado 5002 o rescatado). Y si el SAT devuelve un 5002 (por ejemplo, un criterio gastado antes por otra app), el criterio queda marcado quemado con su explicación y el RESCATE asistido prepara la lista de folios pendientes para bajarlos por el portal (canal aparte, hasta 2.000 XML/día); lo que entra por la carpeta vigilada dentro de una ventana quemada la marca «rescatada»."},{"type":"item","state":"✅","text":"Solicitudes Metadata (hasta 1.000.000 de registros ligeros por petición) para reconciliar cobertura (1.6.10): automáticas una al día por RFC y a petición por periodo; los CFDI que el SAT conoce y faltan en XML se listan en Cobertura."},{"type":"item","state":"✅","text":"Recibidos SIN filtro de «solo vigentes», registrando el estado inicial de cada CFDI (1.6.10): el conector ya no envía filtro de estado y el estado inicial llega de los metadatos al detalle del CFDI."},{"type":"item","state":"✅","text":"Blindaje (1.6.15): intención registrada ANTES de enviar («presunto enviado» al arrancar, con aviso), base de datos con synchronous=FULL a prueba de cortes, timeout duro de 60 s en llamadas al SAT con vigilante del ciclo (aviso si un ciclo pasa de 10 minutos), y contador de descargas por paquete con tope 5008: a los 2 intentos la solicitud se cierra en un estado terminal claro con aviso y salida accionable."},{"type":"item","state":"✅","text":"Carpeta vigilada recursiva: todo CFDI que caiga en la carpeta entra solo."},{"type":"item","state":"✅","text":"Solicitudes frecuentes EN UN CLIC (1.6.10) («mes pasado completo», «este trimestre», «este año») sin teclear fechas: menos errores y menos criterios 5002 quemados por un dedo mal puesto."},{"type":"item","state":"✅","text":"AVISO DE SILENCIO **CONFIGURABLE** + MODO DESCANSO CON **INTERRUPTOR ON/OFF** (petición expresa de Paco: visual, práctico e intuitivo): un interruptor grande y visible — general en la pantalla «Hoy» y uno por RFC — para encender/apagar la vigilancia en un toque, con el estado siempre claro («Vigilando» / «Descansando») y opción de «descansar hasta el [fecha]». Si pasan los días que Paco defina sin entrar ningún CFDI, aviso de posible fallo; durante el descanso no hay descargas ni avisos, y al reanudar el sistema se pone al día solo. El sistema también descansa."},{"type":"item","state":"✅","text":"Respaldo cifrado programado en el servidor."},{"type":"item","state":"✅","text":"Respaldo partido por RFC y año (1.7.0): desde la pantalla de Respaldos se genera manualmente un .faro por ejercicio y empresa, restaurable por partes con el restaurador de siempre."},{"type":"item","state":"✅","text":"COPIA EXTERNA AUTOMÁTICA del respaldo (la copia en sí desde 1.6.4; la vigilancia de antigüedad desde 1.6.15): cada respaldo cifrado se copia solo a un segundo destino FUERA del NAS, con semáforo de antigüedad de la copia en Salud y alerta si lleva más de 7 días sin copia buena o si la copia falla — si el NAS muriera, el archivo fiscal no muere con él. **DESTINO DECIDIDO (Paco, 8 nov 2026): Google Drive, vía Cloud Sync nativo del NAS; la carpeta secundaria del respaldo vive dentro de la carpeta sincronizada (p. ej. «PacoSAT Respaldos»). A Drive solo llega el archivo CIFRADO.**"}]},{"title":"3. Listas negras (art. 69, 69-B y 69-B Bis)","blocks":[{"type":"item","state":"✅","text":"(Fuera de la app) Cruce manual de contrapartes contra los 16 listados oficiales guardados en ~/workspace/pacosat-listas-sat/, hecho el 8 nov 2026: todas las contrapartes con XML en el expediente salieron limpias. Dentro de la app, la vigilancia continua trabaja con el catálogo de 10 listados de la viñeta siguiente."},{"type":"item","state":"✅","text":"Descarga automática y continua de los listados oficiales desde Datos Abiertos del SAT: 69-B y 69-B Bis desde el blob oficial del minisitio y los supuestos del art. 69 desde el paquete oficial del SAT en datos.gob.mx; los supuestos CSD sin efectos y Reducción art. 74 se cargan por archivo (sin CSV oficial verificado) y el motor los trata igual (1.6.13)."},{"type":"item","state":"✅","text":"Padrón de empresas a monitorear (clientes/proveedores): se puebla solo desde los CFDI; alta uno por uno y carga masiva por Excel o CSV (Nombre, RFC, Nota) leída en la propia app (1.6.13)."},{"type":"item","state":"✅","text":"Validador manual por RFC y por nombre/razón social (69, 69-B o ambas), en tiempo real contra todos los listados cargados (1.6.13)."},{"type":"item","state":"✅","text":"Alertas ante CUALQUIER transición (entradas, salidas, desvirtuados; también la línea base inicial) con la exposición por empresa (importes y CFDI en riesgo), alarma si un listado lleva >48 h sin actualizarse y panel «cómo voy» con semáforo por contraparte (1.6.13)."},{"type":"item","state":"✅","text":"Constancia de validación por empresa (fecha, listados consultados y resultado) como documento imprimible, listo para imprimir o guardar como PDF desde el diálogo de impresión (1.6.13)."}]},{"title":"4. e.firma y RFC que maneja","blocks":[{"type":"item","state":"✅","text":"Perfil de Mano Fil (MFI6212158B4) con su e.firma en la carpeta protegida del NAS. (Su e.firma caducó el 30-oct-2024: el perfil existe y sus archivos están en la carpeta protegida, pero no puede descargar del SAT hasta renovarla.)"},{"type":"item","state":"✅","text":"Subida de e.firma DESDE LA APP por RFC (.cer/.key + contraseña en pantalla), con validación inmediata de pareja, RFC y caducidad antes de guardar nada; queda en la carpeta protegida del servidor y se reactiva sola tras reiniciar; nunca a la base de datos ni a los respaldos (1.6.12)."},{"type":"item","state":"🔄","text":"Multi-RFC ampliado: Mano Fil, Elemental Denim (EDE1902136T2), el RFC personal de Paco y los de Rodrigo y José Javier — la arquitectura lo admite sin cambios desde la 1.4; cada perfil se activa cuando aporten su e.firma (la e.firma se coloca en persona, nunca por chat)."}]},{"title":"5. Constancias y opiniones (solo SAT)","blocks":[{"type":"item","state":"🔄","text":"Descarga mensual automática, activable por RFC, de la constancia de situación fiscal y la opinión de cumplimiento del SAT (1.6.14): el programador mensual, el archivo en Expedientes con fecha de emisión, el semáforo y las alertas están construidos y probados, y la subida manual del PDF funciona hoy y vale igual; la conexión con el portal del SAT (puerto `satDocFetch`) aún no está conectada en la instalación, así que la descarga automática queda registrada como intento fallido con su alerta hasta que se conecte ese puerto."},{"type":"item","state":"✅","text":"Semáforo de vigencia (verde <60 días, ámbar 60–90, rojo >90) y alerta si una renovación falla o vence (1.6.14)."},{"type":"item","state":"🔄","text":"Envío por correo de la constancia/opinión recién descargada a uno o varios destinatarios (día, hora y destinatarios se configuran en la pantalla de Constancias): el envío sale automáticamente tras una descarga con éxito, así que depende de que el puerto de descarga del portal esté conectado (ver la primera viñeta de esta sección). No hay envío programado independiente de la descarga."}]},{"title":"6. Salidas: reportes, impresión, exportaciones y correo","blocks":[{"type":"item","state":"✅","text":"Representación impresa del CFDI y paquete mensual básico para la contadora."},{"type":"item","state":"✅","text":"Centro de reportes por periodo y contraparte, con la identidad de la app (pantalla «Salidas», imprimible y en CSV) (1.6.16)."},{"type":"item","state":"✅","text":"Impresión cuidada de las pantallas con reporte e impresión por lote de CFDI en un solo documento desde la selección de Facturas (1.6.16, sobre la representación completa de la 1.6.7)."},{"type":"item","state":"✅","text":"Exportaciones CSV con formato (reporte del mes, base DIOT con desglose) y programables vía los informes automáticos (1.6.16). (No se genera Excel/XLSX: el Excel solo se *lee* en la carga masiva del padrón de Listas.)"},{"type":"item","state":"✅","text":"EXPORTACIÓN COMPLETA LEGIBLE en un clic: todos los XML y PDF con su índice, en carpetas por RFC y año, sin depender del formato de respaldo — tus datos son tuyos y salen enteros cuando quieras (1.6.16)."},{"type":"item","state":"✅","text":"Comparativas AÑO CONTRA AÑO por contraparte: de un vistazo, quién te factura más que antes y qué gasto se está disparando (1.6.16)."},{"type":"item","state":"✅","text":"Correo DENTRO de la app: enviar CFDI, reportes y constancias con adjuntos del expediente, bitácora de envíos visible y botón de correo de prueba (el de prueba llegó en la 1.6.11) (1.6.16)."},{"type":"item","state":"✅","text":"Informe mensual AUTOMÁTICO a Nora: paquete del mes construido en el servidor (índice, XML, documentos, base DIOT con el desglose fiscal persistido, novedades de listas negras y PPD del mes), con día, hora y destinatarios configurables y envío manual inmediato (1.6.16)."},{"type":"item","state":"✅","text":"IVA DEL MES estimado por RFC (trasladado y acreditable desde el desglose; lo que no tiene desglose se señala para reprocesarlo, nunca se estima a ojo) y re-parseo histórico de los XML guardados sin contactar al SAT (1.6.16, mejora nº 6)."},{"type":"item","state":"✅","text":"CIERRE DE MES GUIADO: lista de comprobación paso a paso con semáforo por paso y acceso directo a donde se resuelve cada punto (1.6.16)."},{"type":"item","state":"✅","text":"Resumen semanal ejecutivo por correo (lunes): CFDI nuevos, solicitudes terminadas, cambios en listas y avisos de la semana, enlazado con la bitácora (1.6.16)."}]},{"title":"7. Dinero","blocks":[{"type":"item","state":"✅","text":"Conciliación bancaria CFDI ↔ movimientos: cruceta por importe y fecha con pagado/no pagado, pagos sin factura y facturas sin pago — desde CSV (1.6.17) o desde los estados archivados de Bancos (1.6.19)."},{"type":"item","state":"✅","text":"Cuentas por cobrar Y por pagar: relación pagos↔facturas persistida (los documentos relacionados de cada complemento de pago viajan en el desglose), saldos con antigüedad por contraparte y avisos al envejecer un PPD sin pago completo (30 días por pagar, 60 por cobrar) (1.6.17)."},{"type":"item","state":"✅","text":"Alerta ROJA de cancelación post-pago: CFDI cancelado que ya tenía pagos registrados escala el aviso del monitor y nombra el importe pagado; la pantalla Dinero los lista en rojo (1.6.17)."},{"type":"item","state":"✅","text":"Expediente 360 por contraparte: CFDI, pagos, saldos, situación en listas y documentos en una sola tarjeta (1.6.17)."},{"type":"item","state":"✅","text":"Detector de FACTURAS ESPERADAS: el proveedor recurrente (facturó en al menos 3 de los últimos 6 meses) que este mes no ha llegado genera aviso a partir del día 10 y aparece en Dinero (1.6.17)."}]},{"title":"7 bis. Bancos (apartado propio — entra en esta construcción por orden de Paco, 8 nov 22:46)","blocks":[{"type":"item","state":"✅","text":"Archivo de estados de cuenta por BANCO, CUENTA y MES: subes el estado (PDF) y queda guardado y ordenado, sin carpetas a mano; alta libre de bancos y cuentas con atajos para BBVA (cuenta y fondo), Santander (cheques y FONSER1) y Konfio (1.6.19)."},{"type":"item","state":"✅","text":"LECTURA AUTOMÁTICA de cada estado: saldos inicial/final, abonos y cargos y movimientos leídos del documento (formatos BBVA y Santander y genérico por etiquetas). Lo que no se lee con seguridad NO se inventa: el estado queda «a revisar» y se confirman las cifras a mano en la misma pantalla (1.6.19)."},{"type":"item","state":"✅","text":"CADENA DE SALDOS verificada mes a mes (el final de un mes = el inicial del siguiente; si no cuadra, semáforo rojo con la explicación de ambos importes) y SEMÁFORO DE FALTANTES por cuenta (1.6.19)."},{"type":"item","state":"✅","text":"POSICIÓN TOTAL: cuánto hay en cada banco y en total (cuentas y fondos), con su fecha — la foto bancaria completa en una pantalla (1.6.19)."},{"type":"item","state":"✅","text":"Es la base de la conciliación CFDI↔banco (sección 7): la pantalla Dinero consume los movimientos archivados con «Usar movimientos de Bancos» (1.6.19)."}]},{"title":"8. Cumplimiento","blocks":[{"type":"item","state":"✅","text":"Calendario fiscal por RFC (día 17 de provisionales y DIOT, anual del 31 de marzo, caducidad de la e.firma, constancias que cumplen 90 días y lo que captures a mano) con semáforo y aviso por correo 3 días antes (1.6.18)."},{"type":"item","state":"✅","text":"IVA del mes estimado por RFC (trasladado y acreditable desde el desglose persistido): la foto fiscal del mes antes de que la arme la contadora (1.6.16, en Salidas)."},{"type":"item","state":"✅","text":"Paquete de defensa por periodo en un clic: XML del mes con índice, validación de listas de cada contraparte y constancias/opiniones vigentes, listo para SAT o banco (1.6.18)."},{"type":"item","state":"✅","text":"Detector de errores y duplicados al revisar lo guardado: folio repetido con otro UUID, receptor que no es ningún perfil y totales que no cuadran con el desglose (1.6.18)."},{"type":"item","state":"✅","text":"Validador de RFC con estructura y fecha (al dar de alta un contribuyente)."},{"type":"item","state":"✅","text":"Reglas de clasificación automática por contraparte/concepto (la categoría se escribe en las facturas al aplicarlas) y aviso de ANOMALÍAS: importe inusual de un proveedor recurrente o posible duplicado aproximado (1.6.18)."}]},{"title":"9. Experiencia de uso","blocks":[{"type":"item","state":"✅","text":"Panel de salud (e.firma y su caducidad, correo, respaldos, vigilancia) y bitácora."},{"type":"item","state":"✅","text":"Botón «PROBAR TODO» (1.7.0, en Operaciones): autodiagnóstico en un clic con un semáforo por prueba — base de datos, correo configurado, listados al día, respaldo y copia externa recientes y caducidad de cada e.firma. La conexión con el SAT NO se prueba a propósito: la disciplina 5002 prohíbe gastar solicitudes en diagnósticos."},{"type":"item","state":"✅","text":"Bitácora de movimientos del sistema. ✅ CLICABLE (1.6.11): cada entrada abre el objeto al que se refiere (el CFDI de una cancelación, el SAT, los respaldos, el archivo). ✅ Filtros por tipo y texto, RESUMEN DE ACTIVIDAD por día y semana y exportación CSV (1.7.0, en Operaciones); ✅ registro de accesos del invitado y de su configuración (1.7.0, en Ajustes)."},{"type":"item","state":"✅","text":"Semáforos verde/ámbar/rojo en todo el sistema, con fila de semáforos abriendo el Resumen (1.6.11)."},{"type":"item","state":"✅","text":"Sonidos discretos configurables por evento (éxito, aviso, alerta, error) con interruptor general y elección por evento en Ajustes (cableados en 1.6.11)."},{"type":"item","state":"✅","text":"Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente (1.6.11)."},{"type":"item","state":"✅","text":"Acciones directas en tarjetas CFDI (ver, descargar XML, abrir PDF, copiar UUID, imprimir) y arrastrar y soltar para importar en cualquier pantalla; «Descargar ahora» por RFC; buscador global que también ejecuta acciones (1.6.11)."},{"type":"item","state":"✅","text":"PacoSAT instalable en el móvil (PWA) (1.7.0): manifiesto, icono y service worker que guarda la portada para abrir sin red; las pantallas ya eran adaptativas y la navegación funciona en pantallas pequeñas."},{"type":"item","state":"✅","text":"MODO OFFLINE (1.7.0): la app abre sin conexión (portada en caché) y la pantalla «Sin conexión» consulta la copia local CIFRADA (AES-GCM con clave del dispositivo) y de solo lectura de los ÚLTIMOS 3 MESES (CFDI con su desglose, saldos por cobrar/pagar, facturas esperadas, antigüedad de listados y posición bancaria), siempre con el sello «estás viendo datos de las HH:MM». Los informes clave de esos 3 meses (resumen mensual e IVA estimado) se pregeneran en el servidor dentro del paquete sin conexión; la copia se refresca pulsando «Sincronizar ahora la copia sin conexión» en la pantalla «Sin conexión». Lo que no puede salir (la descarga de un RFC) queda EN COLA como intención y se ejecuta una sola vez al volver la conexión. El XML/PDF individual se abre offline si quedó en la caché reciente; el archivo histórico completo vive en el NAS."},{"type":"item","state":"✅","text":"Acceso en casa sin internet (1.7.0): el mismo proxy del NAS puede servir un nombre local (o la IP) con idéntica autenticación — el procedimiento quedó documentado en DESPLIEGUE.md; sin red en absoluto, manda la copia sin conexión."},{"type":"item","state":"✅","text":"Preguntas en lenguaje normal sobre los propios datos, calculadas 100 % en local (1.7.0, pantalla «Preguntas»): cuánto me deben, cuánto debo, el IVA estimado de un mes, qué vence esta semana y totales por RFC/periodo. Sin salir del dispositivo."},{"type":"item","state":"✅","text":"Escala (1.7.0, mejora nº 10): sincronización por diferencias con revisión por registro y lápidas de borrado (la app solo copia lo que cambió), paginación del archivo de facturas (desde la 1.6.11) y cobertura calculada sobre índices en memoria."},{"type":"item","state":"✅","text":"Sello en el pie: «PacoSAT {versión} · Modificado el {fecha} a las {hora} · Creado por Paco Iglesias» (la fecha de modificación la aporta el servidor y se omite en modo local sin servidor); en Ajustes, los mismos datos como ficha (versión, autor, creación y última modificación de la copia)."}]},{"title":"9 bis. Principios de experiencia (regla de diseño de Paco)","blocks":[{"type":"item","state":"✅","text":"INTUITIVO (aplicado en 1.6.11 y revisado en la 1.7.0): lenguaje llano; cada término del SAT explicado en una línea; botones con verbos claros («Descargar ahora», «Solicitar este hueco»); ninguna pantalla sin siguiente paso visible."},{"type":"item","state":"✅","text":"PROACTIVO (pantalla «Hoy en PacoSAT» en 1.6.11 y revisión final en la 1.7.0): el sistema habla primero — pantalla de inicio «HOY EN PacoSAT» con el resumen del día, los pendientes con semáforo y el SIGUIENTE PASO sugerido; avisos antes de que las cosas venzan o se rompan, no después."},{"type":"item","state":"✅","text":"AMIGABLE (aplicado en 1.6.11 y revisado en la 1.7.0): mensajes en tono cercano y claro; estados vacíos que enseñan qué hacer; errores que dicen qué pasó y cómo se arregla, sin códigos crípticos."},{"type":"item","state":"✅","text":"ÚTIL (aplicado en 1.6.11 y revisado en la 1.7.0): cada pantalla termina en una acción posible; nada de información que no lleve a ninguna parte."}]},{"title":"10. Seguridad y privacidad","blocks":[{"type":"item","state":"✅","text":"Todo corre en el NAS de Paco, tras su túnel y su contraseña; los datos no salen salvo al SAT (descargas con e.firma) y al correo que él configure."},{"type":"item","state":"✅","text":"CSP estricta sin unsafe-inline (1.6.9): la política autoriza por huella SHA-256 los únicos bloques de estilo y script de la copia; el servidor calcula la misma política desde el archivo servido."},{"type":"item","state":"✅","text":"La e.firma vive solo en la carpeta protegida; el SAT se contacta únicamente por el Web Service oficial, con disciplina 5002."},{"type":"item","state":"✅","text":"Acceso invitado de SOLO LECTURA (1.7.0): credencial separada (entrada por /invitado), el servidor rechaza cualquier escritura, desactivado por defecto, con bitácora de accesos, consultas e intentos bloqueados visible en Ajustes."}]},{"title":"Fuera de alcance (decidido por Paco)","blocks":[{"type":"item","state":"","text":"Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT)."}]},{"title":"Cierre del proyecto","blocks":[{"type":"item","state":"✅","text":"**VERSIÓN ACTUAL: 1.7.3** — hotfix «toast is not defined» (9 nov 2026): los fragmentos nuevos llamaban a siete ayudantes que nunca se definieron en ningún fragmento — toast() (36 llamadas en Centro de salidas, Dinero, Cumplimiento, Bancos, Constancias…), fieldWrap() (20), showDialog() y closeDialog() (los diálogos propios de Bancos y del acceso de invitado), previousMonthKey(), money() y satApiBlob() — y cada llamada moría con ReferenceError: Paco lo vio en producción («toast is not defined») y los catch que avisaban con toast() enmascaraban el error verdadero. La 1.7.3 los define en ui.part y sat-ui.part apoyándose en las piezas que ya existían (announce(), field(), el <dialog> compartido, el formato de amount(), satApi()), sin reescribir ninguna llamada, y boot.test.mjs gana la regresión que ejecuta el bloque generado y afirma que los siete existen y funcionan. La 1.7.2 fue el hotfix de arranque (9 nov 2026): el render inicial se movió al final del bloque generado, a capacidades-ui.part, el último fragmento; hasta la 1.7.1 vivía a mitad del bloque (al final de workflows.part) y moría por zona muerta (TDZ) al leer satData/satToken, declarados después: la carga se abortaba, la preparación del almacenamiento nunca corría y la app nacía con el Resumen en esqueleto y Centro SAT en blanco. **La 1.7.2 sustituyó al paquete 1.7.1, que NO debe desplegarse.** La 1.7.1 sumaba el blindaje anti-5002 (PR #25) y el arreglo de la preparación del almacenamiento en Safari (PR #26) sobre la 1.7.0 (PR #24, commit 6486841, desplegada en el NAS el 9 nov 2026). Pendientes del cierre: la prueba del SAT de ventana corta (una sola vez), el examen de Paco (entrar y agregar el RFC sin ningún aviso) y la prueba de restauración del respaldo."}]}]};
+<script>const PACOSAT_META = {"version":"1.7.4","created":"2026-11-08T13:42:35-06:00"};
+const PACOSAT_CAPACIDADES = {"updated":"9 nov 2026, 13:20 CST","sections":[{"title":"1. Núcleo CFDI","blocks":[{"type":"item","state":"✅","text":"Importación de XML y ZIP con validación, y vinculación de PDF."},{"type":"item","state":"✅","text":"IMPORTACIÓN VISIBLE (1.7.4, pieza 1): ninguna acción larga queda «en silencio»: un panel fijo dice qué se está haciendo con contador real («Procesando X de N» por entradas del ZIP o de la carpeta) y barra de progreso; al terminar una importación grande, el resumen «✓ Procesado» queda FIJO en pantalla hasta cerrarlo (nuevos con desglose emitidos/recibidos y por mes, duplicados, por revisar con el motivo de cada uno y qué hacer, y archivos no procesados con su motivo). «Importar carpeta» está a 2 toques desde Facturas y lee la estructura tipo OneFacture (Emitidos/Recibidos/año/mes) por el mismo pipeline que los sueltos, los ZIP y los paquetes del SAT."},{"type":"item","state":"✅","text":"Visor CFDI profesional: datos completos, conceptos e impuestos, cadena original, Timbre Fiscal, complemento de Pagos 2.0 y representación impresa."},{"type":"item","state":"✅","text":"Vinculación PDF ↔ XML por UUID: el PDF de la factura se lee, se detecta su folio fiscal y se vincula al XML del mismo UUID (con cotejo de RFC); el importe del PDF no se compara con el del XML."},{"type":"item","state":"✅","text":"Línea de tiempo por CFDI y buscador global."},{"type":"item","state":"✅","text":"Mapa de cobertura por periodos y gráfica de estados. (En el anillo de estados, «No encontrado» se suma dentro de «Sin consulta»; el detalle de cada CFDI sí muestra «No encontrado» como estado propio.)"},{"type":"item","state":"✅","text":"Persistencia del desglose fiscal al importar (subtotal, IVA por tasa, IEPS, retenciones, método/forma de pago, uso CFDI, tipo de cambio, serie/folio) con re-parseo histórico: base de la DIOT (1.6.16; la relación de pagos se sumó en la 1.6.17)."},{"type":"item","state":"✅","text":"Detector al importar de duplicados por UUID y de CFDI cuyo RFC no corresponde al expediente; el detector de totales que no cuadran y de folios repetidos con otro UUID actúa sobre lo ya guardado (pantalla Cumplimiento, 1.6.18)."}]},{"title":"2. Descarga y vigilancia del SAT","blocks":[{"type":"item","state":"✅","text":"Descarga masiva oficial por Web Service con e.firma (SDK), por RFC y dirección (emitidos/recibidos), con paquetes ZIP."},{"type":"item","state":"✅","text":"Perfiles multi-RFC con cadencia propia (Mano Fil: cada 360 min, ventana 7 días, ambas direcciones)."},{"type":"item","state":"✅","text":"Vigilancia de estado de cada CFDI cada 24 h y de cancelaciones."},{"type":"item","state":"✅","text":"Escudo de criterios 5002 (ronda anti-5002, 1.7.1): ningún criterio (ventana con los segundos exactos + dirección + RFC + tipo de solicitud) se envía dos veces en la vida. El libro de criterios es permanente y toda ruta lo consulta antes de pedir; la única salida al SAT, `sendSatRequest`, rechaza con guardia 409 cualquier criterio con usos previos o marcado agotado, incluidas las intenciones «enviando» que quedaron a medias — la última solicitud idéntica nunca se gasta (ya no hay confirmación posible para repetirla). La salida es siempre la variante de cierre +1 s (el inicio nunca se mueve: no se pierde el primer segundo ni quedan huecos entre ventanas): la descarga programada la aplica sola y la manual la ofrece en un clic. El PLANIFICADOR ensaya cada solicitud sin gastar cupo (mismo código que construye el criterio de verdad) y, si un rango CFDI nuevo supera 31 días, propone pedir primero Metadata. El LIBRO DE CRITERIOS se ve por RFC en Centro SAT (qué se pidió, cuándo, por qué vía y en qué estado quedó: sin usar, usado, quemado 5002 o rescatado). Y si el SAT devuelve un 5002 (por ejemplo, un criterio gastado antes por otra app), el criterio queda marcado quemado con su explicación y el RESCATE asistido prepara la lista de folios pendientes para bajarlos por el portal (canal aparte, hasta 2.000 XML/día); lo que entra por la carpeta vigilada dentro de una ventana quemada la marca «rescatada»."},{"type":"item","state":"✅","text":"Solicitudes Metadata (hasta 1.000.000 de registros ligeros por petición) para reconciliar cobertura (1.6.10): automáticas una al día por RFC y a petición por periodo; los CFDI que el SAT conoce y faltan en XML se listan en Cobertura."},{"type":"item","state":"✅","text":"Recibidos SIN filtro de «solo vigentes», registrando el estado inicial de cada CFDI (1.6.10): el conector ya no envía filtro de estado y el estado inicial llega de los metadatos al detalle del CFDI."},{"type":"item","state":"✅","text":"Blindaje (1.6.15): intención registrada ANTES de enviar («presunto enviado» al arrancar, con aviso), base de datos con synchronous=FULL a prueba de cortes, timeout duro de 60 s en llamadas al SAT con vigilante del ciclo (aviso si un ciclo pasa de 10 minutos), y contador de descargas por paquete con tope 5008: a los 2 intentos la solicitud se cierra en un estado terminal claro con aviso y salida accionable."},{"type":"item","state":"✅","text":"Carpeta vigilada recursiva: todo CFDI que caiga en la carpeta entra solo."},{"type":"item","state":"✅","text":"Solicitudes frecuentes EN UN CLIC (1.6.10) («mes pasado completo», «este trimestre», «este año») sin teclear fechas: menos errores y menos criterios 5002 quemados por un dedo mal puesto."},{"type":"item","state":"✅","text":"AVISO DE SILENCIO **CONFIGURABLE** + MODO DESCANSO CON **INTERRUPTOR ON/OFF** (petición expresa de Paco: visual, práctico e intuitivo): un interruptor grande y visible — general en la pantalla «Hoy» y uno por RFC — para encender/apagar la vigilancia en un toque, con el estado siempre claro («Vigilando» / «Descansando») y opción de «descansar hasta el [fecha]». Si pasan los días que Paco defina sin entrar ningún CFDI, aviso de posible fallo; durante el descanso no hay descargas ni avisos, y al reanudar el sistema se pone al día solo. El sistema también descansa."},{"type":"item","state":"✅","text":"Respaldo cifrado programado en el servidor."},{"type":"item","state":"✅","text":"Respaldo partido por RFC y año (1.7.0): desde la pantalla de Respaldos se genera manualmente un .faro por ejercicio y empresa, restaurable por partes con el restaurador de siempre."},{"type":"item","state":"✅","text":"COPIA EXTERNA AUTOMÁTICA del respaldo (la copia en sí desde 1.6.4; la vigilancia de antigüedad desde 1.6.15): cada respaldo cifrado se copia solo a un segundo destino FUERA del NAS, con semáforo de antigüedad de la copia en Salud y alerta si lleva más de 7 días sin copia buena o si la copia falla — si el NAS muriera, el archivo fiscal no muere con él. **DESTINO DECIDIDO (Paco, 8 nov 2026): Google Drive, vía Cloud Sync nativo del NAS; la carpeta secundaria del respaldo vive dentro de la carpeta sincronizada (p. ej. «PacoSAT Respaldos»). A Drive solo llega el archivo CIFRADO.**"}]},{"title":"3. Listas negras (art. 69, 69-B y 69-B Bis)","blocks":[{"type":"item","state":"✅","text":"(Fuera de la app) Cruce manual de contrapartes contra los 16 listados oficiales guardados en ~/workspace/pacosat-listas-sat/, hecho el 8 nov 2026: todas las contrapartes con XML en el expediente salieron limpias. Dentro de la app, la vigilancia continua trabaja con el catálogo de 10 listados de la viñeta siguiente."},{"type":"item","state":"✅","text":"Descarga automática y continua de los listados oficiales desde Datos Abiertos del SAT: 69-B y 69-B Bis desde el blob oficial del minisitio y los supuestos del art. 69 desde el paquete oficial del SAT en datos.gob.mx; los supuestos CSD sin efectos y Reducción art. 74 se cargan por archivo (sin CSV oficial verificado) y el motor los trata igual (1.6.13)."},{"type":"item","state":"✅","text":"Padrón de empresas a monitorear (clientes/proveedores): se puebla solo desde los CFDI; alta uno por uno y carga masiva por Excel o CSV (Nombre, RFC, Nota) leída en la propia app (1.6.13)."},{"type":"item","state":"✅","text":"Validador manual por RFC y por nombre/razón social (69, 69-B o ambas), en tiempo real contra todos los listados cargados (1.6.13)."},{"type":"item","state":"✅","text":"Alertas ante CUALQUIER transición (entradas, salidas, desvirtuados; también la línea base inicial) con la exposición por empresa (importes y CFDI en riesgo), alarma si un listado lleva >48 h sin actualizarse y panel «cómo voy» con semáforo por contraparte (1.6.13)."},{"type":"item","state":"✅","text":"Constancia de validación por empresa (fecha, listados consultados y resultado) como documento imprimible, listo para imprimir o guardar como PDF desde el diálogo de impresión (1.6.13)."}]},{"title":"4. e.firma y RFC que maneja","blocks":[{"type":"item","state":"✅","text":"Perfil de Mano Fil (MFI6212158B4) con su e.firma en la carpeta protegida del NAS. (Su e.firma caducó el 30-oct-2024: el perfil existe y sus archivos están en la carpeta protegida, pero no puede descargar del SAT hasta renovarla.)"},{"type":"item","state":"✅","text":"Subida de e.firma DESDE LA APP por RFC (.cer/.key + contraseña en pantalla), con validación inmediata de pareja, RFC y caducidad antes de guardar nada; queda en la carpeta protegida del servidor y se reactiva sola tras reiniciar; nunca a la base de datos ni a los respaldos (1.6.12)."},{"type":"item","state":"🔄","text":"Multi-RFC ampliado: Mano Fil, Elemental Denim (EDE1902136T2), el RFC personal de Paco y los de Rodrigo y José Javier — la arquitectura lo admite sin cambios desde la 1.4; cada perfil se activa cuando aporten su e.firma (la e.firma se coloca en persona, nunca por chat)."}]},{"title":"5. Constancias y opiniones (solo SAT)","blocks":[{"type":"item","state":"🔄","text":"Descarga mensual automática, activable por RFC, de la constancia de situación fiscal y la opinión de cumplimiento del SAT (1.6.14): el programador mensual, el archivo en Expedientes con fecha de emisión, el semáforo y las alertas están construidos y probados, y la subida manual del PDF funciona hoy y vale igual; la conexión con el portal del SAT (puerto `satDocFetch`) aún no está conectada en la instalación, así que la descarga automática queda registrada como intento fallido con su alerta hasta que se conecte ese puerto."},{"type":"item","state":"✅","text":"Semáforo de vigencia (verde <60 días, ámbar 60–90, rojo >90) y alerta si una renovación falla o vence (1.6.14)."},{"type":"item","state":"🔄","text":"Envío por correo de la constancia/opinión recién descargada a uno o varios destinatarios (día, hora y destinatarios se configuran en la pantalla de Constancias): el envío sale automáticamente tras una descarga con éxito, así que depende de que el puerto de descarga del portal esté conectado (ver la primera viñeta de esta sección). No hay envío programado independiente de la descarga."}]},{"title":"6. Salidas: reportes, impresión, exportaciones y correo","blocks":[{"type":"item","state":"✅","text":"Representación impresa del CFDI y paquete mensual básico para la contadora."},{"type":"item","state":"✅","text":"Centro de reportes por periodo y contraparte, con la identidad de la app (pantalla «Salidas», imprimible y en CSV) (1.6.16)."},{"type":"item","state":"✅","text":"Impresión cuidada de las pantallas con reporte e impresión por lote de CFDI en un solo documento desde la selección de Facturas (1.6.16, sobre la representación completa de la 1.6.7)."},{"type":"item","state":"✅","text":"Exportaciones CSV con formato (reporte del mes, base DIOT con desglose) y programables vía los informes automáticos (1.6.16). (No se genera Excel/XLSX: el Excel solo se *lee* en la carga masiva del padrón de Listas.)"},{"type":"item","state":"✅","text":"EXPORTACIÓN COMPLETA LEGIBLE en un clic: todos los XML y PDF con su índice, en carpetas por RFC y año, sin depender del formato de respaldo — tus datos son tuyos y salen enteros cuando quieras (1.6.16)."},{"type":"item","state":"✅","text":"Comparativas AÑO CONTRA AÑO por contraparte: de un vistazo, quién te factura más que antes y qué gasto se está disparando (1.6.16)."},{"type":"item","state":"✅","text":"Correo DENTRO de la app: enviar CFDI, reportes y constancias con adjuntos del expediente, bitácora de envíos visible y botón de correo de prueba (el de prueba llegó en la 1.6.11) (1.6.16)."},{"type":"item","state":"✅","text":"Informe mensual AUTOMÁTICO a Nora: paquete del mes construido en el servidor (índice, XML, documentos, base DIOT con el desglose fiscal persistido, novedades de listas negras y PPD del mes), con día, hora y destinatarios configurables y envío manual inmediato (1.6.16)."},{"type":"item","state":"✅","text":"IVA DEL MES estimado por RFC (trasladado y acreditable desde el desglose; lo que no tiene desglose se señala para reprocesarlo, nunca se estima a ojo) y re-parseo histórico de los XML guardados sin contactar al SAT (1.6.16, mejora nº 6)."},{"type":"item","state":"✅","text":"CIERRE DE MES GUIADO: lista de comprobación paso a paso con semáforo por paso y acceso directo a donde se resuelve cada punto (1.6.16)."},{"type":"item","state":"✅","text":"Resumen semanal ejecutivo por correo (lunes): CFDI nuevos, solicitudes terminadas, cambios en listas y avisos de la semana, enlazado con la bitácora (1.6.16)."},{"type":"item","state":"✅","text":"CORREO-RESUMEN DE AVISOS (1.7.4, pieza 2): los avisos ya NUNCA llegan de uno en uno (se acabó la avalancha de un correo por factura): como mucho sale UN correo con el resumen de lo que espera en el Centro de Avisos, con cadencia configurable (diario / solo lunes / solo cuando haya algo importante / sin correo). El informe mensual a Nora y el resumen semanal de arriba son correos aparte, con su propio interruptor."}]},{"title":"7. Dinero","blocks":[{"type":"item","state":"✅","text":"Conciliación bancaria CFDI ↔ movimientos: cruceta por importe y fecha con pagado/no pagado, pagos sin factura y facturas sin pago — desde CSV (1.6.17) o desde los estados archivados de Bancos (1.6.19)."},{"type":"item","state":"✅","text":"Cuentas por cobrar Y por pagar: relación pagos↔facturas persistida (los documentos relacionados de cada complemento de pago viajan en el desglose), saldos con antigüedad por contraparte (1.6.17). Los avisos de esos saldos los genera desde la 1.7.4 el Centro de Avisos (sección 7 ter): con el calendario de pago de cada contraparte, preguntando antes y con textos veraces."},{"type":"item","state":"✅","text":"Alerta ROJA de cancelación post-pago: CFDI cancelado que ya tenía pagos registrados escala el aviso del monitor y nombra el importe pagado; la pantalla Dinero los lista en rojo (1.6.17). Desde la 1.7.4 el aviso vive en el Centro de Avisos («Lo que está mal», severidad alta) y solo viaja dentro del correo-resumen."},{"type":"item","state":"✅","text":"Expediente 360 por contraparte: CFDI, pagos, saldos, situación en listas y documentos en una sola tarjeta (1.6.17)."},{"type":"item","state":"✅","text":"Detector de FACTURAS ESPERADAS: el proveedor recurrente (facturó en al menos 3 de los últimos 6 meses) que este mes no ha llegado genera aviso a partir del día 10 y aparece en Dinero (1.6.17)."}]},{"title":"7 bis. Bancos (apartado propio — entra en esta construcción por orden de Paco, 8 nov 22:46)","blocks":[{"type":"item","state":"✅","text":"Archivo de estados de cuenta por BANCO, CUENTA y MES: subes el estado (PDF) y queda guardado y ordenado, sin carpetas a mano; alta libre de bancos y cuentas con atajos para BBVA (cuenta y fondo), Santander (cheques y FONSER1) y Konfio (1.6.19)."},{"type":"item","state":"✅","text":"LECTURA AUTOMÁTICA de cada estado: saldos inicial/final, abonos y cargos y movimientos leídos del documento (formatos BBVA y Santander y genérico por etiquetas). Lo que no se lee con seguridad NO se inventa: el estado queda «a revisar» y se confirman las cifras a mano en la misma pantalla (1.6.19)."},{"type":"item","state":"✅","text":"CADENA DE SALDOS verificada mes a mes (el final de un mes = el inicial del siguiente; si no cuadra, semáforo rojo con la explicación de ambos importes) y SEMÁFORO DE FALTANTES por cuenta (1.6.19)."},{"type":"item","state":"✅","text":"POSICIÓN TOTAL: cuánto hay en cada banco y en total (cuentas y fondos), con su fecha — la foto bancaria completa en una pantalla (1.6.19)."},{"type":"item","state":"✅","text":"Es la base de la conciliación CFDI↔banco (sección 7): la pantalla Dinero consume los movimientos archivados con «Usar movimientos de Bancos» (1.6.19)."}]},{"title":"7 ter. Centro de Avisos (1.7.4, pieza 2 — punto 17 del alcance)","blocks":[{"type":"item","state":"✅","text":"PANEL DENTRO DEL SISTEMA: resumen en «Hoy» y pantalla propia «Avisos» con contador en la navegación. Tres clases siempre visibles: LO QUE ESTÁ MAL, LO QUE FALTA y LO QUE EL SISTEMA NECESITA DE TI. Cada aviso dice qué pasa, por qué importa, el importe cuando aplica, y lleva un botón que conduce a donde se arregla."},{"type":"item","state":"✅","text":"SOLVENTAR DE VERDAD: «Ya lo corregí» re-comprueba la condición real (si sigue mal, explica qué falta; si ya está bien, cierra el aviso y lo guarda en el historial visible). «Marcar pagado a mano» exige nota (fecha/medio, ej. «pagado con Konfío») y queda en bitácora; cuando el pago se enlaza de verdad (complemento o conciliación), el aviso se cierra solo."},{"type":"item","state":"✅","text":"PREGUNTAR ANTES: ningún cobro/pago se declara atrasado sin preguntar. Al vencer el calendario nace la pregunta («Ayer fue el día de pago de X y no consta el pago. ¿Ya pagaron?») con «Sí, ya pagó» / «No, aún no»; solo el «No» crea el aviso de atraso, y con texto veraz: «no consta el pago en PacoSAT», nunca «sin pagar»."},{"type":"item","state":"✅","text":"CALENDARIO POR CONTRAPARTE: día de pago del mes y/o plazo en días en la ficha de cada contraparte (visible también en el Expediente 360 de Dinero). Antes de vencer: «en plazo», sin aviso. Chedraui viene precargado con su día 10. Sin calendario, manda la regla general (30 días por pagar / 60 por cobrar)."},{"type":"item","state":"✅","text":"LÍNEA BASE SILENCIOSA: importar un histórico (o la primera evaluación sobre datos ya existentes) crea la foto inicial SIN avisos retroactivos ni correos: lo histórico vive solo en el panel, marcado «línea base»."},{"type":"item","state":"✅","text":"SOLICITUDES INTERNAS: lo que el sistema necesita (p. ej. el estado de cuenta de Konfío de un mes para conciliar) se pide DENTRO del panel, con la subida en la propia tarjeta; al aportarlo se procesa y los avisos que dependían de él se solventan solos. Nada se pide por correo."}]},{"title":"8. Cumplimiento","blocks":[{"type":"item","state":"✅","text":"Calendario fiscal por RFC (día 17 de provisionales y DIOT, anual del 31 de marzo, caducidad de la e.firma, constancias que cumplen 90 días y lo que captures a mano) con semáforo y aviso por correo 3 días antes (1.6.18)."},{"type":"item","state":"✅","text":"IVA del mes estimado por RFC (trasladado y acreditable desde el desglose persistido): la foto fiscal del mes antes de que la arme la contadora (1.6.16, en Salidas)."},{"type":"item","state":"✅","text":"Paquete de defensa por periodo en un clic: XML del mes con índice, validación de listas de cada contraparte y constancias/opiniones vigentes, listo para SAT o banco (1.6.18)."},{"type":"item","state":"✅","text":"Detector de errores y duplicados al revisar lo guardado: folio repetido con otro UUID, receptor que no es ningún perfil y totales que no cuadran con el desglose (1.6.18)."},{"type":"item","state":"✅","text":"Validador de RFC con estructura y fecha (al dar de alta un contribuyente)."},{"type":"item","state":"✅","text":"Reglas de clasificación automática por contraparte/concepto (la categoría se escribe en las facturas al aplicarlas) y aviso de ANOMALÍAS: importe inusual de un proveedor recurrente o posible duplicado aproximado (1.6.18)."}]},{"title":"9. Experiencia de uso","blocks":[{"type":"item","state":"✅","text":"Panel de salud (e.firma y su caducidad, correo, respaldos, vigilancia) y bitácora."},{"type":"item","state":"✅","text":"Botón «PROBAR TODO» (1.7.0, en Operaciones): autodiagnóstico en un clic con un semáforo por prueba — base de datos, correo configurado, listados al día, respaldo y copia externa recientes y caducidad de cada e.firma. La conexión con el SAT NO se prueba a propósito: la disciplina 5002 prohíbe gastar solicitudes en diagnósticos."},{"type":"item","state":"✅","text":"Bitácora de movimientos del sistema. ✅ CLICABLE (1.6.11): cada entrada abre el objeto al que se refiere (el CFDI de una cancelación, el SAT, los respaldos, el archivo). ✅ Filtros por tipo y texto, RESUMEN DE ACTIVIDAD por día y semana y exportación CSV (1.7.0, en Operaciones); ✅ registro de accesos del invitado y de su configuración (1.7.0, en Ajustes)."},{"type":"item","state":"✅","text":"Semáforos verde/ámbar/rojo en todo el sistema, con fila de semáforos abriendo el Resumen (1.6.11)."},{"type":"item","state":"✅","text":"Sonidos discretos configurables por evento (éxito, aviso, alerta, error) con interruptor general y elección por evento en Ajustes (cableados en 1.6.11)."},{"type":"item","state":"✅","text":"Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente (1.6.11)."},{"type":"item","state":"✅","text":"Acciones directas en tarjetas CFDI (ver, descargar XML, abrir PDF, copiar UUID, imprimir) y arrastrar y soltar para importar en cualquier pantalla; «Descargar ahora» por RFC; buscador global que también ejecuta acciones (1.6.11)."},{"type":"item","state":"✅","text":"PacoSAT instalable en el móvil (PWA) (1.7.0): manifiesto, icono y service worker que guarda la portada para abrir sin red; las pantallas ya eran adaptativas y la navegación funciona en pantallas pequeñas."},{"type":"item","state":"✅","text":"MODO OFFLINE (1.7.0): la app abre sin conexión (portada en caché) y la pantalla «Sin conexión» consulta la copia local CIFRADA (AES-GCM con clave del dispositivo) y de solo lectura de los ÚLTIMOS 3 MESES (CFDI con su desglose, saldos por cobrar/pagar, facturas esperadas, antigüedad de listados y posición bancaria), siempre con el sello «estás viendo datos de las HH:MM». Los informes clave de esos 3 meses (resumen mensual e IVA estimado) se pregeneran en el servidor dentro del paquete sin conexión; la copia se refresca pulsando «Sincronizar ahora la copia sin conexión» en la pantalla «Sin conexión». Lo que no puede salir (la descarga de un RFC) queda EN COLA como intención y se ejecuta una sola vez al volver la conexión. El XML/PDF individual se abre offline si quedó en la caché reciente; el archivo histórico completo vive en el NAS."},{"type":"item","state":"✅","text":"Acceso en casa sin internet (1.7.0): el mismo proxy del NAS puede servir un nombre local (o la IP) con idéntica autenticación — el procedimiento quedó documentado en DESPLIEGUE.md; sin red en absoluto, manda la copia sin conexión."},{"type":"item","state":"✅","text":"Preguntas en lenguaje normal sobre los propios datos, calculadas 100 % en local (1.7.0, pantalla «Preguntas»): cuánto me deben, cuánto debo, el IVA estimado de un mes, qué vence esta semana y totales por RFC/periodo. Sin salir del dispositivo."},{"type":"item","state":"✅","text":"Escala (1.7.0, mejora nº 10): sincronización por diferencias con revisión por registro y lápidas de borrado (la app solo copia lo que cambió), paginación del archivo de facturas (desde la 1.6.11) y cobertura calculada sobre índices en memoria."},{"type":"item","state":"✅","text":"Sello en el pie: «PacoSAT {versión} · Modificado el {fecha} a las {hora} · Creado por Paco Iglesias» (la fecha de modificación la aporta el servidor y se omite en modo local sin servidor); en Ajustes, los mismos datos como ficha (versión, autor, creación y última modificación de la copia)."}]},{"title":"9 bis. Principios de experiencia (regla de diseño de Paco)","blocks":[{"type":"item","state":"✅","text":"INTUITIVO (aplicado en 1.6.11 y revisado en la 1.7.0): lenguaje llano; cada término del SAT explicado en una línea; botones con verbos claros («Descargar ahora», «Solicitar este hueco»); ninguna pantalla sin siguiente paso visible."},{"type":"item","state":"✅","text":"PROACTIVO (pantalla «Hoy en PacoSAT» en 1.6.11 y revisión final en la 1.7.0): el sistema habla primero — pantalla de inicio «HOY EN PacoSAT» con el resumen del día, los pendientes con semáforo y el SIGUIENTE PASO sugerido; avisos antes de que las cosas venzan o se rompan, no después."},{"type":"item","state":"✅","text":"AMIGABLE (aplicado en 1.6.11 y revisado en la 1.7.0): mensajes en tono cercano y claro; estados vacíos que enseñan qué hacer; errores que dicen qué pasó y cómo se arregla, sin códigos crípticos."},{"type":"item","state":"✅","text":"ÚTIL (aplicado en 1.6.11 y revisado en la 1.7.0): cada pantalla termina en una acción posible; nada de información que no lleve a ninguna parte."}]},{"title":"10. Seguridad y privacidad","blocks":[{"type":"item","state":"✅","text":"Todo corre en el NAS de Paco, tras su túnel y su contraseña; los datos no salen salvo al SAT (descargas con e.firma) y al correo que él configure."},{"type":"item","state":"✅","text":"CSP estricta sin unsafe-inline (1.6.9): la política autoriza por huella SHA-256 los únicos bloques de estilo y script de la copia; el servidor calcula la misma política desde el archivo servido."},{"type":"item","state":"✅","text":"La e.firma vive solo en la carpeta protegida; el SAT se contacta únicamente por el Web Service oficial, con disciplina 5002."},{"type":"item","state":"✅","text":"Acceso invitado de SOLO LECTURA (1.7.0): credencial separada (entrada por /invitado), el servidor rechaza cualquier escritura, desactivado por defecto, con bitácora de accesos, consultas e intentos bloqueados visible en Ajustes."}]},{"title":"Fuera de alcance (decidido por Paco)","blocks":[{"type":"item","state":"","text":"Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT)."}]},{"title":"Cierre del proyecto","blocks":[{"type":"item","state":"✅","text":"**VERSIÓN ACTUAL: 1.7.4** — piezas 1 y 2 del alcance de reestructura (9 nov 2026): importación visible con contador real y resumen fijo «✓ Procesado», «Importar carpeta» en 2 toques, y el Centro de Avisos completo (tres clases, solventar con re-comprobación, calendario por contraparte con Chedraui día 10 precargado, preguntar antes, línea base silenciosa, solicitudes internas y correo reducido a un solo resumen configurable). Construida en árbol de trabajo con `npm run check` en verde (22 suites, incluida la nueva avisos.test.mjs) y capturas locales; pendiente de la revisión de Paco y del resto de piezas del alcance antes de fusionar y desplegar. La 1.7.3 fue el hotfix «toast is not defined» (9 nov 2026): los fragmentos nuevos llamaban a siete ayudantes que nunca se definieron en ningún fragmento — toast() (36 llamadas en Centro de salidas, Dinero, Cumplimiento, Bancos, Constancias…), fieldWrap() (20), showDialog() y closeDialog() (los diálogos propios de Bancos y del acceso de invitado), previousMonthKey(), money() y satApiBlob() — y cada llamada moría con ReferenceError: Paco lo vio en producción («toast is not defined») y los catch que avisaban con toast() enmascaraban el error verdadero. La 1.7.3 los define en ui.part y sat-ui.part apoyándose en las piezas que ya existían (announce(), field(), el <dialog> compartido, el formato de amount(), satApi()), sin reescribir ninguna llamada, y boot.test.mjs gana la regresión que ejecuta el bloque generado y afirma que los siete existen y funcionan. La 1.7.2 fue el hotfix de arranque (9 nov 2026): el render inicial se movió al final del bloque generado, a capacidades-ui.part, el último fragmento; hasta la 1.7.1 vivía a mitad del bloque (al final de workflows.part) y moría por zona muerta (TDZ) al leer satData/satToken, declarados después: la carga se abortaba, la preparación del almacenamiento nunca corría y la app nacía con el Resumen en esqueleto y Centro SAT en blanco. **La 1.7.2 sustituyó al paquete 1.7.1, que NO debe desplegarse.** La 1.7.1 sumaba el blindaje anti-5002 (PR #25) y el arreglo de la preparación del almacenamiento en Safari (PR #26) sobre la 1.7.0 (PR #24, commit 6486841, desplegada en el NAS el 9 nov 2026). Pendientes del cierre: la prueba del SAT de ventana corta (una sola vez), el examen de Paco (entrar y agregar el RFC sin ningún aviso) y la prueba de restauración del respaldo."}]}]};
 'use strict';
 const $ = id => document.getElementById(id);
 const KB = 1024;
@@ -708,7 +734,7 @@ async function inflate(raw, size) {
     return out;
   } finally { await reader.cancel().catch(() => {}); }
 }
-async function* zipEntries(raw, extension) {
+async function* zipEntries(raw, extension, meta) {
   check(raw.length >= 22 && raw.length <= 80 * MB, 'ZIP vacío o mayor de 80 MB.');
   const d = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   const u16 = p => d.getUint16(p, true);
@@ -721,6 +747,21 @@ async function* zipEntries(raw, extension) {
   check(end >= Math.max(0, raw.length - 65557), 'El ZIP no contiene un directorio válido.');
   const count = u16(end + 10);
   let p = u32(end + 16);
+  /* Total de entradas que casan con la extensión, contado en una
+     primera pasada por el directorio (sin descomprimir nada): es el
+     «N» del contador «procesando X de N» de la importación visible
+     (1.7.4, pieza 1). El meta es opcional y no cambia la lectura. */
+  if (meta) {
+    let scan = p, matched = 0;
+    const scanLimit = p + u32(end + 12);
+    for (let i = 0; i < count && scan + 46 <= scanLimit && u32(scan) === 0x02014b50; i++) {
+      const len = u16(scan + 28);
+      const name = new TextDecoder().decode(raw.subarray(scan + 46, scan + 46 + len)).split(/[\\/]/).at(-1);
+      if (extension.test(name)) matched++;
+      scan += 46 + len + u16(scan + 30) + u16(scan + 32);
+    }
+    meta.total = matched;
+  }
   const centralStart = p;
   const limit = p + u32(end + 12);
   check(u16(end + 4) === 0 && u16(end + 6) === 0 && u16(end + 8) === count && count <= 12000 &&
@@ -752,8 +793,8 @@ async function* zipEntries(raw, extension) {
     yield { name, content };
   }
 }
-async function* zipXml(raw) {
-  for await (const entry of zipEntries(raw, /\.xml$/i)) yield { name: entry.name, xml: entry.content };
+async function* zipXml(raw, meta) {
+  for await (const entry of zipEntries(raw, /\.xml$/i, meta)) yield { name: entry.name, xml: entry.content };
 }
 /* Paquetes Metadata del SAT (1.6.10): el ZIP trae un .txt con los
    registros separados por tuberías, no XML. Mismo lector, otra extensión. */
@@ -793,6 +834,7 @@ async function decryptBackup(file, password) {
 }
 
 const screens = {
+  avisos: ['Centro de Avisos', 'Lo que está mal, lo que falta y lo que el sistema necesita de ti: todo dentro, solventable.', 'Actualizar avisos'],
   operations: ['Centro de operaciones', 'Pendientes, conciliación y estado por contribuyente.', 'Actualizar estado'],
   home: ['Resumen fiscal', 'Facturas y documentos de tus contribuyentes en un solo lugar.', 'Importar XML / ZIP'],
   invoices: ['Facturas CFDI', 'Busca por nombre, RFC o UUID y abre el comprobante sin perder tus filtros.', 'Importar XML / ZIP'],
@@ -1486,7 +1528,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
+  const content = ({ home, avisos: avisosScreen, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();
@@ -1664,7 +1706,7 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  const blocks = [banner, todayPanel(), trafficStrip(), metrics, kpiRow(selection), monthlyChart()];
+  const blocks = [banner, todayPanel(), avisosHoyPanel(), trafficStrip(), metrics, kpiRow(selection), monthlyChart()];
   if (lastImport) {
     /* Tarjeta persistente de la última importación (UX-13). */
     const card = panel('Última importación');
@@ -1746,6 +1788,14 @@ function invoiceScreen() {
   const state = select([['', 'Todos los estados SAT'], ['Vigente', 'Vigente'], ['Cancelado', 'Cancelado'], ['efos', 'Con 69-B'], ['none', 'Sin consulta']], invoiceState, 'Estado SAT');
   const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
   const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
+  /* Importar carpeta en 2 toques desde Facturas (1.7.4, pieza 1):
+     lee la estructura tipo OneFacture (Emitidos/Recibidos/año/mes) por
+     el mismo pipeline que los sueltos, los ZIP y los paquetes SAT. */
+  const folderButton = action('Importar carpeta', async () => {
+    await requireStorage();
+    check(people.length, 'Agrega primero un RFC.');
+    if (!importing) $('folder').click();
+  }, undefined, 'folder');
   /* Selección múltiple (UX-14): descargar varios XML en un ZIP. */
   const zipButton = action('Descargar seleccionados (ZIP)', async () => {
     const entries = [];
@@ -1829,7 +1879,7 @@ function invoiceScreen() {
   type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
   state.onchange = () => { invoiceState = state.value; invoicePage = 0; update(); };
   order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
-  controls.append(search, period, type, state, order, exportButton, zipButton, printButton);
+  controls.append(search, period, type, state, order, exportButton, folderButton, zipButton, printButton);
   list.append(tabs, controls, chips, result);
   update();
   return [list];
@@ -2258,16 +2308,33 @@ async function chooseImport() {
   check(people.length, 'Agrega un RFC antes de importar.');
   if (!importing) $('incoming').click();
 }
-async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) {
+async function importBatch(source, requiredRfc = scope, { quiet = false, fromFolder = false } = {}) {
   if (importing) return;
   try { await requireStorage(); }
   catch (error) { if (quiet) throw error; announce(error.message, true); return; }
-  const files = [...source].filter(file => /\.(xml|zip)$/i.test(file.name));
-  if (!files.length) return announce('Elige archivos .xml o .zip con CFDI.', true);
+  /* Modo carpeta (1.7.4, pieza 1): la estructura tipo OneFacture
+     (Emitidos/Recibidos/año/mes) entra por el MISMO pipeline; lo que no
+     es XML/ZIP no se descarta en silencio: se anota como «no procesado»
+     con su motivo y sale en el resumen fijo. */
+  const allFiles = [...source];
+  const files = allFiles.filter(file => /\.(xml|zip)$/i.test(file.name));
+  const skipped = fromFolder
+    ? allFiles.filter(file => !/\.(xml|zip)$/i.test(file.name)).slice(0, 20)
+        .map(file => ({ name: file.name.slice(0, 180), reason: 'No es un XML ni un ZIP de CFDI: no se procesó.' }))
+    : [];
+  if (!files.length) return announce(fromFolder && skipped.length
+    ? 'La carpeta no trae XML ni ZIP de CFDI (' + skipped.length + ' archivos de otro tipo, sin procesar).'
+    : 'Elige archivos .xml o .zip con CFDI.', true);
   if (!people.length) return announce('Agrega primero los RFC que quieres importar.', true);
   importing = true;
   $('primary').disabled = true;
+  /* Indicador global persistente: contador real por entradas (los ZIP
+     suman sus entradas al total en cuanto se abre su directorio). */
+  let totalUnits = files.length, doneUnits = 0;
+  if (!quiet) activityStart(fromFolder ? 'Importando carpeta de comprobantes' : 'Importando comprobantes', totalUnits);
   let added = 0, duplicates = 0, review = 0, scopeRejected = 0;
+  let nuevosEmitidos = 0, nuevosRecibidos = 0;
+  const nuevosPorMes = new Map();
   const dupIds = [];
   const issues = [];
   const pending = new Map();
@@ -2301,6 +2368,10 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
     }
     if (seen.has(row.id)) { duplicates++; if (dupIds.length < 50) dupIds.push(row.id); return; }
     seen.add(row.id);
+    /* Desglose del resumen fijo: dirección y mes de cada nuevo. */
+    if (known.has(row.from.rfc)) nuevosEmitidos++; else if (known.has(row.to.rfc)) nuevosRecibidos++;
+    const monthKey = String(row.date || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(monthKey)) nuevosPorMes.set(monthKey, (nuevosPorMes.get(monthKey) || 0) + 1);
     pending.set(row.id, { row, file: { id: 'xml:' + row.id, blob: new Blob([xml], { type: 'application/xml' }) } });
     pendingSize += xml.length;
     if (pending.size >= 100 || pendingSize >= 12 * MB) await flush();
@@ -2310,28 +2381,48 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
       const file = files[i];
       if (!quiet) announce('Importando ' + (i + 1) + ' de ' + files.length + ' · ' + file.name);
       if (/\.xml$/i.test(file.name)) {
-        if (file.size > 8 * MB) { issue(file.name, new Error('El XML supera 8 MB.')); continue; }
+        if (file.size > 8 * MB) { issue(file.name, new Error('El XML supera 8 MB.')); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
         let xml;
         try { xml = bytes(await file.arrayBuffer()); }
-        catch (error) { issue(file.name, error); continue; }
+        catch (error) { issue(file.name, error); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
         await accept(file.name, xml);
+        doneUnits++;
+        if (!quiet) activityProgress(doneUnits, file.name);
       } else {
-        if (file.size > 80 * MB) { issue(file.name, new Error('El ZIP supera 80 MB.')); continue; }
+        if (file.size > 80 * MB) { issue(file.name, new Error('El ZIP supera 80 MB.')); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
+        /* El ZIP cuenta como UNA unidad hasta abrir su directorio:
+           entonces el total crece con sus entradas XML reales y el
+           contador pasa a ser por comprobante (meta.total). */
+        const meta = {};
         let zip;
-        try { zip = zipXml(bytes(await file.arrayBuffer())); }
-        catch (error) { issue(file.name, error); continue; }
-        let count = 0;
+        try { zip = zipXml(bytes(await file.arrayBuffer()), meta); }
+        catch (error) { issue(file.name, error); doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); continue; }
+        let count = 0, expanded = false;
         while (true) {
           let entry;
           try { entry = await zip.next(); }
           catch (error) { issue(file.name, error); break; }
+          if (!expanded && meta.total) {
+            expanded = true;
+            totalUnits += meta.total - 1;
+            if (!quiet) activitySetTotal(totalUnits);
+          }
           if (entry.done) {
             if (!count) issue(file.name, new Error('El ZIP no contiene CFDI XML.'));
             break;
           }
           count++;
           await accept(entry.value.name, entry.value.xml);
+          doneUnits++;
+          if (!quiet) activityProgress(doneUnits, file.name + ' · ' + entry.value.name);
         }
+        if (expanded && count < meta.total) {
+          /* El ZIP se interrumpió a mitad: el contador cierra el hueco
+             para que la barra termine en el total anunciado. */
+          doneUnits += meta.total - count;
+          if (!quiet) activityProgress(doneUnits, file.name);
+        }
+        if (!expanded) { doneUnits++; if (!quiet) activityProgress(doneUnits, file.name); }
       }
     }
     await flush();
@@ -2347,10 +2438,38 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
         (scopeRejected ? '\n' + scopeRejected + ' archivo(s) no corresponden al RFC seleccionado (' + requiredRfc + ') y quedaron por revisar: cambia el selector a «Todos los RFC» para importarlos.' : '') +
         (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
       if (!review) soundCue('success'); else if (added) soundCue('notice');
+      /* Resumen FIJO (1.7.4, pieza 1): en importaciones grandes, con
+         problemas o con archivos sin procesar, el resultado queda en
+         pantalla hasta que el usuario lo cierra — nada de avisos
+         fugaces para 2.493 comprobantes. */
+      const esGrande = totalUnits >= 10 || review > 0 || skipped.length > 0;
+      if (esGrande) {
+        const lines = [];
+        lines.push(added
+          ? '✓ ' + number.format(added) + ' comprobantes nuevos (' + number.format(nuevosEmitidos) + ' emitidos · ' + number.format(nuevosRecibidos) + ' recibidos).'
+          : 'Sin comprobantes nuevos.');
+        if (nuevosPorMes.size) {
+          const top = [...nuevosPorMes.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 4);
+          lines.push('Por mes: ' + top.map(([mes, n]) => mes + ': ' + number.format(n)).join(' · ') + (nuevosPorMes.size > 4 ? ' · …' : ''));
+        }
+        if (duplicates) lines.push(number.format(duplicates) + ' duplicados: ya estaban en PacoSAT y no se tocaron.');
+        if (review) {
+          lines.push('⚠ ' + number.format(review) + ' por revisar — no entraron. Motivo de los primeros:');
+          for (const item of issues.slice(0, 6)) lines.push('· ' + item.name + ' — ' + item.reason);
+          if (scopeRejected) lines.push(number.format(scopeRejected) + ' no corresponden al RFC seleccionado (' + requiredRfc + '): cambia el selector a «Todos los RFC» y vuelve a importarlos.');
+          lines.push('Qué hacer: corrige el archivo o el RFC indicado y vuelve a importar solo esos; los demás ya están dentro.');
+        }
+        if (skipped.length) {
+          lines.push('Sin procesar (' + skipped.length + '): no son XML ni ZIP de CFDI.');
+          for (const item of skipped.slice(0, 6)) lines.push('· ' + item.name + ' — ' + item.reason);
+        }
+        activityDone('✓ Procesado', lines);
+      } else activityFinish();
     }
     return { added, duplicates, review };
   } catch (error) {
     announce(added + ' comprobantes guardados antes de interrumpir el lote. ' + error.message, true);
+    if (!quiet) activityFail('La importación se interrumpió', added + ' comprobantes quedaron guardados antes de la interrupción. ' + error.message);
     if (quiet) throw error;
   } finally {
     importing = false;
@@ -2855,6 +2974,7 @@ $('inspectFile').onchange = handle(async () => {
   if (file) await viewXml(file, file.name);
 });
 $('primary').onclick = handle(async () => {
+  if (page === 'avisos') { await refreshAvisos(true); render(); return; }
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
   if (page === 'coverage') { await pollSat(); render(); return; }
   if (page === 'settings') { await saveAppSettings(); return; }
@@ -2883,7 +3003,7 @@ function runGlobalSearch() {
      y órdenes cortas («descargar ahora MFI…», «crear respaldo», «ir a
      cobertura») se resuelven antes de tratar el texto como búsqueda. */
   const lower = query.toLocaleLowerCase('es-MX');
-  const screensByWord = [['resumen', 'home'], ['inicio', 'home'], ['hoy', 'home'], ['facturas', 'invoices'], ['cfdi', 'invoices'],
+  const screensByWord = [['resumen', 'home'], ['inicio', 'home'], ['hoy', 'home'], ['avisos', 'avisos'], ['centro de avisos', 'avisos'], ['facturas', 'invoices'], ['cfdi', 'invoices'],
     ['expedientes', 'docs'], ['documentos', 'docs'], ['centro sat', 'sat'], ['descargas', 'sat'], ['vigilancia', 'monitor'],
     ['69-b', 'monitor'], ['operaciones', 'operations'], ['alertas', 'operations'], ['cobertura', 'coverage'], ['huecos', 'coverage'],
     ['respaldos', 'backup'], ['respaldo', 'backup'], ['diot', 'diot'], ['ajustes', 'settings'], ['qué incluye', 'capacidades'], ['capacidades', 'capacidades']];
@@ -2920,9 +3040,8 @@ document.addEventListener('keydown', event => {
   globalSearchInput.select();
 });
 $('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
-for (const id of ['incoming', 'folder']) {
-  $(id).onchange = () => { const files = [...$(id).files]; $(id).value = ''; importBatch(files).catch(error => announce(error.message, true)); };
-}
+$('incoming').onchange = () => { const files = [...$('incoming').files]; $('incoming').value = ''; importBatch(files).catch(error => announce(error.message, true)); };
+$('folder').onchange = () => { const files = [...$('folder').files]; $('folder').value = ''; importBatch(files, scope, { fromFolder: true }).catch(error => announce(error.message, true)); };
 $('restore').onchange = handle(() => {
   const file = $('restore').files[0]; $('restore').value = ''; if (file) return restoreDialog(file);
 });
@@ -3536,6 +3655,9 @@ async function pollSat() {
     satError = error.message;
   } finally {
     satPolling = false;
+    /* La insignia del Centro de Avisos se refresca con el mismo pulso
+       del servidor (1.7.4): sin peticiones extra fuera de este ciclo. */
+    refreshAvisos().catch(() => {});
     if (page === 'sat' && !$('dialog').open && !document.activeElement?.closest('#sat-live')) fillSat();
   }
 }
@@ -4295,11 +4417,20 @@ function counterpartDialog(existing = null) {
     kindSelect.append(option);
   }
   const noteInput = input('text', { value: existing?.note || '', placeholder: 'Nota (opcional)' });
+  /* Calendario de pago (1.7.4, criterio 6): con día de pago y/o plazo,
+     el Centro de Avisos solo pregunta tras vencer ESE calendario;
+     sin calendario manda la regla general (30/60 días). */
+  const payDayInput = input('number', { value: existing?.payDay ?? '', min: '1', max: '31', placeholder: 'Ej. 10' });
+  const payTermsInput = input('number', { value: existing?.payTerms ?? '', min: '0', max: '365', placeholder: 'Ej. 30' });
   dialog(existing ? 'Editar contraparte' : 'Agregar contraparte',
-    [field('Nombre', nameInput), field('RFC', rfcInput), field('Tipo', kindSelect), field('Nota', noteInput)],
+    [field('Nombre', nameInput), field('RFC', rfcInput), field('Tipo', kindSelect), field('Nota', noteInput),
+     field('Día de pago (del mes, opcional)', payDayInput), field('Plazo en días desde la factura (opcional)', payTermsInput),
+     n('p', 'El aviso de cobro/pago de esta contraparte solo nace cuando vence su calendario, y nace preguntando. Vacío = regla general.', 'muted')],
     async () => {
       await satApi('lists/counterparts', { rfc: rfcInput.value.trim().toUpperCase(),
-        name: nameInput.value.trim(), kind: kindSelect.value, note: noteInput.value.trim() });
+        name: nameInput.value.trim(), kind: kindSelect.value, note: noteInput.value.trim(),
+        payDay: payDayInput.value === '' ? null : Number(payDayInput.value),
+        payTerms: payTermsInput.value === '' ? null : Number(payTermsInput.value) });
       await loadLists();
       toast('Contraparte guardada y cruzada con los listados.', 'ok');
     }, existing ? 'Guardar cambios' : 'Agregar y validar');
@@ -4889,6 +5020,21 @@ function counterpart360Panel(paidBy) {
         '⚠ Consta en listados: ' + result.matches.map(match => match.label + ' (' + match.detail + ')').join(' · ') :
         'Sin coincidencias en los listados oficiales cargados.';
     }).catch(() => { listNote.textContent = ''; });
+    /* Calendario de pago de la contraparte (1.7.4, criterio 6): el
+       Centro de Avisos respeta este calendario antes de preguntar por
+       un pago. Se edita en la misma ficha de la contraparte. */
+    const calRow = n('div', undefined, 'traffic-strip');
+    body.append(calRow);
+    if (satToken) satApi('lists').then(data => {
+      const cp = (data.counterparts || []).find(row => row.rfc === rfc);
+      const texto = cp?.payDay ? 'Calendario de pago: día ' + cp.payDay + ' de cada mes' + (cp.payTerms != null ? ' · plazo ' + cp.payTerms + ' días' : '')
+        : cp?.payTerms != null ? 'Calendario de pago: plazo de ' + cp.payTerms + ' días desde la factura'
+        : 'Sin calendario de pago: manda la regla general (30 días por pagar · 60 por cobrar)';
+      calRow.append(statusPill(cp?.payDay || cp?.payTerms != null ? 'ok' : 'dim', texto));
+      const edit = n('button', 'Editar calendario', 'soft small');
+      edit.onclick = () => counterpartDialog(cp || { rfc, name: parties.get(rfc) || '' });
+      calRow.append(edit);
+    }).catch(() => {});
     const seeInvoices = n('button', 'Ver sus CFDI', 'soft');
     seeInvoices.onclick = () => { setInvoiceTerm(rfc); navigate('invoices'); };
     body.append(seeInvoices);
@@ -5754,6 +5900,338 @@ async function splitBackupDialog() {
     announce(made + ' archivos de respaldo generados, uno por RFC y año.');
     soundCue('success');
   }, 'Crear respaldo partido');
+}
+
+/* ===== Indicador de actividad global + Centro de Avisos (1.7.4) =====
+   Pieza 1 (puntos 12 y 16): ninguna acción larga queda «en silencio».
+   Un panel fijo y visible dice QUÉ se está haciendo, con contador real
+   («procesando X de N») y barra; al terminar una importación grande, el
+   resumen «✓ Procesado» queda FIJO en pantalla hasta que el usuario lo
+   cierra: nuevos, duplicados, por revisar y qué hacer con cada problema.
+   Pieza 2 (punto 17): el Centro de Avisos vive en el servidor (NAS): tres
+   clases siempre visibles — LO QUE ESTÁ MAL, LO QUE FALTA y LO QUE EL
+   SISTEMA NECESITA DE TI — con solventar real («Ya lo corregí» re-comprueba;
+   «Marcar pagado a mano» exige nota) y un solo correo-resumen configurable. */
+
+let activityState = null;
+function activityStart(label, total = 0) {
+  activityState = { label, done: 0, total: Math.max(0, total | 0) };
+  const dock = $('activity-dock');
+  dock.hidden = false;
+  $('activity-label').textContent = label;
+  $('activity-detail').textContent = '';
+  activityPaint();
+}
+function activitySetTotal(total) {
+  if (!activityState) return;
+  activityState.total = Math.max(activityState.total, total | 0);
+  activityPaint();
+}
+function activityProgress(done, detail) {
+  if (!activityState) return;
+  activityState.done = Math.max(activityState.done, done | 0);
+  if (detail !== undefined) $('activity-detail').textContent = detail;
+  activityPaint();
+}
+function activityPaint() {
+  if (!activityState) return;
+  const { done, total } = activityState;
+  $('activity-count').textContent = total ? 'Procesando ' + number.format(done) + ' de ' + number.format(total) : '';
+  const bar = $('activity-bar');
+  bar.max = 100;
+  bar.value = total ? Math.min(100, Math.round(done * 100 / total)) : 0;
+  if (!total) bar.removeAttribute('value');
+}
+function activityFinish() {
+  activityState = null;
+  $('activity-dock').hidden = true;
+}
+function activityDone(title, lines) {
+  activityFinish();
+  $('activity-result-title').textContent = title;
+  $('activity-result-text').replaceChildren(...lines.map(line =>
+    typeof line === 'string' ? n('p', line) : line));
+  $('activity-result').hidden = false;
+  $('activity-result').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function activityFail(title, message) {
+  activityFinish();
+  activityDone('⚠ ' + title, [message]);
+}
+$('activity-result-close').onclick = () => { $('activity-result').hidden = true; };
+
+/* ---------- Centro de Avisos ---------- */
+let avisosCache = null;
+let avisosInflight = null;
+let avisosFetchedAt = 0;
+const AVISOS_CLASES = [
+  ['necesita', 'Lo que el sistema necesita de ti', 'alert'],
+  ['mal', 'Lo que está mal', 'x'],
+  ['falta', 'Lo que falta', 'clock']
+];
+const AVISOS_ENLACES = {
+  dinero: ['dinero', 'Ir a Dinero'], bancos: ['bancos', 'Ir a Bancos'],
+  lists: ['lists', 'Ir a Listas negras'], monitor: ['monitor', 'Ir a Vigilancia SAT'],
+  sat: ['sat', 'Ir al Centro SAT'], backup: ['backup', 'Ir a Respaldos'],
+  docs: ['docs', 'Ir a Expedientes'], operaciones: ['operations', 'Ir a Operaciones'],
+  cumplimiento: ['cumplimiento', 'Ir a Cumplimiento']
+};
+function avisosDisponibles() { return typeof satToken !== 'undefined' && Boolean(satToken); }
+async function refreshAvisos(force = false) {
+  if (!avisosDisponibles()) { paintAvisosBadge(0); return null; }
+  if (avisosInflight) return avisosInflight;
+  if (!force && avisosCache && Date.now() - avisosFetchedAt < 20000) return avisosCache;
+  avisosInflight = (async () => {
+    try {
+      avisosCache = await satApi('notices');
+      avisosFetchedAt = Date.now();
+      paintAvisosBadge(avisosCache.counts.total);
+      paintAvisosHoy();
+      if (page === 'avisos') render();
+    } catch { /* sin servidor alcanzable: no se inventa ningún conteo */ }
+    avisosInflight = null;
+    return avisosCache;
+  })();
+  return avisosInflight;
+}
+function paintAvisosBadge(count) {
+  const badge = $('avisos-badge');
+  if (!badge) return;
+  badge.hidden = !count;
+  badge.textContent = count ? number.format(count) : '';
+}
+function avisoFecha(ts) {
+  return new Date(ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+}
+function avisoMeta(aviso) {
+  const bits = [];
+  if (aviso.nombre) bits.push(aviso.nombre + (aviso.contraparte ? ' · ' + aviso.contraparte : ''));
+  else if (aviso.contraparte) bits.push(aviso.contraparte);
+  if (aviso.importe) bits.push('$' + money(aviso.importe));
+  if (aviso.baseline) bits.push('línea base (histórico)');
+  bits.push('desde el ' + avisoFecha(aviso.creado));
+  return bits.join(' · ');
+}
+function avisoPill(aviso) {
+  if (aviso.estado === 'por-confirmar') return statusPill('warn', 'Por confirmar');
+  if (aviso.severidad === 'alta') return statusPill('bad', 'Importante');
+  if (aviso.severidad === 'baja') return statusPill('dim', 'Menor');
+  return statusPill('warn', 'Atención');
+}
+/* Panel en «Hoy»: el resumen del Centro, siempre a la vista. */
+function avisosHoyPanel() {
+  const wrap = panel('Centro de Avisos', 'Lo que está mal, lo que falta y lo que el sistema necesita de ti. Todo se solventa aquí dentro; el correo es solo un resumen.');
+  const box = n('div');
+  box.id = 'avisos-hoy-body';
+  wrap.append(box);
+  if (!avisosDisponibles()) {
+    box.append(n('p', 'El Centro de Avisos vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para verlo y solventarlo. En esta copia local tus facturas siguen en Dinero.', 'muted'));
+  } else {
+    box.append(n('p', 'Consultando tus avisos…', 'muted'));
+    refreshAvisos();
+    if (avisosCache) paintAvisosHoy();
+  }
+  return wrap;
+}
+function paintAvisosHoy() {
+  const box = $('avisos-hoy-body');
+  if (!box || !avisosCache) return;
+  const { counts } = avisosCache;
+  box.replaceChildren();
+  if (!counts.total) {
+    box.append(n('p', '✓ Nada pendiente: no hay avisos abiertos. Cuando algo necesite tu atención aparecerá aquí y en la pantalla Avisos.', 'ok-text'));
+    return;
+  }
+  const strip = n('div', undefined, 'traffic-strip');
+  for (const [clase, etiqueta] of AVISOS_CLASES)
+    if (counts[clase]) strip.append(statusPill(clase === 'mal' ? 'bad' : 'warn', etiqueta + ': ' + number.format(counts[clase])));
+  if (counts.porConfirmar) strip.append(statusPill('warn', number.format(counts.porConfirmar) + ' por confirmar'));
+  box.append(strip);
+  const primeros = avisosCache.avisos.slice(0, 3);
+  for (const aviso of primeros) {
+    const row = n('div', undefined, 'cp-row');
+    row.append(avisoPill(aviso), n('span', aviso.titulo));
+    box.append(row);
+  }
+  const go = action('Ver y solventar avisos', () => navigate('avisos'), 'soft', 'arrow');
+  box.append(go);
+}
+/* Pantalla propia del Centro. */
+function avisosScreen() {
+  const wrap = n('div');
+  if (!avisosDisponibles()) {
+    wrap.append(panel('Centro de Avisos', 'El Centro vive en el servidor de tu casa (el NAS), donde corre el motor de avisos. Abre PacoSAT desde el servidor para verlo; en esta copia local puedes seguir trabajando con tus facturas en Dinero.'));
+    return [wrap];
+  }
+  if (!avisosCache) {
+    const loading = panel('Centro de Avisos', 'Consultando el servidor…');
+    wrap.append(loading);
+    refreshAvisos(true);
+    return [wrap];
+  }
+  const data = avisosCache;
+  /* Resumen por clases: las tres, siempre visibles. */
+  const resumen = panel('Tus avisos', data.counts.total
+    ? number.format(data.counts.total) + ' abiertos. Los de «línea base» son la foto inicial de tu histórico: están en el panel, sin correos ni atrasos retroactivos.'
+    : 'Sin avisos abiertos. Todo en orden.');
+  const strip = n('div', undefined, 'traffic-strip');
+  for (const [clase, etiqueta] of AVISOS_CLASES)
+    strip.append(statusPill(data.counts[clase] ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
+      etiqueta + ': ' + number.format(data.counts[clase] || 0)));
+  const update = n('button', 'Actualizar ahora', 'soft small');
+  update.onclick = () => refreshAvisos(true);
+  strip.append(update);
+  resumen.append(strip);
+  wrap.append(resumen);
+  wrap.append(avisosConfigPanel(data.config));
+  for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
+    const deClase = data.avisos.filter(aviso => aviso.clase === clase);
+    if (!deClase.length) continue;
+    const section = panel(etiqueta + ' (' + number.format(deClase.length) + ')');
+    for (const aviso of deClase) section.append(avisoCard(aviso));
+    wrap.append(section);
+  }
+  if (data.historial.length) {
+    const history = panel('Historial · ya solventado', 'Lo que se corrigió queda registrado aquí, con su nota.');
+    for (const aviso of data.historial) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill('ok', '✓ ' + avisoFecha(aviso.resuelto)),
+        n('span', aviso.titulo + (aviso.resolucion ? ' — ' + aviso.resolucion : '')));
+      history.append(row);
+    }
+    wrap.append(history);
+  }
+  return [wrap];
+}
+function avisosConfigPanel(config) {
+  const el = panel('Correo-resumen', 'Los avisos ya NO llegan de uno en uno: como mucho, un solo correo con el resumen. El detalle completo vive aquí, en el Centro.');
+  const form = n('div', undefined, 'sat-form');
+  const correo = n('select');
+  for (const [value, label] of [['diario', 'Un resumen cada día'], ['semanal', 'Un resumen cada lunes'], ['graves', 'Solo cuando haya algo importante'], ['no', 'Sin correo (solo el panel)']]) {
+    const option = n('option', label); option.value = value;
+    if (config.correo === value) option.selected = true;
+    correo.append(option);
+  }
+  const hora = input('number', { min: '0', max: '23', value: String(config.hora ?? 9) });
+  const save = n('button', 'Guardar', 'soft');
+  save.onclick = async () => {
+    try {
+      avisosCache.config = await satApi('notices/config', { correo: correo.value, hora: Number(hora.value) });
+      toast('Preferencia del correo-resumen guardada.', 'ok');
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  form.append(fieldWrap('Correo-resumen', correo), fieldWrap('Hora de envío', hora), save);
+  el.append(form);
+  return el;
+}
+function avisoCard(aviso) {
+  const card = n('div', undefined, 'aviso-card');
+  const head = n('div', undefined, 'aviso-head');
+  head.append(avisoPill(aviso), n('strong', aviso.titulo));
+  card.append(head);
+  if (aviso.detalle) card.append(n('p', aviso.detalle));
+  card.append(n('p', avisoMeta(aviso), 'muted'));
+  const actions = n('div', undefined, 'traffic-strip');
+  if (aviso.kind === 'saldo' && aviso.estado === 'por-confirmar') {
+    const si = n('button', aviso.direccion === 'cobrar' ? 'Sí, ya pagó' : 'Sí, ya se pagó', 'primary small');
+    si.onclick = () => avisoMarkPaidDialog(aviso);
+    const no = n('button', 'No, aún no', 'soft small');
+    no.onclick = () => avisoConfirmNo(aviso);
+    actions.append(si, no);
+  } else if (aviso.kind === 'saldo') {
+    const paid = n('button', 'Marcar pagado a mano', 'primary small');
+    paid.onclick = () => avisoMarkPaidDialog(aviso);
+    const fixed = n('button', 'Ya lo corregí', 'soft small');
+    fixed.onclick = () => avisoResolve(aviso);
+    actions.append(paid, fixed);
+  } else {
+    if (aviso.kind === 'solicitud-estado') actions.append(avisoUploadButton(aviso));
+    const fixed = n('button', 'Ya lo corregí', 'soft small');
+    fixed.onclick = () => avisoResolve(aviso);
+    actions.append(fixed);
+  }
+  const enlace = AVISOS_ENLACES[aviso.enlace];
+  if (enlace) {
+    const go = n('button', enlace[1], 'soft small');
+    go.onclick = () => navigate(enlace[0]);
+    actions.append(go);
+  }
+  card.append(actions);
+  return card;
+}
+async function avisoAfterChange(message) {
+  toast(message, 'ok');
+  soundCue('success');
+  await refreshAvisos(true);
+  render();
+}
+function avisoMarkPaidDialog(aviso) {
+  const nota = input('text', { placeholder: 'Ej. Pagado con Konfío el 8 de noviembre' });
+  const hoy = new Date();
+  const fecha = input('date', { value: hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0') });
+  dialog('Marcar pagado a mano',
+    [n('p', 'Vas a dar por pagado «' + aviso.titulo + '». Queda registrado en la bitácora con tu nota: si mañana llega el complemento de pago, PacoSAT lo enlaza igual.'),
+     field('Fecha del pago', fecha), field('Nota (obligatoria): medio y detalle', nota)],
+    async () => {
+      check(nota.value.trim().length >= 4, 'Escribe la nota del pago: medio y detalle (ej. «Pagado con Konfío»).');
+      await satApi('notices/answer', { id: aviso.id, respuesta: 'si', nota: nota.value.trim(), fecha: fecha.value });
+      await avisoAfterChange('Pago registrado a mano. El aviso quedó en el historial.');
+    }, 'Registrar el pago');
+}
+function avisoConfirmNo(aviso) {
+  dialog('Confirmar',
+    [n('p', aviso.direccion === 'cobrar'
+      ? 'Confirmas que ' + (aviso.nombre || 'la contraparte') + ' aún NO ha pagado. El aviso pasará a «Lo que está mal» como saldo vencido: en PacoSAT no consta el pago.'
+      : 'Confirmas que aún NO se ha pagado. El aviso pasará a «Lo que está mal» como saldo vencido: en PacoSAT no consta el pago.')],
+    async () => {
+      await satApi('notices/answer', { id: aviso.id, respuesta: 'no' });
+      await avisoAfterChange('Aviso de atraso creado en «Lo que está mal».');
+    }, 'Sí, aún no');
+}
+async function avisoResolve(aviso) {
+  try {
+    const result = await satApi('notices/resolve', { id: aviso.id });
+    if (result.ok) { await avisoAfterChange('Comprobado: ya está bien. Aviso cerrado y guardado en el historial.'); return; }
+    dialog('Todavía falta algo',
+      [n('p', 'PacoSAT lo volvió a comprobar y aún no está solventado:'),
+       n('p', result.falta || 'La condición del aviso sigue presente.', 'error-text'),
+       n('p', 'Cuando lo corrijas, vuelve a pulsar «Ya lo corregí» y lo verificamos otra vez.')],
+      async () => {}, 'Entendido');
+  } catch (error) { toast(error.message, 'error'); }
+}
+/* Solicitud interna (criterio 8): el estado que falta se sube AQUÍ, en
+   la propia tarjeta; al aportarlo se procesa y el aviso se solventa. */
+function avisoUploadButton(aviso) {
+  const holder = n('span');
+  const btn = n('button', 'Subir el estado aquí', 'primary small');
+  btn.onclick = async () => {
+    try {
+      const banks = await satApi('banks');
+      const solicitud = aviso.solicitud || {};
+      const account = (banks.accounts || []).find(row =>
+        row.bank.toLocaleLowerCase('es-MX') === String(solicitud.banco || '').toLocaleLowerCase('es-MX') &&
+        (row.missing || []).includes(solicitud.mes));
+      check(account, 'No encontré la cuenta de ' + (solicitud.banco || 'ese banco') + ' con ese mes faltante: súbelo desde Bancos.');
+      const form = n('div', undefined, 'sat-form');
+      const file = input('file', { accept: 'application/pdf' });
+      const up = n('button', 'Subir y procesar', 'primary small');
+      up.onclick = async () => {
+        try {
+          check(file.files?.[0], 'Elige el PDF del estado de cuenta.');
+          activityStart('Procesando el estado de ' + solicitud.banco + ' de ' + solicitud.mes, 1);
+          const content = encode64(new Uint8Array(await file.files[0].arrayBuffer()));
+          await satApi('banks/statements', { accountId: account.id, month: solicitud.mes, content });
+          activityProgress(1, 'Estado archivado y leído.');
+          activityDone('✓ Estado recibido', ['El estado de ' + solicitud.banco + ' de ' + solicitud.mes + ' quedó archivado y leído. Los avisos que dependían de él se re-comprueban solos.']);
+          await avisoAfterChange('Estado aportado: la solicitud se solventó.');
+        } catch (error) { activityFail('No se pudo procesar el estado', error.message); toast(error.message, 'error'); }
+      };
+      form.append(fieldWrap('PDF del estado · ' + solicitud.mes, file), up);
+      holder.replaceChildren(form);
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  holder.append(btn);
+  return holder;
 }
 
 /* Qué incluye PacoSAT (1.6.9): pantalla generada en build desde la

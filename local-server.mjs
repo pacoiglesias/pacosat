@@ -203,31 +203,50 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
        de la mejora nº 1. Tabla aparte para no interferir con la fila
        del paquete importado. */
     CREATE TABLE IF NOT EXISTS package_attempts (job INTEGER NOT NULL, remoteId TEXT NOT NULL,
-      attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (job, remoteId));`);
+      attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (job, remoteId));
+    /* Centro de Avisos (1.7.4, pieza 2): los avisos viven DENTRO del
+       sistema, en tres clases (mal / falta / necesita), con estado
+       «por-confirmar» para cobros y pagos, historial de solventados y
+       bitácora de acciones. El correo deja de ser por aviso: como
+       mucho sale UN resumen (digest) y la columna correo marca qué
+       avisos ya entraron en un resumen enviado. */
+    CREATE TABLE IF NOT EXISTS avisos (id INTEGER PRIMARY KEY, ref TEXT NOT NULL UNIQUE,
+      kind TEXT NOT NULL DEFAULT '', clase TEXT NOT NULL DEFAULT 'falta',
+      estado TEXT NOT NULL DEFAULT 'abierto', severidad TEXT NOT NULL DEFAULT 'media',
+      titulo TEXT NOT NULL DEFAULT '', detalle TEXT NOT NULL DEFAULT '',
+      contraparte TEXT NOT NULL DEFAULT '', nombre TEXT NOT NULL DEFAULT '',
+      importe TEXT NOT NULL DEFAULT '', enlace TEXT NOT NULL DEFAULT '',
+      datos TEXT NOT NULL DEFAULT '{}', baseline INTEGER NOT NULL DEFAULT 0,
+      creado INTEGER NOT NULL DEFAULT 0, actualizado INTEGER NOT NULL DEFAULT 0,
+      resuelto INTEGER, resolucion TEXT NOT NULL DEFAULT '', correo INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS avisos_acciones (id INTEGER PRIMARY KEY, aviso INTEGER NOT NULL,
+      at INTEGER NOT NULL DEFAULT 0, accion TEXT NOT NULL DEFAULT '', nota TEXT NOT NULL DEFAULT '');
+    /* Pagos marcados a mano (1.7.4): «Sí, ya pagó» con nota obligatoria
+       cuenta como pago enlazado para el saldo, sin tocar el CFDI. */
+    CREATE TABLE IF NOT EXISTS manual_payments (uuid TEXT PRIMARY KEY, at INTEGER NOT NULL DEFAULT 0,
+      nota TEXT NOT NULL DEFAULT '', importe TEXT NOT NULL DEFAULT '');`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
-    if (!mail) return false;
-    /* Alerta ROJA de cancelación post-pago (1.6.17): si el CFDI
-       cancelado tenía pagos vinculados, el aviso se escala y nombra
-       el importe pagado: es el caso que exige actuar ya. */
+    /* Cancelación post-pago (1.6.17 → 1.7.4): ya NO sale un correo
+       directo. Entra como alerta interna y el Centro de Avisos la
+       espeja en «Lo que está mal» con severidad alta; el correo, si
+       acaso, la llevará dentro del resumen (criterio 3 del punto 17).
+       Si el CFDI cancelado tenía pagos vinculados, el texto lo nombra:
+       es el caso que exige actuar ya. */
     const paid = moneyPaidBy().get(item.id) || 0n;
     const wasPaid = paid > 0n;
-    await mail.transport.sendMail({ from: displayFrom(mail.from), to: mail.recipient,
-      subject: wasPaid ? 'PacoSAT · ALERTA ROJA: CFDI cancelado DESPUÉS de pagado' : 'PacoSAT · CFDI cancelado detectado',
-      text: 'El SAT reportó como cancelado el folio ' + item.id + '. Emisor: ' + item.emitter + '. Receptor: ' + item.receiver + '.' +
-        (wasPaid ? ' ATENCIÓN: este CFDI tenía pagos registrados por $' + moneyText(paid) + ' (la relación de pagos está en la pantalla Dinero). ' +
-          'Un CFDI cancelado tras cobrarse/pagarse exige revisión inmediata con tu contadora.' : ''),
-      messageId: '<pacosat-cancelado-' + item.id.toLowerCase() + '@pacosat.local>' });
-    db.prepare('INSERT INTO mail_sends(at,recipients,subject,kind,ok,error) VALUES (?,?,?,?,1,\'\')')
-      .run(now(), mail.recipient, wasPaid ? 'ALERTA ROJA: CFDI cancelado DESPUÉS de pagado' : 'CFDI cancelado detectado', 'monitor');
+    queueAlert('cancellation', 'cancel:' + item.id,
+      wasPaid ? 'PacoSAT · ALERTA ROJA: CFDI cancelado DESPUÉS de pagado' : 'PacoSAT · CFDI cancelado detectado',
+      'El SAT reportó como cancelado el folio ' + item.id + '. Emisor: ' + item.emitter + '. Receptor: ' + item.receiver + '.' +
+        (wasPaid ? ' ATENCIÓN: este CFDI tenía pagos registrados por $' + moneyShow(paid) + ' (la relación de pagos está en la pantalla Dinero). ' +
+          'Un CFDI cancelado tras cobrarse/pagarse exige revisión inmediata con tu contadora.' : ''), now());
     return true;
   }, notifyEfos: async alert => {
-    if (!mail) return false;
-    await mail.transport.sendMail({ from: displayFrom(mail.from), to: mail.recipient,
-      subject: 'PacoSAT · Nuevo RFC en el listado 69-B',
-      text: 'El RFC ' + alert.rfc + ' apareció en el listado oficial del artículo 69-B con la situación: ' + alert.statuses.join(', ') +
-        '. Es emisor o receptor de CFDI de tu expediente. Revisa los comprobantes relacionados en Vigilancia SAT.',
-      messageId: '<pacosat-69b-' + alert.rfc.toLowerCase() + '-' + alert.statuses.join('-').toLowerCase().replaceAll(' ', '-') + '@pacosat.local>' });
+    /* 69-B (1.7.4): también al Centro, sin correo individual. */
+    queueAlert('efos', 'efos:' + alert.rfc + ':' + alert.statuses.join(','),
+      'PacoSAT · Nuevo RFC en el listado 69-B',
+      'El RFC ' + alert.rfc + ' apareció en el listado oficial del artículo 69-B con la situación: ' + alert.statuses.join(', ') +
+        '. Es emisor o receptor de CFDI de tu expediente. Revisa los comprobantes relacionados en Vigilancia SAT.', now());
     return true;
   }, ...monitorOptions });
   const host = new URL(origin).host;
@@ -239,6 +258,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      migración va aquí, junto a la creación del esquema. */
   if (!db.prepare('PRAGMA table_info(records)').all().some(row => row.name === 'rev'))
     db.exec('ALTER TABLE records ADD COLUMN rev INTEGER NOT NULL DEFAULT 0');
+  /* Calendario de pago por contraparte (1.7.4, criterio 6): día de
+     pago del mes (payDay) y/o plazo en días desde la factura
+     (payTerms). Migración guardada, como la de records.rev. */
+  const counterpartCols = db.prepare('PRAGMA table_info(counterparts)').all();
+  if (!counterpartCols.some(row => row.name === 'payDay'))
+    db.exec('ALTER TABLE counterparts ADD COLUMN payDay INTEGER');
+  if (!counterpartCols.some(row => row.name === 'payTerms'))
+    db.exec('ALTER TABLE counterparts ADD COLUMN payTerms INTEGER');
   const insertRecord = db.prepare('INSERT OR IGNORE INTO records(store,id,value,data,mime,rev) VALUES (?,?,?,?,?,?)');
   let recordRev = 0;
   try { recordRev = Number(JSON.parse(getState('records-rev') || '0')) || 0; } catch { recordRev = 0; }
@@ -259,6 +286,13 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   const servedBuildModified = buildModified;
   const getSetting = key => db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || '';
   const setSetting = (key, value) => db.prepare('INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
+  /* Ejemplo precargado del criterio 6 (una sola vez): Chedraui paga
+     los días 10 — si su contraparte ya existe sin calendario, nace
+     con el día 10. Si Paco lo cambia o lo borra después, se respeta. */
+  if (!getState('avisos:seed-calendario')) {
+    db.prepare('UPDATE counterparts SET payDay=10 WHERE rfc=? AND payDay IS NULL').run('TCH850701RM1');
+    setState('avisos:seed-calendario', '1');
+  }
   const deleteSetting = key => db.prepare('DELETE FROM settings WHERE key=?').run(key);
   const SETTING_ACCENTS = ['', 'azul', 'teal', 'violeta', 'burdeos', 'ambar', 'rosa', 'grafito'];
   const cleanSettingName = value => String(value ?? '').replace(/[<>"'\\\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
@@ -684,7 +718,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           now() - (Number(getState('backup:secondaryOk') || 0) || startedAt) > 7 * DAY,
         verify: (() => { try { return JSON.parse(getState('backup:verify') || 'null'); } catch { return null; } })() },
       coverage: computeCoverage(),
-      criteriaBook: criteriaBook()
+      criteriaBook: criteriaBook(),
+      avisos: (() => { try {
+        const row = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN estado='por-confirmar' THEN 1 ELSE 0 END) AS porConfirmar FROM avisos WHERE estado<>'solventado'").get();
+        return { total: row?.total || 0, porConfirmar: row?.porConfirmar || 0 };
+      } catch { return { total: 0, porConfirmar: 0 }; } })()
     };
   }
 
@@ -1512,18 +1550,59 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       db.prepare('UPDATE alert_state SET alerted=1 WHERE key=?').run(key);
     }
   }
+  /* Correo-resumen del Centro de Avisos (1.7.4, criterio 3): NUNCA
+     más un correo por aviso. sendAlerts conserva su nombre y su lugar
+     en el ciclo, pero ahora sincroniza el Centro y, como mucho, manda
+     UN correo con el resumen de avisos abiertos no-línea-base aún no
+     resumidos, según la cadencia elegida (diario / semanal-lunes /
+     solo graves / sin correo). Las alertas internas (tabla alerts)
+     quedan como fuente del espejo del Centro; ya no se envían de una
+     en una. El informe mensual a Nora y el resumen semanal ejecutivo
+     de Informes son correos APARTE, con su propio interruptor. */
   async function sendAlerts(time) {
+    avisosSync(time);
     if (!mail) return;
+    const config = avisosConfig();
+    if (config.correo === 'no') return;
+    const mx = mxParts(time);
+    if (mx.hour < config.hora) return;
+    const pendientes = db.prepare("SELECT * FROM avisos WHERE estado<>'solventado' AND baseline=0 AND correo=0 ORDER BY creado").all();
+    if (!pendientes.length) return;
+    const graves = pendientes.filter(aviso => aviso.severidad === 'alta');
+    const lastDay = getState('avisos:digest-day');
+    let incluir = null;
+    if (config.correo === 'diario' && lastDay !== day(time)) incluir = pendientes;
+    else if (config.correo === 'semanal' && mx.weekday === 1 && lastDay !== day(time)) incluir = pendientes;
+    else if (config.correo === 'graves' && graves.length) incluir = graves;
+    if (!incluir || !incluir.length) return;
     const active = mail;
-    const items = db.prepare('SELECT * FROM alerts WHERE due<=? AND sent IS NULL ORDER BY id LIMIT 10').all(time);
-    for (const item of items) {
-      db.prepare('UPDATE alerts SET due=? WHERE id=?').run(time + 15 * MIN, item.id);
-      try {
-        await active.transport.sendMail({ from: displayFrom(active.from), to: active.recipient, subject: item.subject, text: item.body,
-          messageId: '<pacosat-alerta-' + item.id + '-' + active.instance + '@pacosat.local>' });
-        db.prepare('UPDATE alerts SET sent=?,error=? WHERE id=?').run(now(), '', item.id);
-      } catch { db.prepare('UPDATE alerts SET error=? WHERE id=?').run('El servidor SMTP no aceptó el envío. Revisa la configuración y las credenciales.', item.id); }
+    const claseNombre = { necesita: 'LO QUE EL SISTEMA NECESITA DE TI', mal: 'LO QUE ESTÁ MAL', falta: 'LO QUE FALTA' };
+    const lines = ['Resumen de avisos de PacoSAT · ' + day(time), '',
+      'Tienes ' + incluir.length + ' aviso(s) esperando en el Centro de Avisos de la app.', ''];
+    for (const clase of ['necesita', 'mal', 'falta']) {
+      const deClase = incluir.filter(aviso => aviso.clase === clase);
+      if (!deClase.length) continue;
+      lines.push(claseNombre[clase] + ' (' + deClase.length + '):');
+      for (const aviso of deClase.slice(0, 15)) {
+        lines.push('· ' + aviso.titulo + (aviso.importe ? ' — $' + importeShow(aviso.importe) : '') +
+          (aviso.estado === 'por-confirmar' ? ' (por confirmar)' : ''));
+        if (aviso.detalle) lines.push('  ' + String(aviso.detalle).slice(0, 220));
+      }
+      if (deClase.length > 15) lines.push('· …y ' + (deClase.length - 15) + ' más en el panel.');
+      lines.push('');
     }
+    lines.push('Todo se ve y se solventa dentro de PacoSAT, en la pantalla Avisos. Este correo es solo el resumen.');
+    try {
+      await active.transport.sendMail({ from: displayFrom(active.from), to: active.recipient,
+        subject: 'PacoSAT · Resumen de avisos: ' + incluir.length + ' necesitan tu atención',
+        text: lines.join('\n'),
+        messageId: '<pacosat-resumen-' + day(time) + '-' + active.instance + '@pacosat.local>' });
+      const mark = db.prepare('UPDATE avisos SET correo=1 WHERE id=?');
+      for (const aviso of incluir) mark.run(aviso.id);
+      setState('avisos:digest-day', day(time));
+      db.prepare('INSERT INTO mail_sends(at,recipients,subject,kind,ok,error) VALUES (?,?,?,?,1,\'\')')
+        .run(now(), active.recipient, 'Resumen de avisos (' + incluir.length + ')', 'avisos-resumen');
+    } catch { /* sin envío: los avisos quedan sin marcar y el resumen se reintenta en el siguiente ciclo */ }
   }
   /* Aviso de silencio (1.6.10): si el umbral configurable está activo y
      un RFC lleva más días que el umbral sin CFDI recibidos nuevos, se
@@ -1710,6 +1789,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           (profileRfcs.has(rfc) ? 'Propio' : expo ? (expo.receivedCount && expo.issuedCount ? 'Ambos' :
             expo.receivedCount ? 'Proveedor' : 'Cliente') : ''),
         note: reg?.note || '', source: reg ? reg.source : (profileRfcs.has(rfc) ? 'perfil' : 'cfdi'),
+        payDay: reg?.payDay ?? null, payTerms: reg?.payTerms ?? null,
         hits, severity,
         exposure: expo ? { receivedCount: expo.receivedCount, issuedCount: expo.issuedCount,
           received: (expo.receivedCents / 100n).toString() + '.' + String(expo.receivedCents % 100n).padStart(2, '0') } : null };
@@ -1801,6 +1881,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   };
   const moneyText = cents => { const sign = cents < 0n ? '-' : ''; const abs = cents < 0n ? -cents : cents;
     return sign + (abs / 100n).toString() + '.' + String(abs % 100n).padStart(2, '0'); };
+  /* Solo presentación (pulido 1.7.4): el mismo importe con separador
+     de miles, para los textos que lee Paco en los avisos («$343,539.11»
+     en vez de «$343539.11»). El valor GUARDADO no cambia: avisos.importe
+     y los pagos a mano se siguen escribiendo con moneyText, sin agrupar,
+     porque se vuelven a leer como número (centsOf). */
+  const importeShow = text => { const [ent, dec] = String(text ?? '').split('.');
+    return ent.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (dec !== undefined ? '.' + dec : ''); };
+  const moneyShow = cents => importeShow(moneyText(cents));
   function buildMonthlyPackage(monthKey) {
     const invoices = recordInvoices().filter(invoice => String(invoice.date || '').startsWith(monthKey));
     const entries = [];
@@ -1929,6 +2017,239 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
   }
 
+  /* ===== Centro de Avisos (1.7.4, pieza 2 · punto 17) =====
+     El motor que sustituye a los correos sueltos de antigüedad: genera
+     avisos ESTRUCTURADOS dentro del sistema, en tres clases —
+     «mal» (lo que está mal), «falta» (lo que falta) y «necesita» (lo
+     que el sistema necesita de ti) — y los mantiene sincronizados con
+     la realidad: cuando la condición se corrige (llega el pago, el
+     CFDI o el estado), el aviso se solventa solo y queda en el
+     historial. Reglas de Paco (9-nov-2026): textos veraces («no consta
+     el pago en PacoSAT», jamás «sin pagar»), preguntar ANTES de hablar
+     de atraso, calendario de pago por contraparte y línea base
+     silenciosa para el histórico. */
+  function avisosConfig() {
+    let parsed = {};
+    try { parsed = JSON.parse(getSetting('avisos') || '{}'); } catch { parsed = {}; }
+    return { correo: ['diario', 'semanal', 'graves', 'no'].includes(parsed.correo) ? parsed.correo : 'diario',
+      hora: Number.isInteger(parsed.hora) && parsed.hora >= 0 && parsed.hora <= 23 ? parsed.hora : 9 };
+  }
+  function avisoDatos(aviso) { try { return JSON.parse(aviso.datos || '{}'); } catch { return {}; } }
+  function avisoLog(avisoId, accion, nota, time) {
+    db.prepare('INSERT INTO avisos_acciones(aviso,at,accion,nota) VALUES (?,?,?,?)')
+      .run(avisoId, time, accion, String(nota || '').slice(0, 500));
+  }
+  function avisoEnsure(row, time, baseline) {
+    const existing = db.prepare('SELECT * FROM avisos WHERE ref=?').get(row.ref);
+    if (existing) {
+      if (existing.estado !== 'solventado')
+        db.prepare('UPDATE avisos SET titulo=?,detalle=?,importe=?,actualizado=? WHERE id=?')
+          .run(row.titulo, row.detalle, row.importe || '', time, existing.id);
+      return existing;
+    }
+    db.prepare('INSERT INTO avisos(ref,kind,clase,estado,severidad,titulo,detalle,contraparte,nombre,importe,enlace,datos,baseline,creado,actualizado,correo) ' +
+      'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(row.ref, row.kind, row.clase, row.estado, row.severidad, row.titulo, row.detalle,
+        row.contraparte || '', row.nombre || '', row.importe || '', row.enlace || '',
+        JSON.stringify(row.datos || {}), baseline ? 1 : 0, time, time, row.correo ? 1 : 0);
+    const created = db.prepare('SELECT * FROM avisos WHERE ref=?').get(row.ref);
+    avisoLog(created.id, 'creado', row.titulo, time);
+    return created;
+  }
+  function avisoSolve(ref, resolucion, time) {
+    const aviso = db.prepare("SELECT * FROM avisos WHERE ref=? AND estado<>'solventado'").get(ref);
+    if (!aviso) return;
+    db.prepare("UPDATE avisos SET estado='solventado',resuelto=?,resolucion=?,actualizado=? WHERE id=?")
+      .run(time, resolucion, time, aviso.id);
+    avisoLog(aviso.id, 'solventado', resolucion, time);
+  }
+  /* Fecha en que «toca» pagar una factura PPD según el calendario de
+     su contraparte: plazo en días si está fijado; si no, el día de
+     pago del mes (el de la factura o el siguiente); si no hay
+     calendario, la regla histórica (30 días por pagar / 60 por
+     cobrar). Devuelve la clave AAAA-MM-DD comparable con day(time). */
+  function saldoDueKey(balance, cp) {
+    const fecha = String(balance.date || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return '9999-12-31';
+    if (cp && cp.payTerms !== null && cp.payTerms !== undefined)
+      return day(Date.parse(fecha + 'T12:00:00Z') + Number(cp.payTerms) * DAY);
+    if (cp && cp.payDay !== null && cp.payDay !== undefined) {
+      const [y, m] = fecha.split('-').map(Number);
+      const candidate = (yy, mm) => {
+        const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+        return yy + '-' + String(mm).padStart(2, '0') + '-' + String(Math.min(Number(cp.payDay), last)).padStart(2, '0');
+      };
+      let due = candidate(y, m);
+      if (due < fecha) due = candidate(m === 12 ? y + 1 : y, m === 12 ? 1 : m + 1);
+      return due;
+    }
+    return day(Date.parse(fecha + 'T12:00:00Z') + (balance.payable ? 30 : 60) * DAY);
+  }
+  function avisosSync(time) {
+    /* Línea base silenciosa (criterio 4): la primera evaluación de la
+       vida de la base, o cualquier salto de ≥50 facturas entre dos
+       evaluaciones (una importación de histórico), marca lo creado
+       como línea base: vive en el panel, SIN correos y sin que nada
+       nazca ya «vencido» en un resumen. */
+    const first = !getState('avisos:baseline-done');
+    let invoiceCount = 0;
+    try { invoiceCount = db.prepare("SELECT COUNT(*) AS n FROM records WHERE store='invoices'").get().n; } catch { invoiceCount = 0; }
+    const lastCount = Number(getState('avisos:last-count') || 0);
+    const baseline = (first || invoiceCount - lastCount >= 50) ? 1 : 0;
+    const cpMap = new Map(db.prepare('SELECT * FROM counterparts').all().map(row => [row.rfc, row]));
+    const todayKey = day(time);
+    /* (a) Saldos PPD: solo nacen tras vencer el calendario de la
+       contraparte y nacen PREGUNTANDO («por confirmar»). Antes: en
+       plazo, sin aviso. Si el saldo llega a cero, se cierra solo. */
+    for (const balance of moneyBalances()) {
+      const ref = 'saldo:' + balance.id;
+      if (balance.balance <= 0n) { avisoSolve(ref, 'El pago quedó enlazado en PacoSAT: el saldo llegó a cero.', time); continue; }
+      if (balance.method !== 'PPD') continue;
+      const cpRfc = balance.receivable ? balance.to?.rfc : balance.from?.rfc;
+      const cpName = balance.receivable ? (balance.to?.name || '') : (balance.from?.name || '');
+      const due = saldoDueKey(balance, cpMap.get(cpRfc));
+      if (todayKey <= due) continue;
+      /* Si Paco ya confirmó el atraso («No, aún no»), el aviso es
+         suyo: la sincronización no reescribe su título ni su texto. */
+      const previo = db.prepare('SELECT estado FROM avisos WHERE ref=?').get(ref);
+      if (previo && previo.estado === 'abierto') continue;
+      const cobrar = balance.receivable;
+      avisoEnsure({ ref, kind: 'saldo', clase: 'necesita', estado: 'por-confirmar', severidad: 'media',
+        titulo: 'Día de pago ' + (cobrar ? 'de ' : 'a ') + (cpName || cpRfc || 'la contraparte'),
+        detalle: 'El día de pago ' + (cobrar ? 'de ' : 'a ') + (cpName || cpRfc) + ' fue el ' + due +
+          ' y en PacoSAT no consta el pago de $' + moneyShow(balance.balance) + ' (factura del ' + String(balance.date).slice(0, 10) +
+          ', total $' + moneyShow(balance.total) + '). ' + (cobrar ? '¿Ya pagaron?' : '¿Ya se pagó?') +
+          ' Si ya se pagó, confírmalo aquí mismo con la nota (ej. «pagado con Konfío»); si llegó el complemento de pago, enlázalo en Dinero y este aviso se cierra solo.',
+        contraparte: cpRfc || '', nombre: cpName, importe: moneyText(balance.balance), enlace: 'dinero',
+        datos: { direccion: cobrar ? 'cobrar' : 'pagar', uuid: balance.id, vence: due } }, time, baseline);
+    }
+    /* (b) Facturas esperadas que no han llegado (desde el día 10). */
+    if (mxParts(time).day >= 10) for (const item of expectedInvoices(time))
+      avisoEnsure({ ref: 'esperada:' + item.rfc + ':' + item.month, kind: 'esperada', clase: 'falta',
+        estado: 'abierto', severidad: 'baja',
+        titulo: 'Falta la factura esperada de ' + (item.name || item.rfc),
+        detalle: (item.name || item.rfc) + ' facturó en ' + item.monthsActive + ' de los últimos 6 meses, pero en ' + item.month +
+          ' aún no consta ningún CFDI suyo en PacoSAT. Si era un gasto fijo, puede haberse perdido o no haberse emitido.',
+        contraparte: item.rfc, nombre: item.name || '', importe: '', enlace: 'sat',
+        datos: { rfc: item.rfc, month: item.month } }, time, baseline);
+    for (const aviso of db.prepare("SELECT * FROM avisos WHERE kind='esperada' AND estado<>'solventado'").all()) {
+      const datos = avisoDatos(aviso);
+      const arrived = recordInvoices().some(invoice => invoice.kind === 'I' && invoice.from?.rfc === datos.rfc &&
+        String(invoice.date || '').startsWith(datos.month || ''));
+      if (arrived) avisoSolve(aviso.ref, 'Ya consta el CFDI del mes en PacoSAT.', time);
+    }
+    /* (c) Estados de cuenta faltantes (pasados) y su solicitud interna:
+       el sistema PIDE el estado dentro del panel, con subida ahí. */
+    const monthNow = mxParts(time).monthKey;
+    for (const account of banksOverview().accounts) for (const mes of account.missing) {
+      if (mes >= monthNow) continue;
+      avisoEnsure({ ref: 'estado:' + account.id + ':' + mes, kind: 'estado', clase: 'falta',
+        estado: 'abierto', severidad: 'baja',
+        titulo: 'Falta el estado de ' + account.bank + ' de ' + mes,
+        detalle: 'En Bancos no está archivado el estado de ' + account.bank + ' (' + (account.name || 'cuenta') + ') del mes ' + mes +
+          '. Sin él no se cierra la cadena de saldos ni se concilia ese mes.',
+        contraparte: '', nombre: account.bank, importe: '', enlace: 'bancos',
+        datos: { banco: account.bank, mes, accountId: account.id } }, time, baseline);
+      avisoEnsure({ ref: 'solicitud:' + account.id + ':' + mes, kind: 'solicitud-estado', clase: 'necesita',
+        estado: 'abierto', severidad: 'media',
+        titulo: 'Necesito el estado de ' + account.bank + ' de ' + mes,
+        detalle: 'Para conciliar los pagos de ' + mes + ' me falta el estado de ' + account.bank + ' (' + (account.name || 'cuenta') +
+          '). Súbelo aquí mismo, en esta tarjeta: se procesa al momento y los avisos que dependen de él se solventan solos.',
+        contraparte: '', nombre: account.bank, importe: '', enlace: 'bancos',
+        datos: { banco: account.bank, mes, accountId: account.id } }, time, baseline);
+    }
+    for (const aviso of db.prepare("SELECT * FROM avisos WHERE kind IN ('estado','solicitud-estado') AND estado<>'solventado'").all()) {
+      const datos = avisoDatos(aviso);
+      const exists = db.prepare('SELECT 1 AS x FROM bank_statements WHERE accountId=? AND month=?').get(datos.accountId || '', datos.mes || '');
+      if (exists) avisoSolve(aviso.ref, 'El estado pedido ya está archivado en Bancos.', time);
+    }
+    /* (d) Contrapartes que coinciden con listados del SAT. */
+    for (const cp of listsOverview().counterparts) {
+      const ref = 'lista:' + cp.rfc;
+      if (!cp.hits.length) { avisoSolve(ref, 'La contraparte ya no aparece en los listados cruzados.', time); continue; }
+      avisoEnsure({ ref, kind: 'lista', clase: 'mal', estado: 'abierto',
+        severidad: cp.severity === 'bad' ? 'alta' : 'media',
+        titulo: (cp.name || cp.rfc) + ' aparece en listados del SAT',
+        detalle: 'Coincide en: ' + cp.hits.map(hit => hit.label + (hit.detail ? ' (' + hit.detail + ')' : '')).join(' · ') +
+          '. Revisa los comprobantes relacionados antes de seguir operando con esta contraparte.',
+        contraparte: cp.rfc, nombre: cp.name || '', importe: '', enlace: 'lists',
+        datos: { rfc: cp.rfc } }, time, baseline);
+    }
+    /* (e) Espejo de las alertas internas históricas (respaldo, SAT,
+       listados…): cada una se ve UNA vez en el Centro, en su clase.
+       Las de antigüedad PPD y las de factura esperada NO se espejan:
+       las sustituyen los generadores estructurados (a) y (b). */
+    const ESPEJO = { cancellation: ['mal', 'alta', 'monitor'], efos: ['mal', 'alta', 'monitor'],
+      'backup-fail': ['mal', 'alta', 'backup'], 'criteria-5002': ['mal', 'alta', 'sat'],
+      'backup-secondary-fail': ['mal', 'media', 'backup'], 'backup-verify-fail': ['mal', 'media', 'backup'],
+      'backup-external-stale': ['falta', 'media', 'backup'], 'criteria-presumed': ['mal', 'media', 'sat'],
+      'criteria-rescued': ['falta', 'baja', 'sat'], 'download-fail': ['mal', 'media', 'sat'],
+      'package-exhausted': ['mal', 'media', 'sat'], 'job-terminal': ['mal', 'media', 'operaciones'],
+      'list-transition': ['mal', 'media', 'lists'], 'nora-report-fail': ['mal', 'media', 'operaciones'],
+      'weekly-fail': ['mal', 'media', 'operaciones'], 'satdoc-fail': ['mal', 'media', 'docs'],
+      'watch-fail': ['mal', 'media', 'operaciones'], 'watch-incidents': ['mal', 'media', 'operaciones'],
+      'tick-stuck': ['mal', 'media', 'operaciones'],
+      'cert-expiry': ['necesita', 'media', 'sat'], 'fiscal-due': ['necesita', 'media', 'cumplimiento'],
+      'satdoc-mail': ['necesita', 'media', 'docs'],
+      silence: ['falta', 'baja', 'sat'], 'list-stale': ['falta', 'baja', 'lists'], 'satdoc-old': ['falta', 'baja', 'docs'] };
+    for (const alert of db.prepare('SELECT * FROM alerts').all()) {
+      const mapa = ESPEJO[alert.kind];
+      if (!mapa) continue;
+      /* El espejo NO es línea base (es un suceso, no la foto del
+         histórico) y una alerta que ya salió por correo en su día no
+         vuelve a entrar en ningún resumen (correo=1). */
+      avisoEnsure({ ref: 'alerta:' + alert.id, kind: 'general', clase: mapa[0], estado: 'abierto', severidad: mapa[1],
+        titulo: String(alert.subject || '').replace(/^PacoSAT · /, ''), detalle: alert.body || '',
+        contraparte: '', nombre: '', importe: '', enlace: mapa[2], correo: alert.sent ? 1 : 0,
+        datos: { alerta: alert.id, alertaKind: alert.kind } }, time, 0);
+    }
+    if (first) setState('avisos:baseline-done', '1');
+    setState('avisos:last-count', String(invoiceCount));
+  }
+  /* Re-comprobación de «Ya lo corregí»: se verifica la condición REAL
+     que originó el aviso; si sigue presente, se dice qué falta. */
+  function avisoRecheck(aviso) {
+    const datos = avisoDatos(aviso);
+    if (aviso.kind === 'saldo') {
+      const balance = moneyBalances().find(item => item.id === datos.uuid);
+      if (!balance || balance.balance <= 0n) return { ok: true, resolucion: 'El pago quedó enlazado en PacoSAT: el saldo llegó a cero.' };
+      return { ok: false, falta: 'En PacoSAT sigue constando un saldo de $' + moneyShow(balance.balance) +
+        ' sin pago enlazado. Enlaza el complemento de pago en Dinero, concílialo en Bancos o usa «Marcar pagado a mano» con su nota.' };
+    }
+    if (aviso.kind === 'esperada') {
+      const arrived = recordInvoices().some(invoice => invoice.kind === 'I' && invoice.from?.rfc === datos.rfc &&
+        String(invoice.date || '').startsWith(datos.month || ''));
+      return arrived ? { ok: true, resolucion: 'Ya consta el CFDI del mes en PacoSAT.' }
+        : { ok: false, falta: 'Aún no consta ningún CFDI de esa contraparte en ' + (datos.month || 'ese mes') +
+            ' dentro de PacoSAT. Cuando llegue (descarga del SAT o importación), este aviso se cierra solo.' };
+    }
+    if (aviso.kind === 'estado' || aviso.kind === 'solicitud-estado') {
+      const exists = db.prepare('SELECT 1 AS x FROM bank_statements WHERE accountId=? AND month=?').get(datos.accountId || '', datos.mes || '');
+      return exists ? { ok: true, resolucion: 'El estado pedido ya está archivado en Bancos.' }
+        : { ok: false, falta: 'Todavía no está archivado el estado de ' + (datos.banco || 'ese banco') + ' de ' + (datos.mes || 'ese mes') +
+            '. Súbelo en la tarjeta de la solicitud o desde Bancos.' };
+    }
+    if (aviso.kind === 'lista') {
+      const cp = listsOverview().counterparts.find(item => item.rfc === datos.rfc);
+      return !cp || !cp.hits.length ? { ok: true, resolucion: 'La contraparte ya no aparece en los listados cruzados.' }
+        : { ok: false, falta: 'La contraparte sigue apareciendo en: ' + cp.hits.map(hit => hit.label).join(' · ') +
+            '. El aviso se cierra cuando deje de coincidir en los listados.' };
+    }
+    return { ok: true, resolucion: 'Marcado como corregido por ti; queda registrado en el historial.' };
+  }
+  function avisosOverview() {
+    const open = db.prepare("SELECT * FROM avisos WHERE estado<>'solventado' ORDER BY baseline ASC, creado ASC").all();
+    const history = db.prepare("SELECT * FROM avisos WHERE estado='solventado' ORDER BY resuelto DESC LIMIT 50").all();
+    const serialize = row => { const datos = avisoDatos(row); return { id: row.id, ref: row.ref, kind: row.kind, clase: row.clase,
+      estado: row.estado, severidad: row.severidad, titulo: row.titulo, detalle: row.detalle, contraparte: row.contraparte,
+      nombre: row.nombre, importe: row.importe, enlace: row.enlace, baseline: Boolean(row.baseline), creado: row.creado,
+      resuelto: row.resuelto, resolucion: row.resolucion, direccion: datos.direccion || '',
+      solicitud: row.kind === 'solicitud-estado' ? { banco: datos.banco || '', mes: datos.mes || '' } : null }; };
+    const counts = { total: open.length, mal: 0, falta: 0, necesita: 0, porConfirmar: 0 };
+    for (const row of open) { counts[row.clase] = (counts[row.clase] || 0) + 1; if (row.estado === 'por-confirmar') counts.porConfirmar++; }
+    return { avisos: open.map(serialize), historial: history.map(serialize), counts, config: avisosConfig() };
+  }
+
   /* ===== Dinero (1.6.17) =====
      Saldos desde la relación Pagos↔facturas persistida en el desglose
      (1.6.16/1.6.17): por cobrar y por pagar con antigüedad, avisos de
@@ -1944,6 +2265,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         for (const doc of pago.documentos || [])
           paidBy.set(doc.idDocumento, (paidBy.get(doc.idDocumento) || 0n) + centsOf(doc.impPagado));
     }
+    /* Pagos marcados a mano desde el Centro de Avisos (1.7.4): la
+       confirmación de Paco con su nota vale como pago enlazado. */
+    for (const manual of db.prepare('SELECT * FROM manual_payments').all())
+      paidBy.set(manual.uuid, (paidBy.get(manual.uuid) || 0n) + centsOf(manual.importe));
     return paidBy;
   }
   function moneyBalances() {
@@ -1984,25 +2309,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return expected;
   }
   function moneyTick(time) {
-    const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
-    for (const balance of moneyBalances()) {
-      if (balance.method !== 'PPD' || balance.balance <= 0n) continue;
-      const age = Math.floor((time - Date.parse(balance.date)) / DAY);
-      if (balance.payable && age >= 30)
-        queueAlert('ppd-payable', 'ppd:' + balance.id + ':30', 'PacoSAT · Factura por pagar cumple 30 días sin pago completo',
-          'La factura ' + balance.id + ' de ' + (balance.from.name || balance.from.rfc) + ' por $' + moneyText(balance.total) +
-          ' (PPD, ' + balance.date + ') aún tiene saldo de $' + moneyText(balance.balance) + '. Revisa su vencimiento con el proveedor.', time);
-      if (balance.receivable && age >= 60)
-        queueAlert('ppd-receivable', 'ppd:' + balance.id + ':60', 'PacoSAT · Factura por cobrar cumple 60 días sin cobro completo',
-          'La factura ' + balance.id + ' para ' + (balance.to.name || balance.to.rfc) + ' por $' + moneyText(balance.total) +
-          ' (PPD, ' + balance.date + ') aún tiene saldo por cobrar de $' + moneyText(balance.balance) + '.', time);
-    }
-    if (mxParts(time).day >= 10) for (const item of expectedInvoices(time))
-      queueAlert('expected-invoice', 'expected:' + item.rfc + ':' + item.month,
-        'PacoSAT · Factura esperada que no ha llegado',
-        (item.name || item.rfc) + ' te facturó en ' + item.monthsActive + ' de los últimos 6 meses, pero en ' + item.month +
-        ' aún no consta ningún CFDI suyo. Si era un gasto fijo, conviene preguntar o revisar que no se haya perdido.', time);
-    void profileRfcs;
+    /* 1.7.4: el antiguo motor de antigüedad (un correo por factura
+       «cumple 30/60 días sin pago completo») desaparece. Los saldos y
+       las esperadas los genera ahora el Centro de Avisos, con
+       calendario por contraparte, estado «por confirmar» y textos
+       veraces; el correo es solo el resumen de sendAlerts. */
+    avisosSync(time);
   }
 
   /* ===== Final 1.7.0: invitado, autodiagnóstico y paquete offline =====
@@ -2019,7 +2331,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   function guestSessions() {
     try { return JSON.parse(getState('guest-sessions') || '{}'); } catch { return {}; }
   }
-  const GUEST_GET = ['/api/status', '/api/storage', '/api/storage/rev', '/api/lists', '/api/money',
+  const GUEST_GET = ['/api/status', '/api/storage', '/api/storage/rev', '/api/lists', '/api/money', '/api/notices',
     '/api/fiscal/calendar', '/api/fiscal/issues', '/api/banks', '/api/banks/movements', '/api/offline-bundle', '/api/reports/config'];
   function selfTest() {
     const checks = [];
@@ -2653,9 +2965,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         const shape = validateRfc(typeof x.rfc === 'string' ? x.rfc : '');
         need(shape.level !== 'structure', shape.error || 'RFC inválido.');
         need(['', 'Cliente', 'Proveedor', 'Ambos', 'Propio'].includes(x.kind || ''), 'Tipo de contraparte inválido.');
-        db.prepare('INSERT INTO counterparts(rfc,name,kind,note,source,updated) VALUES (?,?,?,?,?,?) ' +
-          'ON CONFLICT(rfc) DO UPDATE SET name=excluded.name,kind=excluded.kind,note=excluded.note,source=\'manual\',updated=excluded.updated')
-          .run(x.rfc, String(x.name || '').slice(0, 200), x.kind || '', String(x.note || '').slice(0, 300), 'manual', now());
+        /* Calendario de pago (1.7.4): día del mes 1–31 y/o plazo en
+           días. Campo ausente = conservar el que haya; vacío = sin
+           fijar (vuelve la regla general de antigüedad). */
+        const existingCp = db.prepare('SELECT payDay,payTerms FROM counterparts WHERE rfc=?').get(x.rfc);
+        const payDay = x.payDay === undefined ? (existingCp?.payDay ?? null)
+          : x.payDay === null || x.payDay === '' ? null : Math.floor(Number(x.payDay));
+        const payTerms = x.payTerms === undefined ? (existingCp?.payTerms ?? null)
+          : x.payTerms === null || x.payTerms === '' ? null : Math.floor(Number(x.payTerms));
+        need(payDay === null || (payDay >= 1 && payDay <= 31), 'El día de pago debe ser entre 1 y 31.');
+        need(payTerms === null || (payTerms >= 0 && payTerms <= 365), 'El plazo debe ser entre 0 y 365 días.');
+        db.prepare('INSERT INTO counterparts(rfc,name,kind,note,source,updated,payDay,payTerms) VALUES (?,?,?,?,?,?,?,?) ' +
+          'ON CONFLICT(rfc) DO UPDATE SET name=excluded.name,kind=excluded.kind,note=excluded.note,source=\'manual\',updated=excluded.updated,payDay=excluded.payDay,payTerms=excluded.payTerms')
+          .run(x.rfc, String(x.name || '').slice(0, 200), x.kind || '', String(x.note || '').slice(0, 300), 'manual', now(), payDay, payTerms);
         return json(res, listsOverview());
       }
       if (req.method === 'POST' && url.pathname === '/api/lists/counterparts/bulk') {
@@ -2931,6 +3253,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           parsed.movements.forEach((movement, index) => insert.run(id + ':' + index, id, movement.date, movement.concept,
             Number(movement.amountCents), movement.balanceCents === null ? null : Number(movement.balanceCents)));
         });
+        /* Al aportar el estado, las solicitudes y faltas del Centro
+           que dependían de él se solventan en el acto (criterio 8). */
+        avisosSync(now());
         return json(res, banksOverview());
       }
       if (req.method === 'POST' && url.pathname === '/api/banks/statements/confirm') {
@@ -2990,6 +3315,62 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         return json(res, { balances: balances.map(item => ({ ...item, total: moneyText(item.total),
             paid: moneyText(item.paid), balance: moneyText(item.balance) })),
           expected: expectedInvoices(now()) });
+      }
+      /* ===== Centro de Avisos (1.7.4): leer, responder, solventar ===== */
+      if (req.method === 'GET' && url.pathname === '/api/notices') {
+        avisosSync(now());
+        return json(res, avisosOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/notices/answer') {
+        /* Respuesta a un «por confirmar» (criterio 7): «sí» exige la
+           nota del pago y lo registra como pago manual en bitácora;
+           «no» convierte el aviso en atraso declarado — con el texto
+           veraz: en PacoSAT no consta el pago. */
+        const x = await body(req);
+        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado<>'solventado'").get(Number(x.id));
+        need(aviso, 'Ese aviso ya no está abierto.');
+        need(aviso.kind === 'saldo', 'Ese aviso no es de un saldo.');
+        need(x.respuesta !== 'no' || aviso.estado === 'por-confirmar', 'Ese aviso ya no está por confirmar.');
+        const datos = avisoDatos(aviso);
+        if (x.respuesta === 'si') {
+          const nota = String(x.nota || '').trim();
+          need(nota.length >= 4, 'La nota del pago es obligatoria: medio y detalle (ej. «Pagado con Konfío el 8 de noviembre»).');
+          const balance = moneyBalances().find(item => item.id === datos.uuid);
+          const importe = balance ? moneyText(balance.balance) : (aviso.importe || '0.00');
+          db.prepare('INSERT INTO manual_payments(uuid,at,nota,importe) VALUES (?,?,?,?) ' +
+            'ON CONFLICT(uuid) DO UPDATE SET at=excluded.at,nota=excluded.nota,importe=excluded.importe')
+            .run(String(datos.uuid || ''), now(), (x.fecha ? x.fecha + ' · ' : '') + nota, importe);
+          avisoLog(aviso.id, 'pago-manual', (x.fecha ? x.fecha + ' · ' : '') + nota, now());
+          avisoSolve(aviso.ref, 'Pagado a mano: ' + nota, now());
+        } else if (x.respuesta === 'no') {
+          db.prepare("UPDATE avisos SET estado='abierto',clase='mal',severidad='alta',titulo=?,detalle=?,actualizado=? WHERE id=?")
+            .run('Saldo vencido: no consta el pago en PacoSAT',
+              'Confirmaste que aún no se ha pagado. En PacoSAT no consta el pago de $' + importeShow(aviso.importe) +
+              ' de ' + (aviso.nombre || aviso.contraparte || 'la contraparte') + ' (día de pago: ' + (datos.vence || '—') +
+              '). Enlaza el complemento en Dinero, concílialo en Bancos o márcalo pagado a mano cuando se pague.',
+              now(), aviso.id);
+          avisoLog(aviso.id, 'confirmado-no', 'El usuario confirmó que aún no se ha pagado.', now());
+        } else need(false, 'Respuesta inválida.');
+        avisosSync(now());
+        return json(res, avisosOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/notices/resolve') {
+        /* «Ya lo corregí»: re-comprobación real de la condición. */
+        const x = await body(req);
+        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado<>'solventado'").get(Number(x.id));
+        need(aviso, 'Ese aviso ya no está abierto.');
+        const check = avisoRecheck(aviso);
+        if (!check.ok) return json(res, { ok: false, falta: check.falta });
+        avisoSolve(aviso.ref, check.resolucion, now());
+        return json(res, { ok: true, ...avisosOverview() });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/notices/config') {
+        const x = await body(req);
+        need(['diario', 'semanal', 'graves', 'no'].includes(x.correo), 'Cadencia de resumen inválida.');
+        const hora = Math.floor(Number(x.hora));
+        need(hora >= 0 && hora <= 23, 'La hora debe ser entre 0 y 23.');
+        setSetting('avisos', JSON.stringify({ correo: x.correo, hora }));
+        return json(res, avisosConfig());
       }
       if (req.method === 'POST' && url.pathname === '/api/pdf-analyze') {
         const { data } = await body(req, 21 * 1024 * 1024);

@@ -119,6 +119,8 @@ try {
   assert.equal((await call('/api/silence', { days: 3 })).status, 200);
   time += 10 * 86400000;
   await service.tick();
-  assert.ok(sent.some(mail => /Silencio de CFDI/.test(mail.subject)), 'Debe llegar el aviso de silencio.');
+  /* 1.7.4: el aviso de silencio vive en el Centro y se nombra en el
+     cuerpo del único correo-resumen del día (ya no es un correo solo). */
+  assert.ok(sent.some(mail => /Silencio de CFDI/.test(mail.text || '')), 'Debe llegar el aviso de silencio.');
   console.log('OK: metadatos ingeridos y reconciliados (faltante detectado), descanso por RFC y general sin envíos, catch-up al reanudar y aviso de silencio.');
 } finally { service.close(); }
