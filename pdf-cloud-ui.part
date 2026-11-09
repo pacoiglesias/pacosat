@@ -1,12 +1,35 @@
 const cloudStorage = Boolean(document.querySelector('meta[name="pacosat-cloud"]'));
 let previewUrl;
+/* Sync por diferencias (1.7.0, mejora nº 10): cada tienda guarda su
+   marca de revisión; las lecturas siguientes solo traen lo que
+   cambió o se borró desde esa marca, y se mezcla con la copia en
+   memoria. Al escribir, la marca se olvida y la próxima lectura es
+   completa (correcto antes que listo). */
+const cloudCache = new Map(), cloudMarks = new Map();
 async function cloudRead(store, id) {
-  const query = new URLSearchParams({ store });
-  if (id !== undefined) query.set('id', id);
-  const value = await satApi('storage?' + query);
   const decode = item => item && store === 'files' ? { id: item.id,
     blob: new Blob([decode64(item.content)], { type: item.mime }) } : item;
-  return Array.isArray(value) ? value.map(decode) : decode(value);
+  if (id !== undefined) {
+    const query = new URLSearchParams({ store, id });
+    const value = await satApi('storage?' + query);
+    return decode(value);
+  }
+  const since = cloudMarks.get(store);
+  if (since === undefined) {
+    const { rev } = await satApi('storage/rev');
+    const value = await satApi('storage?' + new URLSearchParams({ store }));
+    const map = new Map((Array.isArray(value) ? value : []).map(item => { const decoded = decode(item); return [decoded.id, decoded]; }));
+    cloudCache.set(store, map);
+    cloudMarks.set(store, rev);
+    return [...map.values()];
+  }
+  const diff = await satApi('storage?' + new URLSearchParams({ store, since: String(since) }));
+  const map = cloudCache.get(store) || new Map();
+  for (const item of diff.rows || []) { const decoded = decode(item); map.set(decoded.id, decoded); }
+  for (const deletedId of diff.deleted || []) map.delete(deletedId);
+  cloudCache.set(store, map);
+  cloudMarks.set(store, diff.rev);
+  return [...map.values()];
 }
 async function cloudWrite(batch, replace) {
   const data = { ...batch };
@@ -14,6 +37,7 @@ async function cloudWrite(batch, replace) {
     id: file.id, mime: file.blob.type, content: encode64(bytes(await file.blob.arrayBuffer()))
   })));
   await satApi('storage', { batch: data, replace });
+  for (const store of Object.keys(batch)) cloudMarks.delete(store);
 }
 function pdfLinks(doc, blob) {
   if (previewUrl) URL.revokeObjectURL(previewUrl);

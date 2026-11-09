@@ -1,0 +1,411 @@
+/* ===== Final 1.7.0: PWA, modo offline, preguntas, invitado =====
+   La copia offline cubre los ÚLTIMOS 3 MESES (CFDI con desglose,
+   saldos, esperadas, listados y posición bancaria) más los informes
+   clave pregenerados en cada sincronización. Viaja CIFRADA con una
+   clave del propio dispositivo (AES-GCM) y es de solo lectura; el
+   sello «datos de las HH:MM» acompaña siempre a la consulta. */
+function offlineDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('pacosat-offline', 1);
+    request.onupgradeneeded = () => request.result.createObjectStore('kv');
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function kvGet(key) {
+  const db = await offlineDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction('kv').objectStore('kv').get(key);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+async function kvSet(key, value) {
+  const db = await offlineDb();
+  return new Promise((resolve, reject) => {
+    const request = db.transaction('kv', 'readwrite').objectStore('kv').put(value, key);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
+}
+async function offlineKey() {
+  let jwk = await kvGet('key');
+  if (!jwk) {
+    const key = await crypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt']);
+    jwk = await crypto.subtle.exportKey('jwk', key);
+    await kvSet('key', jwk);
+  }
+  return crypto.subtle.importKey('jwk', jwk, { name: 'AES-GCM' }, false, ['encrypt', 'decrypt']);
+}
+let offlineBundleCache = null;
+async function syncOfflineBundle() {
+  check(satToken, 'El paquete sin conexión se prepara desde el servidor.');
+  const bundle = await satApi('offline-bundle');
+  const key = await offlineKey();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const cipher = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(bundle)));
+  await kvSet('bundle', { iv: encode64(iv), data: encode64(new Uint8Array(cipher)), at: bundle.generatedAt });
+  offlineBundleCache = bundle;
+  return bundle;
+}
+async function loadOfflineBundle() {
+  if (offlineBundleCache) return offlineBundleCache;
+  const stored = await kvGet('bundle');
+  if (!stored) return null;
+  const key = await offlineKey();
+  const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: decode64(stored.iv) }, key, decode64(stored.data));
+  offlineBundleCache = JSON.parse(new TextDecoder().decode(plain));
+  return offlineBundleCache;
+}
+/* Cola de acciones sin conexión: la solicitud al SAT queda registrada
+   como INTENCIÓN (disciplina 5002: al volver la red se envía una
+   sola vez; el servidor además la trata como solicitud en curso). */
+async function enqueueOfflineAction(actionItem) {
+  const queue = (await kvGet('queue')) || [];
+  if (!queue.some(item => item.type === actionItem.type && item.rfc === actionItem.rfc)) queue.push(actionItem);
+  await kvSet('queue', queue);
+}
+async function requestRunNow(rfc) {
+  if (!navigator.onLine) {
+    await enqueueOfflineAction({ type: 'run-now', rfc, at: Date.now() });
+    announce('Sin conexión: la descarga de ' + rfc + ' queda EN COLA y se pedirá al volver internet. Registrada como intención; no se enviará dos veces.');
+    soundCue('notice');
+    return null;
+  }
+  return satApi('run-now', { rfc });
+}
+async function flushOfflineQueue() {
+  if (!navigator.onLine || !satToken) return;
+  const queue = (await kvGet('queue')) || [];
+  if (!queue.length) return;
+  const remaining = [];
+  for (const item of queue) {
+    try { if (item.type === 'run-now') await satApi('run-now', { rfc: item.rfc }); }
+    catch { remaining.push(item); }
+  }
+  await kvSet('queue', remaining);
+  if (remaining.length < queue.length) { logEvent('Cola sin conexión ejecutada al recuperar la red.'); announce('La cola sin conexión se ejecutó al volver la conexión.'); }
+}
+function offlineStamp(bundle) {
+  return 'Estás viendo datos de las ' + new Intl.DateTimeFormat('es-MX', { hour: '2-digit', minute: '2-digit' }).format(bundle.generatedAt) +
+    ' del ' + new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(bundle.generatedAt);
+}
+function offlineScreen() {
+  const wrap = n('div');
+  const head = panel('Sin conexión · consulta de los últimos 3 meses', 'PacoSAT guarda en este dispositivo una copia CIFRADA y de solo lectura de los últimos 3 meses (CFDI con desglose, saldos por cobrar/pagar, facturas esperadas, listados y posición bancaria) y deja pregenerados los informes clave de esos meses. El XML/PDF individual solo está si quedó en la caché reciente del navegador.');
+  const syncBtn = n('button', 'Sincronizar ahora la copia sin conexión', 'soft');
+  const body = n('div');
+  syncBtn.onclick = async () => {
+    try { const bundle = await syncOfflineBundle(); announce('Copia sin conexión actualizada.'); draw(bundle); }
+    catch (error) { toast(error.message, 'error'); }
+  };
+  head.append(syncBtn);
+  wrap.append(head, body);
+  const draw = bundle => {
+    body.replaceChildren();
+    if (!bundle) { body.append(n('p', 'Aún no hay copia en este dispositivo. Con conexión, pulsa «Sincronizar ahora» y quedará lista para cuando falte la red.', 'empty')); return; }
+    body.append(statusPill('warn', offlineStamp(bundle)));
+    for (const report of bundle.reports) {
+      const reportPanel = panel('Informe pregenerado · ' + report.month, 'Resumen del mes, IVA estimado y actividad. Se regenera en cada sincronización.');
+      reportPanel.append(n('p', 'Emitidos: ' + report.totals.issuedCount + ' por $' + report.totals.issuedTotal +
+        ' · Recibidos: ' + report.totals.receivedCount + ' por $' + report.totals.receivedTotal +
+        (report.withoutFiscal ? ' · ' + report.withoutFiscal + ' CFDI sin desglose (su IVA no entra en la estimación)' : '')));
+      for (const row of report.iva)
+        reportPanel.append(n('p', row.rfc + ' · IVA trasladado $' + row.payable + ' · acreditable $' + row.creditable + ' · a cargo $' + row.balance));
+      body.append(reportPanel);
+    }
+    const balances = panel('Por cobrar y por pagar (a la hora de la copia)', 'Saldos abiertos calculados desde los complementos de pago que había al sincronizar.');
+    if (!bundle.balances.length) balances.append(n('p', 'Sin saldos abiertos en la copia.', 'empty'));
+    for (const item of bundle.balances.slice(0, 60)) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill(item.receivable ? 'warn' : 'dim', item.receivable ? 'Por cobrar' : 'Por pagar'),
+        n('span', item.date + ' · ' + (item.receivable ? item.to.name : item.from.name) + ' · saldo $' + item.balance));
+      balances.append(row);
+    }
+    body.append(balances);
+    const lists = panel('Listados oficiales (antigüedad a la hora de la copia)', 'Si un listado lleva más de 48 horas en la copia, trátalo como orientativo y valida en línea al volver la red.');
+    for (const source of bundle.listsSources)
+      lists.append(n('p', source.label + ': ' + (source.fetched ? Math.round((Date.now() - source.fetched) / 3600000) + ' h de antigüedad al copiar' : 'sin cargar') + (source.error ? ' · con error' : ''), 'muted'));
+    body.append(lists);
+    body.append(n('p', 'CFDI en la copia: ' + bundle.invoices.length + ' · Posición bancaria al copiar: $' + bundle.bankPosition.total + '.', 'muted'));
+  };
+  loadOfflineBundle().then(draw).catch(() => draw(null));
+  return [wrap];
+}
+/* ===== Preguntas en lenguaje normal (100 % local) =====
+   Nada sale del dispositivo: reglas fijas sobre los datos locales. */
+const MONTH_NAMES = { enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06', julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12' };
+function questionPeriod(text) {
+  const nowDate = new Date();
+  if (/mes pasado/.test(text)) { const date = new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1); return date.toISOString().slice(0, 7); }
+  if (/este mes/.test(text)) return nowDate.toISOString().slice(0, 7);
+  for (const [name, number] of Object.entries(MONTH_NAMES))
+    if (text.includes(name)) return nowDate.getFullYear() + '-' + number;
+  const match = text.match(/(20\d{2})-(\d{2})/);
+  return match ? match[0] : null;
+}
+function answerQuestion(raw) {
+  const text = raw.toLocaleLowerCase('es-MX');
+  const period = questionPeriod(text);
+  const sumWhere = predicate => invoices.filter(predicate).reduce((acc, row) => acc + Number(totalCents(row)), 0) / 100;
+  if (/cu[aá]nto debo/.test(text)) {
+    const paidBy = paidByMap();
+    let total = 0n;
+    for (const row of invoices) {
+      if (row.kind !== 'I' || !people.some(person => person.id === row.to.rfc)) continue;
+      const balance = balanceOf(row, paidBy).balance;
+      if (balance > 0n) total += balance;
+    }
+    return 'Por PAGAR tienes abiertos $' + centsLabel(total) + '. El detalle con antigüedad está en la pantalla Dinero.';
+  }
+  if (/cu[aá]nto me deben/.test(text)) {
+    const paidBy = paidByMap();
+    let total = 0n;
+    for (const row of invoices) {
+      if (row.kind !== 'I' || !people.some(person => person.id === row.from.rfc)) continue;
+      const balance = balanceOf(row, paidBy).balance;
+      if (balance > 0n) total += balance;
+    }
+    return 'Por COBRAR tienes abiertos $' + centsLabel(total) + '. El detalle con antigüedad está en la pantalla Dinero.';
+  }
+  if (/iva/.test(text) && period) {
+    let payable = 0n, creditable = 0n;
+    for (const row of invoices) {
+      if (!row.date.startsWith(period) || !row.fiscal) continue;
+      const issued = people.some(p => p.id === row.from.rfc);
+      for (const tax of row.fiscal.transferred || []) if (tax.tax === '002') {
+        if (issued) payable += moneyCents(tax.amount); else creditable += moneyCents(tax.amount);
+      }
+    }
+    return 'IVA estimado de ' + period + ' (desde el desglose guardado): trasladado $' + centsLabel(payable) + ', acreditable $' + centsLabel(creditable) + ', a cargo $' + centsLabel(payable - creditable) + '. Es una estimación: la cifra oficial la cierra tu contadora.';
+  }
+  if (/qu[eé] vence|vencimientos/.test(text)) {
+    const events = fiscalLocalEvents().filter(event => event.daysLeft <= 7);
+    if (!events.length) return 'En los próximos 7 días no vence nada del calendario fiscal que conozco. El calendario completo está en Cumplimiento.';
+    return 'Vence pronto: ' + events.map(event => event.title + ' (' + event.date + ', ' + (event.rfc || 'general') + ')').join(' · ') + '.';
+  }
+  if (/(factur|gast|compr|vend)/.test(text)) {
+    const party = findPartyInQuestion(text);
+    const base = invoices.filter(row => row.kind === 'I' && (!period || row.date.startsWith(period)) &&
+      (!party || row.from.rfc === party || row.to.rfc === party));
+    if (party || period) {
+      const total = base.reduce((acc, row) => acc + Number(totalCents(row)), 0) / 100;
+      return 'Hay ' + base.length + ' CFDI' + (period ? ' de ' + period : '') + (party ? ' relacionados con ' + party : '') +
+        ' por un total de $' + total.toLocaleString('es-MX', { minimumFractionDigits: 2 }) + '.';
+    }
+  }
+  return 'Puedo responder con tus datos locales, sin salir de aquí: «¿cuánto me deben?», «¿cuánto debo?», «¿cuánto IVA tengo en octubre?», «¿qué vence esta semana?» o «¿cuánto facturó [RFC] este mes?».';
+}
+function findPartyInQuestion(text) {
+  const upper = text.toUpperCase();
+  const known = new Set();
+  for (const row of invoices) { known.add(row.from.rfc); known.add(row.to.rfc); }
+  for (const person of people) known.add(person.id);
+  for (const rfc of known) if (upper.includes(rfc)) return rfc;
+  return null;
+}
+function preguntasScreen() {
+  const wrap = n('div');
+  const panelEl = panel('Pregunta en lenguaje normal', 'Respuestas calculadas AQUÍ, con tus datos locales: nada se envía a ningún servicio externo. Sirve también sin conexión sobre los datos ya sincronizados.');
+  const form = n('div', undefined, 'sat-form');
+  const question = input('text', { placeholder: '¿Cuánto IVA tengo en octubre?' });
+  const ask = n('button', 'Preguntar', 'soft');
+  const answer = n('p', '', 'empty');
+  const run = () => { try { answer.textContent = answerQuestion(question.value); announce('Respuesta lista.'); } catch (error) { answer.textContent = error.message; } };
+  ask.onclick = run;
+  question.onkeydown = event => { if (event.key === 'Enter') run(); };
+  form.append(fieldWrap('Tu pregunta', question), ask);
+  panelEl.append(form, answer);
+  wrap.append(panelEl);
+  return [wrap];
+}
+/* ===== «Probar todo» (autodiagnóstico) ===== */
+function selfTestPanel() {
+  const panelEl = panel('Probar todo', 'Autodiagnóstico en un clic: base de datos, correo, listados al día, respaldo y copia externa, y la caducidad de cada e.firma. No gasta solicitudes al SAT.');
+  const out = n('div');
+  const btn = n('button', 'Ejecutar el diagnóstico', 'soft');
+  btn.onclick = async () => {
+    out.replaceChildren(n('p', 'Probando…', 'muted'));
+    try {
+      const data = await satApi('selftest');
+      out.replaceChildren();
+      for (const checkItem of data.checks) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill(checkItem.state === 'ok' ? 'ok' : checkItem.state === 'warn' ? 'warn' : checkItem.state === 'bad' ? 'bad' : 'dim', checkItem.label),
+          n('span', checkItem.detail));
+        out.append(row);
+      }
+      soundCue('success');
+    } catch (error) { out.replaceChildren(n('p', error.message, 'error-text')); }
+  };
+  panelEl.append(btn, out);
+  return panelEl;
+}
+/* ===== Bitácora reforzada: filtros y resumen de actividad ===== */
+function activityPanel() {
+  const panelEl = panel('Bitácora y resumen de actividad', 'Qué hizo PacoSAT solo y qué se hizo desde la app: filtros por tipo y el resumen por día y por semana, exportable. Cada entrada de la actividad reciente (en Resumen) abre su objeto.');
+  const controls = n('div', undefined, 'sat-form');
+  const kindSel = n('select');
+  for (const [value, label] of [['', 'Todos los tipos'], ['sat', 'SAT'], ['import', 'Importaciones'], ['event', 'Eventos'], ['alert', 'Alertas']]) {
+    const option = n('option', label); option.value = value; kindSel.append(option);
+  }
+  const textFilter = input('text', { placeholder: 'Buscar texto o RFC…' });
+  const out = n('div');
+  const classify = row => row.event ? (row.event.startsWith('Cancelación') ? 'alert' : 'event') : (row.name.startsWith('SAT') ? 'sat' : 'import');
+  const draw = () => {
+    const kind = kindSel.value, needle = textFilter.value.trim().toLocaleLowerCase('es-MX');
+    const filtered = activity.filter(row => (!kind || classify(row) === kind) &&
+      (!needle || (row.name + ' ' + (row.event || '')).toLocaleLowerCase('es-MX').includes(needle)));
+    out.replaceChildren();
+    const dayKey = row => row.date.slice(0, 10);
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+    const todayCount = filtered.filter(row => dayKey(row) === todayKey).length;
+    const weekCount = filtered.filter(row => dayKey(row) >= weekAgo).length;
+    out.append(n('p', 'Coincidencias: ' + filtered.length + ' · hoy: ' + todayCount + ' · últimos 7 días: ' + weekCount));
+    for (const row of filtered.slice(0, 40)) {
+      const item = n('div', undefined, 'cp-row');
+      item.append(statusPill(classify(row) === 'alert' ? 'bad' : classify(row) === 'sat' ? 'ok' : 'dim', classify(row)),
+        n('span', row.date.slice(0, 10) + ' · ' + (row.event || row.name)));
+      out.append(item);
+    }
+  };
+  kindSel.onchange = draw;
+  textFilter.oninput = draw;
+  const exportBtn = n('button', 'Exportar bitácora (CSV)', 'soft');
+  exportBtn.onclick = async () => {
+    const rows = [['fecha', 'nombre', 'evento'], ...activity.map(row => [row.date, row.name, row.event || ''])];
+    await download('bitacora-pacosat.csv', new TextEncoder().encode(csvText(rows)), 'text/csv');
+    announce('Bitácora exportada.');
+  };
+  controls.append(fieldWrap('Tipo', kindSel), fieldWrap('Texto', textFilter), exportBtn);
+  panelEl.append(controls, out);
+  draw();
+  return panelEl;
+}
+/* ===== Acceso invitado (Ajustes) ===== */
+function guestPanel() {
+  const panelEl = panel('Acceso invitado de solo lectura', 'Una credencial SEPARADA para que otra persona (tu contadora, por ejemplo) consulte sin poder cambiar nada. Está desactivado por defecto; cada entrada y cada intento quedan en la bitácora de accesos. La dirección de entrada es la misma app con /invitado al final.');
+  const body = n('div');
+  panelEl.append(body);
+  const draw = async () => {
+    body.replaceChildren();
+    try {
+      const config = await satApi('guest/config');
+      const strip = n('div', undefined, 'traffic-strip');
+      strip.append(statusPill(config.enabled ? 'warn' : 'ok', config.enabled ? 'Invitado ACTIVADO' : 'Invitado desactivado'),
+        statusPill(config.hasPassword ? 'ok' : 'bad', config.hasPassword ? 'Contraseña fijada' : 'Sin contraseña'));
+      body.append(strip);
+      const form = n('div', undefined, 'sat-form');
+      const password = input('password', { placeholder: 'Nueva contraseña del invitado (mín. 8)', autocomplete: 'new-password' });
+      const toggle = n('button', config.enabled ? 'Desactivar invitado' : 'Activar invitado', 'soft');
+      toggle.onclick = async () => {
+        try { await satApi('guest/config', { enabled: !config.enabled }); announce('Acceso de invitado actualizado.'); draw(); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      const save = n('button', 'Guardar contraseña', 'soft');
+      save.onclick = async () => {
+        try { check(password.value.length >= 8, 'La contraseña debe tener al menos 8 caracteres.'); await satApi('guest/config', { password: password.value }); password.value = ''; announce('Contraseña del invitado guardada.'); draw(); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      form.append(fieldWrap('Contraseña', password), save, toggle);
+      body.append(form);
+      const log = await satApi('access-log');
+      if (log.entries.length) {
+        body.append(n('h4', 'Bitácora de accesos'));
+        for (const entry of log.entries.slice(0, 30))
+          body.append(n('p', new Date(entry.at).toLocaleString('es-MX') + ' · ' + entry.kind + ' · ' + entry.detail, 'muted'));
+      }
+    } catch (error) { body.append(n('p', error.message, 'error-text')); }
+  };
+  if (satToken) draw();
+  else body.append(n('p', 'Solo en modo servidor.', 'empty'));
+  return panelEl;
+}
+/* Arranque de la 1.7.0: service worker, aviso sin conexión, cola y
+   login del invitado. */
+if ('serviceWorker' in navigator && typeof satToken !== 'undefined' && satToken) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+function updateConnectivityBanner() {
+  const banner = $('offline-banner');
+  if (!banner) return;
+  if (navigator.onLine) { banner.hidden = true; return; }
+  banner.hidden = false;
+  banner.textContent = 'Sin conexión: estás en modo de solo lectura con la copia local. Sincroniza la copia en la pantalla «Sin conexión» cuando vuelva la red.';
+  loadOfflineBundle().then(bundle => { if (bundle) banner.textContent = 'Sin conexión · ' + offlineStamp(bundle); }).catch(() => {});
+}
+window.addEventListener('online', () => { updateConnectivityBanner(); flushOfflineQueue(); });
+window.addEventListener('offline', updateConnectivityBanner);
+document.addEventListener('DOMContentLoaded', updateConnectivityBanner);
+
+/* Login del invitado: sin token de sesión en el almacenamiento, la
+   pantalla pide la credencial separada y recarga ya identificado. */
+function showGuestLogin() {
+  const form = n('form', undefined, 'dialog-form');
+  form.append(n('h3', 'Acceso de invitado · solo lectura'),
+    n('p', 'Escribe la contraseña de invitado. Podrás consultar, pero no cambiar nada.', 'muted'));
+  const password = input('password', { autocomplete: 'current-password' });
+  form.append(fieldWrap('Contraseña de invitado', password));
+  const enter = n('button', 'Entrar como invitado', 'primary');
+  enter.type = 'submit';
+  form.append(enter);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    try {
+      const response = await fetch('/api/guest/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: password.value }) });
+      const data = await response.json().catch(() => ({}));
+      check(response.ok, data.error || 'No se pudo entrar.');
+      sessionStorage.setItem('pacosat-guest-token', data.token);
+      location.reload();
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  showDialog(form);
+}
+if (typeof guestMode !== 'undefined' && guestMode && !sessionStorage.getItem('pacosat-guest-token')) showGuestLogin();
+/* ===== Respaldo partido por RFC y año (mejora nº 8) =====
+   Un .faro por cada combinación RFC/año presente en los CFDI, con el
+   mismo formato del respaldo completo: cada parte se restaura sola
+   con el restaurador de siempre. */
+async function splitBackupDialog() {
+  await requireStorage();
+  check(!importing && crypto.subtle, 'El respaldo no está disponible en este navegador o hay una importación activa.');
+  const password = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
+  const repeat = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
+  dialog('Respaldo partido por RFC y año', [n('p', 'Se genera un archivo .faro por cada RFC y año con facturas: más cómodo para archivar por ejercicios. Cada parte se restaura por separado con la misma contraseña. Sin la contraseña ningún archivo se puede abrir.', 'news-note'),
+    field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
+    check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
+    const full = await snapshot();
+    const combos = new Map();
+    for (const row of full.invoices) {
+      for (const rfc of new Set([row.from?.rfc, row.to?.rfc])) {
+        if (!rfc) continue;
+        const key = rfc + '|' + String(row.date || '').slice(0, 4);
+        if (!combos.has(key)) combos.set(key, []);
+        combos.get(key).push(row);
+      }
+    }
+    check(combos.size, 'No hay facturas para partir el respaldo.');
+    let made = 0;
+    for (const [key, rows] of combos) {
+      const [rfc, year] = key.split('|');
+      const ids = new Set(rows.map(row => row.id));
+      const docs = full.documents.filter(doc => doc.rfc === rfc);
+      const docIds = new Set(docs.map(doc => doc.id));
+      const part = { version: 2,
+        people: full.people.filter(person => person.id === rfc),
+        invoices: rows,
+        documents: docs,
+        files: full.files.filter(file => docIds.has(file.id) ||
+          (file.id.startsWith('xml:') && ids.has(file.id.slice(4))) ||
+          (file.id.startsWith('pdf:') && ids.has(file.id.slice(4)))),
+        activity: [] };
+      download(await encryptBackup(part, password.value), 'PacoSAT-' + rfc + '-' + year + '.faro');
+      made++;
+    }
+    await logEvent('Respaldo partido creado (' + made + ' archivos por RFC y año)');
+    announce(made + ' archivos de respaldo generados, uno por RFC y año.');
+    soundCue('success');
+  }, 'Crear respaldo partido');
+}

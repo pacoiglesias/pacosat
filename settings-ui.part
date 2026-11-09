@@ -124,6 +124,7 @@ function settingsScreen() {
   const saveBar = n('div', undefined, 'actions');
   saveBar.append(action('Guardar ajustes', saveAppSettings, 'primary', 'check'));
   panels.push(saveBar);
+  if (satToken && !guestMode) panels.push(guestPanel());
   return panels;
 }
 async function saveAppSettings() {

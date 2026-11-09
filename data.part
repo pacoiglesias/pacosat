@@ -131,7 +131,10 @@ function writeBatch(batch, replace = false) {
    de IndexedDB. No hay papelera: la app confirma antes con el detalle
    de lo que se va a eliminar. */
 function deleteStoreRecords(store, ids) {
-  if (typeof cloudStorage !== 'undefined' && cloudStorage) return satApi('data/delete', { store, ids });
+  if (typeof cloudStorage !== 'undefined' && cloudStorage) {
+    if (typeof cloudMarks !== 'undefined') cloudMarks.delete(store);
+    return satApi('data/delete', { store, ids });
+  }
   return new Promise((resolve, reject) => {
     const tx = db.transaction(store, 'readwrite');
     tx.oncomplete = resolve;
@@ -282,6 +285,55 @@ function parseCfdiFull(raw, Parser = DOMParser) {
       totalTrasladados: attr(impuestosNode, 'TotalImpuestosTrasladados'), totalRetenidos: attr(impuestosNode, 'TotalImpuestosRetenidos') },
     timbre, pagos, otrosComplementos
   };
+}
+/* Desglose fiscal persistido (1.6.16, mejora nº 6 de la auditoría): lo
+   que el informe mensual, la DIOT y el IVA del mes necesitan sin tener
+   que reabrir cada XML. Se guarda junto al CFDI al importarlo y el
+   histórico se completa con el re-parseo (sin contactar al SAT). */
+function fiscalSummary(full) {
+  const taxes = full.impuestos || {};
+  return {
+    subtotal: full.subTotal || '', discount: full.descuento || '',
+    currency: full.moneda || '', exchangeRate: full.tipoCambio || '',
+    paymentMethod: full.metodoPago || '', paymentForm: full.formaPago || '',
+    cfdiUse: full.receptor?.usoCfdi || '', series: full.serie || '', folio: full.folio || '',
+    transferred: (taxes.traslados || []).map(t => ({ tax: t.impuesto, rate: t.tasa, factor: t.tipoFactor, base: t.base, amount: t.importe })),
+    withheld: (taxes.retenciones || []).map(t => ({ tax: t.impuesto, amount: t.importe })),
+    totalTransferred: taxes.totalTrasladados || '', totalWithheld: taxes.totalRetenidos || '',
+    /* Relación Pagos↔facturas (1.6.17, mejora nº 7): los documentos
+       relacionados de cada complemento de pago, persistidos para
+       calcular saldos sin reabrir los XML. */
+    payments: full.pagos ? {
+      totalPaid: full.pagos.totales?.MontoTotalPagos || '',
+      pagos: (full.pagos.pagos || []).map(pago => ({ fechaPago: pago.fechaPago, monto: pago.monto,
+        documentos: (pago.documentos || []).map(doc => ({ idDocumento: doc.idDocumento, impPagado: doc.impPagado,
+          impSaldoInsoluto: doc.impSaldoInsoluto, numParcialidad: doc.numParcialidad })) }))
+    } : null
+  };
+}
+function withFiscal(row, raw) {
+  try { row.fiscal = fiscalSummary(parseCfdiFull(raw)); } catch { /* el registro ligero ya quedó importado */ }
+  return row;
+}
+function moneyCents(value) {
+  const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(String(value ?? '').trim());
+  if (!match) return 0n;
+  const cents = BigInt(match[2]) * 100n + BigInt((match[3] || '').padEnd(2, '0'));
+  return match[1] ? -cents : cents;
+}
+/* IVA (impuesto 002) de un CFDI con desglose: importe y base, en
+   centavos. Sin desglose devuelve null: jamás se estima a ojo. */
+function invoiceIvaCents(row) {
+  if (!row.fiscal) return null;
+  let cents = 0n;
+  for (const t of row.fiscal.transferred) if (t.tax === '002') cents += moneyCents(t.amount);
+  return cents;
+}
+function invoiceIvaBaseCents(row) {
+  if (!row.fiscal) return null;
+  let cents = 0n;
+  for (const t of row.fiscal.transferred) if (t.tax === '002') cents += moneyCents(t.base);
+  return cents;
 }
 const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
   let value = index;

@@ -1,16 +1,17 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { createHash, randomBytes, randomUUID, X509Certificate } from 'node:crypto';
+import { createHash, randomBytes, randomUUID, X509Certificate, scryptSync, timingSafeEqual } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
-import { parseXml, zipXml, zipText, validateRfc } from './xml-core.mjs';
+import { parseXml, parseCfdiFull, fiscalSummary, crc32, zipXml, zipText, validateRfc } from './xml-core.mjs';
 import { analyzeInvoicePdf } from './pdf-invoice.mjs';
 import { createMonitor } from './sat-monitor.mjs';
 import { LIST_CATALOG, parseList, declaredDate, listSeverity, SEVERITY_ORDER } from './sat-lists.mjs';
+import { parseStatementText, extractPdfTextLines, moneyToCents } from './bank-statement.mjs';
 import { encryptBackupBuffer, decryptBackupBuffer } from './backup-core.mjs';
 
 /* El RFC se valida con validateRfc (xml-core): un solo criterio en todo el sistema. */
@@ -104,7 +105,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null, extractText = extractPdfTextLines }) {
   const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
   /* synchronous=FULL (1.6.15, mejora nº 4): en WAL el defecto es NORMAL
@@ -129,6 +130,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       sent INTEGER, error TEXT NOT NULL DEFAULT '', FOREIGN KEY(package) REFERENCES packages(id));
     CREATE TABLE IF NOT EXISTS records (store TEXT NOT NULL, id TEXT NOT NULL, value TEXT, data BLOB, mime TEXT,
       PRIMARY KEY(store,id));
+    /* Sync por diferencias (1.7.0, mejora nº 10): cada registro lleva
+       una revisión global creciente y los borrados dejan lápida, para
+       que la app copie solo lo que cambió desde su última marca. */
+    CREATE TABLE IF NOT EXISTS record_tombstones (store TEXT NOT NULL, id TEXT NOT NULL, rev INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS access_log (at INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '');
     CREATE TABLE IF NOT EXISTS alerts (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, ref TEXT NOT NULL UNIQUE,
       subject TEXT NOT NULL, body TEXT NOT NULL, due INTEGER NOT NULL,
       sent INTEGER, error TEXT NOT NULL DEFAULT '');
@@ -170,6 +176,21 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     CREATE TABLE IF NOT EXISTS sat_documents (id TEXT PRIMARY KEY, rfc TEXT NOT NULL, kind TEXT NOT NULL,
       issuedAt INTEGER NOT NULL DEFAULT 0, fileId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'auto',
       created INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+    /* Bitácora de correos enviados desde la app (1.6.16). */
+    /* Bancos (1.6.19): cuentas libres, estados archivados con su
+       lectura y movimientos para la conciliación de Dinero. */
+    CREATE TABLE IF NOT EXISTS bank_accounts (id TEXT PRIMARY KEY, bank TEXT NOT NULL DEFAULT '',
+      name TEXT NOT NULL DEFAULT '', last4 TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '',
+      created INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS bank_statements (id TEXT PRIMARY KEY, accountId TEXT NOT NULL, month TEXT NOT NULL,
+      fileId TEXT NOT NULL DEFAULT '', openingCents INTEGER, closingCents INTEGER, creditsCents INTEGER,
+      chargesCents INTEGER, movements INTEGER NOT NULL DEFAULT 0, state TEXT NOT NULL DEFAULT 'review',
+      detected TEXT NOT NULL DEFAULT '', created INTEGER NOT NULL DEFAULT 0, UNIQUE(accountId, month));
+    CREATE TABLE IF NOT EXISTS bank_movements (id TEXT PRIMARY KEY, statementId TEXT NOT NULL, date TEXT NOT NULL DEFAULT '',
+      concept TEXT NOT NULL DEFAULT '', amountCents INTEGER NOT NULL DEFAULT 0, balanceCents INTEGER);
+    CREATE TABLE IF NOT EXISTS mail_sends (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, recipients TEXT NOT NULL DEFAULT '',
+      subject TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '', ok INTEGER NOT NULL DEFAULT 0,
+      error TEXT NOT NULL DEFAULT '');
     /* Intentos de descarga por paquete (1.6.15, mejora nº 3): el SAT
        permite como máximo 2 descargas por paquete (error 5008); el
        contador se persiste ANTES de cada descarga, como la intención
@@ -180,10 +201,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
+    /* Alerta ROJA de cancelación post-pago (1.6.17): si el CFDI
+       cancelado tenía pagos vinculados, el aviso se escala y nombra
+       el importe pagado: es el caso que exige actuar ya. */
+    const paid = moneyPaidBy().get(item.id) || 0n;
+    const wasPaid = paid > 0n;
     await mail.transport.sendMail({ from: displayFrom(mail.from), to: mail.recipient,
-      subject: 'PacoSAT · CFDI cancelado detectado',
-      text: 'El SAT reportó como cancelado el folio ' + item.id + '. Emisor: ' + item.emitter + '. Receptor: ' + item.receiver + '.',
+      subject: wasPaid ? 'PacoSAT · ALERTA ROJA: CFDI cancelado DESPUÉS de pagado' : 'PacoSAT · CFDI cancelado detectado',
+      text: 'El SAT reportó como cancelado el folio ' + item.id + '. Emisor: ' + item.emitter + '. Receptor: ' + item.receiver + '.' +
+        (wasPaid ? ' ATENCIÓN: este CFDI tenía pagos registrados por $' + moneyText(paid) + ' (la relación de pagos está en la pantalla Dinero). ' +
+          'Un CFDI cancelado tras cobrarse/pagarse exige revisión inmediata con tu contadora.' : ''),
       messageId: '<pacosat-cancelado-' + item.id.toLowerCase() + '@pacosat.local>' });
+    db.prepare('INSERT INTO mail_sends(at,recipients,subject,kind,ok,error) VALUES (?,?,?,?,1,\'\')')
+      .run(now(), mail.recipient, wasPaid ? 'ALERTA ROJA: CFDI cancelado DESPUÉS de pagado' : 'CFDI cancelado detectado', 'monitor');
     return true;
   }, notifyEfos: async alert => {
     if (!mail) return false;
@@ -199,9 +229,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   let mail, busy = false, storageRevision = 0;
   const cloud = Boolean(proxyKey);
   const stores = ['people', 'invoices', 'documents', 'files', 'activity'];
-  const insertRecord = db.prepare('INSERT OR IGNORE INTO records(store,id,value,data,mime) VALUES (?,?,?,?,?)');
-  const putMetadata = (store, row) => insertRecord.run(store, row.id, JSON.stringify(row), null, null);
-  const putFile = (id, data, mime) => insertRecord.run('files', id, null, data, mime);
+  /* La columna rev debe existir ANTES de preparar insertRecord: la
+     migración va aquí, junto a la creación del esquema. */
+  if (!db.prepare('PRAGMA table_info(records)').all().some(row => row.name === 'rev'))
+    db.exec('ALTER TABLE records ADD COLUMN rev INTEGER NOT NULL DEFAULT 0');
+  const insertRecord = db.prepare('INSERT OR IGNORE INTO records(store,id,value,data,mime,rev) VALUES (?,?,?,?,?,?)');
+  let recordRev = 0;
+  try { recordRev = Number(JSON.parse(getState('records-rev') || '0')) || 0; } catch { recordRev = 0; }
+  const nextRev = () => { recordRev += 1; setState('records-rev', JSON.stringify(recordRev)); return recordRev; };
+  const putMetadata = (store, row) => insertRecord.run(store, row.id, JSON.stringify(row), null, null, nextRev());
+  const putFile = (id, data, mime) => insertRecord.run('files', id, null, data, mime, nextRev());
   const getState = key => db.prepare('SELECT value FROM automation_state WHERE key=?').get(key)?.value || '';
   const setState = (key, value) => db.prepare('INSERT INTO automation_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
   /* Ajustes de identidad de la instalación (1.6.6): viven en la base de
@@ -314,6 +351,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      día de creación) y el libro se siembra una sola vez desde jobs, sin
      perder ni duplicar ninguna solicitud ya enviada. */
   tx(db, () => {
+    const recordColumns = db.prepare('PRAGMA table_info(records)').all().map(row => row.name);
+    if (!recordColumns.includes('rev')) db.exec('ALTER TABLE records ADD COLUMN rev INTEGER NOT NULL DEFAULT 0');
     const jobColumns = db.prepare('PRAGMA table_info(jobs)').all().map(row => row.name);
     if (!jobColumns.includes('startAt')) db.exec("ALTER TABLE jobs ADD COLUMN startAt TEXT NOT NULL DEFAULT ''");
     if (!jobColumns.includes('endAt')) db.exec("ALTER TABLE jobs ADD COLUMN endAt TEXT NOT NULL DEFAULT ''");
@@ -543,6 +582,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       for await (const entry of zipXml(archive)) {
         try {
           const row = parseXml(entry.xml, Parser);
+          /* Desglose fiscal (1.6.16): se persiste junto al CFDI; si el
+             parseo completo falla, el registro ligero ya vale. */
+          try { row.fiscal = fiscalSummary(parseCfdiFull(entry.xml, Parser)); } catch { /* sin desglose */ }
           const validForDirection = job.direction === 'received' ? row.to.rfc === job.rfc : row.from.rfc === job.rfc;
           need(validForDirection, 'CFDI de otro RFC.');
           valid.push({ row, raw: cloud ? entry.xml : null });
@@ -689,7 +731,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['blacklist_meta', ['listId', 'fetched', 'next', 'count', 'declared', 'error']],
     ['list_events', ['id', 'at', 'listId', 'rfc', 'change', 'detail']],
     ['sat_documents', ['id', 'rfc', 'kind', 'issuedAt', 'fileId', 'source', 'created', 'error']],
-    ['package_attempts', ['job', 'remoteId', 'attempts']]
+    ['package_attempts', ['job', 'remoteId', 'attempts']],
+    ['mail_sends', ['id', 'at', 'recipients', 'subject', 'kind', 'ok', 'error']]
   ];
   const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   function dumpOperations() {
@@ -1402,7 +1445,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const watched = counterpartRfcs();
     const changes = [];
     tx(db, () => {
-      const before = new Map(db.prepare('SELECT rfc,detail FROM blacklist_entries WHERE listId=?').all()
+      const before = new Map(db.prepare('SELECT rfc,detail FROM blacklist_entries WHERE listId=?').all(source.id)
         .map(row => [row.rfc, row.detail]));
       for (const rfc of watched) {
         const was = before.get(rfc), is = entries.get(rfc)?.detail;
@@ -1543,6 +1586,512 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       ' Revisa que Cloud Sync esté sincronizando la carpeta del respaldo y que el destino secundario siga configurado.', time);
   }
 
+  /* ===== Centro de salidas (1.6.16) =====
+     Correo DESDE la app con bitácora, paquete mensual de la contadora
+     construido en el servidor, informe automático a Nora, resumen
+     semanal de los lunes, exportación completa legible y re-parseo
+     del histórico. Todo sale de los datos locales: nada se inventa y
+     el desglose fiscal viene del XML guardado. */
+  function readFileRecord(id) {
+    const row = db.prepare("SELECT value,data,mime FROM records WHERE store='files' AND id=?").get(id);
+    if (!row) return null;
+    if (row.data) return { buffer: Buffer.from(row.data), mime: row.mime || 'application/octet-stream' };
+    try { const parsed = JSON.parse(row.value); return { buffer: Buffer.from(parsed.content || '', 'base64'), mime: parsed.mime || 'application/octet-stream' }; }
+    catch { return null; }
+  }
+  function zipStoreBuffers(entries) {
+    const chunks = [], central = [];
+    let offset = 0;
+    for (const { name, buffer } of entries) {
+      const nameBuf = Buffer.from(name, 'utf8');
+      const crc = crc32(buffer);
+      const local = Buffer.alloc(30);
+      local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(0x0800, 6);
+      local.writeUInt32LE(crc, 14); local.writeUInt32LE(buffer.length, 18); local.writeUInt32LE(buffer.length, 22);
+      local.writeUInt16LE(nameBuf.length, 26);
+      chunks.push(local, nameBuf, buffer);
+      const cen = Buffer.alloc(46);
+      cen.writeUInt32LE(0x02014b50, 0); cen.writeUInt16LE(20, 4); cen.writeUInt16LE(20, 6); cen.writeUInt16LE(0x0800, 8);
+      cen.writeUInt32LE(crc, 16); cen.writeUInt32LE(buffer.length, 20); cen.writeUInt32LE(buffer.length, 24);
+      cen.writeUInt16LE(nameBuf.length, 28); cen.writeUInt32LE(offset, 42);
+      central.push(cen, nameBuf);
+      offset += local.length + nameBuf.length + buffer.length;
+    }
+    const centralBuf = Buffer.concat(central);
+    const end = Buffer.alloc(22);
+    end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(entries.length, 8); end.writeUInt16LE(entries.length, 10);
+    end.writeUInt32LE(centralBuf.length, 12); end.writeUInt32LE(offset, 16);
+    return Buffer.concat([...chunks, centralBuf, end]);
+  }
+  const csvCell = value => '"' + String(value ?? '').replaceAll('"', '""') + '"';
+  const csvText = rows => '﻿' + rows.map(row => row.map(csvCell).join(',')).join('\r\n');
+  async function sendAppMail({ to, subject, text, attachments }, kind, time) {
+    const recipients = String(to || '').trim() || (mail ? mail.recipient : '');
+    let ok = false, errorText = '';
+    try {
+      need(mail, 'El correo no está configurado en esta instalación.', 409);
+      need(recipients, 'Falta el destinatario del correo.');
+      await mail.transport.sendMail({ from: displayFrom(mail.from), to: recipients, subject, text, attachments });
+      ok = true;
+    } catch (error) { errorText = message(error); }
+    db.prepare('INSERT INTO mail_sends(at,recipients,subject,kind,ok,error) VALUES (?,?,?,?,?,?)')
+      .run(time, recipients, subject, kind, ok ? 1 : 0, errorText);
+    if (!ok) throw new Error(errorText);
+    return { recipients };
+  }
+  const recordInvoices = () => {
+    try { return db.prepare("SELECT value FROM records WHERE store='invoices'").all().map(row => JSON.parse(row.value)); }
+    catch { return []; }
+  };
+  const centsOf = value => {
+    const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(String(value ?? '').trim());
+    if (!match) return 0n;
+    const cents = BigInt(match[2]) * 100n + BigInt((match[3] || '').padEnd(2, '0'));
+    return match[1] ? -cents : cents;
+  };
+  const moneyText = cents => { const sign = cents < 0n ? '-' : ''; const abs = cents < 0n ? -cents : cents;
+    return sign + (abs / 100n).toString() + '.' + String(abs % 100n).padStart(2, '0'); };
+  function buildMonthlyPackage(monthKey) {
+    const invoices = recordInvoices().filter(invoice => String(invoice.date || '').startsWith(monthKey));
+    const entries = [];
+    const index = [['UUID', 'Fecha', 'Tipo', 'Emisor RFC', 'Emisor', 'Receptor RFC', 'Receptor', 'Total', 'Moneda', 'Estado']];
+    let issued = 0n, received = 0n;
+    const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
+    for (const invoice of invoices) {
+      index.push([invoice.id, invoice.date, invoice.kind, invoice.from?.rfc, invoice.from?.name, invoice.to?.rfc, invoice.to?.name,
+        invoice.total, invoice.currency || 'MXN', invoice.state || '']);
+      if (!invoice.currency || invoice.currency === 'MXN') {
+        if (profileRfcs.has(invoice.from?.rfc)) issued += centsOf(invoice.total);
+        if (profileRfcs.has(invoice.to?.rfc)) received += centsOf(invoice.total);
+      }
+      const file = readFileRecord('xml:' + invoice.id);
+      if (file) entries.push({ name: 'xml/' + invoice.id + '.xml', buffer: file.buffer });
+    }
+    entries.unshift({ name: 'indice.csv', buffer: Buffer.from(csvText(index)) });
+    /* Documentos PDF del mes (constancias, opiniones, acuses…). */
+    try {
+      for (const row of db.prepare("SELECT value FROM records WHERE store='documents'").all()) {
+        const doc = JSON.parse(row.value);
+        if (!String(doc.date || '').startsWith(monthKey)) continue;
+        const file = readFileRecord(doc.id);
+        if (file) entries.push({ name: 'documentos/' + (doc.rfc || 'sin-rfc') + '/' + String(doc.name || doc.id).replace(/[\\/:*?"<>|]/g, '_'), buffer: file.buffer });
+      }
+    } catch { /* sin documentos */ }
+    /* Base DIOT del mes con el desglose persistido. */
+    const diot = new Map();
+    for (const invoice of invoices) {
+      if (!profileRfcs.has(invoice.to?.rfc) || invoice.kind !== 'I') continue;
+      const key = invoice.from.rfc;
+      if (!diot.has(key)) diot.set(key, { name: invoice.from.name || '', count: 0, base: 0n, iva: 0n, withheld: 0n, total: 0n, fiscal: 0 });
+      const group = diot.get(key);
+      group.count++; group.total += centsOf(invoice.total);
+      if (invoice.fiscal) {
+        group.fiscal++;
+        for (const t of invoice.fiscal.transferred) if (t.tax === '002') { group.base += centsOf(t.base); group.iva += centsOf(t.amount); }
+        for (const w of invoice.fiscal.withheld) group.withheld += centsOf(w.amount);
+      }
+    }
+    const diotRows = [['RFC proveedor', 'Proveedor', 'CFDI recibidos', 'Valor de actos', 'IVA trasladado', 'Retenciones', 'Total', 'CFDI con desglose']];
+    for (const [rfc, group] of diot) diotRows.push([rfc, group.name, group.count, moneyText(group.base), moneyText(group.iva), moneyText(group.withheld), moneyText(group.total), group.fiscal]);
+    entries.push({ name: 'base-diot.csv', buffer: Buffer.from(csvText(diotRows)) });
+    /* Novedades de listas negras del mes. */
+    const monthStart = Date.parse(monthKey + '-01T00:00:00Z');
+    const events = db.prepare('SELECT * FROM list_events WHERE at>=? AND at<? ORDER BY at').all(monthStart, monthStart + 32 * DAY);
+    const eventRows = [['Fecha', 'Listado', 'RFC', 'Cambio', 'Detalle']];
+    for (const event of events) eventRows.push([new Date(event.at).toISOString(), event.listId, event.rfc, event.change, event.detail]);
+    entries.push({ name: 'listas-novedades.csv', buffer: Buffer.from(csvText(eventRows)) });
+    /* Por cobrar/pagar base: PPD del mes aún sin complemento (el
+       detalle fino de saldos llega con la ronda de dinero). */
+    const pending = invoices.filter(invoice => invoice.fiscal?.paymentMethod === 'PPD' && invoice.kind === 'I');
+    const pendingRows = [['UUID', 'Fecha', 'Sentido', 'Contraparte', 'Total']];
+    for (const invoice of pending) pendingRows.push([invoice.id, invoice.date,
+      profileRfcs.has(invoice.from?.rfc) ? 'Por cobrar (emitida PPD)' : 'Por pagar (recibida PPD)',
+      profileRfcs.has(invoice.from?.rfc) ? invoice.to?.name : invoice.from?.name, invoice.total]);
+    entries.push({ name: 'ppd-del-mes.csv', buffer: Buffer.from(csvText(pendingRows)) });
+    const summary = ['PacoSAT · Paquete mensual ' + monthKey, '',
+      'CFDI del mes: ' + invoices.length,
+      'Total emitido (tus RFC): $' + moneyText(issued),
+      'Total recibido (tus RFC): $' + moneyText(received),
+      'Documentos PDF del mes incluidos en /documentos.',
+      'Base DIOT con desglose: base-diot.csv · Novedades de listas: listas-novedades.csv · PPD del mes: ppd-del-mes.csv'].join('\n');
+    entries.push({ name: 'resumen.txt', buffer: Buffer.from(summary) });
+    return { buffer: zipStoreBuffers(entries), filename: 'PacoSAT-paquete-' + monthKey + '.zip',
+      counts: { invoices: invoices.length, events: events.length } };
+  }
+  const mxFormat = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Mexico_City', weekday: 'short',
+    day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', hourCycle: 'h23' });
+  function mxParts(time) {
+    const parts = Object.fromEntries(mxFormat.formatToParts(time).map(part => [part.type, part.value]));
+    return { weekday: { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 }[parts.weekday],
+      day: Number(parts.day), hour: Number(parts.hour) % 24, monthKey: parts.year + '-' + parts.month };
+  }
+  const reportsConfig = () => { try { return JSON.parse(db.prepare("SELECT value FROM settings WHERE key='reports'").get()?.value || '{}'); } catch { return {}; } };
+  async function reportsTick(time) {
+    const config = reportsConfig();
+    const state = (() => { try { return JSON.parse(getState('reports-state') || '{}'); } catch { return {}; } })();
+    const mx = mxParts(time);
+    /* Informe mensual a la contadora: el día fijado, se envía el
+       paquete del mes ANTERIOR una sola vez. */
+    if (config.nora?.enabled) {
+      const [year, month] = mx.monthKey.split('-').map(Number);
+      const prevDate = new Date(Date.UTC(year, month - 2, 1));
+      const prev = prevDate.toISOString().slice(0, 7);
+      if (mx.day >= Math.min(28, Math.max(1, config.nora.day || 3)) && mx.hour >= (config.nora.hour ?? 9) && state.noraMonth !== prev) {
+        try {
+          const pack = buildMonthlyPackage(prev);
+          await sendAppMail({ to: config.nora.recipients || '', subject: 'PacoSAT · Informe mensual ' + prev,
+            text: 'Adjunto el paquete del mes ' + prev + ': índice de CFDI, XML, documentos, base DIOT con desglose, ' +
+              'novedades de listas negras y PPD del mes. Generado automáticamente por PacoSAT.',
+            attachments: [{ filename: pack.filename, content: pack.buffer }] }, 'nora', time);
+          state.noraMonth = prev; setState('reports-state', JSON.stringify(state));
+        } catch (error) {
+          queueAlert('nora-report-fail', 'nora:' + prev, 'PacoSAT · El informe mensual no pudo enviarse',
+            'El paquete de ' + prev + ' no salió: ' + message(error) + ' Puedes enviarlo a mano desde Salidas.', time);
+        }
+      }
+    }
+    /* Resumen semanal ejecutivo: lunes a la hora fijada, una vez. */
+    if (config.weekly?.enabled && mx.weekday === 1 && mx.hour >= (config.weekly.hour ?? 8)) {
+      const monday = day(time - ((mx.weekday + 6) % 7) * DAY);
+      if (state.weeklyMonday !== monday) {
+        try {
+          const since = time - 7 * DAY;
+          const activity = (() => { try { return db.prepare("SELECT value FROM records WHERE store='activity'").all()
+            .map(row => JSON.parse(row.value)).filter(item => Date.parse(item.date || 0) >= since); } catch { return []; } })();
+          const added = activity.reduce((sum, item) => sum + (item.added || 0), 0);
+          const finishedJobs = db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status='finished' AND created>=?").get(since).n;
+          const listChanges = db.prepare('SELECT COUNT(*) AS n FROM list_events WHERE at>=?').get(since).n;
+          const alertsSent = db.prepare('SELECT COUNT(*) AS n FROM alerts WHERE sent IS NOT NULL AND sent>=?').get(since).n;
+          const lines = ['Resumen semanal de PacoSAT · semana del ' + monday, '',
+            '· CFDI nuevos incorporados: ' + added,
+            '· Solicitudes al SAT terminadas: ' + finishedJobs,
+            '· Cambios en listas negras: ' + listChanges,
+            '· Avisos enviados: ' + alertsSent,
+            '· Último respaldo: ' + (getState('backup:last') ? day(Number(getState('backup:last'))) : 'sin registro'),
+            '', 'El detalle completo está en la bitácora de la app (Operaciones).'];
+          await sendAppMail({ to: config.weekly.recipients || '', subject: 'PacoSAT · Resumen semanal ' + monday,
+            text: lines.join('\n') }, 'weekly', time);
+          state.weeklyMonday = monday; setState('reports-state', JSON.stringify(state));
+        } catch (error) {
+          queueAlert('weekly-fail', 'weekly:' + monday, 'PacoSAT · El resumen semanal no pudo enviarse', message(error), time);
+        }
+      }
+    }
+  }
+
+  /* ===== Dinero (1.6.17) =====
+     Saldos desde la relación Pagos↔facturas persistida en el desglose
+     (1.6.16/1.6.17): por cobrar y por pagar con antigüedad, avisos de
+     PPD que envejecen sin pago completo y detector de facturas
+     esperadas (proveedor recurrente que este mes no ha llegado). La
+     conciliación con estados de cuenta consume estos mismos saldos
+     cuando llega la ronda de Bancos (1.6.19). */
+  function moneyPaidBy() {
+    const paidBy = new Map();
+    for (const payment of recordInvoices()) {
+      if (payment.kind !== 'P' || !payment.fiscal?.payments) continue;
+      for (const pago of payment.fiscal.payments.pagos || [])
+        for (const doc of pago.documentos || [])
+          paidBy.set(doc.idDocumento, (paidBy.get(doc.idDocumento) || 0n) + centsOf(doc.impPagado));
+    }
+    return paidBy;
+  }
+  function moneyBalances() {
+    const paidBy = moneyPaidBy();
+    const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
+    return recordInvoices().filter(invoice => invoice.kind === 'I').map(invoice => {
+      const total = centsOf(invoice.total);
+      const paid = invoice.fiscal?.paymentMethod === 'PUE' ? total : (paidBy.get(invoice.id) || 0n);
+      return { id: invoice.id, date: invoice.date, from: invoice.from, to: invoice.to, kind: invoice.kind,
+        method: invoice.fiscal?.paymentMethod || '', total, paid, balance: total - paid,
+        receivable: profileRfcs.has(invoice.from?.rfc), payable: profileRfcs.has(invoice.to?.rfc) };
+    });
+  }
+  function expectedInvoices(time) {
+    const mx = mxParts(time);
+    const currentMonth = mx.monthKey;
+    const byEmitter = new Map();
+    for (const invoice of recordInvoices()) {
+      if (invoice.kind !== 'I') continue;
+      const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
+      if (!profileRfcs.has(invoice.to?.rfc)) continue;
+      const month = String(invoice.date || '').slice(0, 7);
+      if (!byEmitter.has(invoice.from.rfc)) byEmitter.set(invoice.from.rfc, { name: invoice.from.name || '', months: new Map() });
+      const entry = byEmitter.get(invoice.from.rfc);
+      entry.months.set(month, (entry.months.get(month) || 0) + 1);
+    }
+    const expected = [];
+    for (const [rfc, entry] of byEmitter) {
+      if (entry.months.has(currentMonth)) continue;
+      /* Recurrente: facturó en al menos 3 de los últimos 6 meses. */
+      let recent = 0;
+      for (let i = 1; i <= 6; i++) {
+        const date = new Date(Date.UTC(Number(currentMonth.slice(0, 4)), Number(currentMonth.slice(5, 7)) - 1 - i, 1));
+        if (entry.months.has(date.toISOString().slice(0, 7))) recent++;
+      }
+      if (recent >= 3) expected.push({ rfc, name: entry.name, monthsActive: recent, month: currentMonth });
+    }
+    return expected;
+  }
+  function moneyTick(time) {
+    const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
+    for (const balance of moneyBalances()) {
+      if (balance.method !== 'PPD' || balance.balance <= 0n) continue;
+      const age = Math.floor((time - Date.parse(balance.date)) / DAY);
+      if (balance.payable && age >= 30)
+        queueAlert('ppd-payable', 'ppd:' + balance.id + ':30', 'PacoSAT · Factura por pagar cumple 30 días sin pago completo',
+          'La factura ' + balance.id + ' de ' + (balance.from.name || balance.from.rfc) + ' por $' + moneyText(balance.total) +
+          ' (PPD, ' + balance.date + ') aún tiene saldo de $' + moneyText(balance.balance) + '. Revisa su vencimiento con el proveedor.', time);
+      if (balance.receivable && age >= 60)
+        queueAlert('ppd-receivable', 'ppd:' + balance.id + ':60', 'PacoSAT · Factura por cobrar cumple 60 días sin cobro completo',
+          'La factura ' + balance.id + ' para ' + (balance.to.name || balance.to.rfc) + ' por $' + moneyText(balance.total) +
+          ' (PPD, ' + balance.date + ') aún tiene saldo por cobrar de $' + moneyText(balance.balance) + '.', time);
+    }
+    if (mxParts(time).day >= 10) for (const item of expectedInvoices(time))
+      queueAlert('expected-invoice', 'expected:' + item.rfc + ':' + item.month,
+        'PacoSAT · Factura esperada que no ha llegado',
+        (item.name || item.rfc) + ' te facturó en ' + item.monthsActive + ' de los últimos 6 meses, pero en ' + item.month +
+        ' aún no consta ningún CFDI suyo. Si era un gasto fijo, conviene preguntar o revisar que no se haya perdido.', time);
+    void profileRfcs;
+  }
+
+  /* ===== Final 1.7.0: invitado, autodiagnóstico y paquete offline =====
+     Acceso invitado de SOLO LECTURA con credencial separada
+     (desactivado por defecto), bitácora de accesos, «Probar todo» y
+     el paquete para consultar sin conexión (últimos 3 meses). */
+  function logAccess(kind, detail) {
+    db.prepare('INSERT INTO access_log(at,kind,detail) VALUES (?,?,?)').run(now(), kind, String(detail || '').slice(0, 200));
+    db.prepare('DELETE FROM access_log WHERE rowid NOT IN (SELECT rowid FROM access_log ORDER BY rowid DESC LIMIT 1000)').run();
+  }
+  function guestConfig() {
+    try { return JSON.parse(getState('guest-config') || '{}'); } catch { return {}; }
+  }
+  function guestSessions() {
+    try { return JSON.parse(getState('guest-sessions') || '{}'); } catch { return {}; }
+  }
+  const GUEST_GET = ['/api/status', '/api/storage', '/api/storage/rev', '/api/lists', '/api/money',
+    '/api/fiscal/calendar', '/api/fiscal/issues', '/api/banks', '/api/banks/movements', '/api/offline-bundle', '/api/reports/config'];
+  function selfTest() {
+    const checks = [];
+    try { db.prepare('SELECT 1').get(); checks.push({ id: 'db', label: 'Base de datos local', state: 'ok', detail: 'Responde y guarda los datos.' }); }
+    catch (error) { checks.push({ id: 'db', label: 'Base de datos local', state: 'bad', detail: message(error) }); }
+    if (mail) checks.push({ id: 'mail', label: 'Correo de avisos', state: 'ok', detail: 'Configurado para ' + mail.recipient + '.' });
+    else checks.push({ id: 'mail', label: 'Correo de avisos', state: 'warn', detail: 'Sin configurar: los avisos no saldrán. Actívalo en el Centro SAT.' });
+    const lists = listsOverview();
+    const stale = lists.sources.filter(source => !source.fetched || now() - source.fetched > 48 * 3600 * 1000);
+    checks.push({ id: 'lists', label: 'Listados oficiales al día', state: stale.length ? 'warn' : 'ok',
+      detail: stale.length ? 'Con retraso o sin cargar: ' + stale.map(source => source.label).join(', ') + '.' : 'Los ' + lists.sources.length + ' listados están dentro de las 48 horas.' });
+    const backup = overview().scheduledBackup;
+    checks.push({ id: 'backup', label: 'Respaldo programado', state: backup.last && now() - backup.last < 8 * DAY ? 'ok' : 'warn',
+      detail: backup.last ? 'Último respaldo: ' + new Date(backup.last).toISOString().slice(0, 10) + '.' : 'Aún no hay respaldo programado ejecutado.' });
+    checks.push({ id: 'external', label: 'Copia externa (Google Drive)', state: backup.secondaryStale ? 'warn' : backup.secondaryLastOk ? 'ok' : 'dim',
+      detail: backup.secondaryLastOk ? 'Última copia buena: ' + new Date(backup.secondaryLastOk).toISOString().slice(0, 10) + '.' : 'Sin copia externa registrada todavía.' });
+    const profiles = db.prepare('SELECT rfc,certExpires FROM profiles').all();
+    if (!profiles.length) checks.push({ id: 'efirma', label: 'e.firma de los perfiles', state: 'dim', detail: 'Sin perfiles SAT configurados.' });
+    for (const profile of profiles) {
+      const days = profile.certExpires ? Math.ceil((profile.certExpires - now()) / DAY) : null;
+      checks.push({ id: 'efirma-' + profile.rfc, label: 'e.firma · ' + profile.rfc,
+        state: days === null ? 'warn' : days < 0 ? 'bad' : days <= 45 ? 'warn' : 'ok',
+        detail: days === null ? 'Sin caducidad registrada.' : days < 0 ? 'CADUCADA: hay que renovarla en el SAT.' : 'Caduca en ' + days + ' días.' });
+    }
+    checks.push({ id: 'sat', label: 'Conexión con el SAT', state: 'dim', detail: 'No se comprueba en el diagnóstico: la disciplina de solicitudes (5002) prohíbe gastar peticiones en pruebas.' });
+    return { at: now(), checks };
+  }
+  function offlineBundle() {
+    const cutoff = new Date(now() - 92 * DAY).toISOString().slice(0, 10);
+    const invoices = recordInvoices().filter(invoice => String(invoice.date || '') >= cutoff).slice(0, 8000);
+    const months = [];
+    const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
+    for (let i = 0; i < 3; i++) {
+      const key = new Date(now() - i * 31 * DAY).toISOString().slice(0, 7);
+      if (months.some(item => item.month === key)) continue;
+      const mine = recordInvoices().filter(invoice => String(invoice.date || '').startsWith(key) && invoice.kind === 'I');
+      let issuedCount = 0, receivedCount = 0, issuedTotal = 0n, receivedTotal = 0n, withoutFiscal = 0;
+      const ivaByRfc = new Map();
+      for (const invoice of mine) {
+        const issued = profileRfcs.has(invoice.from?.rfc);
+        if (issued) { issuedCount++; issuedTotal += centsOf(invoice.total); } else { receivedCount++; receivedTotal += centsOf(invoice.total); }
+        if (!invoice.fiscal) { withoutFiscal++; continue; }
+        const ownRfc = issued ? invoice.from.rfc : invoice.to?.rfc;
+        if (!ownRfc) continue;
+        if (!ivaByRfc.has(ownRfc)) ivaByRfc.set(ownRfc, { rfc: ownRfc, payable: 0n, creditable: 0n });
+        const entry = ivaByRfc.get(ownRfc);
+        for (const tax of invoice.fiscal.transferred || []) {
+          if (tax.tax !== '002') continue;
+          if (issued) entry.payable += centsOf(tax.amount); else entry.creditable += centsOf(tax.amount);
+        }
+      }
+      months.push({ month: key, withoutFiscal,
+        totals: { issuedCount, receivedCount, issuedTotal: moneyText(issuedTotal), receivedTotal: moneyText(receivedTotal) },
+        iva: [...ivaByRfc.values()].map(entry => ({ rfc: entry.rfc, payable: moneyText(entry.payable),
+          creditable: moneyText(entry.creditable), balance: moneyText(entry.payable - entry.creditable) })) });
+    }
+    return { generatedAt: now(), invoices,
+      balances: moneyBalances().filter(item => item.balance > 0n).map(item => ({ ...item,
+        total: moneyText(item.total), paid: moneyText(item.paid), balance: moneyText(item.balance) })),
+      expected: expectedInvoices(now()), listsSources: listsOverview().sources.map(source => ({ id: source.id, label: source.label, fetched: source.fetched, count: source.count, error: source.error })),
+      bankPosition: banksOverview().position, reports: months };
+  }
+
+  /* ===== Bancos (1.6.19) =====
+     Archivo de estados de cuenta por banco/cuenta/mes con lectura
+     automática conservadora, cadena de saldos verificada, semáforo
+     de faltantes y posición total. Los movimientos alimentan la
+     conciliación de Dinero (1.6.17). */
+  function banksOverview() {
+    const accounts = db.prepare('SELECT * FROM bank_accounts ORDER BY bank,name').all();
+    const statements = db.prepare('SELECT * FROM bank_statements ORDER BY month').all();
+    const byAccount = new Map(accounts.map(account => [account.id, []]));
+    for (const statement of statements) byAccount.get(statement.accountId)?.push(statement);
+    const result = { accounts: [], position: { total: '0.00', byBank: {}, asOf: '' } };
+    const bankTotals = new Map();
+    let global = 0n;
+    const monthKeyOf = time => mxParts(time).monthKey;
+    for (const account of accounts) {
+      const mine = byAccount.get(account.id) || [];
+      /* Cadena de saldos: el inicial de un mes debe ser el final del
+         anterior archivado. */
+      let previous = null, chainBroken = null;
+      for (const statement of mine) {
+        statement.chain = 'ok';
+        if (previous && previous.closingCents !== null && statement.openingCents !== null &&
+            BigInt(previous.closingCents) !== BigInt(statement.openingCents)) {
+          statement.chain = 'broken';
+          statement.chainDetail = 'El mes ' + previous.month + ' cerró en $' + moneyText(BigInt(previous.closingCents)) +
+            ' pero ' + statement.month + ' abre en $' + moneyText(BigInt(statement.openingCents)) + '.';
+          chainBroken = statement;
+        }
+        previous = statement;
+      }
+      /* Faltantes: desde el primer estado hasta el mes actual. */
+      const missing = [];
+      if (mine.length) {
+        const have = new Set(mine.map(statement => statement.month));
+        let [year, month] = mine[0].month.split('-').map(Number);
+        const [endYear, endMonth] = monthKeyOf(now()).split('-').map(Number);
+        while (year < endYear || (year === endYear && month <= endMonth)) {
+          const key = year + '-' + String(month).padStart(2, '0');
+          if (!have.has(key)) missing.push(key);
+          month++; if (month > 12) { month = 1; year++; }
+        }
+      }
+      const latest = mine.filter(statement => statement.closingCents !== null).at(-1);
+      if (latest) {
+        global += BigInt(latest.closingCents);
+        const bankKey = account.bank || 'Sin banco';
+        bankTotals.set(bankKey, (bankTotals.get(bankKey) || 0n) + BigInt(latest.closingCents));
+        if (latest.month > result.position.asOf) result.position.asOf = latest.month;
+      }
+      result.accounts.push({ ...account, statements: mine.map(statement => ({ ...statement,
+          opening: statement.openingCents === null ? null : moneyText(BigInt(statement.openingCents)),
+          closing: statement.closingCents === null ? null : moneyText(BigInt(statement.closingCents)),
+          credits: statement.creditsCents === null ? null : moneyText(BigInt(statement.creditsCents)),
+          charges: statement.chargesCents === null ? null : moneyText(BigInt(statement.chargesCents)) })),
+        missing, chainBroken: Boolean(chainBroken),
+        position: latest ? { closing: moneyText(BigInt(latest.closingCents)), month: latest.month } : null });
+    }
+    result.position.total = moneyText(global);
+    for (const [bank, total] of bankTotals) result.position.byBank[bank] = moneyText(total);
+    return result;
+  }
+
+  /* ===== Cumplimiento (1.6.18) =====
+     Calendario fiscal por RFC (lo que el sistema conoce — caducidad
+     de e.firma, constancias que envejecen, día 17 y anual — más lo
+     que se capture a mano), detector de errores y duplicados sobre
+     los registros guardados y paquete de defensa por periodo. */
+  function fiscalEvents(time) {
+    const events = [];
+    const mx = mxParts(time);
+    const profiles = db.prepare('SELECT rfc,certExpires FROM profiles').all();
+    for (const profile of profiles) {
+      if (profile.certExpires) events.push({ rfc: profile.rfc, kind: 'efirma', title: 'Caducidad de la e.firma',
+        date: new Date(profile.certExpires).toISOString().slice(0, 10) });
+      /* Día 17: provisionales y DIOT del mes anterior. */
+      const due17 = mx.day <= 17 ? mx.monthKey + '-17' : (() => { const d = new Date(Date.UTC(Number(mx.monthKey.slice(0, 4)), Number(mx.monthKey.slice(5, 7)), 17)); return d.toISOString().slice(0, 10); })();
+      events.push({ rfc: profile.rfc, kind: 'mensual', title: 'Pago provisional y DIOT (día 17)', date: due17 });
+      const annualYear = mx.monthKey <= '03' || (mx.monthKey.slice(5, 7) === '03' && mx.day <= 31) ? mx.monthKey.slice(0, 4) : String(Number(mx.monthKey.slice(0, 4)) + 1);
+      events.push({ rfc: profile.rfc, kind: 'anual', title: 'Declaración anual (31 de marzo)', date: annualYear + '-03-31' });
+      const docs = db.prepare('SELECT MAX(issuedAt) AS newest FROM sat_documents WHERE rfc=?').get(profile.rfc);
+      if (docs?.newest) {
+        const staleAt = new Date(docs.newest + 90 * DAY).toISOString().slice(0, 10);
+        events.push({ rfc: profile.rfc, kind: 'constancia', title: 'La constancia/opinión cumple 90 días (renovarla)', date: staleAt });
+      }
+    }
+    let manual = [];
+    try { manual = JSON.parse(getState('fiscal-events') || '[]'); } catch { manual = []; }
+    for (const item of Array.isArray(manual) ? manual : [])
+      events.push({ rfc: item.rfc || '', kind: 'manual', title: item.title, date: item.date, id: item.id });
+    for (const event of events) event.daysLeft = Math.round((Date.parse(event.date + 'T12:00:00Z') - time) / DAY);
+    return events.sort((a, b) => a.date.localeCompare(b.date));
+  }
+  function fiscalIssues() {
+    const issues = [];
+    const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
+    const invoices = recordInvoices();
+    const byFolio = new Map();
+    for (const invoice of invoices) {
+      if (invoice.fiscal?.serie || invoice.fiscal?.folio) {
+        const key = invoice.from.rfc + '|' + (invoice.fiscal.serie || '') + '|' + (invoice.fiscal.folio || '');
+        if (byFolio.has(key) && byFolio.get(key) !== invoice.id)
+          issues.push({ id: invoice.id, kind: 'folio-duplicado', detail: 'Mismo emisor, serie y folio que ' + byFolio.get(key) + ' con otro UUID.' });
+        else byFolio.set(key, invoice.id);
+      }
+      if (invoice.kind === 'I' && invoice.to?.rfc && !profileRfcs.has(invoice.to.rfc) && profileRfcs.has(invoice.from?.rfc) === false &&
+          ![...profileRfcs].some(rfc => invoice.from?.rfc === rfc))
+        issues.push({ id: invoice.id, kind: 'receptor-ajeno', detail: 'El receptor ' + invoice.to.rfc + ' no es ningún perfil de PacoSAT (¿importado en la empresa equivocada?).' });
+      const fiscal = invoice.fiscal;
+      if (fiscal && fiscal.subtotal) {
+        const expected = (centsOf(fiscal.subtotal) - centsOf(fiscal.discount) + centsOf(fiscal.totalTransferred) - centsOf(fiscal.totalWithheld));
+        if (Math.abs(Number(expected - centsOf(invoice.total))) > 5)
+          issues.push({ id: invoice.id, kind: 'totales-no-cuadran', detail: 'Subtotal − descuento + impuestos − retenciones = $' + moneyText(expected) + ' pero el total dice $' + moneyText(centsOf(invoice.total)) + '.' });
+      }
+    }
+    return issues.slice(0, 200);
+  }
+  function fiscalTick(time) {
+    for (const event of fiscalEvents(time)) {
+      if (event.daysLeft > 3 || event.daysLeft < -7) continue;
+      queueAlert('fiscal-due', 'fiscal:' + (event.rfc || 'general') + ':' + event.date + ':' + event.title,
+        'PacoSAT · Vencimiento fiscal cercano',
+        (event.rfc ? event.rfc + ' · ' : '') + event.title + ' — fecha: ' + event.date +
+        (event.daysLeft < 0 ? ' (ya venció hace ' + (-event.daysLeft) + ' días)' : event.daysLeft === 0 ? ' (vence HOY)' : ' (faltan ' + event.daysLeft + ' días)') +
+        '. Ábrelo en la pantalla Cumplimiento para resolverlo.', time);
+    }
+  }
+  async function buildDefensePackage(month) {
+    const invoices = recordInvoices().filter(invoice => String(invoice.date || '').startsWith(month));
+    const entries = [];
+    const lines = [['uuid', 'fecha', 'emisor', 'receptor', 'tipo', 'total'].join(',')];
+    for (const invoice of invoices) {
+      lines.push([invoice.id, invoice.date, invoice.from.rfc, invoice.to.rfc, invoice.kind, invoice.total].join(','));
+      const file = readFileRecord('xml:' + invoice.id);
+      if (file) entries.push({ name: 'xml/' + invoice.id + '.xml', buffer: file.buffer });
+    }
+    entries.push({ name: 'indice.csv', buffer: Buffer.from(lines.join('\r\n'), 'utf8') });
+    /* Constancias de validación: situación en listados de cada
+       contraparte del periodo, a fecha de hoy. */
+    const parties = new Set();
+    for (const invoice of invoices) { parties.add(invoice.from.rfc); parties.add(invoice.to.rfc); }
+    const validation = [['rfc', 'situacion'].join(',')];
+    for (const rfc of parties) {
+      const hits = db.prepare('SELECT listId, detail FROM blacklist_entries WHERE rfc=?').all(rfc)
+        .map(hit => (LIST_CATALOG.find(item => item.id === hit.listId)?.label || hit.listId) + ' ' + hit.detail);
+      validation.push([rfc, hits.length ? hits.join(' | ') : 'Sin coincidencias'].join(','));
+    }
+    entries.push({ name: 'validaciones.csv', buffer: Buffer.from(validation.join('\r\n'), 'utf8') });
+    for (const profile of db.prepare('SELECT rfc FROM profiles').all())
+      for (const kind of ['constancia', 'opinion']) {
+        const doc = db.prepare('SELECT fileId FROM sat_documents WHERE rfc=? AND kind=? ORDER BY issuedAt DESC LIMIT 1').get(profile.rfc, kind);
+        const file = doc?.fileId ? readFileRecord(doc.fileId) : null;
+        if (file) entries.push({ name: 'documentos/' + profile.rfc + '-' + kind + '.pdf', buffer: file.buffer });
+      }
+    entries.push({ name: 'resumen.txt', buffer: Buffer.from('Paquete de defensa PacoSAT · Periodo ' + month + '\r\n' +
+      'Generado: ' + new Date(now()).toISOString() + '\r\nXML del periodo: ' + invoices.length + '\r\n' +
+      'Contiene: indice.csv, xml/ con los CFDI del periodo, validaciones.csv (listados oficiales a hoy) y las constancias/opiniones vigentes archivadas.\r\n', 'utf8') });
+    return zipStoreBuffers(entries);
+  }
+
   /* ===== Constancias y opinión del SAT (1.6.14) =====
      SOLO SAT (el IMSS quedó fuera por orden de Paco). Por RFC se puede
      activar la descarga mensual automática de la constancia de
@@ -1572,8 +2121,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const fileId = 'pdf:' + randomUUID();
     const base64 = Buffer.isBuffer(content) ? content.toString('base64') : String(content);
     tx(db, () => {
-      db.prepare("INSERT OR REPLACE INTO records(store,id,value) VALUES ('files',?,?)")
-        .run(fileId, JSON.stringify({ id: fileId, mime: 'application/pdf', content: base64 }));
+      db.prepare("INSERT OR REPLACE INTO records(store,id,value,data,mime) VALUES ('files',?,NULL,?,'application/pdf')")
+        .run(fileId, Buffer.isBuffer(content) ? content : Buffer.from(base64, 'base64'));
       db.prepare("INSERT OR REPLACE INTO records(store,id,value) VALUES ('documents',?,?)")
         .run(fileId, JSON.stringify({ id: fileId, rfc, kind: DOC_KIND_LABEL[kind],
           date: new Date(issuedAt).toISOString().slice(0, 10), period: '', name: fileName || DOC_KIND_LABEL[kind] + ' · ' + rfc + '.pdf' }));
@@ -1608,6 +2157,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
               ', emitido el ' + day(issuedAt) + '. Va adjunto en PDF.',
             attachments: [{ filename: (DOC_KIND_LABEL[kind] + ' ' + rfc + '.pdf').replaceAll('/', '-'),
               content: Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'base64') }] });
+          db.prepare('INSERT INTO mail_sends(at,recipients,subject,kind,ok,error) VALUES (?,?,?,?,1,\'\')')
+            .run(time, recipients.length ? recipients.join(', ') : mail.recipient,
+              DOC_KIND_LABEL[kind] + ' de ' + rfc, 'constancia');
         } catch (error) {
           queueAlert('satdoc-mail', 'satdoc-mail:' + rfc + ':' + kind + ':' + Math.floor(time / DAY),
             'PacoSAT · El documento se archivó pero el correo falló',
@@ -1732,6 +2284,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         checkSilence(time);
         await listsTick(time, listFetch || undefined);
         await satDocsTick(time);
+        await reportsTick(time);
+        moneyTick(time);
+        fiscalTick(time);
       }
       await scanWatchFolder(time);
       await runScheduledBackup(time);
@@ -1758,7 +2313,63 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         return res.end(html.replace('<!--PACOSAT_TOKEN-->', '<meta name="pacosat-token" content="' + token + '">' +
           (cloud ? '<meta name="pacosat-cloud" content="1">' : '')));
       }
-      need(req.headers['x-pacosat-token'] === token, 'Sesión local inválida.', 403);
+      /* PWA (1.7.0): manifiesto, service worker e icono, públicos como
+         la propia portada (sin datos dentro). */
+      if (req.method === 'GET' && url.pathname === '/manifest.webmanifest') {
+        res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
+        return res.end(JSON.stringify({ name: 'PacoSAT', short_name: 'PacoSAT', start_url: '/', scope: '/',
+          display: 'standalone', background_color: '#0e2a47', theme_color: '#0e2a47',
+          icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }] }));
+      }
+      if (req.method === 'GET' && url.pathname === '/icon.svg') {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
+        return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="18" fill="#0e2a47"/><path d="M50 14 80 24v26c0 18-12 30-30 36C32 80 20 68 20 50V24Z" fill="#f4b942"/><text x="50" y="62" font-size="34" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#0e2a47">P</text></svg>');
+      }
+      if (req.method === 'GET' && url.pathname === '/sw.js') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Service-Worker-Allowed': '/' });
+        return res.end("const C='pacosat-shell-v1';self.addEventListener('install',e=>{e.waitUntil(caches.open(C).then(c=>c.add('/')).then(()=>self.skipWaiting()))});" +
+          "self.addEventListener('activate',e=>{e.waitUntil(self.clients.claim())});" +
+          "self.addEventListener('fetch',e=>{const u=new URL(e.request.url);if(e.request.method!=='GET'||u.pathname.startsWith('/api/'))return;" +
+          "e.respondWith(fetch(e.request).then(r=>{if(u.pathname==='/'){const copy=r.clone();caches.open(C).then(c=>c.put('/',copy)).catch(()=>{})}return r}).catch(()=>caches.match('/')))});");
+      }
+      /* Entrada del invitado (1.7.0): la misma app con una meta que la
+         pone en modo invitado; el token llega tras el login. */
+      if (req.method === 'GET' && url.pathname === '/invitado') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(html.replace('<!--PACOSAT_TOKEN-->', '<meta name="pacosat-guest" content="1">' +
+          (cloud ? '<meta name="pacosat-cloud" content="1">' : '')));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/guest/login') {
+        need(req.headers.origin === origin, 'Origen inválido.', 403);
+        const config = guestConfig();
+        need(config.enabled && config.hash && config.salt, 'El acceso de invitado está desactivado.', 403);
+        const x = await body(req);
+        const candidate = scryptSync(String(x.password || ''), config.salt, 32);
+        const expected = Buffer.from(config.hash, 'hex');
+        need(candidate.length === expected.length && timingSafeEqual(candidate, expected), 'Contraseña de invitado incorrecta.');
+        const sessions = guestSessions();
+        const sessionToken = randomBytes(24).toString('hex');
+        sessions[sessionToken] = now() + 12 * 3600 * 1000;
+        for (const [key, expiry] of Object.entries(sessions)) if (expiry < now()) delete sessions[key];
+        setState('guest-sessions', JSON.stringify(sessions));
+        logAccess('guest-login', 'Entrada del invitado');
+        return json(res, { token: sessionToken, expires: sessions[sessionToken] });
+      }
+      /* Autenticación: el token principal (administrador) o una
+         sesión de invitado viva (solo lectura, guarda más abajo). */
+      const presented = req.headers['x-pacosat-token'];
+      let guest = false;
+      if (presented !== token) {
+        const sessions = guestSessions();
+        if (presented && sessions[presented] > now()) guest = true;
+        else need(false, 'Sesión local inválida.', 403);
+      }
+      if (guest) {
+        const allowed = (req.method === 'GET' && GUEST_GET.includes(url.pathname)) ||
+          (req.method === 'POST' && url.pathname === '/api/lists/validate');
+        if (!allowed) { logAccess('guest-blocked', req.method + ' ' + url.pathname); need(false, 'El acceso de invitado es de solo lectura.', 403); }
+        if (url.pathname !== '/api/status') logAccess('guest', req.method + ' ' + url.pathname);
+      }
       if (req.method === 'POST') need(req.headers.origin === origin, 'Origen inválido.', 403);
       if (req.method === 'GET' && url.pathname === '/api/status') return json(res, overview());
       /* Restauración del estado operativo (1.6.4): la hace el diálogo de
@@ -1985,15 +2596,273 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         archiveSatDoc(x.rfc, x.kind, raw, issuedAt, 'manual', now(), String(x.name || '').slice(0, 180) || undefined);
         return json(res, { profiles: satDocsOverview(now()) });
       }
+      if (req.method === 'POST' && url.pathname === '/api/mail/send') {
+        /* Correo desde la app (1.6.16): con adjuntos del expediente o
+           generados al momento; todo envío queda en la bitácora. */
+        const x = await body(req, 30 * 1024 * 1024);
+        need(mail, 'El correo no está configurado en esta instalación.', 409);
+        const tos = String(x.to || '').split(/[,;]/).map(item => item.trim()).filter(Boolean);
+        need(tos.length && tos.every(item => email.test(item)), 'Revisa los destinatarios.');
+        need(typeof x.subject === 'string' && x.subject.trim() && x.subject.length <= 200, 'Escribe el asunto.');
+        need(typeof x.text === 'string' && x.text.length <= 20000, 'El mensaje es demasiado largo.');
+        const attachments = [];
+        for (const item of Array.isArray(x.attachments) ? x.attachments.slice(0, 10) : []) {
+          if (item.fileId) {
+            const file = readFileRecord(String(item.fileId));
+            need(file, 'Un adjunto ya no existe en el expediente.', 404);
+            attachments.push({ filename: String(item.filename || item.fileId).slice(0, 120), content: file.buffer });
+          } else if (typeof item.content === 'string') {
+            const buffer = Buffer.from(item.content, 'base64');
+            need(buffer.length <= 15 * 1024 * 1024, 'Un adjunto supera los 15 MB.');
+            attachments.push({ filename: String(item.filename || 'adjunto').slice(0, 120), content: buffer });
+          }
+        }
+        const result = await sendAppMail({ to: tos.join(', '), subject: x.subject.trim(), text: x.text, attachments }, 'compose', now());
+        return json(res, { ok: true, recipients: result.recipients });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/mail/log') {
+        return json(res, { sends: db.prepare('SELECT * FROM mail_sends ORDER BY id DESC LIMIT 100').all() });
+      }
+      if (cloud && req.method === 'POST' && url.pathname === '/api/reparse') {
+        /* Re-parseo histórico (mejora nº 6): completa el desglose de
+           los CFDI viejos desde su XML guardado. Sin contactar al SAT. */
+        const Parser = await resolveInboxParser();
+        let updated = 0, skipped = 0, failed = 0;
+        for (const row of db.prepare("SELECT id,value FROM records WHERE store='invoices'").all()) {
+          const invoice = JSON.parse(row.value);
+          /* Sin desglose, o complemento de pago aún sin su relación de
+             pagos persistida (desglose anterior a la 1.6.17). */
+          if (invoice.fiscal && (invoice.kind !== 'P' || invoice.fiscal.payments !== undefined)) { skipped++; continue; }
+          const file = readFileRecord('xml:' + invoice.id);
+          if (!file) { failed++; continue; }
+          try {
+            invoice.fiscal = fiscalSummary(parseCfdiFull(file.buffer, Parser));
+            db.prepare("UPDATE records SET value=? WHERE store='invoices' AND id=?").run(JSON.stringify(invoice), invoice.id);
+            updated++;
+          } catch { failed++; }
+        }
+        if (updated) storageRevision++;
+        return json(res, { updated, skipped, failed });
+      }
+      if (cloud && req.method === 'POST' && url.pathname === '/api/export-full') {
+        /* Exportación completa legible: ZIP con XML/PDF por RFC y año
+           más el índice — independiente del formato .faro cifrado. */
+        const x = await body(req);
+        const year = /^\d{4}$/.test(String(x.year || '')) ? String(x.year) : '';
+        const entries = [];
+        const index = [['UUID', 'Fecha', 'Año', 'Emisor RFC', 'Emisor', 'Receptor RFC', 'Receptor', 'Tipo', 'Total', 'Moneda']];
+        let bytes = 0;
+        for (const invoice of recordInvoices()) {
+          const invoiceYear = String(invoice.date || '').slice(0, 4);
+          if (year && invoiceYear !== year) continue;
+          index.push([invoice.id, invoice.date, invoiceYear, invoice.from?.rfc, invoice.from?.name, invoice.to?.rfc, invoice.to?.name,
+            invoice.kind, invoice.total, invoice.currency || 'MXN']);
+          const file = readFileRecord('xml:' + invoice.id);
+          if (file) { entries.push({ name: (invoice.from?.rfc || 'sin-rfc') + '/' + invoiceYear + '/' + invoice.id + '.xml', buffer: file.buffer }); bytes += file.buffer.length; }
+        }
+        try {
+          for (const row of db.prepare("SELECT value FROM records WHERE store='documents'").all()) {
+            const doc = JSON.parse(row.value);
+            const docYear = String(doc.date || '').slice(0, 4);
+            if (year && docYear !== year) continue;
+            const file = readFileRecord(doc.id);
+            if (file) { entries.push({ name: (doc.rfc || 'sin-rfc') + '/' + docYear + '/documentos/' + String(doc.name || doc.id).replace(/[\\/:*?"<>|]/g, '_'), buffer: file.buffer }); bytes += file.buffer.length; }
+          }
+        } catch { /* sin documentos */ }
+        need(bytes <= 200 * 1024 * 1024, 'La exportación supera 200 MB: exporta por año.', 413);
+        entries.unshift({ name: 'indice.csv', buffer: Buffer.from(csvText(index)) });
+        const buffer = zipStoreBuffers(entries);
+        return json(res, { name: 'PacoSAT-exportacion' + (year ? '-' + year : '-completa') + '.zip',
+          content: buffer.toString('base64'), files: entries.length - 1 });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/reports/config') return json(res, reportsConfig());
+      if (req.method === 'POST' && url.pathname === '/api/reports/config') {
+        const x = await body(req);
+        const clean = item => ({ enabled: Boolean(item?.enabled),
+          day: Math.min(28, Math.max(1, Math.floor(Number(item?.day) || 3))),
+          hour: Math.min(23, Math.max(0, Math.floor(Number(item?.hour) || 0))),
+          recipients: String(item?.recipients || '').slice(0, 500) });
+        const config = { nora: clean(x.nora), weekly: clean(x.weekly) };
+        db.prepare("INSERT INTO settings(key,value) VALUES ('reports',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+          .run(JSON.stringify(config));
+        return json(res, config);
+      }
+      if (req.method === 'POST' && url.pathname === '/api/reports/send-now') {
+        /* Envío inmediato del paquete de un mes (p. ej. el informe a
+           Nora a mano): usa los destinatarios configurados. */
+        const x = await body(req);
+        need(/^\d{4}-\d{2}$/.test(String(x.month || '')), 'Indica el mes (AAAA-MM).');
+        const config = reportsConfig();
+        const pack = buildMonthlyPackage(x.month);
+        const result = await sendAppMail({ to: config.nora?.recipients || '', subject: 'PacoSAT · Informe mensual ' + x.month,
+          text: 'Adjunto el paquete del mes ' + x.month + ' generado por PacoSAT (índice, XML, documentos, base DIOT, novedades de listas y PPD).',
+          attachments: [{ filename: pack.filename, content: pack.buffer }] }, 'nora', now());
+        return json(res, { ok: true, recipients: result.recipients, counts: pack.counts });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/selftest') {
+        return json(res, selfTest());
+      }
+      if (req.method === 'GET' && url.pathname === '/api/offline-bundle') {
+        return json(res, offlineBundle());
+      }
+      if (req.method === 'GET' && url.pathname === '/api/access-log') {
+        need(!guest, 'Solo el administrador ve la bitácora de accesos.', 403);
+        return json(res, { entries: db.prepare('SELECT at,kind,detail FROM access_log ORDER BY rowid DESC LIMIT 200').all() });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/guest/config') {
+        const config = guestConfig();
+        return json(res, { enabled: Boolean(config.enabled), hasPassword: Boolean(config.hash) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/guest/config') {
+        need(!guest, 'Solo el administrador configura el acceso de invitado.', 403);
+        const x = await body(req);
+        const config = guestConfig();
+        if (x.password) {
+          need(String(x.password).length >= 8, 'La contraseña del invitado debe tener al menos 8 caracteres.');
+          config.salt = randomBytes(16).toString('hex');
+          config.hash = scryptSync(String(x.password), config.salt, 32).toString('hex');
+        }
+        if (typeof x.enabled === 'boolean') config.enabled = x.enabled;
+        setState('guest-config', JSON.stringify(config));
+        logAccess('guest-config', config.enabled ? 'Invitado activado' : 'Invitado desactivado');
+        return json(res, { enabled: Boolean(config.enabled), hasPassword: Boolean(config.hash) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/banks') {
+        return json(res, banksOverview());
+      }
+      if (req.method === 'GET' && url.pathname === '/api/banks/movements') {
+        const rows = db.prepare('SELECT m.date,m.concept,m.amountCents,s.accountId FROM bank_movements m ' +
+          'JOIN bank_statements s ON s.id=m.statementId ORDER BY m.date').all();
+        return json(res, { movements: rows.map(row => ({ date: row.date, concept: row.concept,
+          amount: moneyText(BigInt(row.amountCents)), accountId: row.accountId })) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/banks/accounts') {
+        const x = await body(req);
+        if (x.delete) {
+          tx(db, () => {
+            const statements = db.prepare('SELECT id FROM bank_statements WHERE accountId=?').all(String(x.delete));
+            for (const statement of statements) db.prepare('DELETE FROM bank_movements WHERE statementId=?').run(statement.id);
+            db.prepare('DELETE FROM bank_statements WHERE accountId=?').run(String(x.delete));
+            db.prepare('DELETE FROM bank_accounts WHERE id=?').run(String(x.delete));
+          });
+          return json(res, banksOverview());
+        }
+        need(String(x.bank || '').trim().length >= 2, 'Escribe el banco.');
+        need(String(x.name || '').trim().length >= 2, 'Ponle un nombre a la cuenta (p. ej. Cuenta principal).');
+        const id = 'bank-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+        db.prepare('INSERT INTO bank_accounts(id,bank,name,last4,kind,created) VALUES (?,?,?,?,?,?)')
+          .run(id, String(x.bank).trim().slice(0, 60), String(x.name).trim().slice(0, 80),
+            String(x.last4 || '').replace(/\D/g, '').slice(-4), String(x.kind || '').slice(0, 40), now());
+        return json(res, banksOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/banks/statements') {
+        const x = await body(req, 16 * 1024 * 1024);
+        const account = db.prepare('SELECT * FROM bank_accounts WHERE id=?').get(String(x.accountId || ''));
+        need(account, 'La cuenta no existe.');
+        need(/^\d{4}-\d{2}$/.test(String(x.month || '')), 'El mes debe ser AAAA-MM.');
+        const raw = Buffer.from(String(x.content || ''), 'base64');
+        need(raw.length > 100 && raw.subarray(0, 5).toString() === '%PDF-', 'Sube el PDF del estado de cuenta.');
+        const text = await extractText(raw);
+        const parsed = parseStatementText(text, String(x.month));
+        const id = 'stmt-' + account.id + '-' + x.month;
+        const fileId = 'bankpdf:' + id;
+        putFile(fileId, raw, 'application/pdf');
+        tx(db, () => {
+          db.prepare('DELETE FROM bank_movements WHERE statementId=?').run(id);
+          db.prepare('INSERT INTO bank_statements(id,accountId,month,fileId,openingCents,closingCents,creditsCents,chargesCents,movements,state,detected,created) ' +
+            'VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET fileId=excluded.fileId,openingCents=excluded.openingCents,' +
+            'closingCents=excluded.closingCents,creditsCents=excluded.creditsCents,chargesCents=excluded.chargesCents,' +
+            'movements=excluded.movements,state=excluded.state,detected=excluded.detected,created=excluded.created')
+            .run(id, account.id, String(x.month), fileId,
+              parsed.opening === null ? null : Number(parsed.opening), parsed.closing === null ? null : Number(parsed.closing),
+              parsed.credits === null ? null : Number(parsed.credits), parsed.charges === null ? null : Number(parsed.charges),
+              parsed.movements.length, parsed.state, parsed.detected, now());
+          const insert = db.prepare('INSERT INTO bank_movements(id,statementId,date,concept,amountCents,balanceCents) VALUES (?,?,?,?,?,?)');
+          parsed.movements.forEach((movement, index) => insert.run(id + ':' + index, id, movement.date, movement.concept,
+            Number(movement.amountCents), movement.balanceCents === null ? null : Number(movement.balanceCents)));
+        });
+        return json(res, banksOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/banks/statements/confirm') {
+        const x = await body(req);
+        const statement = db.prepare('SELECT * FROM bank_statements WHERE id=?').get(String(x.id || ''));
+        need(statement, 'El estado no existe.');
+        const cents = value => { const parsed = moneyToCents(value); need(parsed !== null, 'Importe no válido: ' + value); return Number(parsed); };
+        db.prepare('UPDATE bank_statements SET openingCents=?,closingCents=?,creditsCents=?,chargesCents=?,state=? WHERE id=?')
+          .run(cents(x.opening), cents(x.closing),
+            x.credits === '' || x.credits === undefined ? statement.creditsCents : cents(x.credits),
+            x.charges === '' || x.charges === undefined ? statement.chargesCents : cents(x.charges),
+            'manual', statement.id);
+        return json(res, banksOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/banks/statements/delete') {
+        const x = await body(req);
+        tx(db, () => {
+          db.prepare('DELETE FROM bank_movements WHERE statementId=?').run(String(x.id || ''));
+          db.prepare('DELETE FROM bank_statements WHERE id=?').run(String(x.id || ''));
+        });
+        return json(res, banksOverview());
+      }
+      if (req.method === 'GET' && url.pathname === '/api/fiscal/calendar') {
+        return json(res, { events: fiscalEvents(now()) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/fiscal/issues') {
+        return json(res, { issues: fiscalIssues() });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/fiscal/events') {
+        const x = await body(req);
+        let list = [];
+        try { list = JSON.parse(getState('fiscal-events') || '[]'); } catch { list = []; }
+        if (!Array.isArray(list)) list = [];
+        if (x.delete) {
+          setState('fiscal-events', JSON.stringify(list.filter(item => item.id !== String(x.delete))));
+          return json(res, { ok: true });
+        }
+        need(String(x.title || '').trim().length >= 3, 'Escribe qué vence (al menos 3 letras).');
+        need(/^\d{4}-\d{2}-\d{2}$/.test(String(x.date || '')), 'La fecha debe ser AAAA-MM-DD.');
+        const item = { id: Date.now().toString(36), rfc: String(x.rfc || '').toUpperCase(), title: String(x.title).trim().slice(0, 120), date: String(x.date) };
+        list.push(item);
+        setState('fiscal-events', JSON.stringify(list.slice(-200)));
+        return json(res, { ok: true, item });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/fiscal/defense') {
+        const x = await body(req);
+        need(/^\d{4}-\d{2}$/.test(String(x.month || '')), 'El periodo debe ser AAAA-MM.');
+        const zip = await buildDefensePackage(String(x.month));
+        res.writeHead(200, { 'content-type': 'application/zip',
+          'content-disposition': 'attachment; filename="paquete-defensa-' + x.month + '.zip"' });
+        return res.end(zip);
+      }
+      if (req.method === 'GET' && url.pathname === '/api/money') {
+        /* Saldos y esperadas para la pantalla Dinero (el cliente hace
+           el mismo cálculo en modo local). */
+        const balances = moneyBalances().filter(item => item.balance > 0n || item.method === 'PPD');
+        return json(res, { balances: balances.map(item => ({ ...item, total: moneyText(item.total),
+            paid: moneyText(item.paid), balance: moneyText(item.balance) })),
+          expected: expectedInvoices(now()) });
+      }
       if (req.method === 'POST' && url.pathname === '/api/pdf-analyze') {
         const { data } = await body(req, 21 * 1024 * 1024);
         need(typeof data === 'string' && data.length <= 20 * 1024 * 1024, 'PDF demasiado grande.');
         try { return json(res, await analyzePdf(Buffer.from(data, 'base64'))); }
         catch (error) { need(false, message(error), error.status || 422); }
       }
+      if (cloud && req.method === 'GET' && url.pathname === '/api/storage/rev') {
+        return json(res, { rev: recordRev });
+      }
       if (cloud && req.method === 'GET' && url.pathname === '/api/storage') {
         const store = url.searchParams.get('store'), id = url.searchParams.get('id');
         need(stores.includes(store), 'Tipo de almacenamiento inválido.');
+        /* Sync por diferencias (1.7.0): con ?since=<rev> solo viajan
+           los registros nuevos/cambiados y los borrados desde esa
+           marca; sin since, la tienda completa de siempre. */
+        const since = url.searchParams.get('since');
+        if (id === null && since !== null && /^\d+$/.test(since)) {
+          const changed = db.prepare('SELECT id,value,data,mime FROM records WHERE store=? AND rev>?').all(store, Number(since));
+          const rows = changed.map(row => row.data ? { id: row.id, mime: row.mime, content: Buffer.from(row.data).toString('base64') } : JSON.parse(row.value));
+          const deleted = db.prepare('SELECT id FROM record_tombstones WHERE store=? AND rev>?').all(store, Number(since)).map(row => row.id);
+          return json(res, { rev: recordRev, rows, deleted });
+        }
         const records = id === null ? db.prepare('SELECT id,value,data,mime FROM records WHERE store=?').all(store) :
           db.prepare('SELECT id,value,data,mime FROM records WHERE store=? AND id=?').all(store,id);
         need(records.reduce((size, item) => size + (item.data?.byteLength || 0), 0) <= 100 * 1024 * 1024,
@@ -2007,14 +2876,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         tx(db, () => {
           for (const [store, rows] of Object.entries(batch)) {
             need(stores.includes(store) && Array.isArray(rows) && rows.length <= 50000, 'Lote inválido.');
-            if (replace === true) db.prepare('DELETE FROM records WHERE store=?').run(store);
+            if (replace === true) {
+              const existing = db.prepare('SELECT id FROM records WHERE store=?').all(store);
+              const tomb = db.prepare('INSERT INTO record_tombstones(store,id,rev) VALUES (?,?,?)');
+              for (const row of existing) tomb.run(store, row.id, nextRev());
+              db.prepare('DELETE FROM records WHERE store=?').run(store);
+            }
             for (const row of rows) {
               need(typeof row?.id === 'string' && row.id.length <= 220, 'Identificador inválido.');
               if (store === 'files') {
                 need(typeof row.content === 'string' && row.content.length <= 20 * 1024 * 1024 &&
                   ['application/pdf','application/xml'].includes(row.mime), 'Archivo inválido.');
                 putFile(row.id, Buffer.from(row.content, 'base64'), row.mime);
-              } else db.prepare('INSERT INTO records(store,id,value,data,mime) VALUES (?,?,?,NULL,NULL) ON CONFLICT(store,id) DO UPDATE SET value=excluded.value').run(store, row.id, JSON.stringify(row));
+              } else db.prepare('INSERT INTO records(store,id,value,data,mime,rev) VALUES (?,?,?,NULL,NULL,?) ON CONFLICT(store,id) DO UPDATE SET value=excluded.value,rev=excluded.rev').run(store, row.id, JSON.stringify(row), nextRev());
             }
           }
         });
@@ -2183,7 +3057,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           x.ids.every(id => typeof id === 'string' && id.length <= 220), 'Borrado inválido.');
         let removed = 0;
         const del = db.prepare('DELETE FROM records WHERE store=? AND id=?');
-        for (const id of x.ids) removed += del.run(x.store, id).changes;
+        const tomb = db.prepare('INSERT INTO record_tombstones(store,id,rev) VALUES (?,?,?)');
+        for (const id of x.ids) { removed += del.run(x.store, id).changes; tomb.run(x.store, id, nextRev()); }
         storageRevision++;
         return json(res, { removed, revision: storageRevision });
       }

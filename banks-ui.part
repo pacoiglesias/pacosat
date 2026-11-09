@@ -1,0 +1,132 @@
+/* ===== Bancos (1.6.19) =====
+   Archivo de estados de cuenta por banco/cuenta/mes: subida del PDF,
+   lectura automática de saldos (lo no leído se confirma a mano, nunca
+   se inventa), cadena de saldos entre meses, faltantes y posición
+   total. Vive en el servidor (NAS); sus movimientos alimentan la
+   conciliación de Dinero. */
+const BANK_QUICK = [['BBVA', 'Cuenta Maestra Pyme', 'cuenta'], ['BBVA', 'Fondo', 'fondo'],
+  ['Santander', 'Cuenta de cheques', 'cuenta'], ['Santander', 'FONSER1', 'fondo'], ['Konfio', 'Cuenta', 'cuenta']];
+function bancosScreen() {
+  const wrap = n('div');
+  if (!satToken) {
+    const panelEl = panel('Bancos vive en tu servidor', 'Los estados de cuenta se archivan y se leen en el servidor de casa (el NAS), no en este navegador. Abre PacoSAT desde el servidor para usar esta pantalla.');
+    wrap.append(panelEl);
+    return [wrap];
+  }
+  const body = n('div');
+  wrap.append(body);
+  const draw = data => {
+    body.replaceChildren();
+    /* Posición */
+    const position = panel('Posición total', 'La suma de los últimos saldos finales archivados, por banco y en total. La fecha es el mes del estado más reciente.');
+    const strip = n('div', undefined, 'traffic-strip');
+    strip.append(statusPill('ok', 'Total: $' + data.position.total + (data.position.asOf ? ' · a ' + data.position.asOf : '')));
+    for (const [bank, total] of Object.entries(data.position.byBank))
+      strip.append(statusPill('dim', bank + ': $' + total));
+    position.append(strip);
+    body.append(position);
+    if (!data.accounts.length) {
+      const empty = panel('Tus cuentas', 'Da de alta la primera cuenta con un toque o con el formulario. Después sube el PDF de cada mes y PacoSAT lee los saldos.');
+      const chips = n('div', undefined, 'traffic-strip');
+      for (const [bank, name, kind] of BANK_QUICK) {
+        const chip = n('button', bank + ' · ' + name, 'soft small');
+        chip.onclick = async () => { await satApi('banks/accounts', { bank, name, kind }); announce('Cuenta creada.'); refresh(); };
+        chips.append(chip);
+      }
+      empty.append(chips);
+      body.append(empty);
+    }
+    for (const account of data.accounts) body.append(bankAccountPanel(account, draw));
+    body.append(bankAccountForm(draw));
+  };
+  satApi('banks').then(draw).catch(error => { body.append(panel('Bancos', 'No se pudo cargar: ' + error.message)); });
+  return [wrap];
+}
+function bankAccountPanel(account, draw) {
+  const title = account.bank + ' · ' + account.name + (account.last4 ? ' ····' + account.last4 : '');
+  const panelEl = panel(title, account.position ? 'Último saldo: $' + account.position.closing + ' (' + account.position.month + ').' : 'Aún sin estados archivados.');
+  const strip = n('div', undefined, 'traffic-strip');
+  strip.append(statusPill(account.missing.length ? 'warn' : 'ok',
+    account.missing.length ? 'Faltan ' + account.missing.length + ' meses: ' + account.missing.slice(0, 4).join(', ') + (account.missing.length > 4 ? '…' : '') : 'Sin meses faltantes'));
+  strip.append(statusPill(account.chainBroken ? 'bad' : 'ok', account.chainBroken ? 'Cadena de saldos ROTA (ver el mes marcado)' : 'Cadena de saldos continua'));
+  panelEl.append(strip);
+  for (const statement of account.statements) {
+    const row = n('div', undefined, 'cp-row');
+    row.append(statusPill(statement.chain === 'broken' ? 'bad' : statement.state === 'ok' ? 'ok' : statement.state === 'manual' ? 'ok' : 'warn', statement.month),
+      n('span', (statement.detected ? statement.detected + ' · ' : '') + 'inicial ' + (statement.opening ?? '¿?') +
+        ' → final ' + (statement.closing ?? '¿?') + ' · ' + statement.movements + ' movimientos' +
+        (statement.state === 'review' ? ' · A REVISAR: confirma los saldos' : statement.state === 'manual' ? ' · confirmado a mano' : '')));
+    if (statement.chainDetail) row.title = statement.chainDetail;
+    if (statement.state === 'review') {
+      const confirmBtn = n('button', 'Confirmar saldos', 'soft small');
+      confirmBtn.onclick = () => bankConfirmDialog(statement, draw);
+      row.append(confirmBtn);
+    }
+    const del = n('button', 'Quitar', 'soft small');
+    del.onclick = async () => { await satApi('banks/statements/delete', { id: statement.id }); announce('Estado eliminado.'); refresh(); };
+    row.append(del);
+    panelEl.append(row);
+    if (statement.chainDetail) panelEl.append(n('p', '⚠ ' + statement.chainDetail, 'error-text'));
+  }
+  /* Subida */
+  const form = n('div', undefined, 'sat-form');
+  const month = input('month', { value: previousMonthKey() });
+  const file = input('file', { accept: 'application/pdf' });
+  const upload = n('button', 'Subir y leer el estado', 'soft');
+  upload.onclick = async () => {
+    try {
+      check(file.files?.[0], 'Elige el PDF del estado de cuenta.');
+      check(/^\d{4}-\d{2}$/.test(month.value), 'Elige el mes del estado.');
+      const content = encode64(new Uint8Array(await file.files[0].arrayBuffer()));
+      const data = await satApi('banks/statements', { accountId: account.id, month: month.value, content });
+      announce('Estado archivado y leído. Revisa sus saldos en la lista.');
+      soundCue('success');
+      draw(data);
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  form.append(fieldWrap('Mes del estado', month), fieldWrap('PDF', file), upload);
+  const delAccount = n('button', 'Eliminar esta cuenta y sus estados', 'soft');
+  delAccount.onclick = async () => { await satApi('banks/accounts', { delete: account.id }); announce('Cuenta eliminada.'); refresh(); };
+  panelEl.append(form, delAccount);
+  return panelEl;
+}
+function bankConfirmDialog(statement, draw) {
+  const form = n('form', undefined, 'dialog-form');
+  form.append(n('h3', 'Confirmar saldos · ' + statement.month),
+    n('p', 'La lectura automática no pudo asegurar estas cifras. Escríbelas tal como vienen en el estado: PacoSAT no inventa importes.', 'muted'));
+  const opening = input('text', { value: statement.opening || '', inputmode: 'decimal' });
+  const closing = input('text', { value: statement.closing || '', inputmode: 'decimal' });
+  const credits = input('text', { value: statement.credits || '', inputmode: 'decimal' });
+  const charges = input('text', { value: statement.charges || '', inputmode: 'decimal' });
+  form.append(fieldWrap('Saldo inicial', opening), fieldWrap('Saldo final', closing),
+    fieldWrap('Total de abonos (opcional)', credits), fieldWrap('Total de cargos (opcional)', charges));
+  const save = n('button', 'Guardar cifras confirmadas', 'primary');
+  save.type = 'submit';
+  form.onsubmit = async event => {
+    event.preventDefault();
+    try {
+      const data = await satApi('banks/statements/confirm', { id: statement.id, opening: opening.value, closing: closing.value, credits: credits.value, charges: charges.value });
+      closeDialog(); announce('Saldos confirmados.'); draw(data);
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  const cancel = n('button', 'Cancelar', 'soft');
+  cancel.type = 'button';
+  cancel.onclick = closeDialog;
+  form.append(save, cancel);
+  showDialog(form);
+}
+function bankAccountForm(draw) {
+  const panelEl = panel('Añadir otra cuenta', 'Banco y nombre libres: sirve para cualquier banco, cuenta o fondo.');
+  const form = n('div', undefined, 'sat-form');
+  const bank = input('text', { placeholder: 'BBVA, Santander, Konfio…' });
+  const name = input('text', { placeholder: 'Cuenta principal, Fondo…' });
+  const last4 = input('text', { placeholder: 'Últimos 4 (opcional)', maxlength: '4' });
+  const add = n('button', 'Crear cuenta', 'soft');
+  add.onclick = async () => {
+    try { const data = await satApi('banks/accounts', { bank: bank.value, name: name.value, last4: last4.value }); announce('Cuenta creada.'); draw(data); }
+    catch (error) { toast(error.message, 'error'); }
+  };
+  form.append(fieldWrap('Banco', bank), fieldWrap('Nombre', name), fieldWrap('Terminación', last4), add);
+  panelEl.append(form);
+  return panelEl;
+}

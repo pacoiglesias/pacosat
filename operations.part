@@ -74,7 +74,7 @@ function operationsScreen() {
     sb.secondaryLastOk ? (sb.secondaryStale ? '⚠ Lleva más de 7 días: última buena el ' : 'Al día: última buena el ') +
       localDateTime(sb.secondaryLastOk) : '⚠ Aún no consta ninguna copia buena en el destino externo']);
   sysHealth.append(grid(['Elemento', 'Estado'], healthRows));
-  return [health, sysHealth, alerts, reconcile];
+  return [health, sysHealth, selfTestPanel(), activityPanel(), alerts, reconcile];
 }
 function linkPdfDialog(doc) {
   const uuid = input('text', { required: true, maxLength: 36, value: doc.uuid || '', placeholder: 'UUID del XML importado' });

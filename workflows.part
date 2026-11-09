@@ -117,7 +117,7 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
   async function accept(name, xml) {
     let row;
     try {
-      row = parseXml(xml);
+      row = withFiscal(parseXml(xml), xml);
       check(!requiredRfc || row.from.rfc === requiredRfc || row.to.rfc === requiredRfc,
         'No corresponde a ' + requiredRfc + '. Emisor ' + row.from.rfc + ' · Receptor ' + row.to.rfc + '.');
       check(known.has(row.from.rfc) || known.has(row.to.rfc), 'Los RFC del comprobante no están registrados.');
@@ -221,9 +221,11 @@ async function copyText(text, label) {
    timbre con sellos plegables, Pagos 2.0 y demás complementos — con el
    estado de la vigilancia, la historia, y las acciones de copiar UUID,
    descargar el XML, abrir el PDF vinculado e imprimir el comprobante. */
-function cfdiPrint(row, full) {
+function cfdiPrint(row, full, opts = {}) {
   const section = $('print-report');
-  section.replaceChildren();
+  /* Impresión por lote (1.6.16): opts.append añade el comprobante al
+     documento en curso y opts.print=false difiere la impresión. */
+  if (!opts.append) section.replaceChildren();
   const head = n('div', undefined, 'report-head');
   if (appSettings.logoData) {
     const logo = n('img', undefined, 'report-logo');
@@ -268,7 +270,7 @@ function cfdiPrint(row, full) {
       n('p', 'Cadena original: ' + full.timbre.cadenaOriginal));
     section.append(timbre);
   }
-  setTimeout(() => window.print(), 80);
+  if (opts.print !== false) setTimeout(() => window.print(), 80);
 }
 function invoiceDetail(row) {
   const summary = n('div', undefined, 'invoice-summary');
@@ -552,7 +554,7 @@ async function validateBackup(data) {
     const id = 'xml:' + entry.id;
     check(UUID.test(entry.id) && contents.has(id), 'Falta un XML en el respaldo.');
     const raw = decode64(contents.get(id));
-    const row = parseXml(raw);
+    const row = withFiscal(parseXml(raw), raw);
     check(entry.id === row.id && (registry.has(row.from.rfc) || registry.has(row.to.rfc)), 'El XML del respaldo no coincide.');
     output.invoices.push(row);
     output.files.push({ id, blob: new Blob([raw], { type: 'application/xml' }) });
@@ -687,6 +689,12 @@ $('primary').onclick = handle(async () => {
   if (page === 'settings') { await saveAppSettings(); return; }
   if (page === 'capacidades') { navigate('settings'); return; }
   if (page === 'lists') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
+  if (page === 'salidas') { await exportFull(''); return; }
+  if (page === 'dinero') { navigate('salidas'); return; }
+  if (page === 'cumplimiento') { navigate('cumplimiento'); const monthInput = document.querySelector('#main input[type="month"]'); if (monthInput) { monthInput.focus(); } return; }
+  if (page === 'bancos') { navigate('bancos'); return; }
+  if (page === 'preguntas') { navigate('preguntas'); const q = document.querySelector('#main input[type="text"]'); if (q) q.focus(); return; }
+  if (page === 'offline') { navigate('offline'); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });
@@ -713,7 +721,7 @@ function runGlobalSearch() {
     const rfc = downloadMatch[1].toUpperCase();
     const profile = (satData.profiles || []).find(row => row.rfc === rfc);
     if (profile?.unlocked) {
-      satApi('run-now', { rfc }).then(data => { satData = data; announce('Revisión inmediata de ' + rfc + ' ejecutada.'); soundCue('success'); })
+      requestRunNow(rfc).then(data => { if (data) { satData = data; announce('Revisión inmediata de ' + rfc + ' ejecutada.'); soundCue('success'); } })
         .catch(error => announce(error.message, true));
       return;
     }

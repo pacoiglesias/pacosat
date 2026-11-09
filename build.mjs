@@ -51,7 +51,7 @@ const capacidades = existsSync(new URL('docs/CAPACIDADES.md', import.meta.url)) 
   parseCapacidades(read('docs/CAPACIDADES.md')) : { updated: '', sections: [] };
 const capacidadesConst = 'const PACOSAT_CAPACIDADES = ' + JSON.stringify(capacidades) + ';\n';
 const css = ['style.part','design.part','polish.part'].map(read).join('\n');
-const script = meta + capacidadesConst + ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','monitor-ui.part','coverage-ui.part','settings-ui.part','lists-ui.part','capacidades-ui.part'].map(read).join('\n');
+const script = meta + capacidadesConst + ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','monitor-ui.part','coverage-ui.part','settings-ui.part','lists-ui.part','outputs-ui.part','money-ui.part','compliance-ui.part','banks-ui.part','final-ui.part','capacidades-ui.part'].map(read).join('\n');
 /* CSP estricta sin unsafe-inline (1.6.9): la app es un único bloque
    <style> y un único bloque <script>, ambos funciones puras del árbol,
    así que la política los autoriza por su huella SHA-256 exacta. Sin
@@ -71,4 +71,4 @@ const layout = read('layout.part')
   .replace('<title>PacoSAT</title>', '<title>PacoSAT</title><!--PACOSAT_TOKEN-->');
 if (layout.includes('unsafe-inline')) throw new Error('La CSP generada no debe contener unsafe-inline.');
 write('Faro-Fiscal.html', layout.replace('/*STYLES*/', () => css).replace('/*SCRIPT*/', () => script));
-write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, zipXml, zipText, rfcCheckDigit, validateRfc };\n');
+write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc };\n');
