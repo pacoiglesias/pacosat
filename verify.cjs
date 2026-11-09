@@ -74,5 +74,30 @@ async function collect(stream) {
   const ids = new Set([...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]));
   for (const match of html.matchAll(/\.id\s*=\s*'([^']+)'/g)) ids.add(match[1]);
   for (const match of html.matchAll(/\$\('([^']+)'\)/g)) assert.ok(ids.has(match[1]), 'Falta ' + match[1]);
-  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV y referencias de interfaz.');
+  /* Guarda de empaquetado Docker: todo módulo relativo alcanzado desde el
+     punto de entrada del servidor (local-server.mjs) debe estar copiado
+     en la imagen (COPY del Dockerfile) y permitido por el .dockerignore.
+     La CI no construye la imagen; sin esta guarda, un módulo nuevo puede
+     quedar fuera y el contenedor cae con ERR_MODULE_NOT_FOUND — pasó con
+     backup-core.mjs en el despliegue real de la 1.6.0 (8-nov-2026). */
+  const needed = new Set(['local-server.mjs', 'Faro-Fiscal.html']);
+  const queue = ['local-server.mjs'];
+  while (queue.length) {
+    const file = queue.pop();
+    for (const match of fs.readFileSync(file, 'utf8').matchAll(/(?:from\s+|import\s*\()\s*'(\.\/[^']+)'/g)) {
+      const name = match[1].slice(2);
+      if (!needed.has(name)) { needed.add(name); queue.push(name); }
+    }
+  }
+  const copied = new Set();
+  for (const line of fs.readFileSync('Dockerfile', 'utf8').split('\n')) {
+    const copy = line.match(/^COPY\s+(.+)$/);
+    if (copy) for (const token of copy[1].trim().split(/\s+/).slice(0, -1)) if (!token.startsWith('--')) copied.add(token);
+  }
+  const allowed = new Set([...fs.readFileSync('.dockerignore', 'utf8').matchAll(/^!(\S+)$/gm)].map(m => m[1]));
+  for (const file of needed) {
+    assert.ok(copied.has(file), 'El Dockerfile no copia ' + file + ' y el servidor lo importa.');
+    assert.ok(allowed.has(file), 'El .dockerignore no permite ' + file + ' y el servidor lo importa.');
+  }
+  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz y completitud de la imagen Docker.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
