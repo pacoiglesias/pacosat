@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createPacoSATService } from './local-server.mjs';
@@ -144,6 +144,119 @@ try {
   assert.equal(status.scheduledBackup.error, '');
   console.log('OK: carpeta vigilada importa XML/ZIP, vincula PDF, aparta errores con aviso y respaldo programado cifrado compatible.');
 } finally { watchService.close(); }
+
+// --- Carpeta vigilada recursiva: subcarpetas (1.6.3) ---
+const deepTime = Date.parse('2026-11-09T15:00:00Z');
+const deepSent = [];
+const deepDir = join(base, 'vigilada-profunda'); mkdirSync(deepDir);
+const deepService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+  now: () => deepTime, watchDir: deepDir, inboxParser: FixtureParser,
+  analyzePdf: async data => data.includes('sin-vinculo')
+    ? { uuids: ['12345678-1234-1234-1234-1234567890CD'], rfcs: [], hasText: true }
+    : { uuids: [id], rfcs: [], hasText: true },
+  makeMailer: () => ({ verify: async () => true, sendMail: async payload => { deepSent.push(payload); } }) });
+let deepToken;
+async function deepRequest(url, data) {
+  const req = Object.assign(Readable.from(data === undefined ? [] : [Buffer.from(JSON.stringify(data))]), {
+    url, method: data === undefined ? 'GET' : 'POST',
+    headers: { origin, host: 'pacosat.example.com', 'x-pacosat-proxy': proxyKey, 'x-pacosat-token': deepToken }
+  });
+  let response;
+  await deepService.handle(req, { setHeader() {}, writeHead(status) { this.status = status; this.headersSent = true; },
+    end(payload) { response = new Response(payload, { status: this.status }); } });
+  return response;
+}
+const countTree = dir => !existsSync(dir) ? 0 : readdirSync(dir, { withFileTypes: true })
+  .reduce((total, entry) => total + (entry.isDirectory() ? countTree(join(dir, entry.name)) : 1), 0);
+try {
+  deepToken = (await (await deepRequest('/')).text()).match(/name="pacosat-token" content="([^"]+)"/)[1];
+  assert.equal((await deepRequest('/api/storage', { batch: { people: [{ id: 'XAXX010101000', name: 'Ejemplo' }] } })).status, 200);
+  await deepService.bootstrap({ mail: { host: 'smtp.example.com', port: 587, from: 'from@example.com',
+    recipient: 'to@example.com', user: '', password: '' } });
+  // Árbol anidado de 3 niveles, exclusiones y trampas del escaneo.
+  mkdirSync(join(deepDir, '2025', 'enero'), { recursive: true });
+  mkdirSync(join(deepDir, 'a', 'b', 'c'), { recursive: true });
+  mkdirSync(join(deepDir, 'x', 'y', 'z'), { recursive: true });
+  mkdirSync(join(deepDir, 'real'), { recursive: true });
+  mkdirSync(join(deepDir, 'procesados'), { recursive: true });
+  mkdirSync(join(deepDir, 'errores'), { recursive: true });
+  writeFileSync(join(deepDir, 'raiz.xml'), '<fixture/>');
+  writeFileSync(join(deepDir, '2025', 'enero', 'otro.xml'), '<fixture/>');
+  writeFileSync(join(deepDir, 'a', 'b', 'c', 'profundo.xml'), '<fixture/>');
+  writeFileSync(join(deepDir, 'real', 'dentro.xml'), '<fixture/>');
+  writeFileSync(join(deepDir, 'x', 'y', 'z', 'malo.xml'), '<mismatch/>');
+  writeFileSync(join(deepDir, 'procesados', 'semilla.xml'), '<fixture/>');
+  writeFileSync(join(deepDir, 'errores', 'previo.xml'), '<fixture/>');
+  writeFileSync(join(deepDir, '.oculto.xml'), '<fixture/>');
+  symlinkSync(join(deepDir, 'real'), join(deepDir, 'atajo'), 'dir');
+  await deepService.inboxTick(deepTime);
+  const deepInvoices = await (await deepRequest('/api/storage?store=invoices')).json();
+  assert.equal(deepInvoices.length, 1);
+  assert.equal(deepInvoices[0].id, id);
+  const okDay = join(deepDir, 'procesados', '2026-11-09');
+  assert.ok(existsSync(join(okDay, 'raiz.xml')));
+  assert.ok(existsSync(join(okDay, '2025', 'enero', 'otro.xml')));
+  assert.ok(existsSync(join(okDay, 'a', 'b', 'c', 'profundo.xml')));
+  assert.ok(existsSync(join(okDay, 'real', 'dentro.xml')));
+  assert.ok(!existsSync(join(okDay, 'atajo')));
+  assert.ok(existsSync(join(deepDir, 'errores', 'x', 'y', 'z', 'malo.xml')));
+  // Las carpetas de salida no se reescanean y lo oculto no se toca.
+  assert.ok(existsSync(join(deepDir, 'procesados', 'semilla.xml')));
+  assert.ok(existsSync(join(deepDir, 'errores', 'previo.xml')));
+  assert.ok(existsSync(join(deepDir, '.oculto.xml')));
+  let deepStatus = (await (await deepRequest('/api/status')).json());
+  assert.equal(deepStatus.watchFolder.subfolders, true);
+  assert.equal(deepStatus.watchFolder.failed, 1);
+  const deepLog = await (await deepRequest('/api/storage?store=activity')).json();
+  const firstScan = deepLog.find(row => row.name === 'Carpeta vigilada');
+  assert.equal(firstScan.added, 1);
+  assert.equal(firstScan.duplicates, 3);
+  assert.equal(firstScan.review, 1);
+  assert.ok(firstScan.issues.some(issue => issue.name === 'x/y/z/malo.xml'));
+  await deepService.tick();
+  const watchMails = deepSent.filter(mail => /carpeta vigilada no se importó/.test(mail.subject));
+  assert.equal(watchMails.length, 1);
+  assert.ok(watchMails[0].text.includes('x/y/z/malo.xml'));
+  // Segundo ciclo sin novedades: nada se reimporta (sin bucles entre ciclos).
+  await deepService.inboxTick(deepTime);
+  assert.equal((await (await deepRequest('/api/storage?store=invoices')).json()).length, 1);
+  assert.equal(countTree(okDay), 4);
+  assert.equal(countTree(join(deepDir, 'errores')), 2);
+  // PDF en subcarpeta que se vincula y homónimos que no se pisan.
+  mkdirSync(join(deepDir, 'docs'), { recursive: true });
+  mkdirSync(join(deepDir, 'uno'), { recursive: true });
+  mkdirSync(join(deepDir, 'dos'), { recursive: true });
+  writeFileSync(join(deepDir, 'docs', 'factura.pdf'), '%PDF-1.7 vinculado');
+  writeFileSync(join(deepDir, 'uno', 'dup.xml'), '<fixture/>');
+  writeFileSync(join(deepDir, 'dos', 'dup.xml'), '<fixture/>');
+  mkdirSync(join(okDay, 'uno'), { recursive: true });
+  writeFileSync(join(okDay, 'uno', 'dup.xml'), 'sentinela');
+  await deepService.inboxTick(deepTime);
+  const deepDocs = await (await deepRequest('/api/storage?store=documents')).json();
+  assert.equal(deepDocs.length, 1);
+  assert.equal(deepDocs[0].uuid, id);
+  assert.equal(deepDocs[0].name, 'docs/factura.pdf');
+  assert.ok(existsSync(join(okDay, 'docs', 'factura.pdf')));
+  const { readFileSync: readDeep } = await import('node:fs');
+  assert.equal(readDeep(join(okDay, 'uno', 'dup.xml'), 'utf8'), 'sentinela');
+  assert.ok(existsSync(join(okDay, 'uno', 'dup (2).xml')));
+  assert.ok(existsSync(join(okDay, 'dos', 'dup.xml')));
+  // Tope de 20 por ciclo con reanudación en el siguiente, sin duplicar.
+  mkdirSync(join(deepDir, 'cap'), { recursive: true });
+  for (let n = 1; n <= 25; n++) writeFileSync(join(deepDir, 'cap', 'f' + String(n).padStart(2, '0') + '.xml'), '<fixture/>');
+  await deepService.inboxTick(deepTime);
+  assert.equal(countTree(join(deepDir, 'cap')), 5);
+  assert.equal(countTree(join(okDay, 'cap')), 20);
+  await deepService.inboxTick(deepTime);
+  assert.equal(countTree(join(deepDir, 'cap')), 0);
+  assert.equal(countTree(join(okDay, 'cap')), 25);
+  assert.equal((await (await deepRequest('/api/storage?store=invoices')).json()).length, 1);
+  deepStatus = (await (await deepRequest('/api/status')).json());
+  assert.equal(deepStatus.watchFolder.imported, 32);
+  assert.equal(deepStatus.watchFolder.failed, 1);
+  console.log('OK: carpeta vigilada recursiva importa el árbol, excluye salidas, conserva rutas, respeta el tope y no duplica.');
+} finally { deepService.close(); }
+
 const failService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
   now: () => watchTime,
   makeMailer: () => ({ verify: async () => true, sendMail: async payload => { watchSent.push(payload); } }) });

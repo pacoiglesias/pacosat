@@ -23,7 +23,7 @@ function operationsScreen() {
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
     ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
-      'Activa · ' + satData.watchFolder.imported + ' archivos importados · ' + satData.watchFolder.failed + ' con error' +
+      'Activa' + (satData.watchFolder.subfolders ? ' · incluye subcarpetas' : '') + ' · ' + satData.watchFolder.imported + ' archivos importados · ' + satData.watchFolder.failed + ' con error' +
       (satData.watchFolder.lastScan ? ' · última revisión ' + localDateTime(satData.watchFolder.lastScan) : '') +
       (satData.watchFolder.error ? ' · ' + satData.watchFolder.error : '') : 'Sin configurar en el servidor'],
     ['Respaldo programado', !satToken ? 'Sin servidor: crea respaldos manuales' : satData.scheduledBackup?.enabled ?

@@ -2,9 +2,9 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
 import { parseXml, zipXml, validateRfc } from './xml-core.mjs';
@@ -273,7 +273,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       inbox: db.prepare('SELECT id,rfc,newCount,review FROM packages WHERE archive IS NOT NULL ORDER BY id LIMIT 50').all(),
       mail: { enabled: Boolean(mail), recipient: mail?.recipient || '', error: db.prepare("SELECT error FROM notices WHERE sent IS NULL AND error<>'' ORDER BY id DESC LIMIT 1").get()?.error || '' },
       watchFolder: { enabled: Boolean(inbox.dir), lastScan: inboxStatus.lastScan, imported: inboxStatus.imported,
-        failed: inboxStatus.failed, error: inboxStatus.error || getState('watch:error') },
+        failed: inboxStatus.failed, subfolders: true, error: inboxStatus.error || getState('watch:error') },
       scheduledBackup: { enabled: Boolean(backupJob), frequency: backupJob?.frequency || '',
         last: Number(getState('backup:last')) || null, next: Number(getState('backup:next')) || null, error: getState('backup:error') }
     };
@@ -362,16 +362,65 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const dom = await import('@xmldom/xmldom').catch(() => { throw new Error('Falta el lector XML del servidor.'); });
     return dom.DOMParser;
   }
+  /* Carpeta vigilada (1.6.3): escaneo recursivo. El ciclo recorre todo el
+     árbol bajo la carpeta configurada buscando XML/ZIP/PDF, porque los
+     comprobantes se guardan en un folder con sus propias carpetas. Guardas:
+     nunca se entra en las carpetas de salida del primer nivel (`procesados/`
+     y `errores/`) para no reimportar lo ya movido entre ciclos; se ignoran
+     archivos y carpetas ocultos o temporales; no se siguen enlaces
+     simbólicos y la profundidad se limita a 8 carpetas. Cada ciclo procesa
+     como máximo 20 archivos en orden estable de ruta relativa: lo procesado
+     sale del árbol al moverse, así que ninguna subcarpeta se queda siempre
+     al final; el resto espera al siguiente ciclo. El destino conserva la
+     ruta relativa (`procesados/AAAA-MM-DD/<ruta>` y `errores/<ruta>`) y, si
+     el nombre ya existe en el destino, se añade un sufijo numérico. */
+  const WATCH_LIMIT = 20;
+  const WATCH_MAX_DEPTH = 8;
+  const WATCH_OUTPUT_DIRS = new Set(['procesados', 'errores']);
+  function collectWatchFiles(root) {
+    const found = [];
+    const walk = (dir, segments) => {
+      let entries;
+      try { entries = readdirSync(dir, { withFileTypes: true }); }
+      catch { return; }
+      for (const entry of entries) {
+        if (entry.isSymbolicLink() || entry.name.startsWith('.')) continue;
+        if (entry.isDirectory()) {
+          if (segments.length === 0 && WATCH_OUTPUT_DIRS.has(entry.name.toLowerCase())) continue;
+          if (segments.length + 1 > WATCH_MAX_DEPTH) continue;
+          walk(join(dir, entry.name), [...segments, entry.name]);
+        } else if (entry.isFile()) {
+          if (!/\.(xml|zip|pdf)$/i.test(entry.name)) continue;
+          if (entry.name.startsWith('~$') || entry.name.endsWith('~')) continue;
+          found.push([...segments, entry.name].join('/'));
+        }
+      }
+    };
+    walk(root, []);
+    return found.sort();
+  }
+  function watchDestination(base, rel) {
+    const segments = rel.split('/');
+    let target = join(base, ...segments);
+    if (!existsSync(target)) return target;
+    const file = segments[segments.length - 1];
+    const dot = file.lastIndexOf('.');
+    const stem = dot > 0 ? file.slice(0, dot) : file;
+    const ext = dot > 0 ? file.slice(dot) : '';
+    for (let n = 2; ; n++) {
+      target = join(base, ...segments.slice(0, -1), stem + ' (' + n + ')' + ext);
+      if (!existsSync(target)) return target;
+    }
+  }
   async function scanWatchFolder(time) {
     if (!cloud || !inbox.dir || watchBusy) return;
     watchBusy = true;
     try {
-      let names;
-      try { names = readdirSync(inbox.dir); }
+      try { readdirSync(inbox.dir); }
       catch (error) { inboxStatus.error = message(error); setState('watch:error', inboxStatus.error); return; }
       inboxStatus.error = ''; setState('watch:error', '');
-      const candidates = names.filter(name => /\.(xml|zip|pdf)$/i.test(name)).sort()
-        .filter(name => !inboxStuck.has(name)).slice(0, 20);
+      const candidates = collectWatchFiles(inbox.dir)
+        .filter(rel => !inboxStuck.has(rel)).slice(0, WATCH_LIMIT);
       inboxStatus.lastScan = time;
       if (!candidates.length) return;
       const Parser = await resolveInboxParser();
@@ -390,8 +439,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       };
       let added = 0, duplicates = 0, review = 0;
       const issues = [];
-      for (const name of candidates) {
-        const path = join(inbox.dir, name);
+      for (const rel of candidates) {
+        const name = rel.split('/').pop();
+        const path = join(inbox.dir, ...rel.split('/'));
         let failed = '';
         try {
           const raw = readFileSync(path);
@@ -404,7 +454,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             for await (const entry of zipXml(raw)) {
               count++;
               try { if (importXml(entry.xml) === 'added') added++; else duplicates++; }
-              catch (error) { review++; if (issues.length < 20) issues.push({ name: entry.name, reason: message(error) }); }
+              catch (error) { review++; if (issues.length < 20) issues.push({ name: rel + ' · ' + entry.name, reason: message(error) }); }
             }
             need(count > 0, 'El ZIP no contiene CFDI XML.');
           } else {
@@ -421,21 +471,22 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             const id = 'pdf:' + randomUUID();
             putFile(id, raw, 'application/pdf');
             putMetadata('documents', { id, rfc, kind: 'Factura PDF', date: invoice.date.slice(0, 10),
-              period: '', name: name.slice(0, 180), uuid: uuids[0] });
+              period: '', name: rel.slice(0, 180), uuid: uuids[0] });
             added++;
           }
         } catch (error) { failed = message(error); }
         try {
-          mkdirSync(failed ? badDir : okDir, { recursive: true });
-          renameSync(path, join(failed ? badDir : okDir, basename(name)));
-        } catch { inboxStuck.add(name); }
+          const target = watchDestination(failed ? badDir : okDir, rel);
+          mkdirSync(dirname(target), { recursive: true });
+          renameSync(path, target);
+        } catch { inboxStuck.add(rel); }
         if (failed) {
           review++;
           inboxStatus.failed++;
-          if (issues.length < 20) issues.push({ name, reason: failed });
-          queueAlert('watch-fail', 'watch:' + name, 'PacoSAT · Un archivo de la carpeta vigilada no se importó',
-            'El archivo ' + name + ' de la carpeta vigilada no pudo importarse: ' + failed +
-            ' Quedó apartado en la subcarpeta «errores» de la carpeta vigilada.', time);
+          if (issues.length < 20) issues.push({ name: rel, reason: failed });
+          queueAlert('watch-fail', 'watch:' + rel, 'PacoSAT · Un archivo de la carpeta vigilada no se importó',
+            'El archivo ' + rel + ' de la carpeta vigilada no pudo importarse: ' + failed +
+            ' Quedó apartado en la subcarpeta «errores» de la carpeta vigilada, conservando su ruta relativa.', time);
         } else inboxStatus.imported++;
       }
       if (added || duplicates || review) {

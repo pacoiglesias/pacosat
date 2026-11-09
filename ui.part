@@ -670,7 +670,7 @@ function backupScreen() {
       ['Respaldo programado', sb.enabled ? (sb.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
         (sb.last ? localDateTime(sb.last) : 'aún no') + ' · siguiente: ' + (sb.next ? localDateTime(sb.next) : 'al próximo ciclo') +
         (sb.error ? ' · Error: ' + sb.error : '') : 'Sin configurar: se define en el archivo de arranque protegido del servidor.'],
-      ['Carpeta vigilada', wf.enabled ? 'Activa · ' + wf.imported + ' importados · ' + wf.failed + ' con error' +
+      ['Carpeta vigilada', wf.enabled ? 'Activa' + (wf.subfolders ? ' · incluye subcarpetas' : '') + ' · ' + wf.imported + ' importados · ' + wf.failed + ' con error' +
         (wf.lastScan ? ' · última revisión ' + localDateTime(wf.lastScan) : '') + (wf.error ? ' · ' + wf.error : '') :
         'Sin configurar: se define en el archivo de arranque protegido del servidor.']
     ]));
