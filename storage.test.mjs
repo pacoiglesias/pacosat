@@ -174,4 +174,31 @@ for (const part of ['workflows.part', 'pdf-cloud-ui.part']) {
   assert.equal(idb.requests.length, 0, 'El modo servidor no debe abrir IndexedDB.');
 }
 
-console.log('OK: apertura bloqueada sin rechazo y con recuperación, espera de las acciones, reintento tras fallo, mensajes accionables y modo servidor sin IndexedDB.');
+/* (d) Acción ANTES de que el arranque ejecute beginReadiness(): la
+   carrera que perdió Paco en Safari iOS al tocar «Agregar RFC» (error
+   de JavaScriptCore «undefined is not an object (evaluating
+   'readiness.then')»). La preparación arranca perezosamente desde la
+   propia espera y la acción continúa; nunca se evalúa `.then` sobre
+   un readiness inexistente. */
+{
+  const idb = fakeIndexedDB();
+  const context = makeContext({ idb });
+  const click = context.requireStorage(2000);
+  await until(() => idb.requests.length === 1);
+  idb.succeed(0);
+  await click;
+  assert.equal(context.ready, true);
+  assert.equal(context.refreshCalls, 1);
+}
+/* Lo mismo en modo servidor: sin beginReadiness previo, la acción carga
+   desde el servidor y continúa sin tocar IndexedDB. */
+{
+  const idb = fakeIndexedDB({ throwOnOpen: true });
+  const context = makeContext({ cloud: true, idb });
+  await context.requireStorage(500);
+  assert.equal(context.ready, true);
+  assert.equal(context.refreshCalls, 1);
+  assert.equal(idb.requests.length, 0, 'El modo servidor no debe abrir IndexedDB.');
+}
+
+console.log('OK: apertura bloqueada sin rechazo y con recuperación, espera de las acciones, acción previa al arranque con inicio perezoso, reintento tras fallo, mensajes accionables y modo servidor sin IndexedDB.');
