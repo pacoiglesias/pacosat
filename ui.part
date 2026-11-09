@@ -83,6 +83,22 @@ function amount(row) {
   const [integer, decimals] = row.total.split('.');
   return number.format(BigInt(integer)) + (decimals ? '.' + decimals : '.00') + (row.currency ? ' ' + row.currency : '');
 }
+/* Clave «AAAA-MM» del mes anterior: el valor por defecto de los
+   selectores de mes de Cumplimiento y de Bancos. Se llamaba desde la
+   1.6.18 y nunca se definió (hotfix 1.7.3). */
+function previousMonthKey() {
+  const now = new Date();
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  return previous.getFullYear() + '-' + String(previous.getMonth() + 1).padStart(2, '0');
+}
+/* Un importe suelto, ya en texto («1234.56»), con el mismo formato
+   que amount() pero sin fila ni moneda: lo que piden Listas (la
+   exposición de cada contraparte) y el Centro de salidas. Se llamaba
+   desde la 1.6.13 y nunca se definió (hotfix 1.7.3). */
+function money(value) {
+  const [integer, decimals] = String(value ?? '0').split('.');
+  return number.format(BigInt(integer || '0')) + (decimals ? '.' + decimals : '.00');
+}
 // Tema y sonidos de la interfaz (1.6.0): persistentes en este navegador.
 const prefGet = key => { try { return localStorage.getItem(key); } catch { return null; } };
 const prefSet = (key, value) => { try { localStorage.setItem(key, value); } catch { /* Sin almacenamiento, la preferencia dura la sesión. */ } };
@@ -520,6 +536,17 @@ function announce(message = '', error = false) {
   $('status').dataset.error = error;
   if (message && error) soundCue('error');
 }
+/* toast(): el nombre con el que los fragmentos nuevos (Centro de
+   salidas, Dinero, Cumplimiento, Bancos, Constancias…) piden el mismo
+   aviso que announce() pinta en la barra de estado. Nunca se definió
+   (hotfix 1.7.3): cada llamada moría con «toast is not defined» — lo
+   vio Paco en producción — y los catch que avisaban con toast()
+   enmascaraban el error verdadero tras ese ReferenceError. El segundo
+   argumento es el de las llamadas: 'error' marca el aviso como error
+   y cualquier otro valor ('ok') lo deja como aviso normal. */
+function toast(message, kind) {
+  announce(message, kind === 'error');
+}
 async function logEvent(text) {
   if (!ready) return;
   const entry = { id: crypto.randomUUID(), name: String(text).slice(0, 180), date: new Date().toISOString(),
@@ -577,6 +604,11 @@ function select(items, value, label) {
 function field(label, input) {
   const el = n('label', label); el.append(input); return el;
 }
+/* fieldWrap(): el nombre con el que los fragmentos nuevos (Dinero,
+   Cumplimiento, Bancos, invitado) piden este mismo envoltorio de
+   etiqueta y control. Se llamaba desde la 1.6.17 y nunca se definió
+   (hotfix 1.7.3): es field(), sin duplicar comportamiento. */
+const fieldWrap = field;
 function input(type, props) { return Object.assign(n('input'), { type }, props); }
 function dialog(title, controls, work, confirmLabel) {
   $('dialogTitle').textContent = title;
@@ -598,6 +630,27 @@ function dialog(title, controls, work, confirmLabel) {
     eye.onclick = () => { pw.type = pw.type === 'password' ? 'text' : 'password'; };
     pw.after(eye);
   }
+}
+/* Puente de diálogos (hotfix 1.7.3): Bancos (confirmar saldos) y el
+   acceso de invitado componen su propio <form class="dialog-form">,
+   con su título, sus botones y su onsubmit, y lo muestran con
+   showDialog() y lo cierran con closeDialog(); ninguna de las dos
+   existía. El formulario propio se aloja en el <dialog> compartido,
+   ocultando mientras tanto el formulario integrado, y se retira al
+   cerrar — también cuando el diálogo se cierra con Esc —. */
+let hostedForm = null;
+function showDialog(form) {
+  closeDialog();
+  hostedForm = form;
+  $('form').hidden = true;
+  $('dialog').append(form);
+  $('dialog').addEventListener('close', () => closeDialog(), { once: true });
+  $('dialog').showModal();
+}
+function closeDialog() {
+  if (hostedForm) { hostedForm.remove(); hostedForm = null; }
+  $('form').hidden = false;
+  if ($('dialog').open) $('dialog').close();
 }
 function download(blob, name) {
   const url = URL.createObjectURL(blob);

@@ -276,3 +276,58 @@ test('arranque en modo local: el bloque generado carga entero y la preparación 
   assert.equal(byId.get('app-footer').textContent, sealWithoutDate(),
     'en modo local el pie muestra el sello con la versión, sin fecha');
 });
+
+/* Regresión 1.7.3 — los ayudantes que los fragmentos nuevos llaman
+   deben EXISTIR. Hasta la 1.7.2, siete nombres se llamaban desde los
+   fragmentos y no estaban definidos en ninguno: toast() (36 llamadas
+   en Centro de salidas, Dinero, Cumplimiento, Bancos, Constancias…),
+   fieldWrap(), showDialog(), closeDialog(), previousMonthKey(),
+   money() y satApiBlob(). Cada llamada lanzaba ReferenceError —
+   «toast is not defined», visto por Paco en producción — y los catch
+   que avisaban con toast() enmascaraban el error verdadero tras ese
+   ReferenceError. La 1.7.3 los define en ui.part/sat-ui.part sobre las
+   piezas existentes (announce(), field(), el <dialog> compartido, el
+   formato de amount(), satApi()); esta prueba ejecuta el bloque
+   generado entero en la VM y afirma que los siete son funciones, que
+   toast() pinta el aviso sin lanzar, y que los de comportamiento
+   comprobable en la VM (money, previousMonthKey, fieldWrap y el
+   puente de diálogos) hacen lo suyo. satApiBlob se afirma presente;
+   su camino feliz exige un servidor real y lo cubre la revisión del
+   paquete de defensa en Cumplimiento. */
+test('regresión 1.7.3: toast() y los demás ayudantes de los fragmentos nuevos existen y funcionan', async () => {
+  const { context, byId } = makeBootContext(true);
+  vm.runInContext(generatedScript(), context, { filename: 'Faro-Fiscal.html#script' });
+  await settle();
+  for (const name of ['toast', 'fieldWrap', 'showDialog', 'closeDialog', 'previousMonthKey', 'money', 'satApiBlob'])
+    assert.equal(vm.runInContext('typeof ' + name, context), 'function', name + ' debe estar definido');
+  /* toast(texto, 'ok') pinta el aviso normal y toast(texto, 'error')
+     lo marca como error: es announce() con el segundo argumento de
+     las llamadas, y ninguno de los dos lanza. */
+  vm.runInContext("toast('Aviso de prueba', 'ok')", context);
+  assert.equal(byId.get('status').textContent, 'Aviso de prueba');
+  assert.equal(byId.get('status').dataset.error, false);
+  vm.runInContext("toast('Fallo de prueba', 'error')", context);
+  assert.equal(byId.get('status').textContent, 'Fallo de prueba');
+  assert.equal(byId.get('status').dataset.error, true);
+  /* money() formatea un importe suelto como amount(), sin moneda. */
+  assert.equal(vm.runInContext("money('1234567.89')", context), '1,234,567.89');
+  assert.equal(vm.runInContext("money('0')", context), '0.00');
+  /* previousMonthKey() da la clave AAAA-MM del mes anterior. */
+  const now = new Date();
+  const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const expectedKey = previous.getFullYear() + '-' + String(previous.getMonth() + 1).padStart(2, '0');
+  assert.equal(vm.runInContext('previousMonthKey()', context), expectedKey);
+  /* fieldWrap() es el envoltorio de field(): la etiqueta con el
+     control dentro. */
+  const wrapped = vm.runInContext("fieldWrap('Mes', input('month'))", context);
+  assert.equal(wrapped.tagName, 'LABEL');
+  assert.equal(wrapped.children.length, 1);
+  /* showDialog() aloja el formulario propio en el <dialog> compartido
+     ocultando el integrado; closeDialog() lo retira y lo restaura. */
+  vm.runInContext("showDialog(n('form'))", context);
+  assert.notEqual(vm.runInContext('hostedForm', context), null);
+  assert.equal(byId.get('form').hidden, true);
+  vm.runInContext('closeDialog()', context);
+  assert.equal(vm.runInContext('hostedForm', context), null);
+  assert.equal(byId.get('form').hidden, false);
+});
