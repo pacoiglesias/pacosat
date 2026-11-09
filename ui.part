@@ -139,7 +139,8 @@ function totalsPanel() {
     return wrap;
   }
   wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'),
-    action('Reporte mensual', reportDialog, 'metric-link', 'print'));
+    action('Reporte mensual', reportDialog, 'metric-link', 'print'),
+    action('Paquete mensual', monthlyPackageDialog, 'metric-link', 'box'));
   const rows = [];
   let truncated = false;
   for (const [rfc, group] of totals) {
@@ -192,6 +193,86 @@ function printMonthlyReport(key) {
     cancelled + ' cancelados y ' + efosHits + ' con coincidencia 69-B. Si la vigilancia no ha corrido, estos conteos quedan parciales.', 'report-note'));
   section.append(n('p', 'Importes en MXN sumados al centavo desde el total de cada CFDI; los comprobantes en otra moneda se cuentan pero no se suman. Documento de trabajo generado por PacoSAT, no una declaración.', 'report-note'));
   setTimeout(() => window.print(), 80);
+}
+/* Paquete mensual para la contadora (1.6.5): un ZIP descargable por RFC
+   y mes con los totales en CSV, la base DIOT de ese mes en CSV, un
+   resumen HTML listo para imprimir/guardar en PDF y el manifiesto.
+   Solo descarga del usuario: PacoSAT no envía nada a terceros. */
+function monthlyPackageDialog() {
+  const totals = monthlyTotals();
+  check(totals.size, 'Todavía no hay totales para preparar un paquete.');
+  const rfcs = [...totals.keys()];
+  const rfcSel = select(rfcs.map(rfc => [rfc, (totals.get(rfc).name || rfc) + ' · ' + rfc]),
+    scope && totals.has(scope) ? scope : rfcs[0], 'Contribuyente');
+  const monthSel = select([], '', 'Mes');
+  const fillMonths = () => {
+    monthSel.replaceChildren(...totals.get(rfcSel.value).months.map(([key]) => {
+      const option = n('option', key.slice(5, 7) + '/' + key.slice(0, 4));
+      option.value = key;
+      return option;
+    }));
+  };
+  rfcSel.onchange = fillMonths;
+  fillMonths();
+  dialog('Paquete mensual para la contadora', [n('p', 'Un ZIP por RFC y mes con: totales en CSV, base DIOT del mes en CSV, resumen imprimible (HTML) y manifiesto con el contenido y la fecha de generación. Se descarga en tu equipo; PacoSAT no lo envía a nadie.'),
+    field('Contribuyente', rfcSel), field('Mes', monthSel)], () => buildMonthlyPackage(rfcSel.value, monthSel.value));
+  $('save').textContent = 'Preparar y descargar';
+}
+function buildMonthlyPackage(rfc, monthKey) {
+  const group = monthlyTotals().get(rfc);
+  const found = group?.months.find(([key]) => key === monthKey);
+  check(found, 'Ese RFC no tiene comprobantes en el mes elegido.');
+  const g = found[1];
+  const esc = value => {
+    const text = String(value);
+    const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
+    return '"' + safe.replaceAll('"', '""') + '"';
+  };
+  const escHtml = text => String(text).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const totalesCsv = [['RFC', 'Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN'],
+    [rfc, group.name, monthKey, g.received, centsPlain(g.receivedCents), g.issued, centsPlain(g.issuedCents)]]
+    .map(row => row.map(esc).join(',')).join('\r\n');
+  const providers = new Map();
+  for (const row of invoices) {
+    if (row.to.rfc !== rfc || !row.date.startsWith(monthKey)) continue;
+    if (!providers.has(row.from.rfc)) providers.set(row.from.rfc, { name: row.from.name || '', count: 0, cents: 0n, foreign: 0 });
+    const provider = providers.get(row.from.rfc);
+    provider.count++;
+    if (row.currency && row.currency !== 'MXN') provider.foreign++;
+    else provider.cents += totalCents(row);
+    if (!provider.name && row.from.name) provider.name = row.from.name;
+  }
+  const diotText = [['Mes', 'RFC proveedor', 'Proveedor', 'CFDI recibidos', 'Total MXN', 'En otra moneda sin sumar'],
+    ...[...providers].sort((a, b) => a[0].localeCompare(b[0])).map(([providerRfc, provider]) =>
+      [monthKey, providerRfc, provider.name, provider.count, centsPlain(provider.cents), provider.foreign])]
+    .map(row => row.map(esc).join(',')).join('\r\n');
+  let checked = 0, cancelled = 0, efosHits = 0;
+  for (const row of invoices) {
+    if (!row.date.startsWith(monthKey) || (row.from.rfc !== rfc && row.to.rfc !== rfc)) continue;
+    const item = fiscalResults.get(row.id);
+    if (item?.sat) { checked++; if (item.sat.state === 'Cancelado') cancelled++; }
+    if (item?.efos?.length) efosHits++;
+  }
+  const generated = localDateTime(Date.now());
+  const resumen = '<!DOCTYPE html>\n<html lang="es"><head><meta charset="utf-8"><title>PacoSAT · Resumen ' + monthKey + ' · ' + escHtml(rfc) + '</title>' +
+    '<style>body{font-family:system-ui,sans-serif;margin:32px;color:#17293f}h1{font-size:22px}table{border-collapse:collapse}td,th{border:1px solid #bcccdc;padding:6px 10px;text-align:left}.nota{color:#54687f;font-size:12px}</style></head><body>' +
+    '<p>PACOSAT · PAQUETE MENSUAL</p><h1>Resumen ' + monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4) + ' · ' + escHtml(group.name) + ' (' + escHtml(rfc) + ')</h1>' +
+    '<table><tr><th>Concepto</th><th>Cantidad</th><th>Importe MXN</th></tr>' +
+    '<tr><td>CFDI recibidos</td><td>' + g.received + '</td><td>$' + centsLabel(g.receivedCents) + '</td></tr>' +
+    '<tr><td>CFDI emitidos</td><td>' + g.issued + '</td><td>$' + centsLabel(g.issuedCents) + '</td></tr></table>' +
+    '<p class="nota">Vigilancia según la última consulta disponible: ' + checked + ' CFDI consultados, ' + cancelled + ' cancelados, ' + efosHits +
+    ' con coincidencia 69-B. Importes en MXN sumados al centavo; los de otra moneda se cuentan sin sumar. Generado el ' + generated +
+    ' por PacoSAT. Documento de trabajo, no una declaración.</p></body></html>';
+  const names = ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt'];
+  const encoder = new TextEncoder();
+  const zip = zipStore([
+    { name: names[0], data: encoder.encode('\uFEFF' + totalesCsv) },
+    { name: names[1], data: encoder.encode('\uFEFF' + diotText) },
+    { name: names[2], data: encoder.encode(resumen) },
+    { name: names[3], data: encoder.encode(monthlyPackageManifest(rfc, monthKey, names, generated)) }
+  ]);
+  download(zip, 'PacoSAT-' + rfc + '-' + monthKey + '.zip');
+  announce('Paquete mensual de ' + rfc + ' (' + monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4) + ') descargado.');
 }
 function diotGroups() {
   const groups = new Map();
@@ -461,6 +542,15 @@ function render() {
   $('body').replaceChildren(...content);
 }
 function home() {
+  if (!ready) {
+    /* Esqueleto de carga (1.6.5): mientras llegan los datos se muestran
+       bloques neutros en vez de cifras a medias. */
+    const skel = n('div', undefined, 'skel');
+    skel.setAttribute('aria-busy', 'true');
+    skel.setAttribute('aria-label', 'Cargando el resumen fiscal');
+    for (let i = 0; i < 4; i++) skel.append(n('div', undefined, 'skel-block'));
+    return [skel];
+  }
   const selection = invoices.filter(matches);
   const pdfs = documents.filter(doc => !scope || doc.rfc === scope);
   const banner = n('section', undefined, 'dashboard-hero');
@@ -526,7 +616,7 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  return [banner, metrics, kpiRow(selection), monthlyChart(), ...(selection.length ? [weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
+  return [banner, metrics, kpiRow(selection), monthlyChart(), ...(selection.length ? [fiscalDonut(selection), weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
 }
 
 function weeklyActivity(rows) {

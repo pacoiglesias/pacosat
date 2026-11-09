@@ -181,6 +181,33 @@ function invoiceDetail(row) {
     $('dialog').addEventListener('close', () => viewPdf(doc).catch(error => announce(error.message, true)), { once: true });
     $('dialog').close();
   }, undefined, 'file'));
+  /* Historia del CFDI (1.6.5): línea de tiempo solo con datos guardados.
+     La emisión y el PDF salen del expediente local; descargas, consultas
+     de estado y avisos los aporta el servidor desde jobs y la vigilancia.
+     Lo que no tenga histórico, no aparece. */
+  const timelineSection = n('section', undefined, 'invoice-concepts');
+  timelineSection.append(n('h3', 'Historia del comprobante'));
+  const timelineList = n('div', undefined, 'timeline');
+  timelineList.append(n('p', 'Cargando historia…', 'timeline-empty'));
+  timelineSection.append(timelineList);
+  contents.push(timelineSection);
+  (async () => {
+    const events = [{ at: row.date, label: 'CFDI emitido', detail: KINDS[row.kind] + ' · ' + amount(row) }];
+    for (const doc of linked) events.push({ at: null, label: 'PDF vinculado', detail: doc.name });
+    if (typeof satToken !== 'undefined' && satToken) {
+      try {
+        const data = await satApi('invoice-history?id=' + encodeURIComponent(row.id));
+        for (const event of data.events || []) if (event.kind !== 'emission' && event.kind !== 'pdf') events.push(event);
+      } catch { /* sin servidor o sin historia remota: se muestra la local */ }
+    }
+    events.sort((a, b) => (a.at || '9999').localeCompare(b.at || '9999'));
+    timelineList.replaceChildren(...events.map(event => {
+      const item = n('div', undefined, 'timeline-item');
+      item.append(n('strong', event.label),
+        n('small', (event.at ? localDateTime(Date.parse(event.at)) + ' · ' : '') + (event.detail || '')));
+      return item;
+    }));
+  })();
   contents.push(action('Descargar XML original', async () => {
     const file = await readStore('files', 'xml:' + row.id);
     check(file, 'Archivo no encontrado.');
@@ -335,6 +362,39 @@ function backupDialog() {
     soundCue('success');
   });
 }
+/* ZIP sin compresión (método «stored») construido en el navegador para
+   el paquete mensual: basta el CRC y el directorio central que ya sabe
+   leer zipXml, sin dependencias nuevas. */
+function zipStore(entries) {
+  const encoder = new TextEncoder();
+  const parts = [], centrals = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = encoder.encode(entry.name);
+    const data = entry.data instanceof Uint8Array ? entry.data : encoder.encode(String(entry.data));
+    const crc = crc32(data);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true);
+    local.setUint32(14, crc, true); local.setUint32(18, data.length, true); local.setUint32(22, data.length, true);
+    local.setUint16(26, name.length, true);
+    parts.push(new Uint8Array(local.buffer), name, data);
+    const central = new DataView(new ArrayBuffer(46));
+    central.setUint32(0, 0x02014b50, true); central.setUint16(4, 20, true); central.setUint16(6, 20, true);
+    central.setUint32(16, crc, true); central.setUint32(20, data.length, true); central.setUint32(24, data.length, true);
+    central.setUint16(28, name.length, true); central.setUint32(42, offset, true);
+    centrals.push(new Uint8Array(central.buffer), name);
+    offset += 30 + name.length + data.length;
+  }
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, entries.length, true); end.setUint16(10, entries.length, true);
+  end.setUint32(12, centrals.reduce((sum, part) => sum + part.length, 0), true); end.setUint32(16, offset, true);
+  parts.push(...centrals, new Uint8Array(end.buffer));
+  return new Blob(parts, { type: 'application/zip' });
+}
+function monthlyPackageManifest(rfc, monthKey, files, generatedAt) {
+  return ['PacoSAT · Paquete mensual para la contadora', 'RFC: ' + rfc, 'Mes: ' + monthKey,
+    'Generado: ' + generatedAt, '', 'Contenido del paquete:'].concat(files.map(name => '- ' + name)).join('\n') + '\n';
+}
 function restoreDialog(file) {
   check(ready && !importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
   const password = input('password', { required: true, autocomplete: 'off' });
@@ -374,6 +434,32 @@ $('primary').onclick = handle(async () => {
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });
 for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
+/* Buscador global (1.6.5): por UUID completo o parcial, folio fiscal
+   (el propio UUID) o RFC de emisor/receptor. Aplica el término en el
+   archivo de facturas y, si hay un único resultado, abre su detalle.
+   Atajo Ctrl/Cmd+K para enfocar el buscador (no pisa la escritura en
+   campos: solo actúa fuera de ellos o sobre el propio buscador). */
+const globalSearchInput = $('global-search');
+function runGlobalSearch() {
+  const query = globalSearchInput.value.trim();
+  if (!query) return;
+  term = query; invoiceState = ''; invoiceKind = ''; month = ''; invoicePage = 0;
+  navigate('invoices');
+  const found = invoiceRows();
+  if (found.length === 1) invoiceDetail(found[0]);
+  else announce(found.length ? number.format(found.length) + ' comprobantes coinciden con «' + query + '».' :
+    'Sin comprobantes para «' + query + '».', !found.length);
+}
+globalSearchInput.addEventListener('keydown', event => {
+  if (event.key === 'Enter') { event.preventDefault(); runGlobalSearch(); }
+});
+document.addEventListener('keydown', event => {
+  if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'k' || $('dialog').open) return;
+  if (document.activeElement?.matches('input,select,textarea') && document.activeElement !== globalSearchInput) return;
+  event.preventDefault();
+  globalSearchInput.focus();
+  globalSearchInput.select();
+});
 $('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
 for (const id of ['incoming', 'folder']) {
   $(id).onchange = () => { const files = [...$(id).files]; $(id).value = ''; importBatch(files).catch(error => announce(error.message, true)); };

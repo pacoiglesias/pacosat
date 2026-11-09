@@ -14,6 +14,16 @@ function coverageScreen() {
     guide.append(info);
     return [guide];
   }
+  if (satData.coverage === undefined && !satError) {
+    /* Esqueleto mientras llega el primer estado del servidor (1.6.5). */
+    const wrap = panel('Cobertura de descarga');
+    const skel = n('div', undefined, 'skel');
+    skel.setAttribute('aria-busy', 'true');
+    skel.setAttribute('aria-label', 'Cargando la cobertura de descarga');
+    for (let i = 0; i < 3; i++) skel.append(n('div', undefined, 'skel-block'));
+    wrap.append(skel);
+    return [wrap];
+  }
   const coverage = satData.coverage || { groups: [], gaps: [], days: {} };
   const visible = coverage.groups.filter(group => !scope || group.rfc === scope);
   const screens = [];

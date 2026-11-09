@@ -99,5 +99,59 @@ async function collect(stream) {
     assert.ok(copied.has(file), 'El Dockerfile no copia ' + file + ' y el servidor lo importa.');
     assert.ok(allowed.has(file), 'El .dockerignore no permite ' + file + ' y el servidor lo importa.');
   }
-  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz y completitud de la imagen Docker.');
+  /* Anillo de estados (1.6.5): agregación contra fixtures con estados
+     mezclados, usando el MISMO invoiceStateOf del filtro del archivo
+     (la coincidencia 69-B manda sobre el estado SAT). */
+  const uiSource = fs.readFileSync('ui.part', 'utf8');
+  const monitorSource = fs.readFileSync('monitor-ui.part', 'utf8');
+  vm.runInContext('var fiscalResults = new Map();\n' +
+    "fiscalResults.set('a', { sat: { state: 'Vigente' }, efos: [] });\n" +
+    "fiscalResults.set('b', { sat: { state: 'Cancelado' }, efos: [] });\n" +
+    "fiscalResults.set('c', { sat: { state: 'Cancelado' }, efos: ['Definitivo'] });\n" +
+    "fiscalResults.set('d', { sat: { state: 'Vigente' }, efos: [] });\n" +
+    "fiscalResults.set('e', { sat: { state: 'No encontrado' }, efos: [] });\n" +
+    uiSource.slice(uiSource.indexOf('const invoiceStateOf'), uiSource.indexOf('function invoiceRows')) +
+    monitorSource.slice(monitorSource.indexOf('function fiscalStateCounts'), monitorSource.indexOf('function fiscalDonut')) +
+    "var __rows = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => ({ id }));\n" +
+    'globalThis.__donut = { counts: fiscalStateCounts(__rows), segments: donutSegments(fiscalStateCounts(__rows)) };', context);
+  /* Los objetos creados dentro del contexto VM tienen otro prototipo:
+     se comparan campo a campo, no con deepStrictEqual contra literales. */
+  assert.equal(context.__donut.counts.vigente, 2);
+  assert.equal(context.__donut.counts.cancelado, 1);
+  assert.equal(context.__donut.counts.efos, 1);
+  assert.equal(context.__donut.counts.sin, 2);
+  assert.equal(context.__donut.segments.reduce((sum, seg) => sum + seg.value, 0), 6);
+  assert.ok(Math.abs(context.__donut.segments.reduce((sum, seg) => sum + seg.frac, 0) - 1) < 1e-9);
+  assert.equal(context.__donut.segments[1].start, context.__donut.segments[0].frac);
+  /* Paquete mensual (1.6.5): el ZIP se escribe con zipStore y se relee
+     con el propio zipXml; el manifiesto nombra el contenido exacto. */
+  const wfSource = fs.readFileSync('workflows.part', 'utf8');
+  vm.runInContext(wfSource.slice(wfSource.indexOf('function zipStore'), wfSource.indexOf('function restoreDialog')), context);
+  const manifest = context.monthlyPackageManifest('XAXX010101000', '2026-10',
+    ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt'], '8/11/2026, 10:00');
+  assert.ok(manifest.includes('RFC: XAXX010101000') && manifest.includes('Mes: 2026-10') && manifest.includes('- base-diot.csv'));
+  const zipBlob = context.zipStore([{ name: 'totales.csv', data: new TextEncoder().encode('a,b\n1,2') },
+    { name: 'manifiesto.txt', data: manifest }]);
+  /* Lector mínimo del propio verify: zipXml solo expone entradas .xml
+     (es el lector de CFDI), así que el paquete se comprueba recorriendo
+     las cabeceras locales: nombre, contenido y CRC de cada entrada, y el
+     registro final con su conteo. */
+  const zipBytes = new Uint8Array(await zipBlob.arrayBuffer());
+  const zipView = new DataView(zipBytes.buffer, zipBytes.byteOffset, zipBytes.byteLength);
+  const parsed = [];
+  for (let p = 0; p + 30 <= zipBytes.length && zipView.getUint32(p, true) === 0x04034b50;) {
+    const size = zipView.getUint32(p + 18, true);
+    const nameLen = zipView.getUint16(p + 26, true), extraLen = zipView.getUint16(p + 28, true);
+    const data = zipBytes.subarray(p + 30 + nameLen + extraLen, p + 30 + nameLen + extraLen + size);
+    assert.equal(context.crc32(data), zipView.getUint32(p + 14, true));
+    parsed.push({ name: new TextDecoder().decode(zipBytes.subarray(p + 30, p + 30 + nameLen)),
+      text: new TextDecoder().decode(data) });
+    p += 30 + nameLen + extraLen + size;
+  }
+  assert.deepEqual(parsed.map(entry => entry.name), ['totales.csv', 'manifiesto.txt']);
+  assert.equal(parsed[0].text, 'a,b\n1,2');
+  assert.equal(parsed[1].text, manifest);
+  assert.equal(zipView.getUint32(zipBytes.length - 22, true), 0x06054b50);
+  assert.equal(zipView.getUint16(zipBytes.length - 22 + 10, true), 2);
+  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados y paquete mensual.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

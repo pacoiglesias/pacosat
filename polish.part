@@ -18,3 +18,31 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .chart-legend .sw-hm0{background:var(--surface-2);border:1px solid var(--border)}
 .chart-legend .sw-hm1{background:var(--chart-received);opacity:.5}
 .chart-legend .sw-hm2{background:var(--chart-received)}
+
+/* Pulido 1.6.5: anillo de estados, esqueletos de carga, línea de tiempo
+   del CFDI y buscador global. Todo con tokens del sistema de diseño; la
+   regla global de reduced-motion ya anula la animación del esqueleto. */
+.donut{display:block;margin:0 auto;max-width:190px;height:auto}
+.donut-track{fill:none;stroke:var(--surface-2);stroke-width:13}
+.donut-seg{fill:none;stroke-width:13}
+.donut-vigente{stroke:var(--green)}
+.donut-cancelado{stroke:var(--danger)}
+.donut-efos{stroke:var(--warn-ink)}
+.donut-sin{stroke:var(--border)}
+.donut-total{fill:var(--ink);font-size:26px;font-weight:800;text-anchor:middle}
+.donut-caption{fill:var(--muted);font-size:10px;font-weight:700;text-anchor:middle}
+.chart-legend .sw-donut-vigente{background:var(--green)}
+.chart-legend .sw-donut-cancelado{background:var(--danger)}
+.chart-legend .sw-donut-efos{background:var(--warn-ink)}
+.chart-legend .sw-donut-sin{background:var(--border)}
+.skel{display:grid;gap:12px}
+.skel-block{min-height:86px;border:1px solid var(--border);border-radius:12px;background:linear-gradient(100deg,var(--surface-2) 40%,var(--surface) 50%,var(--surface-2) 60%);background-size:200% 100%;animation:skel-pulse 1.2s ease-in-out infinite}
+@keyframes skel-pulse{from{background-position:180% 0}to{background-position:-20% 0}}
+.timeline{display:grid}
+.timeline-item{display:grid;gap:1px;padding:7px 0 7px 13px;border-left:2px solid var(--border)}
+.timeline-item strong{font-size:13.5px}
+.timeline-item small{color:var(--muted)}
+.timeline-empty{color:var(--muted);margin:4px 0}
+.top-search input{background:var(--nav-field);border:1px solid var(--nav-border);color:var(--nav-text);border-radius:8px;padding:6px 10px;min-width:200px;font:inherit;font-size:13px}
+.top-search input::placeholder{color:var(--nav-muted)}
+@media(max-width:900px){.top-search{display:none}}

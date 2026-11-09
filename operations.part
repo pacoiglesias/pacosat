@@ -37,7 +37,32 @@ function operationsScreen() {
   const buttons = n('div', undefined, 'actions');
   buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
   health.append(buttons);
-  return [health, alerts, reconcile];
+  /* Salud del sistema (1.6.5): caducidad real de cada e.firma (leída del
+     certificado al desbloquear; «sin dato» si nunca se leyó), última
+     descarga con éxito por perfil, último respaldo con sus destinos y
+     tamaño del expediente en conteos. */
+  const sysHealth = panel('Salud del sistema');
+  const expiryText = ms => {
+    const days = Math.ceil((ms - Date.now()) / 86400000);
+    const when = dateLabel(new Date(ms).toISOString());
+    return days > 0 ? 'Vence el ' + when + ' (en ' + days + (days === 1 ? ' día' : ' días') + ')' :
+      days === 0 ? 'Vence hoy, ' + when : 'Venció el ' + when + ' (hace ' + -days + (days === -1 ? ' día' : ' días') + ')';
+  };
+  const sb = satData.scheduledBackup || {};
+  const healthRows = [];
+  for (const profile of (satData.profiles || []).filter(p => !scope || p.rfc === scope)) {
+    healthRows.push(['e.firma · ' + profile.rfc, profile.certExpires ? expiryText(profile.certExpires) :
+      'Sin dato: se registra al desbloquear la e.firma con su certificado']);
+    healthRows.push(['Última descarga con éxito · ' + profile.rfc, profile.lastSatSuccess ? localDateTime(profile.lastSatSuccess) : 'Sin registro']);
+  }
+  if (!healthRows.length && !satToken) healthRows.push(['Perfiles SAT', 'Solo en modo servidor']);
+  healthRows.push(['Último respaldo correcto', !satToken ? 'Sin servidor: crea respaldos manuales' : sb.enabled ?
+    (sb.last ? localDateTime(sb.last) : 'aún no') + (sb.secondary ? ' · destinos: principal y secundario' + (sb.secondaryError ? ' (el secundario falló: ' + sb.secondaryError + ')' : '') : ' · destino: solo principal') +
+    (sb.verify ? ' · prueba de restauración: ' + (sb.verify.ok ? 'íntegra' : 'CON FALLO') : '') : 'Respaldo programado sin configurar']);
+  healthRows.push(['Expediente', number.format(people.length) + ' RFC · ' + number.format(invoices.length) + ' CFDI · ' +
+    number.format(documents.length) + ' documentos · ' + number.format(activity.length) + ' registros de bitácora']);
+  sysHealth.append(grid(['Elemento', 'Estado'], healthRows));
+  return [health, sysHealth, alerts, reconcile];
 }
 function linkPdfDialog(doc) {
   const uuid = input('text', { required: true, maxLength: 36, value: doc.uuid || '', placeholder: 'UUID del XML importado' });
