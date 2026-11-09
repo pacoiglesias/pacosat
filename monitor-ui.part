@@ -1,29 +1,60 @@
+/* ===== Vigilancia SAT (rediseño 1.7.4, a petición de Paco) =====
+   Antes: un muro de UUID con «Sin consulta · Consulta pendiente de
+   reintento» en cada fila — no se entendía nada. Ahora la pantalla
+   abre con lo que Paco quiere hacer y con el resumen en tarjetas:
+   botones grandes con nombre de acción («Descargar CFDI del SAT» con
+   fechas, «Revisar mis CFDI ahora», «Actualizar listados 69-B y 69»),
+   seis tarjetas con semáforo y números grandes, la verdad de la
+   revisión automática («X de N revisados · última tanda…») y, debajo,
+   la lista ya secundaria: buscable por empresa, RFC o mes, con el
+   estado en palabras llanas y qué hacer (o «no tienes que hacer
+   nada»). El UUID solo se ve al abrir el detalle del comprobante. */
 const watched = new Set();
 const fiscalResults = new Map();
 let monitorData = { fetched: null, error: '' }, monitorError = '', monitoring = false;
 let monitorFilter = 'attention', monitorCursor = 0;
+let monitorSummary = null, monitorSummaryKey = '';
+let monitorSearch = '', monitorDlStart = '', monitorDlEnd = '', monitorDlDirection = 'received';
 const monitorRow = row => ({
   id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
   seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal || '') ? row.seal : ''
 });
+/* El estado de un CFDI en lenguaje de Paco: insignia corta, frase que
+   lo explica y si hay que hacer algo. Nada de códigos del SAT en
+   crudo ni de «pendiente de reintento». */
+function monitorErrorText(error) {
+  if (/timeout|aborted|AbortError/i.test(error)) return 'El servicio del SAT tardó demasiado en responder. Se volverá a intentar solo; no tienes que hacer nada.';
+  if (/HTTP \d{3}/.test(error)) return 'El servicio del SAT respondió con un error. Se volverá a intentar solo; no tienes que hacer nada.';
+  if (/fetch|network|conexi|red\b/i.test(error)) return 'No hubo conexión con el servicio del SAT. Se volverá a intentar solo; no tienes que hacer nada.';
+  return 'Hubo un problema al consultar el SAT. Se volverá a intentar solo; no tienes que hacer nada.';
+}
+function monitorStateInfo(row) {
+  const item = fiscalResults.get(row.id);
+  if (item?.efos?.length) return { badge: 'En el listado 69-B', state: '69-B',
+    text: item.efos.includes('Definitivo') ?
+      'El SAT confirmó operaciones inexistentes de este RFC: esos CFDI no deben deducirse. Avisa a tu contadora.' :
+      'El SAT presume operaciones inexistentes de este RFC: pide aclaración al emisor y avisa a tu contadora antes de deducir.' };
+  if (item?.sat?.state === 'Vigente') return { badge: 'Vigente', state: 'Vigente',
+    text: 'El SAT lo confirma vigente.' + (item.checked ? ' Revisado el ' + localDateTime(item.checked) + '.' : '') };
+  if (item?.sat?.state === 'Cancelado') return { badge: 'Cancelado', state: 'Cancelado',
+    text: 'El SAT lo marca cancelado' + (item.sat.cancellation ? ' (' + item.sat.cancellation + ')' : '') +
+      '. Si ya lo pagaste o lo dedujiste, avisa a tu contadora.' };
+  if (item?.sat?.state === 'No encontrado') return { badge: 'No localizado', state: 'No encontrado',
+    text: 'El SAT no lo localiza con los datos del comprobante. Pasa con comprobantes muy antiguos o cuando el servicio del SAT no lo tiene a mano: no es un error tuyo y no hay nada que hacer.' };
+  if (item?.sat) return { badge: item.sat.state, state: item.sat.state, text: 'El SAT respondió: ' + item.sat.state + '.' };
+  if (item?.error) return { badge: 'No se pudo consultar', state: 'Error', text: monitorErrorText(item.error) };
+  return { badge: 'Sin revisar todavía', state: 'Sin consulta',
+    text: 'Está en la cola de la revisión automática, que avanza por tandas. No tienes que hacer nada.' };
+}
 function statusCell(id) {
+  const row = invoices.find(candidate => candidate.id === id);
+  const info = monitorStateInfo(row || { id });
   const item = fiscalResults.get(id);
   const wrap = n('div', undefined, 'fiscal-state');
-  const state = item?.sat?.state || 'Sin consulta';
-  const badge = n('span', state, 'fiscal-badge');
-  badge.dataset.state = state;
-  wrap.append(badge);
-  if (item?.checked) wrap.append(n('small', 'Consultado ' + localDateTime(item.checked)));
-  if (item?.sat?.cancellation) wrap.append(n('small', item.sat.cancellation));
-  if (item?.efos.length) {
-    wrap.append(n('small', '69-B · ' + item.efos.join(' / ')));
-    /* Qué significa y qué hacer, en lenguaje llano (UX-19). */
-    wrap.append(n('small', item.efos.includes('Definitivo') ?
-      'El SAT confirmó operaciones inexistentes de este RFC: esos CFDI no deben deducirse. Avisa a tu contadora.' :
-      'El SAT presume operaciones inexistentes de este RFC: pide aclaración al emisor y avisa a tu contadora antes de deducir.'));
-  }
-  else if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS.'));
-  if (item?.error) wrap.append(n('small', 'Consulta pendiente de reintento.'));
+  const badge = n('span', info.badge, 'fiscal-badge');
+  badge.dataset.state = info.state;
+  wrap.append(badge, n('small', info.text));
+  if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS en este comprobante.'));
   return wrap;
 }
 /* Anillo de estados (1.6.5): resume los mismos datos de la vigilancia
@@ -102,38 +133,215 @@ function fiscalDonut(rows) {
   wrap.append(chartWrap, legend);
   return wrap;
 }
-function monitorScreen() {
-  const overview = panel('Seguimiento fiscal');
-  const header = n('div', undefined, 'panel-head');
-  const source = n('div');
-  source.append(n('h3', 'Fuente oficial · SAT'),
-    n('p', monitorData.fetched ? 'Listado 69-B descargado ' + localDateTime(monitorData.fetched) : 'Listado 69-B pendiente de descarga.'));
-  if (monitorData.error || monitorError) source.append(n('p', monitorError || monitorData.error));
-  const link = n('a', 'Listado oficial 69-B ↗');
+/* El resumen se cuenta en el servidor sobre TODA la selección (las
+   tarjetas no dependen de qué página de la lista se haya cargado). */
+async function loadMonitorSummary(force = false) {
+  const ids = invoices.filter(matches).map(row => row.id);
+  const key = ids.join(',') + '|' + fiscalResults.size;
+  if (!force && monitorSummary && key === monitorSummaryKey) return monitorSummary;
+  try {
+    monitorSummary = await satApi('monitor/summary', { ids });
+    monitorSummaryKey = key;
+  } catch { /* Sin conexión con el servicio: se conserva el resumen anterior. */ }
+  return monitorSummary;
+}
+/* «Revisar mis CFDI ahora»: registra en el vigilante los pendientes
+   que aún no conoce, los pone al frente de la cola y encadena tandas
+   con el indicador de actividad global hasta agotarlos. */
+async function monitorCheckNow() {
+  const selection = invoices.filter(matches);
+  const pending = selection.filter(row => !fiscalResults.get(row.id)?.sat);
+  if (!pending.length) { announce('No hay comprobantes pendientes de revisar: todos tienen ya su estado del SAT.'); return; }
+  activityStart('Revisando el estado de tus CFDI en el SAT', pending.length);
+  try {
+    const fresh = pending.filter(row => !watched.has(row.id)).map(monitorRow);
+    for (let i = 0; i < fresh.length; i += 150) {
+      const chunk = fresh.slice(i, i + 150);
+      await satApi('monitor', { records: chunk, ids: [] });
+      for (const row of chunk) watched.add(row.id);
+    }
+    let done = 0, guard = 0;
+    for (;;) {
+      const result = await satApi('monitor/check-now', { ids: pending.map(row => row.id) });
+      done += result.processed || 0;
+      activityProgress(Math.min(done, pending.length),
+        result.remaining ? 'Quedan ' + number.format(result.remaining) + ' en la cola del vigilante.' : '');
+      if (!result.remaining || !result.processed) break;
+      if (++guard > 400) break;
+      if (result.busy) await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    await pollMonitor();
+    await loadMonitorSummary(true);
+    const counts = monitorSummary?.counts;
+    activityDone('✓ Revisión terminada', [
+      'Ya tienen estado del SAT ' + number.format(counts?.revisados || 0) + ' de ' + number.format(counts?.total || selection.length) + ' comprobantes.',
+      (counts?.sinRevisar || counts?.conProblema) ?
+        'Quedan ' + number.format((counts?.sinRevisar || 0) + (counts?.conProblema || 0)) +
+        ' sin respuesta: la revisión automática seguirá intentándolo y también puedes repetir este botón más tarde.' :
+        'No queda ningún comprobante sin revisar.'
+    ]);
+  } catch (error) {
+    activityFail('La revisión se detuvo', 'Pasó esto: ' + error.message + ' Lo ya revisado quedó guardado; puedes repetir el botón cuando quieras.');
+  }
+  if (page === 'monitor') render();
+}
+/* «Actualizar listados 69-B y 69»: el 69-B del vigilante por su
+   endpoint y los listados del artículo 69 por el de Listas negras. */
+async function monitorRefreshLists() {
+  activityStart('Actualizando los listados oficiales del SAT');
+  try {
+    const result = await satApi('monitor/refresh-lists', {});
+    if (result.lists?.error) throw new Error(result.lists.error);
+    try { await satApi('lists/refresh', {}); } catch { /* El 69-B ya quedó: el aviso lo dirá. */ }
+    monitorData = { fetched: result.lists?.fetched || monitorData.fetched, error: '' };
+    monitorSummaryKey = '';
+    await loadMonitorSummary(true);
+    activityDone('✓ Listados actualizados', [
+      'Listado 69-B: copia del ' + (result.lists?.fetched ? localDateTime(result.lists.fetched) : '—') +
+      ' con ' + number.format(result.lists?.count || 0) + ' RFC publicados.',
+      'Los listados del artículo 69 también se pidieron de nuevo en Listas negras.'
+    ]);
+  } catch (error) {
+    activityFail('No se pudieron actualizar los listados', 'Pasó esto: ' + error.message +
+      ' Se sigue usando la última copia buena' + (monitorData.fetched ? ' (del ' + localDateTime(monitorData.fetched) + ')' : '') + '.');
+  }
+  if (page === 'monitor') render();
+}
+function monitorKpi(label, glyph, value, note, cls) {
+  const el = n('article', undefined, 'kpi' + (cls ? ' ' + cls : ''));
+  const head = n('div', label, 'kpi-label'); head.prepend(icon(glyph));
+  el.append(head, n('strong', value), n('small', note));
+  return el;
+}
+function monitorActionsPanel(counts) {
+  const wrap = panel('Qué quieres hacer');
+  const grid3 = n('div', undefined, 'monitor-actions');
+  /* Descargar CFDI del SAT: fechas aquí mismo; al pulsar se abre el
+     diálogo de solicitud de siempre (mismo motor y mismo
+     planificador anti-5002 del Centro SAT), ya rellenado. */
+  const dl = n('div', undefined, 'monitor-action');
+  dl.append(n('h3', 'Descargar CFDI del SAT'),
+    n('p', 'Baja los comprobantes de un periodo: elige las fechas y pulsa el botón.'));
+  const dates = n('div', undefined, 'monitor-dates');
+  const from = input('date', { value: monitorDlStart, 'aria-label': 'Desde' });
+  const to = input('date', { value: monitorDlEnd, 'aria-label': 'Hasta' });
+  from.onchange = () => { monitorDlStart = from.value; };
+  to.onchange = () => { monitorDlEnd = to.value; };
+  dates.append(field('Desde', from), field('Hasta', to));
+  const direction = select([['received', 'Recibidos'], ['issued', 'Emitidos']], monitorDlDirection, 'Sentido');
+  direction.onchange = () => { monitorDlDirection = direction.value; };
+  dates.append(field('Comprobantes', direction));
+  dl.append(dates);
+  const dlButton = action('Descargar CFDI del SAT', () => {
+    if (!monitorDlStart || !monitorDlEnd) throw new Error('Elige primero la fecha «Desde» y la fecha «Hasta».');
+    if (monitorDlEnd < monitorDlStart) throw new Error('La fecha «Hasta» no puede ser anterior a la «Desde».');
+    requestDialog({ rfc: scope || undefined, direction: monitorDlDirection, start: monitorDlStart, end: monitorDlEnd });
+  }, 'primary', 'down');
+  dlButton.classList.add('monitor-big');
+  dl.append(dlButton);
+  /* Revisar ahora. */
+  const check = n('div', undefined, 'monitor-action');
+  const waiting = counts ? counts.sinRevisar + counts.conProblema : 0;
+  check.append(n('h3', 'Revisar el estado en el SAT'),
+    n('p', counts ? (waiting ?
+      number.format(waiting) + ' comprobantes aún no tienen su estado confirmado por el SAT.' :
+      'Todos tus comprobantes tienen ya su estado del SAT.') :
+      'Consulta al SAT el estado (vigente o cancelado) de los comprobantes que falten.'));
+  const checkButton = action('Revisar mis CFDI ahora', monitorCheckNow, 'primary', 'search');
+  checkButton.classList.add('monitor-big');
+  check.append(checkButton);
+  /* Actualizar listados. */
+  const lists = n('div', undefined, 'monitor-action');
+  const fetched = monitorSummary?.lists?.fetched || monitorData.fetched;
+  lists.append(n('h3', 'Listados 69-B y 69'),
+    n('p', fetched ? 'Última copia del listado 69-B: ' + localDateTime(fetched) + '.' :
+      'Todavía no se ha descargado el listado 69-B.'));
+  const listsButton = action('Actualizar listados 69-B y 69', monitorRefreshLists, 'primary', 'sync');
+  listsButton.classList.add('monitor-big');
+  lists.append(listsButton,
+    n('a', 'Ver el listado oficial 69-B ↗', 'monitor-link'));
+  const link = lists.lastChild;
   link.href = 'https://www.sat.gob.mx/minisitio/DatosAbiertos/contribuyentes_publicados.html';
   link.target = '_blank'; link.rel = 'noopener noreferrer';
-  header.append(source, link);
-  overview.append(header);
+  grid3.append(dl, check, lists);
+  wrap.append(grid3);
+  return wrap;
+}
+function monitorScreen() {
   const selection = invoices.filter(matches);
+  const counts = monitorSummary?.counts;
+  /* --- Acciones primero: lo que Paco vino a hacer. --- */
+  const actionsPanel = monitorActionsPanel(counts);
+  /* --- Resumen en tarjetas con semáforo. --- */
+  const summaryPanel = panel('Resumen de tus comprobantes');
+  if (!selection.length) {
+    summaryPanel.append(empty('Aún no hay comprobantes', 'Cuando importes o descargues CFDI verás aquí su estado según el SAT.'));
+  } else if (!counts) {
+    summaryPanel.append(empty('Cargando el resumen…', 'El sistema está contando el estado de tus ' + number.format(selection.length) + ' comprobantes.'));
+  } else {
+    const kpis = n('div', undefined, 'kpis');
+    const affected = monitorSummary.masAfectados?.[0];
+    const affectedName = affected ? (selection.find(row => row.from.rfc === affected.rfc)?.from.name || affected.rfc) : '';
+    const problemNote = [
+      counts.noEncontrados ? number.format(counts.noEncontrados) + ' no localizados por el SAT' : '',
+      counts.conProblema ? number.format(counts.conProblema) + ' con problema de conexión al consultar' : ''
+    ].filter(Boolean).join(' · ') || 'Sin problemas de consulta.';
+    kpis.append(
+      monitorKpi('Comprobantes', 'file', number.format(counts.total),
+        'En tu expediente para el contribuyente elegido.', ''),
+      monitorKpi('Vigentes', 'shield', number.format(counts.vigentes),
+        'El SAT los confirma vigentes.', 'ok'),
+      monitorKpi('Cancelados', 'alert', number.format(counts.cancelados),
+        counts.cancelados ? 'El SAT los marca cancelados: conviene revisarlos abajo.' : 'Ninguno cancelado.', counts.cancelados ? 'bad' : ''),
+      monitorKpi('En el listado 69-B', 'alert', number.format(counts.enListado69B),
+        counts.enListado69B ? 'Ojo: ' + affectedName + ' aparece en el listado. Esos CFDI pueden no ser deducibles.' :
+          'Ningún emisor tuyo está en el listado.', counts.enListado69B ? 'bad' : ''),
+      monitorKpi('Aún sin revisar', 'clock', number.format(counts.sinRevisar),
+        counts.sinRevisar ? 'El sistema los revisa solo, por tandas. No tienes que hacer nada.' : 'No queda ninguno en la cola.', counts.sinRevisar ? 'warn' : ''),
+      monitorKpi('Con problema al consultar', 'alert', number.format(counts.noEncontrados + counts.conProblema),
+        problemNote, (counts.noEncontrados + counts.conProblema) ? 'warn' : '')
+    );
+    summaryPanel.append(kpis);
+    const truth = n('div', undefined, 'monitor-truth');
+    truth.append(
+      n('p', 'Revisión automática: ' + number.format(counts.revisados) + ' de ' + number.format(counts.total) +
+        ' revisados' + (counts.ultimaRevision ? ' · última revisión: ' + localDateTime(counts.ultimaRevision) : ' · aún sin revisiones') + '.'),
+      n('p', monitorSummary.lists?.fetched ?
+        'Listado 69-B: copia del ' + localDateTime(monitorSummary.lists.fetched) + ' (' + number.format(monitorSummary.lists.count || 0) + ' RFC publicados).' :
+        'Listado 69-B: pendiente de descarga.')
+    );
+    if (monitorSummary.lists?.error) truth.append(n('p', 'El listado 69-B no se pudo descargar la última vez: se usa la última copia buena.'));
+    if (monitorError) truth.append(n('p', monitorError));
+    summaryPanel.append(truth);
+  }
+  /* --- La lista, secundaria: buscable y en lenguaje claro. --- */
+  const listPanel = panel('Tus comprobantes y su estado');
+  const needle = monitorSearch.trim().toLocaleLowerCase('es-MX');
   const selected = selection.filter(row => {
-    const item = fiscalResults.get(row.id);
+    if (needle && ![row.from.name, row.from.rfc, row.to.name, row.to.rfc, row.id, row.date.slice(0, 7), dateLabel(row.date)]
+      .some(value => (value || '').toLocaleLowerCase('es-MX').includes(needle))) return false;
+    const info = monitorStateInfo(row);
     if (monitorFilter === 'all') return true;
-    if (monitorFilter === 'cancelled') return item?.sat?.state === 'Cancelado';
-    if (monitorFilter === 'efos') return Boolean(item?.efos.length || item?.sat?.efos === '100');
-    return Boolean(item?.error || (item?.sat && item.sat.state !== 'Vigente') ||
-      item?.efos.some(x => x === 'Presunto' || x === 'Definitivo') || item?.sat?.efos === '100');
+    if (monitorFilter === 'cancelled') return info.state === 'Cancelado';
+    if (monitorFilter === 'efos') return info.state === '69-B';
+    return ['Cancelado', '69-B', 'No encontrado', 'Error'].includes(info.state);
   });
   const filters = n('div', undefined, 'filters');
-  const picker = select([['attention','Requieren atención'],['cancelled','Cancelados'],['efos','Coincidencias 69-B'],['all','Todos los CFDI']], monitorFilter, 'Filtrar vigilancia');
+  const picker = select([['attention','Requieren atención'],['cancelled','Cancelados'],['efos','En el listado 69-B'],['all','Todos los CFDI']], monitorFilter, 'Filtrar vigilancia');
   picker.onchange = () => { monitorFilter = picker.value; render(); };
-  filters.append(picker, n('span', selected.length + ' de ' + selection.length + ' comprobantes', 'period-chip'));
-  overview.append(filters);
-  if (!selected.length) overview.append(empty('Sin resultados en este filtro', 'El servicio revisa los CFDI en lotes y conserva la fecha de la última consulta.'));
-  else overview.append(grid(['Emisor', 'Folio fiscal', 'Estado y artículo 69-B', 'Detalle'], selected.slice(0, 100).map(row => [
-    cell(row.from.name || row.from.rfc, row.from.rfc), row.id, statusCell(row.id), action('Abrir', () => invoiceDetail(row))
+  const search = input('search', { placeholder: 'Buscar por empresa, RFC o mes (2026-11)…', value: monitorSearch, 'aria-label': 'Buscar comprobantes' });
+  search.oninput = () => { monitorSearch = search.value; clearTimeout(search._t); search._t = setTimeout(render, 250); };
+  filters.append(picker, search, n('span', selected.length + ' de ' + selection.length + ' comprobantes', 'period-chip'));
+  listPanel.append(filters);
+  if (!selected.length) listPanel.append(empty('Sin resultados en este filtro',
+    'Prueba con «Todos los CFDI» o limpia la búsqueda. La revisión automática sigue trabajando por tandas.'));
+  else listPanel.append(grid(['Empresa', 'Fecha e importe', 'Estado según el SAT', 'Detalle'], selected.slice(0, 100).map(row => [
+    cell(row.from.name || row.from.rfc, row.from.rfc + ' → ' + (row.to.name || row.to.rfc)),
+    cell(dateLabel(row.date), '$' + centsLabel(totalCents(row)) + ' · ' + (row.kind === 'P' ? 'Pago' : row.kind === 'N' ? 'Nómina' : 'Factura')),
+    statusCell(row.id), action('Abrir', () => invoiceDetail(row))
   ])));
-  if (selected.length > 100) overview.append(n('div', 'Se muestran los primeros 100 del filtro actual. Selecciona un RFC para acotar la lista.', 'table-foot'));
-  return [overview];
+  if (selected.length > 100) listPanel.append(n('div', 'Se muestran los primeros 100 del filtro actual. Busca por empresa o por mes para acotar la lista.', 'table-foot'));
+  return [actionsPanel, summaryPanel, listPanel];
 }
 async function pollMonitor() {
   if (!satToken || !ready || monitoring) return;
@@ -158,6 +366,7 @@ async function pollMonitor() {
     if (page !== 'invoices') monitorCursor += 500;
     monitorData = result;
     monitorError = '';
+    if (page === 'monitor') await loadMonitorSummary();
   } catch (error) { monitorError = error.message; }
   finally {
     monitoring = false;

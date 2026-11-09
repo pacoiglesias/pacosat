@@ -13,6 +13,7 @@ import { createMonitor } from './sat-monitor.mjs';
 import { LIST_CATALOG, parseList, declaredDate, listSeverity, SEVERITY_ORDER } from './sat-lists.mjs';
 import { parseStatementText, extractPdfTextLines, moneyToCents } from './bank-statement.mjs';
 import { encryptBackupBuffer, decryptBackupBuffer } from './backup-core.mjs';
+import { createSatDocFetch, createFileEfirmaStorage } from './sat-doc-fetch.mjs';
 
 /* El RFC se valida con validateRfc (xml-core): un solo criterio en todo el sistema. */
 const DAY = 86400000;
@@ -2974,6 +2975,31 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         catch (error) { need(false, message(error)); }
         return json(res, monitor.status(ids));
       }
+      if (req.method === 'POST' && url.pathname === '/api/monitor/summary') {
+        /* Resumen de la Vigilancia SAT: las cifras de las tarjetas,
+           contadas sobre TODA la selección del contribuyente. */
+        const { ids = [] } = await body(req);
+        need(Array.isArray(ids) && ids.length <= 20000 && ids.every(id => typeof id === 'string' && id.length === 36),
+          'Selección de resumen inválida.');
+        return json(res, monitor.summary(ids));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/monitor/check-now') {
+        /* «Revisar mis CFDI ahora»: encola los pedidos sin respuesta y
+           procesa una tanda; la pantalla encadena llamadas con el
+           indicador de actividad hasta agotar la cola. */
+        const { ids = [] } = await body(req);
+        need(Array.isArray(ids) && ids.length <= 20000 && ids.every(id => typeof id === 'string' && id.length === 36),
+          'Selección de revisión inválida.');
+        const queued = monitor.checkNow(ids);
+        const batch = await monitor.processNow(10);
+        return json(res, { queued, ...batch });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/monitor/refresh-lists') {
+        /* «Actualizar listados»: fuerza la descarga del listado 69-B
+           que usa la vigilancia (el de la pantalla de Listas negras va
+           por /api/lists/refresh). */
+        return json(res, { lists: await monitor.refreshLists() });
+      }
       if (req.method === 'GET' && url.pathname === '/api/lists') return json(res, listsOverview());
       if (req.method === 'POST' && url.pathname === '/api/lists/refresh') {
         /* Actualizar ahora: marca como vencidos los listados pedidos (o
@@ -3824,6 +3850,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
   const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '',
     efirmaDir: process.env.PACOSAT_EFIRMA_DIR || '', officialLists: true,
+    /* Descargador de constancia y opinión (1.7.4): lee la e.firma de
+       la misma carpeta protegida que resuelve el servicio (la de
+       PACOSAT_EFIRMA_DIR o <datos>/efirma). Sin credenciales válidas
+       el propio descargador devuelve el error claro que toca; nunca
+       sale al portal con una e.firma caducada. */
+    satDocFetch: createSatDocFetch({ storage: createFileEfirmaStorage(
+      process.env.PACOSAT_EFIRMA_DIR || join(path, 'efirma')) }),
     buildModified: statSync(new URL('./Faro-Fiscal.html', import.meta.url)).mtimeMs });
   const server = createServer(service.handle);
   server.requestTimeout = 90000;

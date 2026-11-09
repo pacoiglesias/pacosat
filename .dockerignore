@@ -5,6 +5,7 @@
 !sat-direct.mjs
 !sat-monitor.mjs
 !sat-lists.mjs
+!sat-doc-fetch.mjs
 !xml-core.mjs
 !pdf-invoice.mjs
 !backup-core.mjs
