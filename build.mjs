@@ -5,6 +5,6 @@ const layout = read('layout.part')
   .replace("img-src data:; base-uri", "img-src data:; frame-src blob:; connect-src 'self'; base-uri")
   .replace('<title>PacoSAT</title>', '<title>PacoSAT</title><!--PACOSAT_TOKEN-->');
 const css = ['style.part','design.part','polish.part'].map(read).join('\n');
-const script = ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','monitor-ui.part'].map(read).join('\n');
+const script = ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','monitor-ui.part','coverage-ui.part'].map(read).join('\n');
 write('Faro-Fiscal.html', layout.replace('/*STYLES*/', () => css).replace('/*SCRIPT*/', () => script));
 write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, zipXml, rfcCheckDigit, validateRfc };\n');

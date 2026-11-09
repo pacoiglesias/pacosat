@@ -24,13 +24,15 @@ function operationsScreen() {
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
     ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
       'Activa' + (satData.watchFolder.subfolders ? ' · incluye subcarpetas' : '') + ' · ' + satData.watchFolder.imported + ' archivos importados · ' + satData.watchFolder.failed + ' con error' +
+      (satData.watchFolder.incidents ? ' · ' + satData.watchFolder.incidents + ' con incidencias' : '') +
+      (satData.watchFolder.waiting ? ' · ' + satData.watchFolder.waiting + ' en espera (copiándose)' : '') +
       (satData.watchFolder.lastScan ? ' · última revisión ' + localDateTime(satData.watchFolder.lastScan) : '') +
       (satData.watchFolder.error ? ' · ' + satData.watchFolder.error : '') : 'Sin configurar en el servidor'],
     ['Respaldo programado', !satToken ? 'Sin servidor: crea respaldos manuales' : satData.scheduledBackup?.enabled ?
       (satData.scheduledBackup.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
       (satData.scheduledBackup.last ? localDateTime(satData.scheduledBackup.last) : 'aún no') +
       (satData.scheduledBackup.error ? ' · Error: ' + satData.scheduledBackup.error : '') : 'Sin configurar en el servidor'],
-    ['Respaldo', 'Exporta una copia cifrada antes de actualizar. No incluye e.firma, SMTP ni cola SAT.']
+    ['Respaldo', 'Exporta una copia cifrada antes de actualizar. Ningún respaldo incluye la e.firma ni las credenciales SMTP; el respaldo programado del servidor sí incluye la cola SAT y el estado operativo.']
   ]));
   const buttons = n('div', undefined, 'actions');
   buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));

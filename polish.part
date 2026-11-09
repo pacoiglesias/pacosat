@@ -7,3 +7,14 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .rfc-note[data-state=warn]{color:var(--warn-ink);background:var(--warn-bg);border:1px solid var(--warn-ink);border-radius:8px;padding:7px 10px}
 .rfc-note[data-state=error]{color:var(--danger);background:var(--danger-bg);border:1px solid var(--danger);border-radius:8px;padding:7px 10px}
 .kpi,.panel,.metric{transition:box-shadow .18s ease,transform .18s ease}.kpi:hover{box-shadow:0 8px 22px #27426414;transform:translateY(-1px)}.view-in{animation:view-in .22s ease}@keyframes view-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Cobertura (1.6.4): mapa de calor anual de días cubiertos por RFC. */
+.hm-scroll{overflow-x:auto;padding:2px 17px 6px}
+.hm{display:block;height:auto}
+.hm rect.hm-l0{fill:var(--surface-2);stroke:var(--border);stroke-width:.6}
+.hm rect.hm-l1{fill:var(--chart-received);opacity:.5}
+.hm rect.hm-l2{fill:var(--chart-received)}
+.hm text{fill:var(--muted);font-size:9px;font-weight:600}
+.chart-legend .sw-hm0{background:var(--surface-2);border:1px solid var(--border)}
+.chart-legend .sw-hm1{background:var(--chart-received);opacity:.5}
+.chart-legend .sw-hm2{background:var(--chart-received)}

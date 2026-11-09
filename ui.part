@@ -4,6 +4,7 @@ const screens = {
   invoices: ['Facturas CFDI', 'Busca por nombre, RFC o UUID y abre el comprobante sin perder tus filtros.', 'Importar XML / ZIP'],
   docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
   sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
+  coverage: ['Cobertura de descarga', 'Qué periodos están descargados por RFC, dónde quedan huecos y el mapa anual de días cubiertos.', 'Actualizar estado'],
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
   backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
   diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV']
@@ -455,7 +456,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
 }
@@ -669,11 +670,26 @@ function backupScreen() {
     auto.append(grid(['Componente', 'Estado'], [
       ['Respaldo programado', sb.enabled ? (sb.frequency === 'weekly' ? 'Semanal' : 'Diario') + ' · último: ' +
         (sb.last ? localDateTime(sb.last) : 'aún no') + ' · siguiente: ' + (sb.next ? localDateTime(sb.next) : 'al próximo ciclo') +
-        (sb.error ? ' · Error: ' + sb.error : '') : 'Sin configurar: se define en el archivo de arranque protegido del servidor.'],
+        (sb.error ? ' · Error: ' + sb.error : '') + ' · incluye el estado operativo (descargas, criterios 5002 y avisos pendientes)' : 'Sin configurar: se define en el archivo de arranque protegido del servidor.'],
+      ['Destino secundario', !sb.enabled ? '—' : sb.secondary ? 'Configurado: recibe el mismo respaldo cifrado' +
+        (sb.secondaryError ? ' · ÚLTIMO FALLO: ' + sb.secondaryError : ' · sin fallos') :
+        'Sin configurar: añade «secondaryDir» al bloque backup del archivo de arranque (una carpeta sincronizada fuera del NAS).'],
+      ['Prueba de restauración', !sb.enabled ? '—' : sb.verify ? (sb.verify.ok ? 'Íntegra' : 'CON FALLO') + ' · ' + localDateTime(sb.verify.at) +
+        ' (' + sb.verify.source + ')' : 'Aún no se ha ejecutado: corre sola tras cada respaldo programado.'],
       ['Carpeta vigilada', wf.enabled ? 'Activa' + (wf.subfolders ? ' · incluye subcarpetas' : '') + ' · ' + wf.imported + ' importados · ' + wf.failed + ' con error' +
+        (wf.incidents ? ' · ' + wf.incidents + ' con incidencias' : '') + (wf.waiting ? ' · ' + wf.waiting + ' en espera (copiándose)' : '') +
         (wf.lastScan ? ' · última revisión ' + localDateTime(wf.lastScan) : '') + (wf.error ? ' · ' + wf.error : '') :
         'Sin configurar: se define en el archivo de arranque protegido del servidor.']
     ]));
+    if (sb.enabled) {
+      const verifyActions = n('div', undefined, 'actions');
+      verifyActions.append(action('Probar restauración ahora', async () => {
+        await satApi('backup/verify', {});
+        await pollSat(); render();
+        announce('Prueba de restauración ejecutada: quedó registrada en la bitácora.');
+      }, undefined, 'shield'));
+      auto.append(verifyActions);
+    }
     screens.push(auto);
   }
   return screens;

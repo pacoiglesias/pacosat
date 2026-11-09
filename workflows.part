@@ -342,11 +342,21 @@ function restoreDialog(file) {
   dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de PacoSAT se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
     field('Confirmo que quiero reemplazar los datos actuales', confirmation)], async () => {
     check(confirmation.checked, 'Confirma el reemplazo de los datos.');
-    const contents = await validateBackup(await decryptBackup(file, password.value));
+    const rawBackup = await decryptBackup(file, password.value);
+    const contents = await validateBackup(rawBackup);
     await writeBatch(contents, true);
+    /* Estado operativo (1.6.4): si el respaldo lo trae y hay servidor, se
+       restaura también en el servidor. Los respaldos anteriores a 1.6.4 no
+       lo traen y se restauran como siempre. */
+    let operationsNote = '';
+    if (rawBackup.operations && typeof satToken !== 'undefined' && satToken) {
+      await satApi('backup/operations', rawBackup.operations);
+      await pollSat();
+      operationsNote = ' También se restauró el estado operativo (descargas, criterios 5002 y avisos pendientes); desbloquea cada perfil para reanudar.';
+    }
     await refresh();
     await logEvent('Respaldo restaurado desde un archivo cifrado');
-    announce('Respaldo restaurado.');
+    announce('Respaldo restaurado.' + operationsNote);
   });
 }
 const handle = work => () => Promise.resolve().then(work).catch(error => announce(error.message, true));
@@ -359,6 +369,7 @@ $('inspectFile').onchange = handle(async () => {
 });
 $('primary').onclick = handle(async () => {
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
+  if (page === 'coverage') { await pollSat(); render(); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });

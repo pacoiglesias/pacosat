@@ -2,7 +2,7 @@ import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -10,7 +10,7 @@ import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
 import { parseXml, zipXml, validateRfc } from './xml-core.mjs';
 import { analyzeInvoicePdf } from './pdf-invoice.mjs';
 import { createMonitor } from './sat-monitor.mjs';
-import { encryptBackupBuffer } from './backup-core.mjs';
+import { encryptBackupBuffer, decryptBackupBuffer } from './backup-core.mjs';
 
 /* El RFC se valida con validateRfc (xml-core): un solo criterio en todo el sistema. */
 const DAY = 86400000;
@@ -87,7 +87,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000 }) {
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
   db.exec(`
@@ -148,7 +148,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   const getState = key => db.prepare('SELECT value FROM automation_state WHERE key=?').get(key)?.value || '';
   const setState = (key, value) => db.prepare('INSERT INTO automation_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
   const inbox = { dir: watchDir || '' };
-  const inboxStatus = { lastScan: 0, imported: 0, failed: 0, error: '' };
+  const inboxStatus = { lastScan: 0, imported: 0, failed: 0, incidents: 0, waiting: 0, error: '' };
   const inboxStuck = new Set();
   let backupJob = null;
   const packageLookup = db.prepare('SELECT id FROM packages WHERE job=? AND remoteId=?');
@@ -198,6 +198,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const jobColumns = db.prepare('PRAGMA table_info(jobs)').all().map(row => row.name);
     if (!jobColumns.includes('startAt')) db.exec("ALTER TABLE jobs ADD COLUMN startAt TEXT NOT NULL DEFAULT ''");
     if (!jobColumns.includes('endAt')) db.exec("ALTER TABLE jobs ADD COLUMN endAt TEXT NOT NULL DEFAULT ''");
+    /* 1.6.4: contador de verificaciones pendientes por solicitud, para la
+       espera creciente (backoff) de verifyJobs. */
+    if (!jobColumns.includes('checks')) db.exec("ALTER TABLE jobs ADD COLUMN checks INTEGER NOT NULL DEFAULT 0");
     for (const job of db.prepare("SELECT * FROM jobs WHERE startAt=''").all()) {
       const endAt = job.periodEnd + ' ' + (job.periodEnd === day(job.created) ? clock.format(job.created) : '23:59:59');
       db.prepare('UPDATE jobs SET startAt=?,endAt=? WHERE id=?').run(job.periodStart + ' 00:00:00', endAt, job.id);
@@ -233,7 +236,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (String(config.backup.password).length >= 12) {
         backupJob = { password: String(config.backup.password),
           frequency: config.backup.frequency === 'weekly' ? 'weekly' : 'daily',
-          dir: config.backup.dir ? String(config.backup.dir) : join(dirname(dbFile), 'respaldos') };
+          dir: config.backup.dir ? String(config.backup.dir) : join(dirname(dbFile), 'respaldos'),
+          secondaryDir: config.backup.secondaryDir ? String(config.backup.secondaryDir) : '' };
       } else console.error('PacoSAT: el respaldo programado requiere una contraseña de al menos 12 caracteres.');
     }
     if (config.mail) {
@@ -267,15 +271,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return {
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
       profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc) })),
-      jobs: db.prepare('SELECT id,rfc,direction,periodStart,periodEnd,startAt,endAt,status,due,created,error FROM jobs ORDER BY id DESC LIMIT 35').all()
+      jobs: db.prepare('SELECT id,rfc,direction,periodStart,periodEnd,startAt,endAt,status,due,created,error,checks FROM jobs ORDER BY id DESC LIMIT 35').all()
         .map(row => { const info = criteriaInfo(criteriaFromJob(row));
           return { ...row, criteriaState: info.state, criteriaCount: info.count }; }),
       inbox: db.prepare('SELECT id,rfc,newCount,review FROM packages WHERE archive IS NOT NULL ORDER BY id LIMIT 50').all(),
       mail: { enabled: Boolean(mail), recipient: mail?.recipient || '', error: db.prepare("SELECT error FROM notices WHERE sent IS NULL AND error<>'' ORDER BY id DESC LIMIT 1").get()?.error || '' },
       watchFolder: { enabled: Boolean(inbox.dir), lastScan: inboxStatus.lastScan, imported: inboxStatus.imported,
-        failed: inboxStatus.failed, subfolders: true, error: inboxStatus.error || getState('watch:error') },
+        failed: inboxStatus.failed, incidents: inboxStatus.incidents, waiting: inboxStatus.waiting,
+        subfolders: true, error: inboxStatus.error || getState('watch:error') },
       scheduledBackup: { enabled: Boolean(backupJob), frequency: backupJob?.frequency || '',
-        last: Number(getState('backup:last')) || null, next: Number(getState('backup:next')) || null, error: getState('backup:error') }
+        last: Number(getState('backup:last')) || null, next: Number(getState('backup:next')) || null, error: getState('backup:error'),
+        secondary: Boolean(backupJob?.secondaryDir), secondaryError: getState('backup:secondaryError'),
+        verify: (() => { try { return JSON.parse(getState('backup:verify') || 'null'); } catch { return null; } })() },
+      coverage: computeCoverage()
     };
   }
 
@@ -317,16 +325,153 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     });
   }
 
+  /* Respaldo completo (1.6.4). El .faro sigue siendo el formato v2 de
+     siempre (las tiendas del expediente, con los archivos en base64) y
+     añade una sección `operations` versionada con el ESTADO OPERATIVO:
+     perfiles, cola de descargas (jobs, con su contador de verificaciones),
+     libro de criterios 5002 y criterios agotados, notificaciones y alertas
+     TODAVÍA PENDIENTES, contadores de fallo persistente, estado de
+     automatización, UUID ya descubiertos y el estado de la vigilancia
+     (consultas CFDI programadas, 69-B y avisos de cancelación pendientes).
+     Diseño: volcado versionado DENTRO del mismo .faro cifrado (no una
+     copia binaria de SQLite), leído en una sola transacción de lectura
+     para que expediente y estado sean una foto coherente del mismo
+     instante. Los respaldos viejos (sin `operations`) se restauran como
+     antes y dejan el estado intacto; una restauración nueva ignora la
+     sección si su versión no conoce. Nunca viaja la e.firma (vive solo en
+     memoria y en pacosat-secrets, fuera del respaldo por diseño) ni las
+     credenciales SMTP (se configuran en el servidor, no se respaldan).
+     Exclusiones deliberadas: los ZIP de paquetes sin importar (columna
+     `packages.archive`) NO se copian — sus XML forman parte del expediente
+     al importarse y un paquete pendiente se puede volver a descargar con
+     su IdSolicitud; y la lista 69-B (`efos_rfc`) tampoco, porque se
+     descarga de nuevo del SAT. El límite de 100 MB del formato SÍ existe
+     (este snapshot, la subida por /api/storage y el respaldo del
+     navegador) y se aplica al CONJUNTO: bytes de archivos + tamaño del
+     estado operativo serializado. Para expedientes que lo superen, el
+     diseño previsto es partir el respaldo en un .faro por RFC y año
+     (los registros ya llevan RFC y fecha; el estado operativo, pequeño,
+     iría completo en cada parte) — queda documentado, no implementado. */
+  const OPERATIONS_TABLES = [
+    ['profiles', ['rfc', 'minutes', 'days', 'direction', 'nextRun', 'error']],
+    ['jobs', ['id', 'rfc', 'direction', 'periodStart', 'periodEnd', 'startAt', 'endAt', 'requestId', 'status', 'imported', 'due', 'created', 'error', 'checks']],
+    ['packages', ['id', 'job', 'remoteId', 'rfc', 'newCount', 'review']],
+    ['notices', ['id', 'package', 'rfc', 'recipient', 'count', 'due', 'sent', 'error']],
+    ['criteria', ['id', 'key', 'rfc', 'direction', 'type', 'emitter', 'receiver', 'startAt', 'endAt', 'requestId', 'origin', 'sentAt']],
+    ['criteria_exhausted', ['key', 'learnedAt', 'detail']],
+    ['alerts', ['id', 'kind', 'ref', 'subject', 'body', 'due', 'sent', 'error']],
+    ['alert_state', ['key', 'failures', 'alerted']],
+    ['automation_state', ['key', 'value']],
+    ['discovered', ['rfc', 'uuid']],
+    ['cfdi_watch', ['id', 'emitter', 'receiver', 'total', 'seal', 'next', 'checked', 'result', 'error']],
+    ['cancellation_alert', ['id', 'due', 'sent']],
+    ['efos_alert', ['key', 'rfc', 'due', 'sent']],
+    ['efos_meta', ['id', 'fetched', 'next', 'error']]
+  ];
+  const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
+  function dumpOperations() {
+    const dump = { version: 1, packagesArchiveOmitted: true, efosListOmitted: true };
+    for (const [name] of OPERATIONS_TABLES) {
+      if (!tableExists(name)) { dump[name] = []; continue; }
+      /* Solo lo pendiente de avisos: lo ya enviado es historia, no estado. */
+      const pendingOnly = name === 'notices' || name === 'alerts' || name === 'cancellation_alert' || name === 'efos_alert';
+      dump[name] = db.prepare('SELECT * FROM ' + name + (pendingOnly ? ' WHERE sent IS NULL' : '')).all();
+    }
+    return dump;
+  }
+  function restoreOperations(operations) {
+    need(operations && typeof operations === 'object' && !Array.isArray(operations), 'La sección de estado operativo no es válida.');
+    need(operations.version === 1, 'La versión del estado operativo no es compatible con esta instalación.');
+    const present = OPERATIONS_TABLES.filter(([name]) => operations[name] !== undefined);
+    for (const [name] of present) {
+      need(Array.isArray(operations[name]) && operations[name].length <= 100000, 'El estado operativo tiene un tamaño no válido (' + name + ').');
+      for (const row of operations[name]) need(row && typeof row === 'object' && !Array.isArray(row), 'El estado operativo contiene filas no válidas (' + name + ').');
+    }
+    tx(db, () => {
+      for (const [name] of [...present].reverse()) if (tableExists(name)) db.prepare('DELETE FROM ' + name).run();
+      for (const [name, columns] of present) {
+        if (!tableExists(name)) continue;
+        const insert = db.prepare('INSERT INTO ' + name + '(' + columns.join(',') + ') VALUES (' + columns.map(() => '?').join(',') + ')');
+        for (const row of operations[name]) insert.run(...columns.map(column => row[column] === undefined ? null : row[column]));
+      }
+    });
+    /* Las sesiones de e.firma viven solo en memoria y NO se restauran:
+       los perfiles restaurados quedan bloqueados hasta desbloquearlos. */
+    return Object.fromEntries(present.map(([name]) => [name, operations[name].length]));
+  }
+  function validateBackupData(data) {
+    need(data && typeof data === 'object' && !Array.isArray(data), 'El respaldo no contiene un objeto válido.');
+    need(data.version === 2, 'La versión del respaldo no es compatible.');
+    let fileBytes = 0, invoices = 0, documents = 0;
+    for (const store of stores) {
+      need(Array.isArray(data[store]), 'El respaldo está incompleto: falta la tienda «' + store + '».');
+      if (store === 'files') for (const file of data[store]) {
+        need(file && typeof file.content === 'string', 'Un archivo del respaldo no es válido.');
+        fileBytes += Buffer.from(file.content, 'base64').length;
+      }
+      if (store === 'invoices') invoices = data[store].length;
+      if (store === 'documents') documents = data[store].length;
+    }
+    let operations = null;
+    if (data.operations !== undefined) {
+      need(data.operations && data.operations.version === 1, 'La versión del estado operativo del respaldo no es compatible.');
+      operations = { jobs: (data.operations.jobs || []).length, criteria: (data.operations.criteria || []).length,
+        exhausted: (data.operations.criteria_exhausted || []).length,
+        pendingAlerts: (data.operations.alerts || []).length + (data.operations.notices || []).length };
+    }
+    return { fileBytes, invoices, documents, operations };
+  }
+  function latestBackupFile(dir) {
+    try {
+      const names = readdirSync(dir).filter(name => /^PacoSAT-\d{4}-\d{2}-\d{2}\.faro$/.test(name)).sort();
+      return names.length ? join(dir, names[names.length - 1]) : '';
+    } catch { return ''; }
+  }
+  /* Prueba de restauración: descifra el respaldo más reciente de cada
+     destino con la contraseña configurada y valida estructura y conteos
+     SIN tocar la base activa. Queda registrada en la bitácora y en el
+     estado para verla en Respaldos; también corre sola tras cada
+     respaldo programado, contra el archivo recién escrito. */
+  function verifyLatestBackup(time, source) {
+    need(backupJob, 'El respaldo programado no está configurado.');
+    const destinations = [['principal', backupJob.dir]];
+    if (backupJob.secondaryDir) destinations.push(['secundario', backupJob.secondaryDir]);
+    const results = destinations.map(([label, dir]) => {
+      const file = latestBackupFile(dir);
+      if (!file) return { label, ok: false, detail: 'No hay ningún respaldo en este destino.' };
+      try {
+        const info = validateBackupData(decryptBackupBuffer(readFileSync(file), backupJob.password));
+        return { label, ok: true, detail: 'Íntegro · ' + info.invoices + ' CFDI · ' + info.documents + ' documentos' +
+          (info.operations ? ' · estado operativo: ' + info.operations.jobs + ' solicitudes, ' + info.operations.criteria +
+            ' criterios (' + info.operations.exhausted + ' agotados), ' + info.operations.pendingAlerts + ' avisos pendientes' : ' · sin estado operativo (respaldo anterior a 1.6.4)') };
+      } catch (error) { return { label, ok: false, detail: message(error) }; }
+    });
+    const ok = results.every(result => result.ok);
+    setState('backup:verify', JSON.stringify({ at: time, ok, source, results }));
+    putMetadata('activity', { id: 'backupverify:' + time, name: 'Prueba de restauración',
+      date: new Date(time).toISOString(), added: 0, duplicates: 0, review: ok ? 0 : 1,
+      issues: results.filter(result => !result.ok).map(result => ({ name: 'Destino ' + result.label, reason: result.detail })),
+      event: 'Prueba de restauración (' + source + '): ' + results.map(result => result.label + ' → ' + result.detail).join(' · ') });
+    storageRevision++;
+    return { ok, results };
+  }
+
   function snapshotFromRecords() {
     const data = { version: 2 };
     let fileBytes = 0;
-    for (const store of stores) {
-      const rows = db.prepare('SELECT id,value,data FROM records WHERE store=? ORDER BY id').all(store);
-      if (store === 'files') {
-        data[store] = rows.map(row => { fileBytes += row.data?.length || 0; return { id: row.id, content: Buffer.from(row.data || []).toString('base64') }; });
-      } else data[store] = rows.map(row => JSON.parse(row.value));
-    }
-    need(fileBytes <= 100 * 1024 * 1024, 'El respaldo supera el límite de 100 MB.');
+    /* Una sola transacción de lectura: expediente y estado operativo son
+       la misma foto, sin cambios a mitad de camino. */
+    db.exec('BEGIN');
+    try {
+      for (const store of stores) {
+        const rows = db.prepare('SELECT id,value,data FROM records WHERE store=? ORDER BY id').all(store);
+        if (store === 'files') {
+          data[store] = rows.map(row => { fileBytes += row.data?.length || 0; return { id: row.id, content: Buffer.from(row.data || []).toString('base64') }; });
+        } else data[store] = rows.map(row => JSON.parse(row.value));
+      }
+      data.operations = dumpOperations();
+    } finally { db.exec('COMMIT'); }
+    need(fileBytes + Buffer.byteLength(JSON.stringify(data.operations)) <= 100 * 1024 * 1024, 'El respaldo supera el límite de 100 MB.');
     return data;
   }
 
@@ -339,14 +484,33 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     try {
       mkdirSync(backupJob.dir, { recursive: true });
       const stamp = day(time);
-      writeFileSync(join(backupJob.dir, 'PacoSAT-' + stamp + '.faro'), encryptBackupBuffer(snapshotFromRecords(), backupJob.password));
+      const buffer = encryptBackupBuffer(snapshotFromRecords(), backupJob.password);
+      writeFileSync(join(backupJob.dir, 'PacoSAT-' + stamp + '.faro'), buffer);
+      /* Destino secundario (1.6.4): el MISMO .faro cifrado en una segunda
+         ruta (pensada para una carpeta sincronizada fuera del NAS). Su
+         fallo no tumba el respaldo principal: se anota y se avisa aparte. */
+      let secondaryError = '';
+      if (backupJob.secondaryDir) {
+        try { mkdirSync(backupJob.secondaryDir, { recursive: true }); writeFileSync(join(backupJob.secondaryDir, 'PacoSAT-' + stamp + '.faro'), buffer); }
+        catch (error) { secondaryError = message(error); }
+        setState('backup:secondaryError', secondaryError);
+        if (secondaryError) queueAlert('backup-secondary-fail', 'backup2:' + stamp, 'PacoSAT · El destino secundario del respaldo falló',
+          'La copia principal del respaldo cifrado (' + stamp + ') se guardó, pero el destino secundario no aceptó la suya: ' +
+          secondaryError + ' Revisa esa carpeta (sincronización, espacio o permisos).', time);
+      }
       setState('backup:last', time);
       setState('backup:next', time + (backupJob.frequency === 'weekly' ? 7 * DAY : DAY));
       setState('backup:error', '');
       putMetadata('activity', { id: 'backup:' + stamp + ':' + backupJob.frequency, name: 'Respaldo cifrado programado',
         date: new Date(time).toISOString(), added: 0, duplicates: 0, review: 0, issues: [],
-        event: 'Respaldo programado · copia cifrada guardada (' + stamp + ')' });
+        event: 'Respaldo programado · copia cifrada guardada (' + stamp + ')' +
+          (backupJob.secondaryDir ? (secondaryError ? ' · el destino secundario falló: ' + secondaryError : ' · también en el destino secundario') : '') +
+          ' · incluye el estado operativo' });
       storageRevision++;
+      /* Prueba de restauración automática contra lo recién escrito. */
+      try { verifyLatestBackup(time, 'automática tras el respaldo'); }
+      catch (error) { queueAlert('backup-verify-fail', 'backupverify:' + stamp, 'PacoSAT · La prueba de restauración falló',
+        'El respaldo se escribió, pero su prueba de restauración automática no pasó: ' + message(error), time); }
     } catch (error) {
       setState('backup:error', message(error));
       setState('backup:next', time + 60 * MIN);
@@ -365,8 +529,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   /* Carpeta vigilada (1.6.3): escaneo recursivo. El ciclo recorre todo el
      árbol bajo la carpeta configurada buscando XML/ZIP/PDF, porque los
      comprobantes se guardan en un folder con sus propias carpetas. Guardas:
-     nunca se entra en las carpetas de salida del primer nivel (`procesados/`
-     y `errores/`) para no reimportar lo ya movido entre ciclos; se ignoran
+     nunca se entra en las carpetas de salida del primer nivel (`procesados/`,
+     `errores/` e `incidencias/`, esta última desde 1.6.4) para no reimportar
+     lo ya movido entre ciclos; se ignoran
      archivos y carpetas ocultos o temporales; no se siguen enlaces
      simbólicos y la profundidad se limita a 8 carpetas. Cada ciclo procesa
      como máximo 20 archivos en orden estable de ruta relativa: lo procesado
@@ -376,7 +541,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      el nombre ya existe en el destino, se añade un sufijo numérico. */
   const WATCH_LIMIT = 20;
   const WATCH_MAX_DEPTH = 8;
-  const WATCH_OUTPUT_DIRS = new Set(['procesados', 'errores']);
+  const WATCH_OUTPUT_DIRS = new Set(['procesados', 'errores', 'incidencias']);
   function collectWatchFiles(root) {
     const found = [];
     const walk = (dir, segments) => {
@@ -422,7 +587,40 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       const candidates = collectWatchFiles(inbox.dir)
         .filter(rel => !inboxStuck.has(rel)).slice(0, WATCH_LIMIT);
       inboxStatus.lastScan = time;
+      inboxStatus.waiting = 0;
       if (!candidates.length) return;
+      /* Ingesta robusta (1.6.4): el tamaño se comprueba con stat ANTES de
+         leer el contenido —un archivo que excede su límite se rechaza sin
+         cargarlo entero— y cada candidato debe verse igual (tamaño y
+         mtime) en dos lecturas separadas por una espera corta: si está
+         creciendo (una copia a medias) se deja para el siguiente ciclo,
+         sin contarlo como fallo ni como atascado. */
+      const sizeLimits = [[/\.xml$/i, 8 * 1024 * 1024, 'El XML supera 8 MB.'],
+        [/\.zip$/i, 80 * 1024 * 1024, 'El ZIP supera 80 MB.'], [/\.pdf$/i, 20 * 1024 * 1024, 'El PDF supera 20 MB.']];
+      const stats = new Map(), oversize = new Map();
+      for (const rel of candidates) {
+        try {
+          const stat = statSync(join(inbox.dir, ...rel.split('/')));
+          stats.set(rel, { size: stat.size, mtimeMs: stat.mtimeMs });
+          const limit = sizeLimits.find(([pattern]) => pattern.test(rel));
+          if (limit && stat.size > limit[1]) oversize.set(rel, limit[2]);
+        } catch { /* desapareció entre el listado y la lectura: se ignora este ciclo */ }
+      }
+      let ready = candidates.filter(rel => stats.has(rel));
+      if (watchSettleMs > 0 && ready.some(rel => !oversize.has(rel))) {
+        await new Promise(resolve => setTimeout(resolve, watchSettleMs));
+        ready = ready.filter(rel => {
+          if (oversize.has(rel)) return true;
+          try {
+            const again = statSync(join(inbox.dir, ...rel.split('/')));
+            const before = stats.get(rel);
+            if (again.size === before.size && again.mtimeMs === before.mtimeMs) return true;
+          } catch { return false; }
+          inboxStatus.waiting++;
+          return false;
+        });
+      }
+      if (!ready.length) return;
       const Parser = await resolveInboxParser();
       const peopleIds = new Set(db.prepare("SELECT value FROM records WHERE store='people'").all().map(row => JSON.parse(row.value).id));
       const okDir = join(inbox.dir, 'procesados', day(time));
@@ -439,11 +637,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       };
       let added = 0, duplicates = 0, review = 0;
       const issues = [];
-      for (const rel of candidates) {
+      const incidentsDir = join(inbox.dir, 'incidencias');
+      for (const rel of ready) {
         const name = rel.split('/').pop();
         const path = join(inbox.dir, ...rel.split('/'));
+        const fileIssues = [];
+        const importedBefore = added + duplicates;
         let failed = '';
         try {
+          if (oversize.has(rel)) throw new Error(oversize.get(rel));
           const raw = readFileSync(path);
           if (/\.xml$/i.test(name)) {
             need(raw.length <= 8 * 1024 * 1024, 'El XML supera 8 MB.');
@@ -454,7 +656,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             for await (const entry of zipXml(raw)) {
               count++;
               try { if (importXml(entry.xml) === 'added') added++; else duplicates++; }
-              catch (error) { review++; if (issues.length < 20) issues.push({ name: rel + ' · ' + entry.name, reason: message(error) }); }
+              catch (error) { fileIssues.push({ name: rel + ' · ' + entry.name, reason: message(error) }); }
             }
             need(count > 0, 'El ZIP no contiene CFDI XML.');
           } else {
@@ -475,18 +677,37 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             added++;
           }
         } catch (error) { failed = message(error); }
+        /* Tres resultados (1.6.4): procesado, procesado CON INCIDENCIAS
+           (un ZIP del que entró algo pero no todo: el contenedor va a
+           «incidencias» con su ruta relativa y el desglose por entrada
+           queda en la bitácora y en el aviso) y rechazado (a «errores»).
+           Un ZIP sin ninguna entrada válida es un rechazo, no una
+           incidencia. */
+        review += fileIssues.length;
+        for (const issue of fileIssues) if (issues.length < 20) issues.push(issue);
+        let outcome = failed ? 'failed' : 'ok';
+        if (!failed && fileIssues.length) {
+          if (added + duplicates > importedBefore) outcome = 'incidents';
+          else { failed = 'El ZIP no aportó ningún CFDI: ' + (fileIssues[0]?.reason || 'entradas no válidas.'); outcome = 'failed'; }
+        }
         try {
-          const target = watchDestination(failed ? badDir : okDir, rel);
+          const target = watchDestination(outcome === 'failed' ? badDir : outcome === 'incidents' ? incidentsDir : okDir, rel);
           mkdirSync(dirname(target), { recursive: true });
           renameSync(path, target);
         } catch { inboxStuck.add(rel); }
-        if (failed) {
+        if (outcome === 'failed') {
           review++;
           inboxStatus.failed++;
           if (issues.length < 20) issues.push({ name: rel, reason: failed });
           queueAlert('watch-fail', 'watch:' + rel, 'PacoSAT · Un archivo de la carpeta vigilada no se importó',
             'El archivo ' + rel + ' de la carpeta vigilada no pudo importarse: ' + failed +
             ' Quedó apartado en la subcarpeta «errores» de la carpeta vigilada, conservando su ruta relativa.', time);
+        } else if (outcome === 'incidents') {
+          inboxStatus.incidents++;
+          queueAlert('watch-incidents', 'watchinc:' + rel, 'PacoSAT · Un archivo de la carpeta vigilada se importó con incidencias',
+            'El archivo ' + rel + ' se importó solo en parte: ' + fileIssues.length + ' entrada(s) no pudieron importarse (' +
+            fileIssues.slice(0, 3).map(issue => issue.name.split(' · ').pop() + ': ' + issue.reason).join('; ') +
+            '). El contenedor quedó en la subcarpeta «incidencias» de la carpeta vigilada, conservando su ruta relativa; el desglose completo está en la bitácora.', time);
         } else inboxStatus.imported++;
       }
       if (added || duplicates || review) {
@@ -539,12 +760,20 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
   }
 
+  /* Espera creciente entre verificaciones (1.6.4): 5, 10, 20, 40 y 60 min
+     como tope. Sustituye el ritmo fijo de 5 min sin tope (hallazgo M-4 de
+     la ronda 2): una solicitud que el SAT tarda en atender ya no se
+     consulta en bucle corto, y el contador `jobs.checks` queda en el
+     respaldo operativo para reanudar la cadencia tras un reinicio. */
+  const verifyBackoffMin = checks => Math.min(5 * 2 ** checks, 60);
   async function verifyJobs(profile, active, time) {
     const jobs = db.prepare("SELECT * FROM jobs WHERE rfc=? AND status='pending' AND due<=? ORDER BY id").all(profile.rfc, time);
     const terminal = [];
     let stuck = 0;
     for (const job of jobs) {
-      db.prepare('UPDATE jobs SET due=? WHERE id=?').run(time + 5 * MIN, job.id);
+      /* Si el proceso muere a mitad de la verificación, la solicitud no
+         queda vencida al momento: se reprograma ya con su espera actual. */
+      db.prepare('UPDATE jobs SET due=? WHERE id=?').run(time + verifyBackoffMin(job.checks || 0) * MIN, job.id);
       const save = async next => db.prepare('UPDATE jobs SET imported=?,status=?,error=? WHERE id=?')
         .run(JSON.stringify(next.imported || []), next.status, '', job.id);
       try {
@@ -555,9 +784,103 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       } catch (error) { db.prepare('UPDATE jobs SET error=? WHERE id=?').run(message(error), job.id); }
       const after = db.prepare('SELECT status,error FROM jobs WHERE id=?').get(job.id);
       if (after && ['expired', 'failed', 'rejected'].includes(after.status)) terminal.push({ ...job, afterStatus: after.status });
-      else if (after?.status === 'pending' && after.error) stuck++;
+      else if (after?.status === 'pending') {
+        const checks = (job.checks || 0) + 1;
+        const wait = verifyBackoffMin(checks);
+        db.prepare('UPDATE jobs SET checks=?,due=? WHERE id=?').run(checks, time + wait * MIN, job.id);
+        if (after.error) stuck++;
+        if (wait >= 60 && verifyBackoffMin(checks - 1) < 60) {
+          putMetadata('activity', { id: 'backoff:' + job.id, name: 'Verificación al SAT · espera máxima',
+            date: new Date(time).toISOString(), added: 0, duplicates: 0, review: 0, issues: [],
+            event: 'La solicitud ' + job.requestId + ' del RFC ' + job.rfc + ' (' + job.periodStart + ' a ' + job.periodEnd +
+              ') sigue pendiente en el SAT tras ' + checks + ' verificaciones; la espera entre consultas queda en su tope de 60 minutos.' });
+          storageRevision++;
+        }
+      }
     }
     return { terminal, attempted: jobs.length, stuck };
+  }
+
+  /* Cobertura de descarga por RFC (1.6.4). A partir de las solicitudes
+     (con sus instantes exactos al segundo del blindaje) y del libro de
+     criterios: por RFC y sentido, los tramos ya descargados (solicitudes
+     terminadas), lo que sigue en curso, lo fallido y los criterios
+     agotados. Dos tramos terminados dejan hueco solo si entre el fin de
+     uno y el inicio del siguiente queda más de un segundo sin cubrir;
+     los huecos de 1–2 s son las costuras del desplazamiento +1 s del
+     blindaje y se marcan como micro-huecos. «Verificado hasta» es el fin
+     del primer tramo continuo. La conciliación SOLO anota en la bitácora
+     los huecos nuevos: PacoSAT no solicita nada al SAT por su cuenta. */
+  const stampSeconds = datetime => {
+    const [datePart, timePart] = String(datetime || '').split(' ');
+    const [year, month, date] = (datePart || '').split('-').map(Number);
+    const [hour, minute, second] = (timePart || '00:00:00').split(':').map(Number);
+    return Date.UTC(year || 1970, (month || 1) - 1, date || 1, hour || 0, minute || 0, second || 0) / 1000;
+  };
+  const stampText = seconds => {
+    const date = new Date(seconds * 1000);
+    return date.getUTCFullYear() + '-' + pad2(date.getUTCMonth() + 1) + '-' + pad2(date.getUTCDate()) +
+      ' ' + pad2(date.getUTCHours()) + ':' + pad2(date.getUTCMinutes()) + ':' + pad2(date.getUTCSeconds());
+  };
+  function computeCoverage() {
+    const exhaustedKeys = new Set(db.prepare('SELECT key FROM criteria_exhausted').all().map(row => row.key));
+    const groups = new Map();
+    const groupFor = (rfc, direction) => {
+      const key = rfc + '|' + direction;
+      if (!groups.has(key)) groups.set(key, { rfc, direction, ranges: [], pending: 0, failed: 0, exhausted: 0 });
+      return groups.get(key);
+    };
+    for (const job of db.prepare('SELECT rfc,direction,periodStart,periodEnd,startAt,endAt,status FROM jobs').all()) {
+      const group = groupFor(job.rfc, job.direction);
+      if (job.status === 'finished') group.ranges.push([job.startAt || job.periodStart + ' 00:00:00', job.endAt || job.periodEnd + ' 23:59:59']);
+      else if (job.status === 'pending') group.pending++;
+      else group.failed++;
+    }
+    for (const row of db.prepare("SELECT rfc,direction,key FROM criteria WHERE type='cfdi'").all())
+      if (exhaustedKeys.has(row.key)) groupFor(row.rfc, row.direction).exhausted++;
+    const gaps = [], days = {}, out = [];
+    for (const group of groups.values()) {
+      const merged = [];
+      for (const [start, end] of group.ranges.map(([s, e]) => [stampSeconds(s), stampSeconds(e)]).sort((a, b) => a[0] - b[0] || a[1] - b[1])) {
+        const last = merged[merged.length - 1];
+        if (last && start <= last[1] + 1) last[1] = Math.max(last[1], end);
+        else merged.push([start, end]);
+      }
+      for (let i = 1; i < merged.length; i++) {
+        const uncovered = merged[i][0] - merged[i - 1][1] - 1;
+        if (uncovered > 0) gaps.push({ rfc: group.rfc, direction: group.direction,
+          from: stampText(merged[i - 1][1] + 1), to: stampText(merged[i][0] - 1), seconds: uncovered, micro: uncovered <= 2 });
+      }
+      const daySet = days[group.rfc] || (days[group.rfc] = { received: new Set(), issued: new Set() });
+      for (const [start, end] of merged) {
+        const first = Math.floor(start / 86400), last = Math.floor(end / 86400);
+        for (let d = first; d <= last && d - first < 3700; d++)
+          daySet[group.direction].add(new Date(d * 86400000).toISOString().slice(0, 10));
+      }
+      out.push({ rfc: group.rfc, direction: group.direction, verifiedUntil: merged.length ? stampText(merged[0][1]) : '',
+        covered: merged.map(([s, e]) => [stampText(s), stampText(e)]), pending: group.pending, failed: group.failed, exhausted: group.exhausted });
+    }
+    for (const rfc of Object.keys(days)) { days[rfc].received = [...days[rfc].received].sort(); days[rfc].issued = [...days[rfc].issued].sort(); }
+    gaps.sort((a, b) => (a.rfc + a.direction + a.from).localeCompare(b.rfc + b.direction + b.from));
+    out.sort((a, b) => (a.rfc + a.direction).localeCompare(b.rfc + b.direction));
+    return { groups: out, gaps, days };
+  }
+  function reconcileCoverageGaps(time) {
+    let gaps;
+    try { gaps = computeCoverage().gaps; } catch { return; }
+    const signature = JSON.stringify(gaps.map(gap => [gap.rfc, gap.direction, gap.from, gap.to]));
+    if (!gaps.length) { if (getState('coverage:gaps')) setState('coverage:gaps', ''); return; }
+    if (getState('coverage:gaps') === signature) return;
+    setState('coverage:gaps', signature);
+    let hash = 0;
+    for (const char of signature) hash = ((hash * 31) + char.charCodeAt(0)) >>> 0;
+    const list = gaps.slice(0, 8).map(gap => gap.rfc + ' · ' + (gap.direction === 'received' ? 'recibidos' : 'emitidos') +
+      ': del ' + gap.from + ' al ' + gap.to + (gap.micro ? ' (micro-hueco: costura del blindaje)' : '')).join(' · ');
+    putMetadata('activity', { id: 'coverage:' + hash.toString(36), name: 'Conciliación de cobertura',
+      date: new Date(time).toISOString(), added: 0, duplicates: 0, review: gaps.length, issues: [],
+      event: 'Se detectaron ' + gaps.length + ' hueco(s) sin descargar: ' + list +
+        '. PacoSAT no pide nada al SAT por su cuenta: para cubrir un tramo, solicítalo desde el Centro SAT (si el criterio exacto ya se envió, desplaza un extremo un segundo).' });
+    storageRevision++;
   }
 
   async function notify(time) {
@@ -627,6 +950,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
           Boolean(profileError) || outcome.stuck > 0, time);
       }
+      reconcileCoverageGaps(time);
       await scanWatchFolder(time);
       await runScheduledBackup(time);
       await notify(time);
@@ -652,6 +976,24 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       need(req.headers['x-pacosat-token'] === token, 'Sesión local inválida.', 403);
       if (req.method === 'POST') need(req.headers.origin === origin, 'Origen inválido.', 403);
       if (req.method === 'GET' && url.pathname === '/api/status') return json(res, overview());
+      /* Restauración del estado operativo (1.6.4): la hace el diálogo de
+         restauración tras volcar las tiendas del expediente, con la
+         sección `operations` del mismo .faro ya descifrado. Disponible
+         también en modo local: el estado vive en este servidor igualmente. */
+      if (req.method === 'POST' && url.pathname === '/api/backup/operations') {
+        const operations = await body(req, 32 * 1024 * 1024);
+        const counts = restoreOperations(operations);
+        putMetadata('activity', { id: 'oprestore:' + now(), name: 'Restauración del estado operativo',
+          date: new Date(now()).toISOString(), added: 0, duplicates: 0, review: 0, issues: [],
+          event: 'Estado operativo restaurado desde un respaldo: ' + Object.entries(counts).map(([name, count]) => name + ' ' + count).join(' · ') +
+            '. Las e.firma no viajan en el respaldo: desbloquea cada perfil para reanudar las descargas.' });
+        storageRevision++;
+        return json(res, { ok: true, counts });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/backup/verify') {
+        await body(req);
+        return json(res, verifyLatestBackup(now(), 'manual'));
+      }
       if (req.method === 'POST' && url.pathname === '/api/monitor') {
         const { ids = [], records = [] } = await body(req);
         need(Array.isArray(ids) && ids.length <= 500 && ids.every(id => typeof id === 'string' && id.length === 36) &&
