@@ -391,9 +391,10 @@ function zipStore(entries) {
   parts.push(...centrals, new Uint8Array(end.buffer));
   return new Blob(parts, { type: 'application/zip' });
 }
-function monthlyPackageManifest(rfc, monthKey, files, generatedAt) {
+function monthlyPackageManifest(rfc, monthKey, files, generatedAt, installName = '') {
   return ['PacoSAT · Paquete mensual para la contadora', 'RFC: ' + rfc, 'Mes: ' + monthKey,
-    'Generado: ' + generatedAt, '', 'Contenido del paquete:'].concat(files.map(name => '- ' + name)).join('\n') + '\n';
+    'Generado: ' + generatedAt, ...(installName ? ['Instalación: ' + installName] : []), '', 'Contenido del paquete:']
+    .concat(files.map(name => '- ' + name)).join('\n') + '\n';
 }
 function restoreDialog(file) {
   check(ready && !importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
@@ -430,6 +431,7 @@ $('inspectFile').onchange = handle(async () => {
 $('primary').onclick = handle(async () => {
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
   if (page === 'coverage') { await pollSat(); render(); return; }
+  if (page === 'settings') { await saveAppSettings(); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });

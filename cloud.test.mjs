@@ -559,3 +559,124 @@ try {
   assert.deepEqual(empty.events, []);
   console.log('OK: historia del CFDI armada solo con datos guardados (emisión, descarga, consulta, aviso, PDF) y vacía sin inventar eventos.');
 } finally { histService.close(); }
+
+// --- 1.6.6: ajustes de identidad persistentes en el servidor ---
+const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const idBase = mkdtempSync(join(tmpdir(), 'pacosat-166-'));
+const idFile = join(idBase, 'identidad.sqlite');
+const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+  makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
+{
+  const first = createPacoSATService(idOptions());
+  const apiA = harnessFor(first);
+  try {
+    await apiA.init();
+    const saved = await apiA.call('/api/settings', { installName: 'Mano Fil · PacoSAT', senderName: 'PacoSAT <b>Mano</b> Fil', accent: 'azul' });
+    assert.equal(saved.status, 200);
+    const badAccent = await apiA.call('/api/settings', { installName: '', senderName: '', accent: 'neon' });
+    assert.equal(badAccent.status, 400);
+    const logo = await apiA.call('/api/settings/logo', { mime: 'image/png', data: PNG_1PX });
+    assert.equal(logo.status, 200);
+    assert.equal((await logo.json()).settings.hasLogo, true);
+    assert.equal((await apiA.call('/api/settings/logo', { mime: 'image/gif', data: PNG_1PX })).status, 400);
+    assert.equal((await apiA.call('/api/settings/logo', { mime: 'image/png', data: Buffer.from('no-soy-png').toString('base64') })).status, 400);
+    const big = Buffer.alloc(200 * 1024 + 1); big.set([0x89, 0x50, 0x4e, 0x47], 0);
+    assert.equal((await apiA.call('/api/settings/logo', { mime: 'image/png', data: big.toString('base64') })).status, 400);
+    const evilSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64');
+    assert.equal((await apiA.call('/api/settings/logo', { mime: 'image/svg+xml', data: evilSvg })).status, 400);
+    const goodSvg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>').toString('base64');
+    assert.equal((await apiA.call('/api/settings/logo', { mime: 'image/svg+xml', data: goodSvg })).status, 200);
+    /* Se restaura el PNG para la comprobación de ida y vuelta. */
+    assert.equal((await apiA.call('/api/settings/logo', { mime: 'image/png', data: PNG_1PX })).status, 200);
+  } finally { first.close(); }
+  const second = createPacoSATService(idOptions());
+  const apiB = harnessFor(second);
+  try {
+    await apiB.init();
+    const status = await (await apiB.call('/api/status')).json();
+    /* El nombre del remitente llega saneado (los caracteres de marcado
+       se eliminan y queda texto inerte, seguro para la cabecera From) y
+       el resto intacto tras un reinicio completo sobre el mismo volumen. */
+    assert.deepEqual(status.settings, { installName: 'Mano Fil · PacoSAT', senderName: 'PacoSAT bMano/b Fil', accent: 'azul', hasLogo: true });
+    assert.ok(status.serverStartedAt > 0);
+    const logo = await (await apiB.call('/api/settings/logo')).json();
+    assert.equal(logo.mime, 'image/png');
+    assert.equal(logo.data, PNG_1PX);
+    /* El arnés común solo hace GET/POST: el DELETE se ejerce con una
+       llamada cruda equivalente sobre el mismo servicio. */
+    const rawToken = (await (await apiB.call('/')).text()).match(/content="([^"]+)"/)[1];
+    const rawDelete = async path => {
+      const headers = { host: 'pacosat.example.com', origin, 'x-pacosat-proxy': proxyKey, 'x-pacosat-token': rawToken };
+      const req = Object.assign(Readable.from([]), { url: path, method: 'DELETE', headers });
+      let response;
+      const res = { setHeader() {}, writeHead(status) { this.status = status; },
+        end(content) { response = new Response(content, { status: this.status }); } };
+      await second.handle(req, res);
+      return response;
+    };
+    assert.equal((await rawDelete('/api/settings/logo')).status, 200);
+    const after = await (await apiB.call('/api/status')).json();
+    assert.equal(after.settings.hasLogo, false);
+    console.log('OK: ajustes de identidad persistentes tras reinicio, nombres saneados, logo validado por tipo real/tamaño y SVG seguro.');
+  } finally { second.close(); }
+}
+
+// --- 1.6.6: el remitente con nombre llega al correo construido ---
+{
+  let fromTime = certExpected - 100 * 86400000;
+  const fromSent = [];
+  const fromService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+    now: () => fromTime,
+    makeConnector: async () => ({ parser: FixtureParser, connector: {
+      request: async () => 'from-req', check: async () => ({ status: 'pending', packages: [] }), download: async () => Buffer.alloc(0) } }),
+    makeMailer: () => ({ verify: async () => true, sendMail: async payload => { fromSent.push(payload); } }) });
+  const fromApi = harnessFor(fromService);
+  try {
+    await fromApi.init();
+    await fromService.bootstrap({ mail: { host: 'smtp.example.com', port: 587, from: 'from@example.com',
+      recipient: 'to@example.com', user: '', password: '' } });
+    await fromApi.call('/api/unlock', { rfc: 'XAXX010101000', minutes: 1440, days: 7, direction: 'received',
+      password: 'simulated', certificate: CERT_B64, key: 'YQ==' });
+    fromTime = certExpected - 89 * 86400000;
+    await fromService.tick();
+    const plain = fromSent.filter(mail => /e\.firma/.test(mail.subject));
+    assert.equal(plain.length, 1);
+    assert.equal(plain[0].from, 'from@example.com');
+    await fromApi.call('/api/settings', { installName: '', senderName: 'Avisos PacoSAT', accent: '' });
+    fromTime = certExpected - 29 * 86400000;
+    await fromService.tick();
+    const named = fromSent.filter(mail => /e\.firma/.test(mail.subject) && /Avisos PacoSAT/.test(mail.from));
+    assert.equal(named.length, 2);
+    assert.equal(named[0].from, 'Avisos PacoSAT <from@example.com>');
+    console.log('OK: sin nombre del remitente el From no cambia; con nombre, los avisos salen como «Nombre <correo>».');
+  } finally { fromService.close(); }
+}
+
+// --- Corrección 1.6.6: el bootstrap acepta el mismo intervalo que la API ---
+{
+  const bootBase = mkdtempSync(join(tmpdir(), 'pacosat-166-boot-'));
+  const certPath = join(bootBase, 'fiel.cer'), keyPath = join(bootBase, 'fiel.key');
+  writeFileSync(certPath, Buffer.from(CERT_B64, 'base64'));
+  writeFileSync(keyPath, 'llave-de-prueba');
+  const bootWith = async minutes => {
+    const service = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+      makeConnector: async () => ({}),
+      makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
+    const api = harnessFor(service);
+    try {
+      await api.init();
+      await service.bootstrap({ profiles: [{ rfc: 'XAXX010101000', name: 'Prueba', minutes, days: 7,
+        direction: 'received', certificatePath: certPath, keyPath, password: 'simulated' }] });
+      const status = await (await api.call('/api/status')).json();
+      return status.profiles[0]?.minutes;
+    } finally { service.close(); }
+  };
+  /* La cadencia decidida por Paco (cada 6 horas) y los extremos del rango
+     de la API activan el perfil; fuera de rango sigue rechazado. */
+  assert.equal(await bootWith(360), 360);
+  assert.equal(await bootWith(60), 60);
+  assert.equal(await bootWith(1440), 1440);
+  assert.equal(await bootWith(59), undefined);
+  assert.equal(await bootWith(1441), undefined);
+  console.log('OK: el bootstrap de perfiles acepta cualquier intervalo de 60 a 1440 minutos, como la API (360 incluido).');
+}

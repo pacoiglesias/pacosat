@@ -31,10 +31,11 @@
 <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.8v4.2m0 2.8v.4"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.8 12S6.2 5.4 12 5.4 21.2 12 21.2 12 17.8 18.6 12 18.6 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4"/><path d="M12 2.9v3.1m0 12v3.1M2.9 12h3.1m12 0h3.1M5.3 5.3l2.2 2.2m9 9 2.2 2.2m0-13.4-2.2 2.2m-9 9-2.2 2.2"/></symbol>
 </svg>
 <div class="frame">
 <aside class="sidebar">
-  <div class="brand"><span class="logo"><svg><use href="#i-logo"/></svg></span><span>PacoSAT<small>ESPACIO DE TRABAJO</small></span></div>
+  <div class="brand"><span class="logo"><svg id="brand-mark"><use href="#i-logo"/></svg><img id="brand-logo" alt="" hidden></span><span><span id="brand-name">PacoSAT</span><small>ESPACIO DE TRABAJO</small></span></div>
   <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"><option value="">Todos los RFC</option></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
   <nav aria-label="Navegación principal">
     <span class="nav-caption">OPERACIÓN FISCAL</span>
@@ -48,6 +49,7 @@
     <button data-view="monitor"><svg><use href="#i-shield"/></svg> Vigilancia SAT</button>
     <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
     <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>
+    <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
   </nav>
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
 </aside>
@@ -60,6 +62,7 @@
     </header>
     <p id="status" role="status" hidden></p>
     <section id="body" aria-label="Contenido"></section>
+    <footer class="app-footer" id="app-footer"></footer>
   </div>
 </main>
 </div>

@@ -7,7 +7,8 @@ const screens = {
   coverage: ['Cobertura de descarga', 'Qué periodos están descargados por RFC, dónde quedan huecos y el mapa anual de días cubiertos.', 'Actualizar estado'],
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
   backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
-  diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV']
+  diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV'],
+  settings: ['Ajustes', 'Nombre, logo, color de acento y remitente de los correos de esta instalación.', 'Guardar ajustes']
 };
 const portals = [
   ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
@@ -15,6 +16,29 @@ const portals = [
   ['Opinión de cumplimiento', 'Consulta y guarda el PDF de la opinión.', 'https://wwwmat.sat.gob.mx/consultas/20777/consulta-tu-opinion-de-cumplimiento-de-obligaciones-fiscales'],
   ['Declaraciones y acuses', 'Recupera acuses de declaraciones presentadas.', 'https://wwwmatnp.sat.gob.mx/aplicacion/77792/reimprime-tus-acuses-de-declaraciones-presentadas']
 ];
+/* Identidad de la instalación (1.6.6): en modo servidor vive en el
+   servidor (tabla settings, sobrevive a reinicios); en modo local se
+   guarda en este navegador. applySettings la refleja en la cabecera, el
+   acento y el pie; el bloque «Acerca de» y el pie toman versión y sellos
+   de PACOSAT_META (generados por build.mjs desde datos reales). */
+let appSettings = { installName: '', senderName: '', accent: '', hasLogo: false, logoData: '' };
+try {
+  const saved = JSON.parse(localStorage.getItem('pacosat-settings') || 'null');
+  if (saved && typeof saved === 'object') appSettings = { ...appSettings, ...saved, hasLogo: Boolean(saved.logoData) };
+} catch { /* sin almacenamiento local: identidad por defecto */ }
+const SETTING_ACCENT_LABELS = { azul: 'Azul', teal: 'Turquesa', violeta: 'Violeta', burdeos: 'Burdeos', ambar: 'Ámbar', rosa: 'Rosa', grafito: 'Grafito' };
+function applySettings() {
+  const root = document.documentElement;
+  if (appSettings.accent) root.dataset.accent = appSettings.accent; else delete root.dataset.accent;
+  $('brand-name').textContent = appSettings.installName || 'PacoSAT';
+  const logoImg = $('brand-logo'), mark = $('brand-mark');
+  if (appSettings.logoData) { logoImg.src = appSettings.logoData; logoImg.hidden = false; mark.style.display = 'none'; }
+  else { logoImg.hidden = true; logoImg.removeAttribute('src'); mark.style.display = ''; }
+  const stamp = new Date(PACOSAT_META.modified);
+  $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + ' · Modificado el ' +
+    stamp.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
+    ' a las ' + stamp.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+}
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
 let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '';
@@ -167,7 +191,13 @@ function printMonthlyReport(key) {
   const section = $('print-report');
   section.replaceChildren();
   const head = n('div', undefined, 'report-head');
-  head.append(n('div', 'PACOSAT · REPORTE MENSUAL', 'hero-kicker'), n('h1', 'Reporte mensual ' + key.slice(5, 7) + '/' + key.slice(0, 4)),
+  if (appSettings.logoData) {
+    const logo = n('img', undefined, 'report-logo');
+    logo.src = appSettings.logoData;
+    logo.alt = '';
+    head.append(logo);
+  }
+  head.append(n('div', (appSettings.installName || 'PacoSAT') + ' · REPORTE MENSUAL', 'hero-kicker'), n('h1', 'Reporte mensual ' + key.slice(5, 7) + '/' + key.slice(0, 4)),
     n('p', (scope ? (scopes().get(scope) || scope) + ' · ' + scope : 'Todos los contribuyentes') + ' · Generado el ' + localDateTime(Date.now()), 'report-meta'));
   section.append(head);
   const rows = [];
@@ -269,7 +299,7 @@ function buildMonthlyPackage(rfc, monthKey) {
     { name: names[0], data: encoder.encode('\uFEFF' + totalesCsv) },
     { name: names[1], data: encoder.encode('\uFEFF' + diotText) },
     { name: names[2], data: encoder.encode(resumen) },
-    { name: names[3], data: encoder.encode(monthlyPackageManifest(rfc, monthKey, names, generated)) }
+    { name: names[3], data: encoder.encode(monthlyPackageManifest(rfc, monthKey, names, generated, appSettings.installName)) }
   ]);
   download(zip, 'PacoSAT-' + rfc + '-' + monthKey + '.zip');
   announce('Paquete mensual de ' + rfc + ' (' + monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4) + ') descargado.');
@@ -537,9 +567,10 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen, settings: settingsScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
+  applySettings();
 }
 function home() {
   if (!ready) {
