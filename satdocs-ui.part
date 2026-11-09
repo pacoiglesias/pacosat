@@ -1,0 +1,98 @@
+/* ===== Constancias y opinión del SAT (1.6.14) =====
+   Sección del Centro SAT: por RFC, semáforo de antigüedad de la
+   constancia de situación fiscal y de la opinión de cumplimiento,
+   activación de la descarga mensual automática con día, hora y
+   destinatarios del correo, descarga inmediata y subida manual del
+   PDF (vale igual para el semáforo). Solo SAT: el IMSS no entra. */
+function satDocPill(doc, label) {
+  if (!doc) return statusPill('dim', label + ': sin archivar');
+  const level = doc.level === 'ok' ? 'ok' : doc.level === 'warn' ? 'warn' : 'bad';
+  return statusPill(level, label + ': ' + doc.ageDays + ' días');
+}
+function satDocsSection() {
+  const section = panel('Constancias y opinión del SAT',
+    'La constancia de situación fiscal y la opinión de cumplimiento caducan a la vista de tus clientes: aquí se vigila su edad (verde menos de 60 días, ámbar hasta 90, rojo después) y, si activas la descarga automática, PacoSAT las renueva cada mes y las envía por correo.');
+  const body = n('div');
+  section.append(body);
+  const fill = async data => {
+    const view = data || await satApi('satdocs');
+    body.replaceChildren();
+    if (!view.profiles.length) {
+      body.append(n('p', 'Configura primero un RFC arriba: sus constancias se vigilarán aquí.', 'empty'));
+      return;
+    }
+    for (const profile of view.profiles) {
+      const card = n('article', undefined, 'sat-card');
+      const head = n('div', undefined, 'sat-card-head');
+      head.append(n('strong', profile.rfc), satDocPill(profile.constancia, 'Constancia'), satDocPill(profile.opinion, 'Opinión'));
+      card.append(head);
+      const meta = n('div', undefined, 'sat-meta');
+      if (profile.constancia) meta.append(n('span', 'Constancia emitida: ' + localDate(profile.constancia.issuedAt) + (profile.constancia.source === 'manual' ? ' (subida a mano)' : '')));
+      if (profile.opinion) meta.append(n('span', 'Opinión emitida: ' + localDate(profile.opinion.issuedAt) + (profile.opinion.source === 'manual' ? ' (subida a mano)' : '')));
+      if (profile.lastAttempt) meta.append(n('span', 'Último intento de descarga: ' + localDateTime(profile.lastAttempt)));
+      card.append(meta);
+      if (profile.lastError) card.append(n('p', 'Último intento: ' + profile.lastError, 'error-text'));
+      /* Configuración del envío automático, en lenguaje llano. */
+      const form = n('div', undefined, 'satdoc-form');
+      const enabled = input('checkbox', { checked: Boolean(profile.config.enabled) });
+      const dayInput = input('number', { value: profile.config.day, min: 1, max: 28, 'aria-label': 'Día del mes' });
+      const hourInput = input('number', { value: profile.config.hour, min: 0, max: 23, 'aria-label': 'Hora' });
+      const recipients = input('text', { value: profile.config.recipients, placeholder: 'Correos que reciben los documentos (separados por comas); vacío = tu correo de avisos' });
+      const toggleLabel = n('label', undefined, 'switch-line');
+      toggleLabel.append(enabled, n('span', 'Descarga automática mensual'));
+      const when = n('label'); when.append(n('span', 'Día '), dayInput, n('span', ' a las '), hourInput, n('span', ':00'));
+      const save = n('button', 'Guardar', 'soft');
+      save.onclick = async () => {
+        try {
+          const data = await satApi('satdocs/config', { rfc: profile.rfc, enabled: enabled.checked,
+            day: Number(dayInput.value), hour: Number(hourInput.value), recipients: recipients.value });
+          toast('Configuración guardada para ' + profile.rfc + '.', 'ok');
+          fill(data);
+        } catch (error) { toast(error.message, 'error'); }
+      };
+      form.append(toggleLabel, when, recipients, save);
+      card.append(form);
+      const actions = n('div', undefined, 'sat-actions');
+      const run = n('button', 'Descargar ahora', 'soft');
+      run.onclick = async () => {
+        run.disabled = true; run.textContent = 'Descargando del portal…';
+        try {
+          const data = await satApi('satdocs/run', { rfc: profile.rfc });
+          const failed = Object.values(data.results).filter(result => !result.ok).length;
+          toast(failed ? 'El portal no entregó ' + failed + ' documento(s): quedó registrado y avisado.' :
+            'Documentos descargados, archivados y enviados.', failed ? 'error' : 'ok');
+          fill(data);
+        } catch (error) { toast(error.message, 'error'); fill(); }
+      };
+      const upload = n('button', 'Subir PDF a mano', 'soft');
+      upload.onclick = () => satDocUploadDialog(profile.rfc, fill);
+      actions.append(run, upload);
+      card.append(actions);
+      body.append(card);
+    }
+  };
+  fill();
+  return section;
+}
+function satDocUploadDialog(rfc, fill) {
+  const kind = n('select');
+  for (const [value, label] of [['constancia', 'Constancia de situación fiscal'], ['opinion', 'Opinión de cumplimiento']]) {
+    const option = n('option', label); option.value = value; kind.append(option);
+  }
+  const date = input('date', { required: true, value: new Date().toISOString().slice(0, 10) });
+  const picker = input('file', { accept: '.pdf,application/pdf', required: true });
+  dialog('Subir documento del SAT · ' + rfc,
+    [field('Documento', kind), field('Fecha de emisión', date), field('Archivo PDF', picker)],
+    async () => {
+      const file = picker.files[0];
+      check(file, 'Elige el archivo PDF.');
+      const content = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+      const data = await satApi('satdocs/upload', { rfc, kind: kind.value, date: date.value, content, name: file.name });
+      await refresh();
+      toast('Documento archivado en Expedientes y semáforo actualizado.', 'ok');
+      fill(data);
+    }, 'Archivar documento');
+}
+function localDate(value) {
+  return new Date(value).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+}

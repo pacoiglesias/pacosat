@@ -6,18 +6,19 @@
    significa que el SAT publicó ese RFC en un listado oficial. */
 const LISTS_VIEW = { data: null };
 const listStatePill = source => {
-  if (source.error) return pill('bad', 'Con error');
-  if (!source.fetched) return pill('dim', source.manual ? 'Sin cargar' : 'Pendiente');
-  if (Date.now() - source.fetched > 48 * 3600 * 1000) return pill('warn', 'Desactualizado');
-  return pill('ok', 'Al día');
+  if (source.error) return statusPill('bad', 'Con error');
+  if (!source.fetched) return statusPill('dim', source.manual ? 'Sin cargar' : 'Pendiente');
+  if (Date.now() - source.fetched > 48 * 3600 * 1000) return statusPill('warn', 'Desactualizado');
+  return statusPill('ok', 'Al día');
 };
 async function loadLists() {
   LISTS_VIEW.data = await satApi('lists');
-  if (VIEW === 'lists') render();
+  if (page === 'lists') render();
   return LISTS_VIEW.data;
 }
-async function listsScreen() {
-  const data = LISTS_VIEW.data || await loadLists();
+function listsScreen() {
+  if (!LISTS_VIEW.data) { loadLists(); return [panel('Listas negras', 'Cargando los listados y tu padrón…')]; }
+  const data = LISTS_VIEW.data;
   const wrap = n('div');
   /* Fuentes oficiales */
   const sourcesPanel = panel('Listados oficiales del SAT', 'Se descargan solos cada día. Si uno lleva más de 48 horas sin actualizar, PacoSAT avisa: vigilar con datos viejos es peor que no vigilar.');
@@ -75,7 +76,7 @@ async function listsScreen() {
         const row = n('div', undefined, 'cp-row');
         row.append(n('strong', match.name || match.rfc),
           n('span', match.rfc + ' · ' + match.label + ' · ' + match.detail, 'muted'),
-          pill(match.severity === 'bad' ? 'bad' : match.severity === 'warn' ? 'warn' : 'ok',
+          statusPill(match.severity === 'bad' ? 'bad' : match.severity === 'warn' ? 'warn' : 'ok',
             match.severity === 'bad' ? 'Alerta' : match.severity === 'warn' ? 'Precaución' : 'Regularizado'));
         vout.append(row);
       }
@@ -95,10 +96,10 @@ async function listsScreen() {
   }
   const registry = panel('Padrón de contrapartes', 'Toda empresa que te factura o a la que facturas, más las que agregues. «Exposición» es lo que te ha facturado quien aparece en un listado: ese dinero es el que el SAT podría cuestionar.');
   const summary = n('div', undefined, 'traffic-strip');
-  summary.append(pill(counts.bad ? 'bad' : 'ok', counts.bad + ' con alerta grave'),
-    pill(counts.warn ? 'warn' : 'ok', counts.warn + ' con precaución'),
-    pill('ok', counts.clean + ' sin coincidencias'),
-    pill('dim', data.counterparts.length + ' en el padrón'));
+  summary.append(statusPill(counts.bad ? 'bad' : 'ok', counts.bad + ' con alerta grave'),
+    statusPill(counts.warn ? 'warn' : 'ok', counts.warn + ' con precaución'),
+    statusPill('ok', counts.clean + ' sin coincidencias'),
+    statusPill('dim', data.counterparts.length + ' en el padrón'));
   registry.append(summary);
   const addRow = n('div', undefined, 'filterbar');
   const addBtn = n('button', 'Agregar contraparte', 'soft');
@@ -129,7 +130,7 @@ async function listsScreen() {
     if (cp.exposure && cp.exposure.receivedCount)
       main.append(n('span', 'Te ha facturado ' + money(cp.exposure.received) + ' en ' + cp.exposure.receivedCount + ' CFDI', 'muted'));
     row.append(main,
-      pill(cp.severity === 'bad' ? 'bad' : cp.severity === 'warn' ? 'warn' : cp.severity === 'dim' ? 'dim' : 'ok',
+      statusPill(cp.severity === 'bad' ? 'bad' : cp.severity === 'warn' ? 'warn' : cp.severity === 'dim' ? 'dim' : 'ok',
         cp.severity === 'bad' ? 'En lista · grave' : cp.severity === 'warn' ? 'En lista' :
         cp.severity === 'dim' ? 'En lista · menor' : cp.severity === 'ok' ? 'Regularizada' : 'Limpia'));
     const actions = n('div', undefined, 'row-actions');
@@ -161,7 +162,7 @@ async function listsScreen() {
     eventsPanel.append(row);
   }
   wrap.append(eventsPanel);
-  return wrap;
+  return [wrap];
 }
 function counterpartDialog(existing = null) {
   const nameInput = input('text', { value: existing?.name || '', placeholder: 'Nombre o razón social' });

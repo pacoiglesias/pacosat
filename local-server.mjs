@@ -104,7 +104,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, satDocFetch = null }) {
   const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
@@ -158,7 +158,13 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       kind TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'manual',
       updated INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS list_events (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, listId TEXT NOT NULL,
-      rfc TEXT NOT NULL, change TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');`);
+      rfc TEXT NOT NULL, change TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');
+    /* Constancias y opinión (1.6.14): registro de documentos del SAT
+       por RFC — la descarga automática deja aquí cada intento; el PDF
+       vive en Expedientes (records) y esta tabla guarda su edad. */
+    CREATE TABLE IF NOT EXISTS sat_documents (id TEXT PRIMARY KEY, rfc TEXT NOT NULL, kind TEXT NOT NULL,
+      issuedAt INTEGER NOT NULL DEFAULT 0, fileId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'auto',
+      created INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
@@ -631,7 +637,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['efos_meta', ['id', 'fetched', 'next', 'error']],
     ['counterparts', ['rfc', 'name', 'kind', 'note', 'source', 'updated']],
     ['blacklist_meta', ['listId', 'fetched', 'next', 'count', 'declared', 'error']],
-    ['list_events', ['id', 'at', 'listId', 'rfc', 'change', 'detail']]
+    ['list_events', ['id', 'at', 'listId', 'rfc', 'change', 'detail']],
+    ['sat_documents', ['id', 'rfc', 'kind', 'issuedAt', 'fileId', 'source', 'created', 'error']]
   ];
   const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   function dumpOperations() {
@@ -1443,6 +1450,129 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return { sources, counterparts, events };
   }
 
+  /* ===== Constancias y opinión del SAT (1.6.14) =====
+     SOLO SAT (el IMSS quedó fuera por orden de Paco). Por RFC se puede
+     activar la descarga mensual automática de la constancia de
+     situación fiscal y la opinión de cumplimiento: el PDF se archiva
+     en Expedientes, se envía por correo a los destinatarios fijados y
+     su antigüedad se vigila con semáforo (verde <60 días, ámbar
+     60–90, rojo >90). La descarga pasa por el puerto satDocFetch: el
+     portal del SAT exige su propio flujo con e.firma; si un intento
+     falla —portal caído, flujo rechazado o puerto no disponible— el
+     intento queda registrado, llega una alerta y el semáforo manda.
+     También se puede subir el PDF a mano: vale igual. */
+  const DOC_KIND_LABEL = { constancia: 'Constancia / CIF', opinion: 'Opinión de cumplimiento' };
+  const satDocsConfig = () => { try { return JSON.parse(db.prepare("SELECT value FROM settings WHERE key='satdocs'").get()?.value || '{}'); } catch { return {}; } };
+  const satDocsState = () => { try { return JSON.parse(db.prepare("SELECT value FROM settings WHERE key='satdocs-state'").get()?.value || '{}'); } catch { return {}; } };
+  const saveSatDocsState = state => db.prepare("INSERT INTO settings(key,value) VALUES ('satdocs-state',?) " +
+    "ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(JSON.stringify(state));
+  function latestSatDoc(rfc, kind) {
+    return db.prepare("SELECT * FROM sat_documents WHERE rfc=? AND kind=? AND fileId<>'' ORDER BY issuedAt DESC, created DESC LIMIT 1")
+      .get(rfc, kind) || null;
+  }
+  function docLevel(issuedAt, time) {
+    if (!issuedAt) return 'none';
+    const days = Math.floor((time - issuedAt) / DAY);
+    return days < 60 ? 'ok' : days <= 90 ? 'warn' : 'bad';
+  }
+  function archiveSatDoc(rfc, kind, content, issuedAt, source, time, fileName) {
+    const fileId = 'pdf:' + randomUUID();
+    const base64 = Buffer.isBuffer(content) ? content.toString('base64') : String(content);
+    tx(db, () => {
+      db.prepare("INSERT OR REPLACE INTO records(store,id,value) VALUES ('files',?,?)")
+        .run(fileId, JSON.stringify({ id: fileId, mime: 'application/pdf', content: base64 }));
+      db.prepare("INSERT OR REPLACE INTO records(store,id,value) VALUES ('documents',?,?)")
+        .run(fileId, JSON.stringify({ id: fileId, rfc, kind: DOC_KIND_LABEL[kind],
+          date: new Date(issuedAt).toISOString().slice(0, 10), period: '', name: fileName || DOC_KIND_LABEL[kind] + ' · ' + rfc + '.pdf' }));
+      db.prepare('INSERT INTO sat_documents(id,rfc,kind,issuedAt,fileId,source,created) VALUES (?,?,?,?,?,?,?)')
+        .run(randomUUID(), rfc, kind, issuedAt, fileId, source, time);
+    });
+    return fileId;
+  }
+  async function runSatDocAttempt(rfc, kind, time) {
+    const state = satDocsState();
+    state[rfc] = state[rfc] || {};
+    state[rfc][kind + 'Attempt'] = time;
+    saveSatDocsState(state);
+    try {
+      if (!satDocFetch) throw new Error('La descarga automática desde el portal del SAT no está disponible en esta instalación todavía: sube el PDF en esta pantalla y quedará archivado y vigilado igual.');
+      const result = await satDocFetch({ rfc }, kind);
+      const content = result?.content;
+      if (!content || !(Buffer.isBuffer(content) ? content.length : String(content).length))
+        throw new Error('El portal del SAT no devolvió el documento.');
+      const issuedAt = result.issuedAt ? Date.parse(result.issuedAt) || time : time;
+      archiveSatDoc(rfc, kind, content, issuedAt, 'auto', time, result.fileName);
+      state[rfc][kind + 'Month'] = new Date(time).toISOString().slice(0, 7);
+      saveSatDocsState(state);
+      /* Envío automático a los destinatarios configurados. */
+      const config = satDocsConfig()[rfc] || {};
+      const recipients = String(config.recipients || '').split(/[,;]/).map(item => item.trim()).filter(Boolean);
+      if (mail && (recipients.length || mail.recipient)) {
+        try {
+          await mail.transport.sendMail({ from: displayFrom(mail.from), to: recipients.length ? recipients.join(', ') : mail.recipient,
+            subject: 'PacoSAT · ' + DOC_KIND_LABEL[kind] + ' de ' + rfc + ' (' + day(issuedAt) + ')',
+            text: 'Se descargó y archivó en Expedientes el documento «' + DOC_KIND_LABEL[kind] + '» de ' + rfc +
+              ', emitido el ' + day(issuedAt) + '. Va adjunto en PDF.',
+            attachments: [{ filename: (DOC_KIND_LABEL[kind] + ' ' + rfc + '.pdf').replaceAll('/', '-'),
+              content: Buffer.isBuffer(content) ? content : Buffer.from(String(content), 'base64') }] });
+        } catch (error) {
+          queueAlert('satdoc-mail', 'satdoc-mail:' + rfc + ':' + kind + ':' + Math.floor(time / DAY),
+            'PacoSAT · El documento se archivó pero el correo falló',
+            '«' + DOC_KIND_LABEL[kind] + '» de ' + rfc + ' quedó en Expedientes, pero el envío por correo falló: ' + message(error), time);
+        }
+      }
+      return { ok: true };
+    } catch (error) {
+      db.prepare('INSERT INTO sat_documents(id,rfc,kind,issuedAt,fileId,source,created,error) VALUES (?,?,?,?,?,?,?,?)')
+        .run(randomUUID(), rfc, kind, 0, '', 'auto', time, message(error));
+      queueAlert('satdoc-fail', 'satdoc:' + rfc + ':' + kind + ':' + Math.floor(time / DAY),
+        'PacoSAT · No se pudo descargar ' + DOC_KIND_LABEL[kind] + ' de ' + rfc,
+        'El intento de descarga automática falló: ' + message(error) +
+        ' El documento seguirá vigilado por antigüedad; también puedes subir el PDF a mano en el Centro SAT.', time);
+      return { ok: false, error: message(error) };
+    }
+  }
+  async function satDocsTick(time) {
+    const config = satDocsConfig(), state = satDocsState();
+    for (const profile of db.prepare('SELECT rfc FROM profiles').all()) {
+      const item = config[profile.rfc];
+      /* Alarma de antigüedad: roja y sin aviso esta semana → correo. */
+      for (const kind of ['constancia', 'opinion']) {
+        const latest = latestSatDoc(profile.rfc, kind);
+        if (latest && docLevel(latest.issuedAt, time) === 'bad')
+          queueAlert('satdoc-old', 'satdoc-old:' + profile.rfc + ':' + kind + ':' + Math.floor(time / (7 * DAY)),
+            'PacoSAT · ' + DOC_KIND_LABEL[kind] + ' de ' + profile.rfc + ' lleva más de 90 días',
+            'La última emisión archivada es del ' + day(latest.issuedAt) + '. Renueva el documento: si la descarga automática está activa, PacoSAT lo intenta solo; si no, súbelo en el Centro SAT.', time);
+      }
+      if (!item?.enabled) continue;
+      const date = new Date(time);
+      const due = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), Math.min(28, Math.max(1, item.day || 5)), item.hour ?? 9);
+      const monthKey = date.toISOString().slice(0, 7);
+      for (const kind of ['constancia', 'opinion']) {
+        const done = state[profile.rfc]?.[kind + 'Month'] === monthKey;
+        const attempted = state[profile.rfc]?.[kind + 'Attempt'] || 0;
+        if (!done && time >= due && time - attempted >= DAY) await runSatDocAttempt(profile.rfc, kind, time);
+      }
+    }
+  }
+  function satDocsOverview(time) {
+    const config = satDocsConfig(), state = satDocsState();
+    return db.prepare('SELECT rfc FROM profiles ORDER BY rfc').all().map(profile => {
+      const view = { rfc: profile.rfc, config: config[profile.rfc] ||
+        { enabled: false, day: 5, hour: 9, recipients: '' }, lastError: '' };
+      for (const kind of ['constancia', 'opinion']) {
+        const latest = latestSatDoc(profile.rfc, kind);
+        view[kind] = latest ? { issuedAt: latest.issuedAt, ageDays: Math.floor((time - latest.issuedAt) / DAY),
+          level: docLevel(latest.issuedAt, time), source: latest.source } : null;
+        const failure = db.prepare("SELECT error,created FROM sat_documents WHERE rfc=? AND kind=? AND error<>'' ORDER BY created DESC LIMIT 1")
+          .get(profile.rfc, kind);
+        if (failure && (!latest || failure.created >= latest.created)) view.lastError = failure.error;
+      }
+      view.lastAttempt = Math.max(state[profile.rfc]?.constanciaAttempt || 0, state[profile.rfc]?.opinionAttempt || 0);
+      return view;
+    });
+  }
+
   /* Ciclo completo de un perfil (1.6.11): verificar lo pendiente,
      programar CFDI y metadatos y anotar el resultado. Lo usa el tick y
      también el botón «Descargar ahora» por RFC. */
@@ -1494,6 +1624,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         checkCertExpiries(time);
         checkSilence(time);
         await listsTick(time, listFetch || undefined);
+        await satDocsTick(time);
       }
       await scanWatchFolder(time);
       await runScheduledBackup(time);
@@ -1705,6 +1836,46 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           }
         }
         return json(res, { query, matches });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/satdocs') return json(res, { profiles: satDocsOverview(now()) });
+      if (req.method === 'POST' && url.pathname === '/api/satdocs/config') {
+        const x = await body(req);
+        need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(String(x.rfc || '')), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        const day = Math.floor(Number(x.day)), hour = Math.floor(Number(x.hour));
+        need(day >= 1 && day <= 28, 'El día del mes debe estar entre 1 y 28.');
+        need(hour >= 0 && hour <= 23, 'La hora debe estar entre 0 y 23.');
+        const config = satDocsConfig();
+        config[x.rfc] = { enabled: Boolean(x.enabled), day, hour,
+          recipients: String(x.recipients || '').slice(0, 500) };
+        db.prepare("INSERT INTO settings(key,value) VALUES ('satdocs',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+          .run(JSON.stringify(config));
+        return json(res, { profiles: satDocsOverview(now()) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/satdocs/run') {
+        /* Descargar ahora: intento inmediato de una o de las dos
+           clases de documento; el resultado queda registrado. */
+        const x = await body(req);
+        need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(String(x.rfc || '')), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        const kinds = x.kind ? [x.kind] : ['constancia', 'opinion'];
+        for (const kind of kinds) need(DOC_KIND_LABEL[kind], 'Clase de documento inválida.');
+        const results = {};
+        for (const kind of kinds) results[kind] = await runSatDocAttempt(x.rfc, kind, now());
+        return json(res, { results, profiles: satDocsOverview(now()) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/satdocs/upload') {
+        /* Subida manual del PDF: se archiva en Expedientes con su
+           fecha de emisión y vale para el semáforo igual que una
+           descarga automática. */
+        const x = await body(req, 22 * 1024 * 1024);
+        need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(String(x.rfc || '')), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        need(DOC_KIND_LABEL[x.kind], 'Clase de documento inválida.');
+        const issuedAt = Date.parse(String(x.date || ''));
+        need(Number.isFinite(issuedAt), 'Indica la fecha de emisión del documento.');
+        need(typeof x.content === 'string' && x.content.length > 0, 'Falta el archivo PDF.');
+        const raw = Buffer.from(x.content, 'base64');
+        need(raw.length <= 16 * 1024 * 1024 && raw.subarray(0, 4).toString() === '%PDF', 'El archivo no es un PDF válido de hasta 16 MB.');
+        archiveSatDoc(x.rfc, x.kind, raw, issuedAt, 'manual', now(), String(x.name || '').slice(0, 180) || undefined);
+        return json(res, { profiles: satDocsOverview(now()) });
       }
       if (req.method === 'POST' && url.pathname === '/api/pdf-analyze') {
         const { data } = await body(req, 21 * 1024 * 1024);
