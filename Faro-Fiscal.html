@@ -157,6 +157,40 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .top-search input{background:var(--nav-field);border:1px solid var(--nav-border);color:var(--nav-text);border-radius:8px;padding:6px 10px;min-width:200px;font:inherit;font-size:13px}
 .top-search input::placeholder{color:var(--nav-muted)}
 @media(max-width:900px){.top-search{display:none}}
+
+/* Personalización 1.6.6: paleta de acentos como tokens del sistema
+   de diseño. Cada valor cumple contraste AA (texto sobre superficie,
+   texto sobre el acento y tinte) en claro y en oscuro; verify.cjs lo
+   comprueba recomputando los ratios desde esta misma hoja. */
+:root[data-accent="azul"]{--green:#175c9e;--green-hover:#114a80;--on-accent:#ffffff;--tint:#e3edf8;--ok-bg:#e3edf8;--ok-ink:#175c9e;--focus:#175c9e;--nav-active-bg:#123c63;--nav-active-ink:#cfe2f5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--ok-bg:#17334f;--ok-ink:#6ea8dc;--focus:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}}
+:root[data-theme="dark"][data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--ok-bg:#17334f;--ok-ink:#6ea8dc;--focus:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}
+:root[data-accent="teal"]{--green:#0f766e;--green-hover:#0b5a54;--on-accent:#ffffff;--tint:#dcf2ef;--ok-bg:#dcf2ef;--ok-ink:#0f766e;--focus:#0f766e;--nav-active-bg:#0a3f3a;--nav-active-ink:#c4efe9}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--ok-bg:#0f3532;--ok-ink:#2dd4bf;--focus:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}}
+:root[data-theme="dark"][data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--ok-bg:#0f3532;--ok-ink:#2dd4bf;--focus:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}
+:root[data-accent="violeta"]{--green:#6d28d9;--green-hover:#571db0;--on-accent:#ffffff;--tint:#ece4fa;--ok-bg:#ece4fa;--ok-ink:#6d28d9;--focus:#6d28d9;--nav-active-bg:#3d1478;--nav-active-ink:#ddd0fb}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--ok-bg:#2a1b4d;--ok-ink:#a78bfa;--focus:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}}
+:root[data-theme="dark"][data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--ok-bg:#2a1b4d;--ok-ink:#a78bfa;--focus:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}
+:root[data-accent="burdeos"]{--green:#9f2436;--green-hover:#7f1b2b;--on-accent:#ffffff;--tint:#f9e3e6;--ok-bg:#f9e3e6;--ok-ink:#9f2436;--focus:#9f2436;--nav-active-bg:#57101d;--nav-active-ink:#f6ccd2}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--ok-bg:#472028;--ok-ink:#f08a94;--focus:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}}
+:root[data-theme="dark"][data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--ok-bg:#472028;--ok-ink:#f08a94;--focus:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}
+:root[data-accent="ambar"]{--green:#9a5b00;--green-hover:#7c4900;--on-accent:#ffffff;--tint:#f7ecd4;--ok-bg:#f7ecd4;--ok-ink:#9a5b00;--focus:#9a5b00;--nav-active-bg:#54350a;--nav-active-ink:#f3dfae}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--ok-bg:#453310;--ok-ink:#f5b04c;--focus:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}}
+:root[data-theme="dark"][data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--ok-bg:#453310;--ok-ink:#f5b04c;--focus:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}
+:root[data-accent="rosa"]{--green:#b01854;--green-hover:#8f1244;--on-accent:#ffffff;--tint:#f9e0ea;--ok-bg:#f9e0ea;--ok-ink:#b01854;--focus:#b01854;--nav-active-bg:#5c0d2f;--nav-active-ink:#f6c9da}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--ok-bg:#472031;--ok-ink:#f78fb8;--focus:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}}
+:root[data-theme="dark"][data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--ok-bg:#472031;--ok-ink:#f78fb8;--focus:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}
+:root[data-accent="grafito"]{--green:#3f5468;--green-hover:#31424f;--on-accent:#ffffff;--tint:#e5ebf0;--ok-bg:#e5ebf0;--ok-ink:#3f5468;--focus:#3f5468;--nav-active-bg:#22303f;--nav-active-ink:#d3dee8}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--ok-bg:#22303f;--ok-ink:#9db1c8;--focus:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}}
+:root[data-theme="dark"][data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--ok-bg:#22303f;--ok-ink:#9db1c8;--focus:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}
+.app-footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
+.brand .logo img{width:100%;height:100%;object-fit:contain;border-radius:12px}
+.report-logo{max-height:54px;max-width:190px;object-fit:contain;margin-bottom:8px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatch{display:inline-flex;gap:7px;align-items:center;padding:7px 10px}
+.swatch[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--ok-ink)}
+.swatch-dot{width:15px;height:15px;border-radius:50%;display:inline-block;border:1px solid var(--border)}
+.logo-preview{width:52px;height:52px;object-fit:contain;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -188,10 +222,11 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3.5 2.8 19.5h18.4z"/><path d="M12 9.8v4.2m0 2.8v.4"/></symbol>
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.8 12S6.2 5.4 12 5.4 21.2 12 21.2 12 17.8 18.6 12 18.6 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+<symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4"/><path d="M12 2.9v3.1m0 12v3.1M2.9 12h3.1m12 0h3.1M5.3 5.3l2.2 2.2m9 9 2.2 2.2m0-13.4-2.2 2.2m-9 9-2.2 2.2"/></symbol>
 </svg>
 <div class="frame">
 <aside class="sidebar">
-  <div class="brand"><span class="logo"><svg><use href="#i-logo"/></svg></span><span>PacoSAT<small>ESPACIO DE TRABAJO</small></span></div>
+  <div class="brand"><span class="logo"><svg id="brand-mark"><use href="#i-logo"/></svg><img id="brand-logo" alt="" hidden></span><span><span id="brand-name">PacoSAT</span><small>ESPACIO DE TRABAJO</small></span></div>
   <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"><option value="">Todos los RFC</option></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
   <nav aria-label="Navegación principal">
     <span class="nav-caption">OPERACIÓN FISCAL</span>
@@ -205,6 +240,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
     <button data-view="monitor"><svg><use href="#i-shield"/></svg> Vigilancia SAT</button>
     <button data-view="backup"><svg><use href="#i-box"/></svg> Respaldos</button>
     <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>
+    <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
   </nav>
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
 </aside>
@@ -217,6 +253,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
     </header>
     <p id="status" role="status" hidden></p>
     <section id="body" aria-label="Contenido"></section>
+    <footer class="app-footer" id="app-footer"></footer>
   </div>
 </main>
 </div>
@@ -231,7 +268,8 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
   <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
 </dialog>
-<script>'use strict';
+<script>const PACOSAT_META = {"version":"1.6.6","created":"2026-11-08T13:42:35-06:00"};
+'use strict';
 const $ = id => document.getElementById(id);
 const KB = 1024;
 const MB = KB * KB;
@@ -501,7 +539,8 @@ const screens = {
   coverage: ['Cobertura de descarga', 'Qué periodos están descargados por RFC, dónde quedan huecos y el mapa anual de días cubiertos.', 'Actualizar estado'],
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
   backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
-  diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV']
+  diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV'],
+  settings: ['Ajustes', 'Nombre, logo, color de acento y remitente de los correos de esta instalación.', 'Guardar ajustes']
 };
 const portals = [
   ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
@@ -509,6 +548,31 @@ const portals = [
   ['Opinión de cumplimiento', 'Consulta y guarda el PDF de la opinión.', 'https://wwwmat.sat.gob.mx/consultas/20777/consulta-tu-opinion-de-cumplimiento-de-obligaciones-fiscales'],
   ['Declaraciones y acuses', 'Recupera acuses de declaraciones presentadas.', 'https://wwwmatnp.sat.gob.mx/aplicacion/77792/reimprime-tus-acuses-de-declaraciones-presentadas']
 ];
+/* Identidad de la instalación (1.6.6): en modo servidor vive en el
+   servidor (tabla settings, sobrevive a reinicios); en modo local se
+   guarda en este navegador. applySettings la refleja en la cabecera, el
+   acento y el pie; el bloque «Acerca de» y el pie toman versión y sellos
+   de PACOSAT_META (generados por build.mjs desde datos reales). */
+let appSettings = { installName: '', senderName: '', accent: '', hasLogo: false, logoData: '' };
+try {
+  const saved = JSON.parse(localStorage.getItem('pacosat-settings') || 'null');
+  if (saved && typeof saved === 'object') appSettings = { ...appSettings, ...saved, hasLogo: Boolean(saved.logoData) };
+} catch { /* sin almacenamiento local: identidad por defecto */ }
+const SETTING_ACCENT_LABELS = { azul: 'Azul', teal: 'Turquesa', violeta: 'Violeta', burdeos: 'Burdeos', ambar: 'Ámbar', rosa: 'Rosa', grafito: 'Grafito' };
+function applySettings() {
+  const root = document.documentElement;
+  if (appSettings.accent) root.dataset.accent = appSettings.accent; else delete root.dataset.accent;
+  $('brand-name').textContent = appSettings.installName || 'PacoSAT';
+  const logoImg = $('brand-logo'), mark = $('brand-mark');
+  if (appSettings.logoData) { logoImg.src = appSettings.logoData; logoImg.hidden = false; mark.style.display = 'none'; }
+  else { logoImg.hidden = true; logoImg.removeAttribute('src'); mark.style.display = ''; }
+  /* El sello de modificación lo aporta el servidor (la mtime real del
+     archivo servido); sin servidor esa parte se omite, no se inventa. */
+  const modified = typeof satData !== 'undefined' && satData.buildModified ? new Date(satData.buildModified) : null;
+  $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + (modified ? ' · Modificado el ' +
+    modified.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
+    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : '');
+}
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
 let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '';
@@ -661,7 +725,13 @@ function printMonthlyReport(key) {
   const section = $('print-report');
   section.replaceChildren();
   const head = n('div', undefined, 'report-head');
-  head.append(n('div', 'PACOSAT · REPORTE MENSUAL', 'hero-kicker'), n('h1', 'Reporte mensual ' + key.slice(5, 7) + '/' + key.slice(0, 4)),
+  if (appSettings.logoData) {
+    const logo = n('img', undefined, 'report-logo');
+    logo.src = appSettings.logoData;
+    logo.alt = '';
+    head.append(logo);
+  }
+  head.append(n('div', (appSettings.installName || 'PacoSAT') + ' · REPORTE MENSUAL', 'hero-kicker'), n('h1', 'Reporte mensual ' + key.slice(5, 7) + '/' + key.slice(0, 4)),
     n('p', (scope ? (scopes().get(scope) || scope) + ' · ' + scope : 'Todos los contribuyentes') + ' · Generado el ' + localDateTime(Date.now()), 'report-meta'));
   section.append(head);
   const rows = [];
@@ -763,7 +833,7 @@ function buildMonthlyPackage(rfc, monthKey) {
     { name: names[0], data: encoder.encode('\uFEFF' + totalesCsv) },
     { name: names[1], data: encoder.encode('\uFEFF' + diotText) },
     { name: names[2], data: encoder.encode(resumen) },
-    { name: names[3], data: encoder.encode(monthlyPackageManifest(rfc, monthKey, names, generated)) }
+    { name: names[3], data: encoder.encode(monthlyPackageManifest(rfc, monthKey, names, generated, appSettings.installName)) }
   ]);
   download(zip, 'PacoSAT-' + rfc + '-' + monthKey + '.zip');
   announce('Paquete mensual de ' + rfc + ' (' + monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4) + ') descargado.');
@@ -1031,9 +1101,10 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen, settings: settingsScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
+  applySettings();
 }
 function home() {
   if (!ready) {
@@ -1865,9 +1936,10 @@ function zipStore(entries) {
   parts.push(...centrals, new Uint8Array(end.buffer));
   return new Blob(parts, { type: 'application/zip' });
 }
-function monthlyPackageManifest(rfc, monthKey, files, generatedAt) {
+function monthlyPackageManifest(rfc, monthKey, files, generatedAt, installName = '') {
   return ['PacoSAT · Paquete mensual para la contadora', 'RFC: ' + rfc, 'Mes: ' + monthKey,
-    'Generado: ' + generatedAt, '', 'Contenido del paquete:'].concat(files.map(name => '- ' + name)).join('\n') + '\n';
+    'Generado: ' + generatedAt, ...(installName ? ['Instalación: ' + installName] : []), '', 'Contenido del paquete:']
+    .concat(files.map(name => '- ' + name)).join('\n') + '\n';
 }
 function restoreDialog(file) {
   check(ready && !importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
@@ -1904,6 +1976,7 @@ $('inspectFile').onchange = handle(async () => {
 $('primary').onclick = handle(async () => {
   if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
   if (page === 'coverage') { await pollSat(); render(); return; }
+  if (page === 'settings') { await saveAppSettings(); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });
@@ -2144,6 +2217,18 @@ async function pollSat() {
   try {
     satData = await satApi('status');
     satError = '';
+    if (satData.settings) {
+      /* La identidad del servidor manda sobre la copia local (1.6.6). */
+      appSettings = { ...appSettings, ...satData.settings, logoData: appSettings.logoData };
+      if (satData.settings.hasLogo && !appSettings.logoData) {
+        try {
+          const logo = await satApi('settings/logo');
+          appSettings.logoData = 'data:' + logo.mime + ';base64,' + logo.data;
+        } catch { /* sin logo disponible: se queda la marca de texto */ }
+      }
+      if (!satData.settings.hasLogo) appSettings.logoData = '';
+      applySettings();
+    }
     if (cloudStorage && satData.cloudRevision !== cloudRevision && !$('dialog').open && !importing &&
         !document.activeElement?.matches('input,select,textarea')) {
       await refresh(page === 'sat');
@@ -2443,6 +2528,140 @@ function coverageHeatmap(rfc, daysForRfc) {
   legend.append(item('sw-hm0', 'Sin cubrir'), item('sw-hm1', 'Un sentido'), item('sw-hm2', 'Recibidos y emitidos'));
   wrap.append(scroll, legend);
   return wrap;
+}
+
+/* Ajustes de identidad (1.6.6): nombre de la instalación, logo, color de
+   acento y nombre del remitente de los correos. En modo servidor se
+   guardan vía API en el volumen de datos (sobreviven a reinicios y
+   redespliegues y viajan en el respaldo completo); en modo local se
+   guardan en este navegador. Nada de esto toca pacosat-secrets. */
+const ACCENT_SWATCHES = { '': '#0e6b4f', azul: '#175c9e', teal: '#0f766e', violeta: '#6d28d9',
+  burdeos: '#9f2436', ambar: '#9a5b00', rosa: '#b01854', grafito: '#3f5468' };
+let pendingLogo; // undefined = sin cambios · '' = quitar · dataURL = logo nuevo
+async function satApiDelete(route) {
+  const response = await fetch('/api/' + route, { method: 'DELETE', headers: { 'X-PacoSAT-Token': satToken } });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'El servicio local no respondió.');
+  return response.json();
+}
+const stampText = iso => {
+  const date = new Date(iso);
+  return date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
+    ' a las ' + date.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+};
+function settingsScreen() {
+  pendingLogo = undefined;
+  const panels = [];
+  const identity = panel('Identidad de la instalación');
+  const body = n('div', undefined, 'portal');
+  const nameInput = input('text', { maxlength: '60', placeholder: 'PacoSAT', autocomplete: 'off' });
+  nameInput.value = appSettings.installName;
+  nameInput.id = 'settings-name';
+  const senderInput = input('text', { maxlength: '60', placeholder: 'Sin nombre: como hasta ahora', autocomplete: 'off' });
+  senderInput.value = appSettings.senderName;
+  senderInput.id = 'settings-sender';
+  body.append(field('Nombre de la instalación', nameInput),
+    n('p', 'Se muestra en la cabecera, en el reporte mensual imprimible y en el manifiesto del paquete mensual.'),
+    field('Nombre del remitente de los correos', senderInput),
+    n('p', 'Los avisos del sistema saldrán como «Nombre <correo configurado>». Sin nombre, los correos no cambian.'));
+  const logoRow = n('div', undefined, 'actions');
+  const preview = n('img', undefined, 'logo-preview');
+  preview.alt = 'Logo de la instalación';
+  if (appSettings.logoData) preview.src = appSettings.logoData; else preview.hidden = true;
+  preview.id = 'settings-logo-preview';
+  const fileInput = input('file', { accept: '.png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml' });
+  fileInput.setAttribute('aria-label', 'Subir logo');
+  fileInput.onchange = async () => {
+    const file = fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    if (file.size > 200 * 1024) { announce('El logo debe pesar como máximo 200 KB.', true); return; }
+    if (file.type === 'image/svg+xml' && /<script|javascript:|on\w+\s*=/i.test(await file.text())) {
+      announce('Ese SVG no es seguro (scripts o controladores) y no se acepta.', true); return;
+    }
+    pendingLogo = await new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(file); });
+    preview.src = pendingLogo;
+    preview.hidden = false;
+    announce('Logo listo: se aplicará al guardar los ajustes.');
+  };
+  const removeLogo = action('Quitar logo', () => {
+    pendingLogo = '';
+    preview.hidden = true;
+    preview.removeAttribute('src');
+    announce('El logo se quitará al guardar los ajustes.');
+  });
+  logoRow.append(preview, fileInput, removeLogo);
+  body.append(field('Logo (opcional)', logoRow), n('p', 'PNG, JPG o SVG seguro, hasta 200 KB. Se guarda en el servidor y se sirve desde el propio origen; sin logo se usa la marca de texto.'));
+  const swatches = n('div', undefined, 'swatches');
+  swatches.setAttribute('role', 'group');
+  swatches.setAttribute('aria-label', 'Color de acento');
+  for (const value of Object.keys(ACCENT_SWATCHES)) {
+    const swatch = n('button', undefined, 'swatch');
+    swatch.type = 'button';
+    swatch.dataset.accentOption = value;
+    swatch.setAttribute('aria-pressed', String(appSettings.accent === value));
+    swatch.title = value ? SETTING_ACCENT_LABELS[value] : 'Predeterminado (verde)';
+    const dot = n('span', undefined, 'swatch-dot');
+    dot.style.background = ACCENT_SWATCHES[value];
+    swatch.append(dot, n('span', value ? SETTING_ACCENT_LABELS[value] : 'Predeterminado'));
+    swatch.onclick = () => {
+      for (const other of swatches.querySelectorAll('[data-accent-option]')) other.setAttribute('aria-pressed', 'false');
+      swatch.setAttribute('aria-pressed', 'true');
+      appSettings.accent = value;
+      applySettings();
+    };
+    swatches.append(swatch);
+  }
+  body.append(field('Color de acento', swatches),
+    n('p', 'Paleta cerrada del sistema de diseño: cada color cumple contraste AA en tema claro y oscuro. «Predeterminado» restaura el verde original. El botón «Guardar ajustes» de la cabecera guarda todo.'));
+  identity.append(body);
+  panels.push(identity);
+  const about = panel('Acerca de PacoSAT');
+  const aboutBody = n('div', undefined, 'portal');
+  const facts = n('div', undefined, 'facts');
+  const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
+  facts.append(fact('Versión', 'PacoSAT ' + PACOSAT_META.version),
+    fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'));
+  if (satToken && satData.buildModified) facts.append(fact('Última modificación de esta copia', stampText(new Date(satData.buildModified).toISOString())));
+  if (satToken && satData.serverStartedAt) facts.append(fact('Esta instancia se inició', stampText(new Date(satData.serverStartedAt).toISOString())));
+  aboutBody.append(facts, n('p', satToken ?
+    'Los ajustes de identidad viven en el servidor, en su volumen de datos junto al estado operativo: sobreviven a reinicios y redespliegues, viajan en el respaldo completo y se restauran con él. Nunca se mezclan con las credenciales de pacosat-secrets.' :
+    'Sin servidor, los ajustes se guardan en este navegador. La fecha de inicio de la instancia solo existe en modo servidor y por eso no se muestra aquí.'));
+  about.append(aboutBody);
+  panels.push(about);
+  return panels;
+}
+async function saveAppSettings() {
+  const name = $('settings-name')?.value ?? appSettings.installName;
+  const sender = $('settings-sender')?.value ?? appSettings.senderName;
+  const accent = document.querySelector('[data-accent-option][aria-pressed="true"]')?.dataset.accentOption ?? appSettings.accent;
+  if (satToken) {
+    const result = await satApi('settings', { installName: name, senderName: sender, accent });
+    appSettings = { ...appSettings, ...result.settings, logoData: appSettings.logoData };
+    if (pendingLogo === '') {
+      await satApiDelete('settings/logo');
+      appSettings.logoData = '';
+      appSettings.hasLogo = false;
+    } else if (pendingLogo) {
+      const mime = /data:(.*?);/.exec(pendingLogo)[1];
+      await satApi('settings/logo', { mime, data: pendingLogo.split(',')[1] });
+      appSettings.logoData = pendingLogo;
+      appSettings.hasLogo = true;
+    }
+    pendingLogo = undefined;
+    announce('Ajustes guardados en el servidor.');
+  } else {
+    appSettings = { ...appSettings, installName: name.trim().slice(0, 60), senderName: sender.trim().slice(0, 60), accent,
+      logoData: pendingLogo === '' ? '' : (pendingLogo || appSettings.logoData) };
+    appSettings.hasLogo = Boolean(appSettings.logoData);
+    try {
+      localStorage.setItem('pacosat-settings', JSON.stringify({ installName: appSettings.installName,
+        senderName: appSettings.senderName, accent: appSettings.accent, logoData: appSettings.logoData }));
+    } catch { /* almacenamiento lleno o bloqueado: la identidad vale para esta sesión */ }
+    pendingLogo = undefined;
+    announce('Ajustes guardados en este navegador.');
+  }
+  applySettings();
+  render();
 }
 </script>
 </body></html>

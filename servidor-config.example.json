@@ -3,7 +3,7 @@
     {
       "rfc": "XAXX010101000",
       "name": "Ejemplo ficticio",
-      "minutes": 240,
+      "minutes": 360,
       "days": 7,
       "direction": "received",
       "certificatePath": "/run/pacosat-secrets/contribuyente.cer",

@@ -46,3 +46,37 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .top-search input{background:var(--nav-field);border:1px solid var(--nav-border);color:var(--nav-text);border-radius:8px;padding:6px 10px;min-width:200px;font:inherit;font-size:13px}
 .top-search input::placeholder{color:var(--nav-muted)}
 @media(max-width:900px){.top-search{display:none}}
+
+/* Personalización 1.6.6: paleta de acentos como tokens del sistema
+   de diseño. Cada valor cumple contraste AA (texto sobre superficie,
+   texto sobre el acento y tinte) en claro y en oscuro; verify.cjs lo
+   comprueba recomputando los ratios desde esta misma hoja. */
+:root[data-accent="azul"]{--green:#175c9e;--green-hover:#114a80;--on-accent:#ffffff;--tint:#e3edf8;--ok-bg:#e3edf8;--ok-ink:#175c9e;--focus:#175c9e;--nav-active-bg:#123c63;--nav-active-ink:#cfe2f5}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--ok-bg:#17334f;--ok-ink:#6ea8dc;--focus:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}}
+:root[data-theme="dark"][data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--ok-bg:#17334f;--ok-ink:#6ea8dc;--focus:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}
+:root[data-accent="teal"]{--green:#0f766e;--green-hover:#0b5a54;--on-accent:#ffffff;--tint:#dcf2ef;--ok-bg:#dcf2ef;--ok-ink:#0f766e;--focus:#0f766e;--nav-active-bg:#0a3f3a;--nav-active-ink:#c4efe9}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--ok-bg:#0f3532;--ok-ink:#2dd4bf;--focus:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}}
+:root[data-theme="dark"][data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--ok-bg:#0f3532;--ok-ink:#2dd4bf;--focus:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}
+:root[data-accent="violeta"]{--green:#6d28d9;--green-hover:#571db0;--on-accent:#ffffff;--tint:#ece4fa;--ok-bg:#ece4fa;--ok-ink:#6d28d9;--focus:#6d28d9;--nav-active-bg:#3d1478;--nav-active-ink:#ddd0fb}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--ok-bg:#2a1b4d;--ok-ink:#a78bfa;--focus:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}}
+:root[data-theme="dark"][data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--ok-bg:#2a1b4d;--ok-ink:#a78bfa;--focus:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}
+:root[data-accent="burdeos"]{--green:#9f2436;--green-hover:#7f1b2b;--on-accent:#ffffff;--tint:#f9e3e6;--ok-bg:#f9e3e6;--ok-ink:#9f2436;--focus:#9f2436;--nav-active-bg:#57101d;--nav-active-ink:#f6ccd2}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--ok-bg:#472028;--ok-ink:#f08a94;--focus:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}}
+:root[data-theme="dark"][data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--ok-bg:#472028;--ok-ink:#f08a94;--focus:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}
+:root[data-accent="ambar"]{--green:#9a5b00;--green-hover:#7c4900;--on-accent:#ffffff;--tint:#f7ecd4;--ok-bg:#f7ecd4;--ok-ink:#9a5b00;--focus:#9a5b00;--nav-active-bg:#54350a;--nav-active-ink:#f3dfae}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--ok-bg:#453310;--ok-ink:#f5b04c;--focus:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}}
+:root[data-theme="dark"][data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--ok-bg:#453310;--ok-ink:#f5b04c;--focus:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}
+:root[data-accent="rosa"]{--green:#b01854;--green-hover:#8f1244;--on-accent:#ffffff;--tint:#f9e0ea;--ok-bg:#f9e0ea;--ok-ink:#b01854;--focus:#b01854;--nav-active-bg:#5c0d2f;--nav-active-ink:#f6c9da}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--ok-bg:#472031;--ok-ink:#f78fb8;--focus:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}}
+:root[data-theme="dark"][data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--ok-bg:#472031;--ok-ink:#f78fb8;--focus:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}
+:root[data-accent="grafito"]{--green:#3f5468;--green-hover:#31424f;--on-accent:#ffffff;--tint:#e5ebf0;--ok-bg:#e5ebf0;--ok-ink:#3f5468;--focus:#3f5468;--nav-active-bg:#22303f;--nav-active-ink:#d3dee8}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--ok-bg:#22303f;--ok-ink:#9db1c8;--focus:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}}
+:root[data-theme="dark"][data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--ok-bg:#22303f;--ok-ink:#9db1c8;--focus:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}
+.app-footer{margin-top:26px;padding-top:12px;border-top:1px solid var(--border);color:var(--muted);font-size:12px}
+.brand .logo img{width:100%;height:100%;object-fit:contain;border-radius:12px}
+.report-logo{max-height:54px;max-width:190px;object-fit:contain;margin-bottom:8px}
+.swatches{display:flex;gap:8px;flex-wrap:wrap}
+.swatch{display:inline-flex;gap:7px;align-items:center;padding:7px 10px}
+.swatch[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--ok-ink)}
+.swatch-dot{width:15px;height:15px;border-radius:50%;display:inline-block;border:1px solid var(--border)}
+.logo-preview{width:52px;height:52px;object-fit:contain;border:1px solid var(--border);border-radius:10px;background:var(--surface)}

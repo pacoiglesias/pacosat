@@ -87,7 +87,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000 }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null }) {
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
   db.exec(`
@@ -119,18 +119,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       origin TEXT NOT NULL DEFAULT 'manual', sentAt INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS criteria_key_idx ON criteria(key);
     CREATE TABLE IF NOT EXISTS criteria_exhausted (key TEXT PRIMARY KEY,
-      learnedAt INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '');`);
+      learnedAt INTEGER NOT NULL, detail TEXT NOT NULL DEFAULT '');
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL DEFAULT '');`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
-    await mail.transport.sendMail({ from: mail.from, to: mail.recipient,
+    await mail.transport.sendMail({ from: displayFrom(mail.from), to: mail.recipient,
       subject: 'PacoSAT · CFDI cancelado detectado',
       text: 'El SAT reportó como cancelado el folio ' + item.id + '. Emisor: ' + item.emitter + '. Receptor: ' + item.receiver + '.',
       messageId: '<pacosat-cancelado-' + item.id.toLowerCase() + '@pacosat.local>' });
     return true;
   }, notifyEfos: async alert => {
     if (!mail) return false;
-    await mail.transport.sendMail({ from: mail.from, to: mail.recipient,
+    await mail.transport.sendMail({ from: displayFrom(mail.from), to: mail.recipient,
       subject: 'PacoSAT · Nuevo RFC en el listado 69-B',
       text: 'El RFC ' + alert.rfc + ' apareció en el listado oficial del artículo 69-B con la situación: ' + alert.statuses.join(', ') +
         '. Es emisor o receptor de CFDI de tu expediente. Revisa los comprobantes relacionados en Vigilancia SAT.',
@@ -147,6 +148,43 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   const putFile = (id, data, mime) => insertRecord.run('files', id, null, data, mime);
   const getState = key => db.prepare('SELECT value FROM automation_state WHERE key=?').get(key)?.value || '';
   const setState = (key, value) => db.prepare('INSERT INTO automation_state(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
+  /* Ajustes de identidad de la instalación (1.6.6): viven en la base de
+     datos del volumen de datos, junto al estado operativo — sobreviven a
+     reinicios y redespliegues y viajan en el respaldo completo. NUNCA en
+     pacosat-secrets: no son credenciales. */
+  const startedAt = now();
+  /* Fecha de modificación real del archivo de la copia servida (su
+     mtime al arrancar el proceso): es el sello «Modificado el» de la
+     interfaz en modo servidor. Null cuando quien crea el servicio no la
+     conoce (p. ej. la copia local suelta), y entonces no se muestra. */
+  const servedBuildModified = buildModified;
+  const getSetting = key => db.prepare('SELECT value FROM settings WHERE key=?').get(key)?.value || '';
+  const setSetting = (key, value) => db.prepare('INSERT INTO settings(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').run(key, String(value));
+  const deleteSetting = key => db.prepare('DELETE FROM settings WHERE key=?').run(key);
+  const SETTING_ACCENTS = ['', 'azul', 'teal', 'violeta', 'burdeos', 'ambar', 'rosa', 'grafito'];
+  const cleanSettingName = value => String(value ?? '').replace(/[<>"'\\\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  const publicSettings = () => ({ installName: getSetting('installName'), senderName: getSetting('senderName'),
+    accent: getSetting('accent'), hasLogo: Boolean(getSetting('logoMime')) });
+  const displayFrom = from => { const name = cleanSettingName(getSetting('senderName'));
+    return name ? name + ' <' + from + '>' : from; };
+  /* Logo: validación de tipo REAL (magia o estructura), no la extensión.
+     PNG y JPEG por sus bytes de firma; el SVG por su estructura y sin
+     scripts, controladores de eventos ni objetos externos. */
+  const LOGO_MAX = 200 * 1024;
+  function validateLogo(mime, bytes) {
+    if (!['image/png', 'image/jpeg', 'image/svg+xml'].includes(mime)) return 'Formato no admitido: usa PNG, JPG o SVG.';
+    if (!bytes.length || bytes.length > LOGO_MAX) return 'La imagen debe pesar entre 1 byte y 200 KB.';
+    if (mime === 'image/png' && !(bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47))
+      return 'El archivo no es un PNG válido.';
+    if (mime === 'image/jpeg' && !(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff))
+      return 'El archivo no es un JPEG válido.';
+    if (mime === 'image/svg+xml') {
+      const text = bytes.toString('utf8');
+      if (!/<svg[\s>]/i.test(text) || /<script|javascript:|on\w+\s*=|<foreignObject/i.test(text))
+        return 'El SVG no es seguro o no contiene un elemento <svg>.';
+    }
+    return '';
+  }
   const inbox = { dir: watchDir || '' };
   const inboxStatus = { lastScan: 0, imported: 0, failed: 0, incidents: 0, waiting: 0, error: '' };
   const inboxStuck = new Set();
@@ -260,7 +298,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const row of config.profiles || []) {
       try {
         need(validateRfc(row.rfc || '').level !== 'structure' && typeof row.name === 'string' && row.name.length > 0 && row.name.length <= 120 &&
-          [60,120,240,720,1440].includes(row.minutes) && Number.isInteger(row.days) && row.days >= 1 && row.days <= 31 &&
+          Number.isInteger(row.minutes) && row.minutes >= 60 && row.minutes <= 1440 && Number.isInteger(row.days) && row.days >= 1 && row.days <= 31 &&
           ['received','issued','both'].includes(row.direction), 'Perfil inicial inválido.');
         const certificate = readFileSync(row.certificatePath), privateKey = readFileSync(row.keyPath);
         const expires = certExpiryMs(certificate);
@@ -312,6 +350,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
 
   function overview() {
     return {
+      settings: publicSettings(),
+      serverStartedAt: startedAt,
+      buildModified: servedBuildModified,
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
       profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc),
         lastSatSuccess: db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(row.rfc)?.last || null })),
@@ -406,6 +447,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['alerts', ['id', 'kind', 'ref', 'subject', 'body', 'due', 'sent', 'error']],
     ['alert_state', ['key', 'failures', 'alerted']],
     ['automation_state', ['key', 'value']],
+    ['settings', ['key', 'value']],
     ['discovered', ['rfc', 'uuid']],
     ['cfdi_watch', ['id', 'emitter', 'receiver', 'total', 'seal', 'next', 'checked', 'result', 'error']],
     ['cancellation_alert', ['id', 'due', 'sent']],
@@ -935,7 +977,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       db.prepare('UPDATE notices SET due=? WHERE id=?').run(time + 15 * MIN, item.id);
       try {
         await active.transport.sendMail({
-          from: active.from, to: item.recipient,
+          from: displayFrom(active.from), to: item.recipient,
           subject: 'PacoSAT · Nuevos CFDI recibidos',
           text: 'PacoSAT detectó ' + item.count + ' comprobante(s) nuevo(s) para el RFC ' + item.rfc + '. Abre PacoSAT para revisar el expediente.',
           messageId: '<pacosat-' + item.id + '-' + active.instance + '@pacosat.local>'
@@ -968,7 +1010,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const item of items) {
       db.prepare('UPDATE alerts SET due=? WHERE id=?').run(time + 15 * MIN, item.id);
       try {
-        await active.transport.sendMail({ from: active.from, to: active.recipient, subject: item.subject, text: item.body,
+        await active.transport.sendMail({ from: displayFrom(active.from), to: active.recipient, subject: item.subject, text: item.body,
           messageId: '<pacosat-alerta-' + item.id + '-' + active.instance + '@pacosat.local>' });
         db.prepare('UPDATE alerts SET sent=?,error=? WHERE id=?').run(now(), '', item.id);
       } catch { db.prepare('UPDATE alerts SET error=? WHERE id=?').run('El servidor SMTP no aceptó el envío. Revisa la configuración y las credenciales.', item.id); }
@@ -1044,6 +1086,36 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
          incluyeron (jobs.imported), consultas de estado de la vigilancia,
          aviso de cancelación y PDF vinculado. Lo que no exista, no se
          muestra: ningún evento se fabrica. */
+      if (req.method === 'POST' && url.pathname === '/api/settings') {
+        const x = await body(req);
+        if (!SETTING_ACCENTS.includes(x.accent ?? '')) need(false, 'Color de acento no válido.', 400);
+        setSetting('installName', cleanSettingName(x.installName));
+        setSetting('senderName', cleanSettingName(x.senderName));
+        setSetting('accent', x.accent || '');
+        return json(res, { ok: true, settings: publicSettings() });
+      }
+      if (url.pathname === '/api/settings/logo') {
+        if (req.method === 'GET') {
+          const mime = getSetting('logoMime'), data = getSetting('logoData');
+          if (!mime || !data) need(false, 'Esta instalación no tiene logo.', 404);
+          return json(res, { mime, data });
+        }
+        if (req.method === 'POST') {
+          /* Límite de cuerpo propio: un logo de 200 KB viaja en base64
+             (~273 KB de JSON), por encima del tope general de 192 KB. */
+          const x = await body(req, 320 * 1024);
+          const bytes = Buffer.from(String(x.data || ''), 'base64');
+          const problem = validateLogo(String(x.mime || ''), bytes);
+          if (problem) need(false, problem, 400);
+          setSetting('logoMime', String(x.mime));
+          setSetting('logoData', bytes.toString('base64'));
+          return json(res, { ok: true, settings: publicSettings() });
+        }
+        if (req.method === 'DELETE') {
+          deleteSetting('logoMime'); deleteSetting('logoData');
+          return json(res, { ok: true, settings: publicSettings() });
+        }
+      }
       if (req.method === 'GET' && url.pathname === '/api/invoice-history') {
         const id = url.searchParams.get('id') || '';
         need(id.length > 0 && id.length <= 40, 'Folio fiscal inválido.');
@@ -1227,7 +1299,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const origin = process.env.PACOSAT_ORIGIN || 'http://127.0.0.1:43729';
   need(origin === new URL(origin).origin && (!proxyKey || (proxyKey.length >= 32 && origin.startsWith('https://'))) &&
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
-  const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '' });
+  const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '',
+    buildModified: statSync(new URL('./Faro-Fiscal.html', import.meta.url)).mtimeMs });
   const server = createServer(service.handle);
   server.requestTimeout = 90000;
   server.on('error', error => {

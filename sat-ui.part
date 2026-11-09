@@ -171,6 +171,18 @@ async function pollSat() {
   try {
     satData = await satApi('status');
     satError = '';
+    if (satData.settings) {
+      /* La identidad del servidor manda sobre la copia local (1.6.6). */
+      appSettings = { ...appSettings, ...satData.settings, logoData: appSettings.logoData };
+      if (satData.settings.hasLogo && !appSettings.logoData) {
+        try {
+          const logo = await satApi('settings/logo');
+          appSettings.logoData = 'data:' + logo.mime + ';base64,' + logo.data;
+        } catch { /* sin logo disponible: se queda la marca de texto */ }
+      }
+      if (!satData.settings.hasLogo) appSettings.logoData = '';
+      applySettings();
+    }
     if (cloudStorage && satData.cloudRevision !== cloudRevision && !$('dialog').open && !importing &&
         !document.activeElement?.matches('input,select,textarea')) {
       await refresh(page === 'sat');

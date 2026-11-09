@@ -1,0 +1,133 @@
+/* Ajustes de identidad (1.6.6): nombre de la instalación, logo, color de
+   acento y nombre del remitente de los correos. En modo servidor se
+   guardan vía API en el volumen de datos (sobreviven a reinicios y
+   redespliegues y viajan en el respaldo completo); en modo local se
+   guardan en este navegador. Nada de esto toca pacosat-secrets. */
+const ACCENT_SWATCHES = { '': '#0e6b4f', azul: '#175c9e', teal: '#0f766e', violeta: '#6d28d9',
+  burdeos: '#9f2436', ambar: '#9a5b00', rosa: '#b01854', grafito: '#3f5468' };
+let pendingLogo; // undefined = sin cambios · '' = quitar · dataURL = logo nuevo
+async function satApiDelete(route) {
+  const response = await fetch('/api/' + route, { method: 'DELETE', headers: { 'X-PacoSAT-Token': satToken } });
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || 'El servicio local no respondió.');
+  return response.json();
+}
+const stampText = iso => {
+  const date = new Date(iso);
+  return date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
+    ' a las ' + date.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+};
+function settingsScreen() {
+  pendingLogo = undefined;
+  const panels = [];
+  const identity = panel('Identidad de la instalación');
+  const body = n('div', undefined, 'portal');
+  const nameInput = input('text', { maxlength: '60', placeholder: 'PacoSAT', autocomplete: 'off' });
+  nameInput.value = appSettings.installName;
+  nameInput.id = 'settings-name';
+  const senderInput = input('text', { maxlength: '60', placeholder: 'Sin nombre: como hasta ahora', autocomplete: 'off' });
+  senderInput.value = appSettings.senderName;
+  senderInput.id = 'settings-sender';
+  body.append(field('Nombre de la instalación', nameInput),
+    n('p', 'Se muestra en la cabecera, en el reporte mensual imprimible y en el manifiesto del paquete mensual.'),
+    field('Nombre del remitente de los correos', senderInput),
+    n('p', 'Los avisos del sistema saldrán como «Nombre <correo configurado>». Sin nombre, los correos no cambian.'));
+  const logoRow = n('div', undefined, 'actions');
+  const preview = n('img', undefined, 'logo-preview');
+  preview.alt = 'Logo de la instalación';
+  if (appSettings.logoData) preview.src = appSettings.logoData; else preview.hidden = true;
+  preview.id = 'settings-logo-preview';
+  const fileInput = input('file', { accept: '.png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml' });
+  fileInput.setAttribute('aria-label', 'Subir logo');
+  fileInput.onchange = async () => {
+    const file = fileInput.files[0];
+    fileInput.value = '';
+    if (!file) return;
+    if (file.size > 200 * 1024) { announce('El logo debe pesar como máximo 200 KB.', true); return; }
+    if (file.type === 'image/svg+xml' && /<script|javascript:|on\w+\s*=/i.test(await file.text())) {
+      announce('Ese SVG no es seguro (scripts o controladores) y no se acepta.', true); return;
+    }
+    pendingLogo = await new Promise(resolve => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.readAsDataURL(file); });
+    preview.src = pendingLogo;
+    preview.hidden = false;
+    announce('Logo listo: se aplicará al guardar los ajustes.');
+  };
+  const removeLogo = action('Quitar logo', () => {
+    pendingLogo = '';
+    preview.hidden = true;
+    preview.removeAttribute('src');
+    announce('El logo se quitará al guardar los ajustes.');
+  });
+  logoRow.append(preview, fileInput, removeLogo);
+  body.append(field('Logo (opcional)', logoRow), n('p', 'PNG, JPG o SVG seguro, hasta 200 KB. Se guarda en el servidor y se sirve desde el propio origen; sin logo se usa la marca de texto.'));
+  const swatches = n('div', undefined, 'swatches');
+  swatches.setAttribute('role', 'group');
+  swatches.setAttribute('aria-label', 'Color de acento');
+  for (const value of Object.keys(ACCENT_SWATCHES)) {
+    const swatch = n('button', undefined, 'swatch');
+    swatch.type = 'button';
+    swatch.dataset.accentOption = value;
+    swatch.setAttribute('aria-pressed', String(appSettings.accent === value));
+    swatch.title = value ? SETTING_ACCENT_LABELS[value] : 'Predeterminado (verde)';
+    const dot = n('span', undefined, 'swatch-dot');
+    dot.style.background = ACCENT_SWATCHES[value];
+    swatch.append(dot, n('span', value ? SETTING_ACCENT_LABELS[value] : 'Predeterminado'));
+    swatch.onclick = () => {
+      for (const other of swatches.querySelectorAll('[data-accent-option]')) other.setAttribute('aria-pressed', 'false');
+      swatch.setAttribute('aria-pressed', 'true');
+      appSettings.accent = value;
+      applySettings();
+    };
+    swatches.append(swatch);
+  }
+  body.append(field('Color de acento', swatches),
+    n('p', 'Paleta cerrada del sistema de diseño: cada color cumple contraste AA en tema claro y oscuro. «Predeterminado» restaura el verde original. El botón «Guardar ajustes» de la cabecera guarda todo.'));
+  identity.append(body);
+  panels.push(identity);
+  const about = panel('Acerca de PacoSAT');
+  const aboutBody = n('div', undefined, 'portal');
+  const facts = n('div', undefined, 'facts');
+  const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
+  facts.append(fact('Versión', 'PacoSAT ' + PACOSAT_META.version),
+    fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'));
+  if (satToken && satData.buildModified) facts.append(fact('Última modificación de esta copia', stampText(new Date(satData.buildModified).toISOString())));
+  if (satToken && satData.serverStartedAt) facts.append(fact('Esta instancia se inició', stampText(new Date(satData.serverStartedAt).toISOString())));
+  aboutBody.append(facts, n('p', satToken ?
+    'Los ajustes de identidad viven en el servidor, en su volumen de datos junto al estado operativo: sobreviven a reinicios y redespliegues, viajan en el respaldo completo y se restauran con él. Nunca se mezclan con las credenciales de pacosat-secrets.' :
+    'Sin servidor, los ajustes se guardan en este navegador. La fecha de inicio de la instancia solo existe en modo servidor y por eso no se muestra aquí.'));
+  about.append(aboutBody);
+  panels.push(about);
+  return panels;
+}
+async function saveAppSettings() {
+  const name = $('settings-name')?.value ?? appSettings.installName;
+  const sender = $('settings-sender')?.value ?? appSettings.senderName;
+  const accent = document.querySelector('[data-accent-option][aria-pressed="true"]')?.dataset.accentOption ?? appSettings.accent;
+  if (satToken) {
+    const result = await satApi('settings', { installName: name, senderName: sender, accent });
+    appSettings = { ...appSettings, ...result.settings, logoData: appSettings.logoData };
+    if (pendingLogo === '') {
+      await satApiDelete('settings/logo');
+      appSettings.logoData = '';
+      appSettings.hasLogo = false;
+    } else if (pendingLogo) {
+      const mime = /data:(.*?);/.exec(pendingLogo)[1];
+      await satApi('settings/logo', { mime, data: pendingLogo.split(',')[1] });
+      appSettings.logoData = pendingLogo;
+      appSettings.hasLogo = true;
+    }
+    pendingLogo = undefined;
+    announce('Ajustes guardados en el servidor.');
+  } else {
+    appSettings = { ...appSettings, installName: name.trim().slice(0, 60), senderName: sender.trim().slice(0, 60), accent,
+      logoData: pendingLogo === '' ? '' : (pendingLogo || appSettings.logoData) };
+    appSettings.hasLogo = Boolean(appSettings.logoData);
+    try {
+      localStorage.setItem('pacosat-settings', JSON.stringify({ installName: appSettings.installName,
+        senderName: appSettings.senderName, accent: appSettings.accent, logoData: appSettings.logoData }));
+    } catch { /* almacenamiento lleno o bloqueado: la identidad vale para esta sesión */ }
+    pendingLogo = undefined;
+    announce('Ajustes guardados en este navegador.');
+  }
+  applySettings();
+  render();
+}

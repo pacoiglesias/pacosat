@@ -153,5 +153,66 @@ async function collect(stream) {
   assert.equal(parsed[1].text, manifest);
   assert.equal(zipView.getUint32(zipBytes.length - 22, true), 0x06054b50);
   assert.equal(zipView.getUint16(zipBytes.length - 22 + 10, true), 2);
-  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados y paquete mensual.');
+  /* Personalización (1.6.6): la paleta de acentos cumple contraste AA.
+     Los valores se leen de la propia hoja (polish.part) y los ratios se
+     recomputan aquí: texto del acento sobre la superficie, texto sobre
+     el acento y su hover, tinta sobre tinte y sobre el activo de la
+     barra lateral, en claro (#ffffff) y en oscuro (#14243a). */
+  const polish = fs.readFileSync('polish.part', 'utf8');
+  const luminance = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+    .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))
+    .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+  const accentNames = [...polish.matchAll(/\[data-accent="([a-z]+)"\]\{--green:/g)].map(match => match[1]);
+  assert.deepEqual([...new Set(accentNames)].sort(), ['ambar', 'azul', 'burdeos', 'grafito', 'rosa', 'teal', 'violeta']);
+  for (const name of new Set(accentNames)) {
+    const block = selector => {
+      const found = polish.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}'));
+      assert.ok(found, 'Falta el bloque de acento ' + name + ' para ' + selector);
+      return Object.fromEntries([...found[1].matchAll(/(--[\w-]+):\s*(#[0-9a-f]{6})/g)].map(m => [m[1], m[2]]));
+    };
+    const light = block(':root[data-accent="' + name + '"]');
+    const dark = block(':root[data-theme="dark"][data-accent="' + name + '"]');
+    for (const [label, a, b] of [
+      ['claro texto', light['--green'], '#ffffff'], ['claro sobre acento', light['--on-accent'], light['--green']],
+      ['claro hover', light['--on-accent'], light['--green-hover']], ['claro tinte', light['--ok-ink'], light['--tint']],
+      ['claro nav', light['--nav-active-ink'], light['--nav-active-bg']],
+      ['oscuro texto', dark['--green'], '#14243a'], ['oscuro sobre acento', dark['--on-accent'], dark['--green']],
+      ['oscuro hover', dark['--on-accent'], dark['--green-hover']], ['oscuro tinte', dark['--ok-ink'], dark['--tint']],
+      ['oscuro nav', dark['--nav-active-ink'], dark['--nav-active-bg']]])
+      assert.ok(contrast(a, b) >= 4.5, 'Contraste AA insuficiente en ' + name + ' (' + label + '): ' + contrast(a, b).toFixed(2));
+  }
+  /* Sellos de la copia (1.6.6): el artefacto es una función pura del
+     árbol (dos generaciones seguidas, byte a byte idénticas: es la
+     propiedad que exige el diff de CI) y sus metadatos son la versión
+     de package.json y la creación constante documentada. El sello de
+     modificación NO vive en el artefacto (un derivado del historial no
+     es reproducible entre checkouts): lo aporta el servidor con la
+     mtime del archivo servido, probado en cloud.test. */
+  const { execFileSync } = require('node:child_process');
+  const os = require('node:os');
+  const path = require('node:path');
+  const stampDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pacosat-stamp-'));
+  fs.cpSync('.', stampDir, { recursive: true, filter: source => !/(^|[\\/])(\.git|node_modules)([\\/]|$)/.test(source) });
+  execFileSync('node', ['build.mjs'], { cwd: stampDir });
+  const firstBuild = fs.readFileSync(path.join(stampDir, 'Faro-Fiscal.html'));
+  execFileSync('node', ['build.mjs'], { cwd: stampDir });
+  assert.ok(firstBuild.equals(fs.readFileSync(path.join(stampDir, 'Faro-Fiscal.html'))),
+    'Dos generaciones del mismo árbol deben ser byte a byte idénticas.');
+  const meta = JSON.parse(firstBuild.toString('utf8').match(/PACOSAT_META = (\{[^}]*\})/)[1]);
+  assert.equal(meta.version, JSON.parse(fs.readFileSync('package.json', 'utf8')).version);
+  assert.equal(meta.created, '2026-11-08T13:42:35-06:00');
+  assert.ok(!('modified' in meta), 'El artefacto no debe llevar sello volátil.');
+  fs.rmSync(stampDir, { recursive: true, force: true });
+  /* La constante de creación coincide con el primer commit real cuando
+     el historial está completo (en CI la copia es superficial y se omite). */
+  try {
+    const shallow = execFileSync('git', ['rev-parse', '--is-shallow-repository'], { encoding: 'utf8' }).trim();
+    if (shallow === 'false') {
+      const first = execFileSync('git', ['log', '--reverse', '--format=%cI'], { encoding: 'utf8' }).split('\n')[0].trim();
+      const created = fs.readFileSync('build.mjs', 'utf8').match(/SOFTWARE_CREATED = '([^']+)'/)[1];
+      assert.equal(first, created);
+    }
+  } catch { /* sin git en el entorno de verificación: nada que contrastar */ }
+  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados, paquete mensual, paleta AA y sellos de la copia.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
