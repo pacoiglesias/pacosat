@@ -5,7 +5,7 @@ const UUID = /^[A-F0-9]{8}(?:-[A-F0-9]{4}){3}-[A-F0-9]{12}$/;
 const DAY = 86400000;
 const HOUR = 3600000;
 const text = value => typeof value === 'string' ? value : '';
-const clean = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+export const cleanName = value => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
 
 function limited(response, max) {
   if (!response.ok || !response.body) throw new Error('El servicio oficial respondió HTTP ' + response.status + '.');
@@ -56,7 +56,7 @@ export async function querySat(input, request = fetch) {
   return { state, code, cancellation: val('EstatusCancelacion'), cancelable: val('EsCancelable'), efos: val('ValidacionEFOS') };
 }
 
-function csvRows(content) {
+export function csvRows(content) {
   const first = content.split(/\r?\n/).find(line => /rfc/i.test(line) && /situaci[oó]n/i.test(line)) || '';
   const delimiter = first.includes(';') && !first.includes(',') ? ';' : ',';
   const rows = [];
@@ -80,15 +80,15 @@ function csvRows(content) {
 }
 export function parseEfos(content) {
   const rows = csvRows(content);
-  const header = rows.findIndex(row => row.some(cell => clean(cell) === 'rfc') &&
-    row.some(cell => /^situacion(?: del contribuyente)?$/.test(clean(cell))));
+  const header = rows.findIndex(row => row.some(cell => cleanName(cell) === 'rfc') &&
+    row.some(cell => /^situacion(?: del contribuyente)?$/.test(cleanName(cell))));
   if (header < 0) throw new Error('No se reconocen las columnas del listado oficial 69-B.');
-  const columns = rows[header].map(clean);
+  const columns = rows[header].map(cleanName);
   const rfcColumn = columns.indexOf('rfc'), statusColumn = columns.findIndex(value => value.startsWith('situacion'));
   const index = new Map();
   for (const row of rows.slice(header + 1)) {
     const rfc = text(row[rfcColumn]).trim().toUpperCase();
-    const value = clean(text(row[statusColumn]));
+    const value = cleanName(text(row[statusColumn]));
     const status = /^presunt/.test(value) ? 'Presunto' : /^definitiv/.test(value) ? 'Definitivo' :
       /^desvirtuad/.test(value) ? 'Desvirtuado' : /sentencia|medio de defensa favorable/.test(value) ? 'Sentencia favorable' : '';
     if (!RFC.test(rfc) || !status) continue;

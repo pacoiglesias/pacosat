@@ -6,6 +6,7 @@ const screens = {
   sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
   coverage: ['Cobertura de descarga', 'Qué periodos están descargados por RFC, dónde quedan huecos y el mapa anual de días cubiertos.', 'Actualizar estado'],
   monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
+  lists: ['Listas negras', 'Listados oficiales del SAT cruzados con tus contrapartes: quién consta, desde cuándo y cuánto te ha facturado.', 'Actualizar listados'],
   backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
   diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV'],
   settings: ['Ajustes', 'Nombre, logo, color de acento y remitente de los correos de esta instalación.', 'Guardar ajustes'],
@@ -619,7 +620,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
+  const content = ({ home, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();

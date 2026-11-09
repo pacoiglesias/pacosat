@@ -10,10 +10,12 @@ import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
 import { parseXml, zipXml, zipText, validateRfc } from './xml-core.mjs';
 import { analyzeInvoicePdf } from './pdf-invoice.mjs';
 import { createMonitor } from './sat-monitor.mjs';
+import { LIST_CATALOG, parseList, declaredDate, listSeverity, SEVERITY_ORDER } from './sat-lists.mjs';
 import { encryptBackupBuffer, decryptBackupBuffer } from './backup-core.mjs';
 
 /* El RFC se valida con validateRfc (xml-core): un solo criterio en todo el sistema. */
 const DAY = 86400000;
+const HOUR_MS = 3600000;
 const MIN = 60000;
 const formatDay = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' });
 const day = (date = Date.now()) => formatDay.format(date);
@@ -102,7 +104,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '' }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null }) {
   const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
@@ -144,7 +146,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     CREATE TABLE IF NOT EXISTS metadata_records (uuid TEXT PRIMARY KEY, rfc TEXT NOT NULL,
       direction TEXT NOT NULL, emitter TEXT NOT NULL DEFAULT '', receiver TEXT NOT NULL DEFAULT '',
       issuedAt TEXT NOT NULL DEFAULT '', total TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT '',
-      cancelDate TEXT NOT NULL DEFAULT '', seenAt INTEGER NOT NULL DEFAULT 0);`);
+      cancelDate TEXT NOT NULL DEFAULT '', seenAt INTEGER NOT NULL DEFAULT 0);
+    /* Listas negras vivas (1.6.13): metadatos por listado, entradas
+       (datos públicos re-descargables: NO viajan en los respaldos),
+       padrón de contrapartes y registro de cambios detectados. */
+    CREATE TABLE IF NOT EXISTS blacklist_meta (listId TEXT PRIMARY KEY, fetched INTEGER, next INTEGER NOT NULL DEFAULT 0,
+      count INTEGER NOT NULL DEFAULT 0, declared TEXT NOT NULL DEFAULT '', error TEXT NOT NULL DEFAULT '');
+    CREATE TABLE IF NOT EXISTS blacklist_entries (listId TEXT NOT NULL, rfc TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', PRIMARY KEY (listId, rfc));
+    CREATE TABLE IF NOT EXISTS counterparts (rfc TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '',
+      kind TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'manual',
+      updated INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS list_events (id INTEGER PRIMARY KEY, at INTEGER NOT NULL, listId TEXT NOT NULL,
+      rfc TEXT NOT NULL, change TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '');`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
@@ -614,11 +628,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['cfdi_watch', ['id', 'emitter', 'receiver', 'total', 'seal', 'next', 'checked', 'result', 'error']],
     ['cancellation_alert', ['id', 'due', 'sent']],
     ['efos_alert', ['key', 'rfc', 'due', 'sent']],
-    ['efos_meta', ['id', 'fetched', 'next', 'error']]
+    ['efos_meta', ['id', 'fetched', 'next', 'error']],
+    ['counterparts', ['rfc', 'name', 'kind', 'note', 'source', 'updated']],
+    ['blacklist_meta', ['listId', 'fetched', 'next', 'count', 'declared', 'error']],
+    ['list_events', ['id', 'at', 'listId', 'rfc', 'change', 'detail']]
   ];
   const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   function dumpOperations() {
-    const dump = { version: 1, packagesArchiveOmitted: true, efosListOmitted: true };
+    const dump = { version: 1, packagesArchiveOmitted: true, efosListOmitted: true, listsEntriesOmitted: true };
     for (const [name] of OPERATIONS_TABLES) {
       if (!tableExists(name)) { dump[name] = []; continue; }
       /* Solo lo pendiente de avisos: lo ya enviado es historia, no estado. */
@@ -1257,6 +1274,175 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
   }
 
+  /* ===== Listas negras vivas (1.6.13) =====
+     Descarga diaria de los listados oficiales con URL, importación
+     manual para los que no la tienen, cruce continuo contra el padrón
+     de contrapartes (del CFDI y manual) y aviso ante CUALQUIER cambio:
+     altas, bajas, cambios de situación y la línea base de la primera
+     carga. Las entradas son datos públicos: no viajan en respaldos. */
+  let listsBusy = false;
+  const listMeta = listId => db.prepare('SELECT * FROM blacklist_meta WHERE listId=?').get(listId) ||
+    { listId, fetched: null, next: 0, count: 0, declared: '', error: '' };
+  function counterpartRfcs() {
+    const set = new Set(db.prepare('SELECT rfc FROM counterparts').all().map(row => row.rfc));
+    for (const profile of db.prepare('SELECT rfc FROM profiles').all()) set.add(profile.rfc);
+    try {
+      for (const row of db.prepare("SELECT value FROM records WHERE store='invoices'").all()) {
+        const invoice = JSON.parse(row.value);
+        if (invoice?.from?.rfc) set.add(invoice.from.rfc);
+        if (invoice?.to?.rfc) set.add(invoice.to.rfc);
+      }
+    } catch { /* sin expedientes todavía */ }
+    return set;
+  }
+  function recordListEvent(time, source, rfc, change, detail) {
+    db.prepare('INSERT INTO list_events(at,listId,rfc,change,detail) VALUES (?,?,?,?,?)')
+      .run(time, source.id, rfc, change, detail);
+  }
+  function alertListChange(time, source, rfc, change, detail) {
+    queueAlert('list-transition', 'list:' + source.id + ':' + rfc + ':' + change + ':' + detail,
+      'PacoSAT · Listas negras: ' + change + ' en ' + source.label,
+      'La contraparte ' + rfc + ' registró un cambio en el listado «' + source.label + '»: ' + change +
+      (detail ? ' (' + detail + ')' : '') + '. Revisa el panel de Listas negras para ver su exposición.', time);
+  }
+  async function refreshList(source, time, fetcher) {
+    let content;
+    if (fetcher) content = await fetcher(source);
+    else {
+      const response = await fetch(source.url, { redirect: 'error', signal: AbortSignal.timeout(90000) });
+      if (!response.ok) throw new Error('La fuente oficial respondió HTTP ' + response.status + '.');
+      const raw = Buffer.from(await response.arrayBuffer());
+      if (raw.length > 64 * 1024 * 1024) throw new Error('El listado supera el tamaño permitido.');
+      try { content = new TextDecoder('utf-8', { fatal: true }).decode(raw); }
+      catch { content = new TextDecoder('windows-1252').decode(raw); }
+    }
+    const entries = parseList(content, source);
+    const declared = declaredDate(content);
+    const meta = listMeta(source.id);
+    const baseline = !meta.fetched;
+    const watched = counterpartRfcs();
+    const changes = [];
+    tx(db, () => {
+      const before = new Map(db.prepare('SELECT rfc,detail FROM blacklist_entries WHERE listId=?').all()
+        .map(row => [row.rfc, row.detail]));
+      for (const rfc of watched) {
+        const was = before.get(rfc), is = entries.get(rfc)?.detail;
+        if (was === is) continue;
+        const change = baseline && is ? ['Línea base: ya constaba', is] :
+          !was && is ? ['Alta nueva', is] :
+          was && !is ? ['Baja: ya no consta', was] :
+          ['Cambio de situación', was + ' → ' + is];
+        recordListEvent(time, source, rfc, change[0], change[1]);
+        changes.push([rfc, change[0], change[1]]);
+      }
+      db.prepare('DELETE FROM blacklist_entries WHERE listId=?').run(source.id);
+      const insert = db.prepare('INSERT INTO blacklist_entries(listId,rfc,name,detail) VALUES (?,?,?,?)');
+      for (const [rfc, entry] of entries) insert.run(source.id, rfc, entry.name, entry.detail);
+      db.prepare('INSERT INTO blacklist_meta(listId,fetched,next,count,declared,error) VALUES (?,?,?,?,?,?) ' +
+        'ON CONFLICT(listId) DO UPDATE SET fetched=excluded.fetched,next=excluded.next,count=excluded.count,declared=excluded.declared,error=\'\'')
+        .run(source.id, time, time + DAY, entries.size, declared, '');
+    });
+    /* Avisos: hasta 5 cambios, uno por contraparte; si son más, un
+       solo correo resumen (la línea base de un padrón grande no debe
+       convertirse en 50 correos). El detalle queda en list_events. */
+    if (changes.length <= 5) for (const [rfc, change, detail] of changes) alertListChange(time, source, rfc, change, detail);
+    else queueAlert('list-transition', 'list:' + source.id + ':resumen:' + time,
+      'PacoSAT · Listas negras: ' + changes.length + ' cambios en ' + source.label,
+      'La actualización del listado «' + source.label + '» trajo ' + changes.length + ' cambios en tus contrapartes ' +
+      '(' + changes.slice(0, 8).map(([rfc, change]) => rfc + ': ' + change).join('; ') + (changes.length > 8 ? '; …' : '') +
+      '). El detalle completo está en el panel de Listas negras.', time);
+    return entries.size;
+  }
+  async function listsTick(time, fetcher) {
+    if (listsBusy) return;
+    listsBusy = true;
+    try {
+      for (const source of LIST_CATALOG) {
+        if (!source.url) continue;
+        const meta = listMeta(source.id);
+        if (time < meta.next) continue;
+        try { await refreshList(source, time, fetcher); }
+        catch (error) {
+          db.prepare('INSERT INTO blacklist_meta(listId,fetched,next,count,declared,error) VALUES (?,?,?,?,?,?) ' +
+            'ON CONFLICT(listId) DO UPDATE SET next=excluded.next,error=excluded.error')
+            .run(source.id, meta.fetched, time + HOUR_MS, meta.count, meta.declared, message(error));
+        }
+      }
+      /* Lista rancia: más de 48 h sin una descarga buena de un listado
+         con URL (o con datos cargados a mano) → aviso una vez al día. */
+      for (const source of LIST_CATALOG) {
+        const meta = listMeta(source.id);
+        if (!meta.fetched || time - meta.fetched <= 2 * DAY) continue;
+        const ref = 'stale:' + source.id + ':' + Math.floor(time / DAY);
+        queueAlert('list-stale', ref, 'PacoSAT · Un listado oficial lleva más de 48 h sin actualizar',
+          'El listado «' + source.label + '» no se actualiza desde ' + day(meta.fetched) +
+          '. PacoSAT lo sigue intentando; si la fuente oficial no responde, la vigilancia trabaja con datos viejos.', time);
+      }
+    } finally { listsBusy = false; }
+  }
+  function listsOverview() {
+    const sources = LIST_CATALOG.map(source => {
+      const meta = listMeta(source.id);
+      return { id: source.id, label: source.label, url: source.url, manual: !source.url,
+        fetched: meta.fetched, count: meta.count, declared: meta.declared, error: meta.error };
+    });
+    /* Exposición y presencia por contraparte desde el expediente. */
+    const exposure = new Map();
+    try {
+      for (const row of db.prepare("SELECT value FROM records WHERE store='invoices'").all()) {
+        const invoice = JSON.parse(row.value);
+        for (const [rfc, role] of [[invoice?.from?.rfc, 'emitter'], [invoice?.to?.rfc, 'receiver']]) {
+          if (!rfc) continue;
+          if (!exposure.has(rfc)) exposure.set(rfc, { name: '', receivedCents: 0n, receivedCount: 0, issuedCount: 0 });
+          const item = exposure.get(rfc);
+          const name = role === 'emitter' ? invoice.from?.name : invoice.to?.name;
+          if (name && !item.name) item.name = name;
+          if (role === 'emitter') {
+            item.receivedCount++;
+            const [integer, decimals = ''] = String(invoice.total || '0').split('.');
+            if (/^\d+$/.test(integer) && (!invoice.currency || invoice.currency === 'MXN'))
+              item.receivedCents += BigInt(integer) * 100n + BigInt((decimals + '00').slice(0, 2));
+          } else item.issuedCount++;
+        }
+      }
+    } catch { /* sin expedientes todavía */ }
+    const registry = new Map(db.prepare('SELECT * FROM counterparts').all().map(row => [row.rfc, row]));
+    const profileRfcs = new Set(db.prepare('SELECT rfc FROM profiles').all().map(row => row.rfc));
+    const rfcs = new Set([...registry.keys(), ...exposure.keys(), ...profileRfcs]);
+    const entriesByRfc = new Map();
+    /* Solo se leen las entradas de las contrapartes (el total de los
+       listados suma cientos de miles de filas ajenas). */
+    const rfcList = [...rfcs];
+    for (let i = 0; i < rfcList.length; i += 400) {
+      const chunk = rfcList.slice(i, i + 400);
+      for (const entry of db.prepare('SELECT * FROM blacklist_entries WHERE rfc IN (' +
+        chunk.map(() => '?').join(',') + ')').all(...chunk)) {
+        if (!entriesByRfc.has(entry.rfc)) entriesByRfc.set(entry.rfc, []);
+        entriesByRfc.get(entry.rfc).push(entry);
+      }
+    }
+    const counterparts = [...rfcs].map(rfc => {
+      const reg = registry.get(rfc), expo = exposure.get(rfc);
+      const hits = (entriesByRfc.get(rfc) || []).map(entry => {
+        const source = LIST_CATALOG.find(item => item.id === entry.listId);
+        return { listId: entry.listId, label: source?.label || entry.listId, detail: entry.detail,
+          severity: source ? listSeverity(source, entry.detail) : 'warn' };
+      });
+      const severity = hits.reduce((worst, hit) =>
+        SEVERITY_ORDER[hit.severity] > SEVERITY_ORDER[worst] ? hit.severity : worst, hits.length ? 'ok' : 'none');
+      return { rfc, name: reg?.name || expo?.name || '', kind: reg?.kind ||
+          (profileRfcs.has(rfc) ? 'Propio' : expo ? (expo.receivedCount && expo.issuedCount ? 'Ambos' :
+            expo.receivedCount ? 'Proveedor' : 'Cliente') : ''),
+        note: reg?.note || '', source: reg ? reg.source : (profileRfcs.has(rfc) ? 'perfil' : 'cfdi'),
+        hits, severity,
+        exposure: expo ? { receivedCount: expo.receivedCount, issuedCount: expo.issuedCount,
+          received: (expo.receivedCents / 100n).toString() + '.' + String(expo.receivedCents % 100n).padStart(2, '0') } : null };
+    }).sort((a, b) => (SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity]) || a.rfc.localeCompare(b.rfc));
+    const events = db.prepare('SELECT * FROM list_events ORDER BY id DESC LIMIT 100').all()
+      .map(row => ({ ...row, label: LIST_CATALOG.find(item => item.id === row.listId)?.label || row.listId }));
+    return { sources, counterparts, events };
+  }
+
   /* Ciclo completo de un perfil (1.6.11): verificar lo pendiente,
      programar CFDI y metadatos y anotar el resultado. Lo usa el tick y
      también el botón «Descargar ahora» por RFC. */
@@ -1307,6 +1493,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         reconcileCoverageGaps(time);
         checkCertExpiries(time);
         checkSilence(time);
+        await listsTick(time, listFetch || undefined);
       }
       await scanWatchFolder(time);
       await runScheduledBackup(time);
@@ -1428,6 +1615,96 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         try { tx(db, () => records.forEach(monitor.register)); }
         catch (error) { need(false, message(error)); }
         return json(res, monitor.status(ids));
+      }
+      if (req.method === 'GET' && url.pathname === '/api/lists') return json(res, listsOverview());
+      if (req.method === 'POST' && url.pathname === '/api/lists/refresh') {
+        /* Actualizar ahora: marca como vencidos los listados pedidos (o
+           todos) y corre el ciclo de listas en el acto. */
+        const x = await body(req);
+        need(!listsBusy, 'Ya hay una actualización de listados en curso: espera a que termine.', 409);
+        for (const source of LIST_CATALOG) {
+          if (x.listId && source.id !== x.listId) continue;
+          if (!source.url) continue;
+          db.prepare('INSERT INTO blacklist_meta(listId,next) VALUES (?,0) ON CONFLICT(listId) DO UPDATE SET next=0')
+            .run(source.id);
+        }
+        await listsTick(now(), listFetch || undefined);
+        return json(res, listsOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/lists/import') {
+        /* Importación manual de un listado sin URL oficial en CSV
+           (CSD sin efectos, Reducción 74, o una copia semilla): pasa por
+           el mismo parser y el mismo cruce que una descarga. */
+        const x = await body(req, 72 * 1024 * 1024);
+        const source = LIST_CATALOG.find(item => item.id === x.listId);
+        need(source, 'Listado desconocido.', 404);
+        need(typeof x.content === 'string' && x.content.length > 0, 'Falta el contenido del listado.');
+        const raw = Buffer.from(x.content, 'base64');
+        need(raw.length <= 64 * 1024 * 1024, 'El listado supera el tamaño permitido.');
+        let content;
+        try { content = new TextDecoder('utf-8', { fatal: true }).decode(raw); }
+        catch { content = new TextDecoder('windows-1252').decode(raw); }
+        try { await refreshList(source, now(), async () => content); }
+        catch (error) { need(false, message(error), 422); }
+        return json(res, listsOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/lists/counterparts') {
+        const x = await body(req);
+        const shape = validateRfc(typeof x.rfc === 'string' ? x.rfc : '');
+        need(shape.level !== 'structure', shape.error || 'RFC inválido.');
+        need(['', 'Cliente', 'Proveedor', 'Ambos', 'Propio'].includes(x.kind || ''), 'Tipo de contraparte inválido.');
+        db.prepare('INSERT INTO counterparts(rfc,name,kind,note,source,updated) VALUES (?,?,?,?,?,?) ' +
+          'ON CONFLICT(rfc) DO UPDATE SET name=excluded.name,kind=excluded.kind,note=excluded.note,source=\'manual\',updated=excluded.updated')
+          .run(x.rfc, String(x.name || '').slice(0, 200), x.kind || '', String(x.note || '').slice(0, 300), 'manual', now());
+        return json(res, listsOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/lists/counterparts/bulk') {
+        /* Carga masiva (Excel/CSV de 3 columnas ya leído en la app). */
+        const x = await body(req, 8 * 1024 * 1024);
+        need(Array.isArray(x.rows) && x.rows.length <= 5000, 'Lote inválido.');
+        let saved = 0, skipped = 0;
+        const upsert = db.prepare('INSERT INTO counterparts(rfc,name,kind,note,source,updated) VALUES (?,?,?,?,?,?) ' +
+          'ON CONFLICT(rfc) DO UPDATE SET name=excluded.name,note=excluded.note,source=\'manual\',updated=excluded.updated');
+        for (const row of x.rows) {
+          const rfc = String(row?.rfc || '').trim().toUpperCase();
+          if (validateRfc(rfc).level === 'structure') { skipped++; continue; }
+          upsert.run(rfc, String(row?.name || '').slice(0, 200),
+            ['Cliente', 'Proveedor', 'Ambos'].includes(row?.kind) ? row.kind : '',
+            String(row?.note || '').slice(0, 300), 'manual', now());
+          saved++;
+        }
+        return json(res, { ...listsOverview(), bulk: { saved, skipped } });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/lists/counterparts/remove') {
+        const x = await body(req);
+        db.prepare('DELETE FROM counterparts WHERE rfc=?').run(String(x.rfc || ''));
+        return json(res, listsOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/lists/validate') {
+        /* Validador en tiempo real: por RFC exacto o por nombre/razón
+           social (sin acentos ni mayúsculas) contra TODOS los listados
+           cargados, no solo contra el padrón. */
+        const x = await body(req);
+        const query = String(x.query || '').trim();
+        need(query.length >= 3, 'Escribe un RFC completo o al menos 3 letras del nombre.');
+        const matches = [];
+        const pushEntry = entry => {
+          const source = LIST_CATALOG.find(item => item.id === entry.listId);
+          matches.push({ rfc: entry.rfc, name: entry.name, listId: entry.listId,
+            label: source?.label || entry.listId, detail: entry.detail,
+            severity: source ? listSeverity(source, entry.detail) : 'warn' });
+        };
+        if (/^[A-Za-zÑ&0-9]{12,13}$/.test(query)) {
+          for (const entry of db.prepare('SELECT * FROM blacklist_entries WHERE rfc=?').all(query.toUpperCase())) pushEntry(entry);
+        } else {
+          const needle = query.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+          for (const entry of db.prepare('SELECT * FROM blacklist_entries').all()) {
+            if (matches.length >= 50) break;
+            const name = (entry.name || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+            if (name.includes(needle)) pushEntry(entry);
+          }
+        }
+        return json(res, { query, matches });
       }
       if (req.method === 'POST' && url.pathname === '/api/pdf-analyze') {
         const { data } = await body(req, 21 * 1024 * 1024);

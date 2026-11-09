@@ -4,6 +4,7 @@
 !local-server.mjs
 !sat-direct.mjs
 !sat-monitor.mjs
+!sat-lists.mjs
 !xml-core.mjs
 !pdf-invoice.mjs
 !backup-core.mjs

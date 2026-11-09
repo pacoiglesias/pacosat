@@ -686,6 +686,7 @@ $('primary').onclick = handle(async () => {
   if (page === 'coverage') { await pollSat(); render(); return; }
   if (page === 'settings') { await saveAppSettings(); return; }
   if (page === 'capacidades') { navigate('settings'); return; }
+  if (page === 'lists') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
     page === 'diot' ? exportDiotCsv() : chooseImport();
 });
