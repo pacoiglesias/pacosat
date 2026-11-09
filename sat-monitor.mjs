@@ -40,7 +40,10 @@ export function soapQuery(input) {
     expression + '</expresionimpresa></Consulta></s:Body></s:Envelope>';
 }
 export async function querySat(input, request = fetch) {
-  const response = await request(STATUS_URL, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(15000),
+  /* El servicio del SAT es lento: con 15 s una parte de las consultas
+     moría por timeout aunque el SAT fuera a responder (visto en vivo el
+     9 nov 2026). 30 s da margen sin colgar la tanda. */
+  const response = await request(STATUS_URL, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30000),
     headers: { 'Content-Type': 'text/xml; charset=utf-8', SOAPAction: '"http://tempuri.org/IConsultaCFDIService/Consulta"' }, body: soapQuery(input) });
   const xml = (await limited(response, 128 * 1024)).toString('utf8');
   if (/<!DOCTYPE|<!ENTITY/i.test(xml)) throw new Error('Respuesta XML inesperada.');
@@ -51,7 +54,16 @@ export async function querySat(input, request = fetch) {
   const val = name => acuse.getElementsByTagNameNS('http://schemas.datacontract.org/2004/07/Sat.Cfdi.Negocio.ConsultaCfdi.Servicio', name)[0]?.textContent.trim() || '';
   const code = val('CodigoEstatus');
   const state = val('Estado');
-  if (/^N\s*-?\s*602\b/i.test(code)) return { state: 'No encontrado', code, cancellation: '', cancelable: '', efos: '' };
+  /* N-601 y N-602 son RESPUESTA del SAT, no un fallo de transporte: el
+     servicio no validó/localizó el comprobante con su expresión
+     impresa. Tratarlos como error transitorio (el comportamiento
+     anterior) dejaba cada CFDI reintentando cada hora para siempre y
+     la pantalla entera en «pendiente de reintento»: comprobado en vivo
+     el 9 nov 2026 con CFDI reales de 2024 y de noviembre de 2026 y con
+     ocho variantes de formato de la expresión — el SAT respondió
+     N-601 a todas. Como respuesta guardada, el vigilante la rechequea
+     a los 30 días, no cada hora. */
+  if (/^N\s*-?\s*60[12]\b/i.test(code)) return { state: 'No encontrado', code, cancellation: '', cancelable: '', efos: '' };
   if (!/^S\b/i.test(code) || !['Vigente','Cancelado'].includes(state)) throw new Error('El SAT no confirmó el estado: ' + (code || 'respuesta incompleta').slice(0, 150));
   return { state, code, cancellation: val('EstatusCancelacion'), cancelable: val('EsCancelable'), efos: val('ValidacionEFOS') };
 }
@@ -127,43 +139,122 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
         efos: JSON.parse(efos.get(item.emitter)?.statuses || '[]') }];
     }) };
   }
+  /* Una consulta al SAT con su guardado: la usan la tanda automática
+     (tick) y la revisión manual por lotes (processNow), sin duplicar. */
+  async function checkOne(item, time) {
+    try {
+      const result = await checkSat(item);
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        /* «No encontrado» es una respuesta firme del SAT: se rechequea
+           al mes, no a diario ni cada hora. El resto, a diario. */
+        const next = result.state === 'No encontrado' ? time + 30 * DAY : time + DAY;
+        db.prepare("UPDATE cfdi_watch SET checked=?,result=?,next=?,error='' WHERE id=?").run(time, JSON.stringify(result), next, item.id);
+        if (result.state === 'Cancelado') db.prepare('INSERT OR IGNORE INTO cancellation_alert(id,due) VALUES (?,?)').run(item.id, time);
+        db.exec('COMMIT');
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
+      return true;
+    } catch (error) { db.prepare('UPDATE cfdi_watch SET error=?,next=? WHERE id=?').run(text(error.message).slice(0, 180), time + HOUR, item.id); return false; }
+  }
+  /* Descarga y guardado del listado 69-B con sus avisos de alta: lo
+     llama el tick cuando toca y el botón «Actualizar listados». */
+  async function refreshEfosNow(time) {
+    db.prepare('UPDATE efos_meta SET next=? WHERE id=1').run(time + HOUR);
+    try {
+      const data = await refreshEfos();
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        const before = new Map(db.prepare('SELECT rfc,statuses FROM efos_rfc').all().map(row => [row.rfc, new Set(JSON.parse(row.statuses))]));
+        const parties = new Set(db.prepare('SELECT emitter AS rfc FROM cfdi_watch UNION SELECT receiver FROM cfdi_watch').all().map(row => row.rfc));
+        db.exec('DELETE FROM efos_rfc');
+        const statement = db.prepare('INSERT INTO efos_rfc VALUES (?,?)');
+        for (const [rfc, values] of data) statement.run(rfc, JSON.stringify([...values]));
+        if (before.size) for (const [rfc, values] of data) {
+          const fresh = [...values].filter(state => (state === 'Presunto' || state === 'Definitivo') && !before.get(rfc)?.has(state));
+          if (fresh.length && parties.has(rfc)) db.prepare('INSERT OR IGNORE INTO efos_alert(key,rfc,due) VALUES (?,?,?)')
+            .run(rfc + '|' + fresh.sort().join(','), rfc, time);
+        }
+        db.prepare("UPDATE efos_meta SET fetched=?,next=?,error='' WHERE id=1").run(time, time + DAY);
+        db.exec('COMMIT');
+      } catch (error) { db.exec('ROLLBACK'); throw error; }
+    } catch (error) { db.prepare('UPDATE efos_meta SET error=? WHERE id=1').run(text(error.message).slice(0, 180)); }
+  }
+  function listsMeta() {
+    const meta = db.prepare('SELECT fetched,error FROM efos_meta WHERE id=1').get();
+    const count = db.prepare('SELECT COUNT(*) AS total FROM efos_rfc').get().total;
+    return { fetched: meta.fetched, error: meta.error, count };
+  }
+  /* Resumen de la vigilancia para una selección de CFDI: las cifras de
+     las tarjetas de la pantalla, contadas en el servidor sobre TODA la
+     selección (no solo sobre la página visible). La coincidencia 69-B
+     manda sobre el estado, como en el anillo de estados. */
+  function summary(ids) {
+    const counts = { total: 0, vigentes: 0, cancelados: 0, noEncontrados: 0, enListado69B: 0,
+      sinRevisar: 0, conProblema: 0, revisados: 0, ultimaRevision: 0 };
+    const affected = new Map();
+    const get = db.prepare('SELECT * FROM cfdi_watch WHERE id=?');
+    const efosGet = db.prepare('SELECT statuses FROM efos_rfc WHERE rfc=?');
+    for (const id of ids) {
+      counts.total++;
+      const item = get.get(id);
+      if (item?.checked) counts.ultimaRevision = Math.max(counts.ultimaRevision, item.checked);
+      if (item?.result) counts.revisados++;
+      const hits = item ? JSON.parse(efosGet.get(item.emitter)?.statuses || '[]')
+        .filter(state => state === 'Presunto' || state === 'Definitivo') : [];
+      if (hits.length) {
+        counts.enListado69B++;
+        affected.set(item.emitter, (affected.get(item.emitter) || 0) + 1);
+        continue;
+      }
+      if (!item || (!item.result && !item.error)) { counts.sinRevisar++; continue; }
+      if (!item.result) { counts.conProblema++; continue; }
+      const state = JSON.parse(item.result).state;
+      if (state === 'Vigente') counts.vigentes++;
+      else if (state === 'Cancelado') counts.cancelados++;
+      else if (state === 'No encontrado') counts.noEncontrados++;
+      else counts.conProblema++;
+    }
+    return { counts, masAfectados: [...affected.entries()].map(([rfc, count]) => ({ rfc, count }))
+      .sort((a, b) => b.count - a.count).slice(0, 3), lists: listsMeta() };
+  }
+  /* «Revisar ahora»: pone al frente de la cola los CFDI pedidos que
+     aún no tienen respuesta del SAT (con o sin error anterior). */
+  function checkNow(ids) {
+    const statement = db.prepare('UPDATE cfdi_watch SET next=0 WHERE id=? AND result IS NULL');
+    let queued = 0;
+    for (const id of ids) queued += statement.run(id).changes;
+    return queued;
+  }
+  const pendingCount = () => db.prepare('SELECT COUNT(*) AS total FROM cfdi_watch WHERE result IS NULL').get().total;
+  /* Una tanda manual de revisión inmediata (la pantalla la encadena
+     con el indicador de actividad hasta agotar la cola). */
+  async function processNow(limit = 10) {
+    if (busy) return { processed: 0, remaining: pendingCount(), busy: true };
+    busy = true;
+    try {
+      const time = now();
+      const due = db.prepare('SELECT * FROM cfdi_watch WHERE next<=? AND result IS NULL ORDER BY next LIMIT ?').all(time, limit);
+      let processed = 0;
+      for (const item of due) { await checkOne(item, time); processed++; }
+      return { processed, remaining: pendingCount(), busy: false };
+    } finally { busy = false; }
+  }
+  /* Botón «Actualizar listados»: fuerza la descarga del 69-B ahora. */
+  async function refreshLists() {
+    if (busy) return { ...listsMeta(), busy: true };
+    busy = true;
+    try { await refreshEfosNow(now()); } finally { busy = false; }
+    return { ...listsMeta(), busy: false };
+  }
   async function tick() {
     if (busy) return;
     busy = true;
     try {
       const time = now();
       const snapshot = db.prepare('SELECT next FROM efos_meta WHERE id=1').get();
-      if (time >= snapshot.next) {
-        db.prepare('UPDATE efos_meta SET next=? WHERE id=1').run(time + HOUR);
-        try {
-          const data = await refreshEfos();
-          db.exec('BEGIN IMMEDIATE');
-          try {
-            const before = new Map(db.prepare('SELECT rfc,statuses FROM efos_rfc').all().map(row => [row.rfc, new Set(JSON.parse(row.statuses))]));
-            const parties = new Set(db.prepare('SELECT emitter AS rfc FROM cfdi_watch UNION SELECT receiver FROM cfdi_watch').all().map(row => row.rfc));
-            db.exec('DELETE FROM efos_rfc');
-            const statement = db.prepare('INSERT INTO efos_rfc VALUES (?,?)');
-            for (const [rfc, values] of data) statement.run(rfc, JSON.stringify([...values]));
-            if (before.size) for (const [rfc, values] of data) {
-              const fresh = [...values].filter(state => (state === 'Presunto' || state === 'Definitivo') && !before.get(rfc)?.has(state));
-              if (fresh.length && parties.has(rfc)) db.prepare('INSERT OR IGNORE INTO efos_alert(key,rfc,due) VALUES (?,?,?)')
-                .run(rfc + '|' + fresh.sort().join(','), rfc, time);
-            }
-            db.prepare("UPDATE efos_meta SET fetched=?,next=?,error='' WHERE id=1").run(time, time + DAY);
-            db.exec('COMMIT');
-          } catch (error) { db.exec('ROLLBACK'); throw error; }
-        } catch (error) { db.prepare('UPDATE efos_meta SET error=? WHERE id=1').run(text(error.message).slice(0, 180)); }
-      }
+      if (time >= snapshot.next) await refreshEfosNow(time);
       for (const item of db.prepare('SELECT * FROM cfdi_watch WHERE next<=? ORDER BY next LIMIT 5').all(time)) {
-        try {
-          const result = await checkSat(item);
-          db.exec('BEGIN IMMEDIATE');
-          try {
-            db.prepare("UPDATE cfdi_watch SET checked=?,result=?,next=?,error='' WHERE id=?").run(time, JSON.stringify(result), time + DAY, item.id);
-            if (result.state === 'Cancelado') db.prepare('INSERT OR IGNORE INTO cancellation_alert(id,due) VALUES (?,?)').run(item.id, time);
-            db.exec('COMMIT');
-          } catch (error) { db.exec('ROLLBACK'); throw error; }
-        } catch (error) { db.prepare('UPDATE cfdi_watch SET error=?,next=? WHERE id=?').run(text(error.message).slice(0, 180), time + HOUR, item.id); }
+        await checkOne(item, time);
       }
       if (notifyCancellation) {
         const alerts = db.prepare('SELECT id FROM cancellation_alert WHERE sent IS NULL AND due<=? ORDER BY due LIMIT 10').all(time);
@@ -185,5 +276,5 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
       }
     } finally { busy = false; }
   }
-  return { register, status, tick };
+  return { register, status, tick, summary, checkNow, processNow, refreshLists };
 }
