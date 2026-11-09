@@ -104,10 +104,15 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, satDocFetch = null }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null }) {
   const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
-  db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
+  /* synchronous=FULL (1.6.15, mejora nº 4): en WAL el defecto es NORMAL
+     y un corte de luz puede perder las últimas transacciones — justo el
+     libro de criterios 5002 y la cola de solicitudes, cuya pérdida
+     provocaría reenviar un criterio que el SAT ya contó. La base es
+     pequeña y las escrituras pocas: el coste es inapreciable. */
+  db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON; PRAGMA synchronous=FULL;');
   db.exec(`
     CREATE TABLE IF NOT EXISTS profiles (rfc TEXT PRIMARY KEY, minutes INTEGER NOT NULL, days INTEGER NOT NULL,
       direction TEXT NOT NULL, nextRun INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
@@ -164,7 +169,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
        vive en Expedientes (records) y esta tabla guarda su edad. */
     CREATE TABLE IF NOT EXISTS sat_documents (id TEXT PRIMARY KEY, rfc TEXT NOT NULL, kind TEXT NOT NULL,
       issuedAt INTEGER NOT NULL DEFAULT 0, fileId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'auto',
-      created INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');`);
+      created INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+    /* Intentos de descarga por paquete (1.6.15, mejora nº 3): el SAT
+       permite como máximo 2 descargas por paquete (error 5008); el
+       contador se persiste ANTES de cada descarga, como la intención
+       de la mejora nº 1. Tabla aparte para no interferir con la fila
+       del paquete importado. */
+    CREATE TABLE IF NOT EXISTS package_attempts (job INTEGER NOT NULL, remoteId TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (job, remoteId));`);
   const token = randomBytes(32).toString('hex');
   const monitor = createMonitor(db, { now, notifyCancellation: async item => {
     if (!mail) return false;
@@ -249,7 +261,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
   function criteriaInfo(criteria) {
     const key = pacosatCriteriaKey(criteria);
-    const row = db.prepare('SELECT COUNT(*) AS count, MIN(sentAt) AS first FROM criteria WHERE key=?').get(key);
+    const row = db.prepare('SELECT COUNT(*) AS count, MIN(CASE WHEN sentAt>0 THEN sentAt END) AS first FROM criteria WHERE key=?').get(key);
     const count = row?.count || 0;
     const exhausted = Boolean(db.prepare('SELECT 1 FROM criteria_exhausted WHERE key=?').get(key));
     return { key, count, firstSentAt: row?.first || null, exhausted,
@@ -260,6 +272,31 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       state: info.state, count: info.count, firstSentAt: info.firstSentAt,
       startAt: criteria.startAt, endAt: criteria.endAt,
       shiftedStartAt: pacosatShiftSecond(criteria.startAt), message: text } });
+  }
+  /* Blindaje 5002 a prueba de cortes (1.6.15, mejora nº 1): la fila
+     del libro se escribe en estado «enviando» (sentAt 0, sin
+     requestId) ANTES de llamar al SAT, y se completa al volver la
+     respuesta. Si el proceso muere entre ambas cosas, la fila queda
+     como «presunto enviado»: criteriaInfo la cuenta igual que una
+     enviada (la guardia no reenvía el criterio a ciegas) y el arranque
+     avisa de su existencia. Único caso en que la intención se retira:
+     el SAT responde 5002 en la propia llamada — confirma que NO contó
+     esta solicitud (el cupo lo gastaron las filas anteriores, que ya
+     están en el libro). */
+  async function sendSatRequest(send, criteria, origin, time) {
+    const intent = insertCriteria.run(pacosatCriteriaKey(criteria), criteria.rfc, criteria.direction,
+      criteria.type, criteria.emitter || '', criteria.receiver || '', criteria.startAt, criteria.endAt,
+      '', origin, 0);
+    try {
+      const requestId = await send();
+      db.prepare('UPDATE criteria SET requestId=?, sentAt=? WHERE id=?')
+        .run(requestId, time, intent.lastInsertRowid);
+      return requestId;
+    } catch (error) {
+      if (error?.code === 5002 || /5002/.test(message(error)))
+        db.prepare('DELETE FROM criteria WHERE id=?').run(intent.lastInsertRowid);
+      throw error;
+    }
   }
   function learnCriteria5002(job, time) {
     const info = criteriaInfo(criteriaFromJob(job));
@@ -415,6 +452,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       } catch { console.error('PacoSAT: un perfil de e.firma guardado desde la app no pudo activarse.'); }
     }
     if (config.watchFolder?.path) inbox.dir = String(config.watchFolder.path);
+    /* «Presunto enviado» (1.6.15, mejora nº 1): filas del libro en
+       estado «enviando» sin respuesta = el proceso murió durante la
+       llamada al SAT. Cuentan como enviadas para la guardia 5002 y se
+       avisa una sola vez de su existencia. */
+    const presumed = db.prepare('SELECT COUNT(*) AS n FROM criteria WHERE sentAt=0').get().n;
+    if (presumed) queueAlert('criteria-presumed', 'criteria-presumed',
+      'PacoSAT · Hay solicitudes marcadas como «presunto enviadas»',
+      presumed + ' solicitud(es) quedaron registradas como intención sin confirmación del SAT (un corte durante ' +
+      'el envío). Por seguridad cuentan como enviadas para el blindaje 5002: el mismo criterio no se reenviará ' +
+      'sin desplazar la ventana un segundo.', now());
     if (config.backup?.password) {
       if (String(config.backup.password).length >= 12) {
         backupJob = { password: String(config.backup.password),
@@ -479,6 +526,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       scheduledBackup: { enabled: Boolean(backupJob), frequency: backupJob?.frequency || '',
         last: Number(getState('backup:last')) || null, next: Number(getState('backup:next')) || null, error: getState('backup:error'),
         secondary: Boolean(backupJob?.secondaryDir), secondaryError: getState('backup:secondaryError'),
+        secondaryLastOk: Number(getState('backup:secondaryOk') || 0),
+        secondaryStale: Boolean(backupJob?.secondaryDir) &&
+          now() - (Number(getState('backup:secondaryOk') || 0) || startedAt) > 7 * DAY,
         verify: (() => { try { return JSON.parse(getState('backup:verify') || 'null'); } catch { return null; } })() },
       coverage: computeCoverage()
     };
@@ -638,7 +688,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['counterparts', ['rfc', 'name', 'kind', 'note', 'source', 'updated']],
     ['blacklist_meta', ['listId', 'fetched', 'next', 'count', 'declared', 'error']],
     ['list_events', ['id', 'at', 'listId', 'rfc', 'change', 'detail']],
-    ['sat_documents', ['id', 'rfc', 'kind', 'issuedAt', 'fileId', 'source', 'created', 'error']]
+    ['sat_documents', ['id', 'rfc', 'kind', 'issuedAt', 'fileId', 'source', 'created', 'error']],
+    ['package_attempts', ['job', 'remoteId', 'attempts']]
   ];
   const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   function dumpOperations() {
@@ -771,6 +822,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         try { mkdirSync(backupJob.secondaryDir, { recursive: true }); writeFileSync(join(backupJob.secondaryDir, 'PacoSAT-' + stamp + '.faro'), buffer); }
         catch (error) { secondaryError = message(error); }
         setState('backup:secondaryError', secondaryError);
+        /* Última copia externa buena (1.6.15): la vigila el semáforo de
+           antigüedad de Salud y la alarma de los 7 días. */
+        if (!secondaryError) setState('backup:secondaryOk', String(time));
         if (secondaryError) queueAlert('backup-secondary-fail', 'backup2:' + stamp, 'PacoSAT · El destino secundario del respaldo falló',
           'La copia principal del respaldo cifrado (' + stamp + ') se guardó, pero el destino secundario no aceptó la suya: ' +
           secondaryError + ' Revisa esa carpeta (sincronización, espacio o permisos).', time);
@@ -1041,11 +1095,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
               '); el inicio se desplazó a ' + startAt + ' (+' + shifts + ' s) para no agotar las solicitudes del SAT (error 5002).' });
           storageRevision++;
         }
-        const requestId = await service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction });
+        const requestId = await sendSatRequest(
+          () => service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction }),
+          { ...criteria, startAt }, 'scheduled', time);
         db.prepare('INSERT INTO jobs(rfc,direction,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?)')
           .run(profile.rfc, direction, start, end, startAt, endAt, requestId, 'pending', time + 5 * MIN, time);
-        insertCriteria.run(pacosatCriteriaKey({ ...criteria, startAt }), profile.rfc, direction, 'cfdi', '', '',
-          startAt, endAt, requestId, 'scheduled', time);
       } catch (error) {
         db.prepare('UPDATE profiles SET error=? WHERE rfc=?').run(message(error), profile.rfc);
       }
@@ -1078,11 +1132,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           info = criteriaInfo({ ...criteria, startAt });
         }
         if (info.state !== 'disponible') continue;
-        const requestId = await service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction, type: 'metadata' });
+        const requestId = await sendSatRequest(
+          () => service.request({ start, end, startTime: startAt.slice(11), endTime: clock.format(time), direction, type: 'metadata' }),
+          { ...criteria, startAt }, 'scheduled', time);
         db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
           .run(profile.rfc, direction, 'metadata', start, end, startAt, endAt, requestId, 'pending', time + 5 * MIN, time);
-        insertCriteria.run(pacosatCriteriaKey({ ...criteria, startAt }), profile.rfc, direction, 'metadata', '', '',
-          startAt, endAt, requestId, 'scheduled', time);
         sent = true;
       } catch { /* metadatos: si el SAT no responde, se reintenta en el siguiente ciclo sin ensuciar el perfil */ }
     }
@@ -1108,12 +1162,30 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       try {
         const advanced = await advanceSatJob(active.connector, { ...job, imported: JSON.parse(job.imported) }, save,
           ({ id, archive }) => job.kind === 'metadata' ? inspectMetadataPackage(job, id, archive) :
-            inspectPackage(job, id, archive, active.parser));
+            inspectPackage(job, id, archive, active.parser), {
+          /* Contador 5008 persistido ANTES de descargar (mejora nº 3):
+             a los 2 intentos sin éxito, no se descarga más y la
+             solicitud se cierra como «exhausted» con aviso. */
+          beforeDownload: async remoteId => {
+            const row = db.prepare('SELECT attempts FROM package_attempts WHERE job=? AND remoteId=?').get(job.id, remoteId);
+            const attempts = (row?.attempts || 0) + 1;
+            db.prepare('INSERT INTO package_attempts(job,remoteId,attempts) VALUES (?,?,?) ' +
+              'ON CONFLICT(job,remoteId) DO UPDATE SET attempts=excluded.attempts').run(job.id, remoteId, attempts);
+            if (attempts <= 2) return true;
+            queueAlert('package-exhausted', 'pkg:' + job.id + ':' + remoteId,
+              'PacoSAT · Un paquete agotó sus descargas ante el SAT (5008)',
+              'El paquete ' + remoteId + ' de la solicitud ' + job.requestId + ' (' + job.rfc + ', ' +
+              job.periodStart + ' a ' + job.periodEnd + ') ya se intentó descargar dos veces sin éxito y el SAT no ' +
+              'permite más descargas de ese paquete (error 5008). La solicitud quedó cerrada con este aviso, no ' +
+              'pendiente para siempre. Salida: solicita el mismo periodo desplazando el inicio un segundo desde ' +
+              '«Solicitar un periodo» en el Centro SAT.', time);
+            return false;
+          } });
         db.prepare('UPDATE jobs SET error=? WHERE id=?').run('', job.id);
         if (advanced?.satCode === 5002) learnCriteria5002(job, time);
       } catch (error) { db.prepare('UPDATE jobs SET error=? WHERE id=?').run(message(error), job.id); }
       const after = db.prepare('SELECT status,error FROM jobs WHERE id=?').get(job.id);
-      if (after && ['expired', 'failed', 'rejected'].includes(after.status)) terminal.push({ ...job, afterStatus: after.status });
+      if (after && ['expired', 'failed', 'rejected', 'exhausted'].includes(after.status)) terminal.push({ ...job, afterStatus: after.status });
       else if (after?.status === 'pending') {
         const checks = (job.checks || 0) + 1;
         const wait = verifyBackoffMin(checks);
@@ -1361,6 +1433,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return entries.size;
   }
   async function listsTick(time, fetcher) {
+    /* Sin fetcher inyectado (pruebas) y sin la autorización expresa de
+       la entrada de producción (officialLists), el ciclo NO sale a la
+       red: ninguna prueba descarga listados reales jamás. */
+    if (!fetcher && !officialLists) return;
     if (listsBusy) return;
     listsBusy = true;
     try {
@@ -1448,6 +1524,23 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const events = db.prepare('SELECT * FROM list_events ORDER BY id DESC LIMIT 100').all()
       .map(row => ({ ...row, label: LIST_CATALOG.find(item => item.id === row.listId)?.label || row.listId }));
     return { sources, counterparts, events };
+  }
+
+  /* Copia externa (Google Drive vía Cloud Sync): si el destino
+     secundario está activo y lleva más de 7 días sin una copia buena
+     —o nunca la tuvo desde hace más de 7 días—, un aviso por semana.
+     La antigüedad también se expone en el resumen para el semáforo de
+     Salud. */
+  function checkExternalCopyAge(time) {
+    if (!backupJob?.secondaryDir) return;
+    const lastOk = Number(getState('backup:secondaryOk') || 0);
+    const reference = lastOk || startedAt;
+    if (time - reference <= 7 * DAY) return;
+    queueAlert('backup-external-stale', 'ext-stale:' + Math.floor(time / (7 * DAY)),
+      'PacoSAT · La copia externa del respaldo lleva más de 7 días sin renovarse',
+      (lastOk ? 'La última copia buena en el destino externo (Google Drive) es del ' + day(lastOk) + '.' :
+        'Todavía no consta ninguna copia buena en el destino externo (Google Drive).') +
+      ' Revisa que Cloud Sync esté sincronizando la carpeta del respaldo y que el destino secundario siga configurado.', time);
   }
 
   /* ===== Constancias y opinión del SAT (1.6.14) =====
@@ -1599,9 +1692,23 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
       Boolean(profileError) || outcome.stuck > 0, time);
   }
+  let tickStartedAt = 0;
   async function tick() {
-    if (busy) return;
+    if (busy) {
+      /* Vigilante del ciclo (1.6.15, mejora nº 2): un tick que lleva
+         más de 10 minutos en curso no puede pasar en silencio — con el
+         timeout de 60 s por llamada no debería ocurrir, y si ocurre
+         hay que saberlo el mismo día. */
+      if (tickStartedAt && now() - tickStartedAt > 10 * MIN)
+        queueAlert('tick-stuck', 'tick-stuck:' + day(now()),
+          'PacoSAT · El ciclo automático lleva más de 10 minutos en curso',
+          'Un ciclo de descarga y verificación sigue abierto desde hace más de 10 minutos. Las llamadas al SAT ' +
+          'tienen un límite de 60 segundos, así que algo va mal (red del NAS o el propio SAT). Si el ciclo no ' +
+          'termina solo, reinicia el contenedor de PacoSAT y revisa el Centro SAT.', now());
+      return;
+    }
     busy = true;
+    tickStartedAt = now();
     try {
       const time = now();
       /* Modo descanso general (1.6.10): con el descanso activo no se
@@ -1629,10 +1736,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       await scanWatchFolder(time);
       await runScheduledBackup(time);
       if (!isResting) {
+        checkExternalCopyAge(time);
         await notify(time);
         await sendAlerts(time);
       }
-    } finally { busy = false; }
+    } finally { busy = false; tickStartedAt = 0; }
   }
 
   async function handle(req, res) {
@@ -2120,11 +2228,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           const prior = db.prepare("SELECT id FROM jobs WHERE rfc=? AND direction=? AND kind=? AND startAt=? AND endAt=? AND status='pending'")
             .get(x.rfc, x.direction, kind, startAt, endAt);
           need(!prior, 'Ese criterio ya tiene una solicitud en curso.', 409);
-          const requestId = await active.connector.request({ start: x.start, end: x.end, startTime: startAt.slice(11), endTime, direction: x.direction,
-            ...(kind === 'metadata' ? { type: 'metadata' } : {}) });
+          const requestId = await sendSatRequest(
+            () => active.connector.request({ start: x.start, end: x.end, startTime: startAt.slice(11), endTime, direction: x.direction,
+              ...(kind === 'metadata' ? { type: 'metadata' } : {}) }),
+            criteria, 'manual', now());
           db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
             .run(x.rfc, x.direction, kind, x.start, x.end, startAt, endAt, requestId, 'pending', now() + 5 * MIN, now());
-          insertCriteria.run(info.key, x.rfc, x.direction, kind, '', '', startAt, endAt, requestId, 'manual', now());
         } finally { busy = false; }
         return json(res, overview());
       }
@@ -2152,7 +2261,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   need(origin === new URL(origin).origin && (!proxyKey || (proxyKey.length >= 32 && origin.startsWith('https://'))) &&
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
   const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '',
-    efirmaDir: process.env.PACOSAT_EFIRMA_DIR || '',
+    efirmaDir: process.env.PACOSAT_EFIRMA_DIR || '', officialLists: true,
     buildModified: statSync(new URL('./Faro-Fiscal.html', import.meta.url)).mtimeMs });
   const server = createServer(service.handle);
   server.requestTimeout = 90000;

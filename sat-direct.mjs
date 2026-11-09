@@ -40,7 +40,11 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
   ensure(fiel.isValid(), 'Usa una e.firma vigente con su llave y contraseña.');
   ensure(certificateRfc(fiel, certificate) === rfc,
     'La e.firma debe corresponder al RFC del expediente.');
-  const service = new sdk.Service(new sdk.FielRequestBuilder(fiel), new sdk.HttpsWebClient(), sdk.ServiceEndpoints.cfdi());
+  /* Timeout duro de 60 s (1.6.15, mejora nº 2): el SDK crea sus
+     peticiones SIN timeout si el cliente web no lo fija, y una conexión
+     colgada congelaba el ciclo automático entero en silencio. El tercer
+     argumento de HttpsWebClient es ese timeout, en milisegundos. */
+  const service = new sdk.Service(new sdk.FielRequestBuilder(fiel), new sdk.HttpsWebClient(undefined, undefined, 60000), sdk.ServiceEndpoints.cfdi());
   return {
     async request({ start, end, startTime = '00:00:00', endTime = '23:59:59', direction = 'received', type = 'cfdi' }) {
       ensure(validDate(start) && validDate(end) && start <= end, 'Periodo inválido.');
@@ -97,7 +101,7 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
 
 // The caller persists requestId and imported package IDs. Failed imports are
 // left pending so that the next scheduled execution can retry safely.
-export async function advanceSatJob(connector, job, save, importPackage) {
+export async function advanceSatJob(connector, job, save, importPackage, hooks = {}) {
   if (job.status !== 'pending') return job;
   const result = await connector.check(job.requestId);
   if (result.status === 'pending') return { ...job, satCode: result.code };
@@ -109,6 +113,17 @@ export async function advanceSatJob(connector, job, save, importPackage) {
   let next = { ...job, imported: [...(job.imported || [])], satCode: result.code };
   for (const id of result.packages) {
     if (next.imported.includes(id)) continue;
+    /* Blindaje 5008 (1.6.15, mejora nº 3): el llamador lleva un
+       contador persistido de descargas por paquete y decide ANTES de
+       descargar si aún quedan intentos (el SAT permite 2). Sin
+       intentos, la solicitud se cierra en el estado terminal
+       «exhausted» con su paquete nombrado: nunca un «pendiente»
+       eterno que nadie descubre hasta meses después. */
+    if (hooks.beforeDownload && !await hooks.beforeDownload(id)) {
+      next = { ...next, status: 'exhausted', exhaustedPackage: id };
+      await save(next);
+      return next;
+    }
     await importPackage({ rfc: job.rfc, id, archive: await connector.download(id) });
     next = { ...next, imported: [...next.imported, id] };
     await save(next);
