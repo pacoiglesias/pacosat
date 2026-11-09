@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-CS1RpiBAeaIfLkZCr8DSRK+jB1BuS3PlaT6OIR8KwKI='; script-src 'sha256-1cF3PP/nQec8af8AYFtLNUEhisI5NzzhhyM8zoCDAWo='; img-src data: blob:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><!--PACOSAT_TOKEN-->
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-kVlUgHnXuCTZ3aBYB/MKlyHkGSEj3sZFR8QxaCnbR7E='; script-src 'sha256-oBQv3TuOIwad5WDHNGUE1VQwAk20zk+KfgNhLuWdLz4='; img-src data: blob:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><!--PACOSAT_TOKEN-->
 <style>:root{font:15px/1.48 "Segoe UI",system-ui,-apple-system,"Helvetica Neue",sans-serif;color:var(--ink);background:var(--bg)}*{box-sizing:border-box}body{margin:0}svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:none}.symbols,[hidden]{display:none!important}button,input,select,textarea{font:inherit}button,a,input,select{border-radius:8px}button{color:var(--ink);border:1px solid var(--border);background:var(--surface);padding:9px 12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-align:left}button:hover{background:var(--surface-2)}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);border-color:var(--green);color:var(--on-accent)}button.primary:hover:not(:disabled){background:var(--green-hover)}a{color:var(--green);font-weight:600;text-underline-offset:3px}input,select,textarea{border:1px solid var(--field-border);background:var(--surface);color:var(--ink);padding:9px 11px;min-width:0;max-width:100%}:focus-visible{outline:3px solid var(--focus);outline-offset:2px}.frame{min-height:100vh;display:grid;grid-template-columns:244px minmax(0,1fr)}.sidebar{padding:24px 17px;background:var(--nav);color:var(--nav-text);display:flex;flex-direction:column;gap:27px}.brand{display:flex;align-items:center;gap:10px;color:white;font-weight:720;font-size:20px;letter-spacing:-.025em}.brand small,.local small{display:block;color:var(--nav-muted);font-size:10px;font-weight:650;letter-spacing:.11em}.logo{width:42px;height:42px;display:grid;place-items:center;color:var(--logo-ink);background:var(--logo-bg);border-radius:12px}.logo svg{width:25px;height:25px}.switcher{display:grid;gap:7px}.switcher label{color:var(--nav-muted);font-size:10px;letter-spacing:.12em;font-weight:700}.switcher select{background:var(--nav-field);border-color:var(--nav-border);color:var(--nav-text);width:100%}.sidebar nav{display:grid;gap:4px}.sidebar button{background:transparent;border-color:transparent;color:var(--nav-text);justify-content:flex-start}.sidebar button:hover{background:var(--nav-hover)}.sidebar .quiet{font-size:13px;padding:6px 4px}.sidebar nav button[aria-current]{background:var(--nav-active-bg);border-color:var(--nav-border);color:var(--nav-active-ink)}.local{display:flex;gap:10px;align-items:center;color:var(--nav-text);font-size:13px;margin-top:auto}.local small{letter-spacing:0;font-size:11px;font-weight:400}.top{background:var(--surface);border-bottom:1px solid var(--border);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);gap:10px;font-size:13px}.top strong{color:var(--ink)}.slash{margin:0 7px;color:var(--muted)}.badge,.tag{font-size:12px;color:var(--ok-ink);background:var(--tint);display:inline-flex;gap:6px;align-items:center;padding:4px 8px;border-radius:100px;font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:var(--green)}.page{max-width:1340px;margin:auto;padding:29px 28px 36px}.heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:23px}.eyebrow{font-weight:750;font-size:11px;letter-spacing:.14em;color:var(--green);overflow-wrap:anywhere}h1{font-size:clamp(29px,4.1vw,46px);letter-spacing:-.052em;line-height:1.12;margin:6px 0}h2{font-size:20px;letter-spacing:-.025em;margin:0}h3{font-size:16px;margin:0}p{margin:0;color:var(--muted)}.heading .primary{padding:11px 15px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:15px}.metric,.panel,.guide{background:var(--surface);border:1px solid var(--border);border-radius:13px}.metric{padding:15px;display:grid;gap:5px;min-width:0}.metric-label{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:13px}.metric-label svg{color:var(--green)}.metric strong{font-size:28px;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.panel{min-width:0;overflow:hidden;margin-bottom:14px}.panel-head,.filters,.table-foot,.guide{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:13px 15px;flex-wrap:wrap}.filters{justify-content:flex-start}.filters input[type=search]{flex:1 1 200px}.table-foot{color:var(--muted);font-size:13px}.guide{margin-bottom:14px;background:var(--guide-bg);justify-content:space-between}.guide p{margin-top:4px}.guide ul{margin:8px 0 0;padding-left:20px}.guide .actions,.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.table-wrap{overflow-x:auto}table{width:100%;border-collapse:collapse;text-align:left}th,td{padding:11px 13px;border-top:1px solid var(--border);overflow-wrap:anywhere}th{font-size:12px;color:var(--muted);background:var(--surface-2)}td small{display:block;color:var(--muted);margin-top:3px}td.num{white-space:nowrap;font-variant-numeric:tabular-nums}td button{font-size:13px;padding:5px 8px;white-space:nowrap}.tabs{display:flex;gap:4px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--border)}.tabs button{border-color:transparent}.tabs button[aria-pressed=true]{background:var(--tint);color:var(--ok-ink)}.empty{padding:30px 15px;text-align:center}.empty p{margin:6px 0 12px}#status{margin:0 0 12px;padding:11px 13px;border-radius:8px;background:var(--tint);white-space:pre-line;overflow-wrap:anywhere;color:var(--ink)}#status[data-error=true]{background:var(--danger-bg);color:var(--danger)}dialog{width:min(520px,calc(100% - 26px));border:1px solid var(--border);border-radius:14px;padding:20px;color:var(--ink);background:var(--surface);box-shadow:0 18px 55px var(--shadow-color)}dialog::backdrop{background:var(--backdrop)}.modal-head,.modal-actions{display:flex;justify-content:space-between;align-items:center;gap:10px}.modal-actions{justify-content:flex-end;margin-top:16px}.icon-button{padding:6px}#fields{display:grid;gap:12px;margin-top:14px}#fields label{display:grid;gap:5px;font-weight:600}#fields p{overflow-wrap:anywhere}#formError{color:var(--danger);margin-top:9px}.portal{display:grid;gap:8px;padding:14px 15px}.portal a{display:inline-block;width:max-content;max-width:100%}.import-history td:first-child{max-width:250px}.drag-active{outline:3px dashed var(--focus);outline-offset:-5px}@media(max-width:780px){.frame{grid-template-columns:1fr}.sidebar{padding:14px;gap:12px}.switcher{grid-template-columns:minmax(0,1fr) auto}.switcher label{grid-column:1/-1}.sidebar nav{display:flex;flex-wrap:wrap}.local{display:none}.top,.page{padding:14px}}@media(max-width:460px){.cards{grid-template-columns:1fr}.metric{grid-template-columns:1fr auto;align-items:center}.badge{font-size:10px}.heading .primary{width:100%}.filters input,.filters select{flex:1 1 140px}.top{gap:4px}.sidebar nav button{padding:7px 8px}}
 .xml-view{margin:0;padding:12px;max-height:45vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;border:1px solid var(--border);border-radius:8px;background:var(--surface-2);font:13px/1.55 Consolas,monospace;color:var(--ink)}
 
@@ -156,7 +156,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .timeline-empty{color:var(--muted);margin:4px 0}
 .top-search input{background:var(--nav-field);border:1px solid var(--nav-border);color:var(--nav-text);border-radius:8px;padding:6px 10px;min-width:200px;font:inherit;font-size:13px}
 .top-search input::placeholder{color:var(--nav-muted)}
-@media(max-width:900px){.top-search{display:none}}
+@media(max-width:900px){.top-search input{min-width:120px;width:38vw}}
 
 /* Personalización 1.6.6: paleta de acentos como tokens del sistema
    de diseño. Cada valor cumple contraste AA (texto sobre superficie,
@@ -205,6 +205,35 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .print-seals p{margin:3px 0}
 .cap-row{display:flex;gap:9px;align-items:flex-start;padding:5px 0}
 .cap-row .tag{flex:none;margin-top:1px}
+
+/* ===== 1.6.11 · Semáforos, Hoy, un clic ===== */
+:root{--pill-ok-bg:#e2f1e6;--pill-ok-ink:#14532d;--pill-warn-bg:#fdf0d2;--pill-warn-ink:#7a4a00;--pill-bad-bg:#fde3e0;--pill-bad-ink:#8f1d17;--pill-dim-bg:#eceff3;--pill-dim-ink:#4b5563}
+@media (prefers-color-scheme:dark){html:not([data-theme="light"]){--pill-ok-bg:#173a26;--pill-ok-ink:#9fd8b0;--pill-warn-bg:#4a380f;--pill-warn-ink:#ffd88a;--pill-bad-bg:#4c1d1a;--pill-bad-ink:#ffb3ab;--pill-dim-bg:#2a2f36;--pill-dim-ink:#c3cad2}}
+html[data-theme="dark"]{--pill-ok-bg:#173a26;--pill-ok-ink:#9fd8b0;--pill-warn-bg:#4a380f;--pill-warn-ink:#ffd88a;--pill-bad-bg:#4c1d1a;--pill-bad-ink:#ffb3ab;--pill-dim-bg:#2a2f36;--pill-dim-ink:#c3cad2}
+.status-pill{display:inline-flex;align-items:center;gap:7px;border-radius:100px;padding:6px 12px;font-size:13px;font-weight:650;border:1px solid transparent;cursor:pointer}
+.status-pill .pill-dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}
+.status-pill[data-state="ok"]{background:var(--pill-ok-bg);color:var(--pill-ok-ink)}
+.status-pill[data-state="warn"]{background:var(--pill-warn-bg);color:var(--pill-warn-ink)}
+.status-pill[data-state="bad"]{background:var(--pill-bad-bg);color:var(--pill-bad-ink)}
+.status-pill[data-state="dim"]{background:var(--pill-dim-bg);color:var(--pill-dim-ink)}
+.traffic-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.today-line{padding:0 15px 6px}
+.next-step{margin:6px 15px 15px;padding:13px 15px;border:1px solid var(--border);border-radius:11px;background:var(--guide-bg);display:grid;gap:6px;justify-items:start}
+.rest-switch{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rest-label{display:grid;gap:1px}
+.rest-label small{color:var(--muted);font-size:12px}
+.rest-toggle[aria-pressed="true"]{background:var(--pill-warn-bg);color:var(--pill-warn-ink);border-color:transparent}
+.filter-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:0 15px}
+.filter-chips:not(:empty){padding:10px 15px;border-top:1px solid var(--border)}
+.filter-chip{border-radius:100px;padding:5px 11px;font-size:12.5px;background:var(--surface-2)}
+.pw-eye{padding:5px 8px;margin-top:4px;justify-self:start}
+.activity-link{cursor:pointer}
+.activity-link:hover{background:var(--surface-2)}
+.legend-item{background:none;border:none;padding:2px 4px;font:inherit;color:inherit;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.hm-detail{padding:0 15px 13px;color:var(--muted)}
+.side-version{color:var(--nav-muted);font-size:12px;padding:0 4px}
+body.drag-active::after{content:"Suelta los archivos para importar";position:fixed;inset:auto 0 22px 0;margin:0 auto;width:max-content;max-width:92vw;background:var(--green);color:var(--on-accent);padding:11px 18px;border-radius:100px;font-weight:700;z-index:60;box-shadow:0 10px 30px var(--shadow-color)}
+td button{padding:7px 10px}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -258,6 +287,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
     <button data-view="capacidades"><svg><use href="#i-file"/></svg> Qué incluye PacoSAT</button>
   </nav>
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Datos en este equipo<small>Almacenamiento del navegador</small></span></div>
+  <div class="side-version" id="side-version"></div>
 </aside>
 <main>
   <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, folio fiscal o RFC…" aria-label="Buscador global de CFDI" title="Buscador global (Ctrl+K)"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
@@ -283,8 +313,8 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
   <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
 </dialog>
-<script>const PACOSAT_META = {"version":"1.6.10","created":"2026-11-08T13:42:35-06:00"};
-const PACOSAT_CAPACIDADES = {"updated":"8 nov 2026, 22:34 CST","sections":[{"title":"1. Núcleo CFDI","blocks":[{"type":"item","state":"✅","text":"Importación de XML y ZIP con validación, y vinculación de PDF."},{"type":"item","state":"✅","text":"Visor CFDI profesional: datos completos, conceptos e impuestos, cadena original, Timbre Fiscal, complemento de Pagos 2.0 y representación impresa."},{"type":"item","state":"✅","text":"Conciliación PDF ↔ XML."},{"type":"item","state":"✅","text":"Línea de tiempo por CFDI y buscador global."},{"type":"item","state":"✅","text":"Mapa de cobertura por periodos y gráfica de estados."},{"type":"item","state":"🔄","text":"Persistencia del desglose fiscal al importar (subtotal, IVA por tasa, IEPS, retenciones, método/forma de pago, uso CFDI, tipo de cambio, serie/folio) con re-parseo histórico: base de la DIOT."},{"type":"item","state":"🔄","text":"Detector de errores y duplicados al importar (UUID/folio repetido, RFC receptor equivocado, totales que no cuadran)."}]},{"title":"2. Descarga y vigilancia del SAT","blocks":[{"type":"item","state":"✅","text":"Descarga masiva oficial por Web Service con e.firma (SDK), por RFC y dirección (emitidos/recibidos), con paquetes ZIP."},{"type":"item","state":"✅","text":"Perfiles multi-RFC con cadencia propia (Mano Fil: cada 360 min, ventana 7 días, ambas direcciones)."},{"type":"item","state":"✅","text":"Vigilancia de estado de cada CFDI cada 24 h y de cancelaciones."},{"type":"item","state":"✅","text":"Escudo de criterios 5002 (registro de criterios ya enviados; nunca repetir un criterio idéntico)."},{"type":"item","state":"✅","text":"Solicitudes Metadata (hasta 1.000.000 de registros ligeros por petición) para reconciliar cobertura (1.6.10): automáticas una al día por RFC y a petición por periodo; los CFDI que el SAT conoce y faltan en XML se listan en Cobertura."},{"type":"item","state":"✅","text":"Recibidos SIN filtro de «solo vigentes», registrando el estado inicial de cada CFDI (1.6.10): el conector ya no envía filtro de estado y el estado inicial llega de los metadatos al detalle del CFDI."},{"type":"item","state":"🔄","text":"Blindaje: intención registrada ANTES de enviar («presunto enviado» al arrancar), base de datos con synchronous=FULL a prueba de cortes, timeout duro de 60 s en llamadas al SAT con vigilante del ciclo, y contador de descargas por paquete con tope 5008 y estado terminal claro."},{"type":"item","state":"✅","text":"Carpeta vigilada recursiva: todo CFDI que caiga en la carpeta entra solo."},{"type":"item","state":"✅","text":"Solicitudes frecuentes EN UN CLIC (1.6.10) («mes pasado completo», «este trimestre», «este año») sin teclear fechas: menos errores y menos criterios 5002 quemados por un dedo mal puesto."},{"type":"item","state":"✅","text":"AVISO DE SILENCIO **CONFIGURABLE** + MODO DESCANSO CON **INTERRUPTOR ON/OFF** (petición expresa de Paco: visual, práctico e intuitivo): un interruptor grande y visible — general en la pantalla «Hoy» y uno por RFC — para encender/apagar la vigilancia en un toque, con el estado siempre claro («Vigilando» / «Descansando») y opción de «descansar hasta el [fecha]». Si pasan los días que Paco defina sin entrar ningún CFDI, aviso de posible fallo; durante el descanso no hay descargas ni avisos, y al reanudar el sistema se pone al día solo. El sistema también descansa."},{"type":"item","state":"✅","text":"Respaldo cifrado programado. 🔄 Respaldo partido por RFC y año, sin techo de 100 MB."},{"type":"item","state":"🔄","text":"COPIA EXTERNA AUTOMÁTICA del respaldo: cada respaldo cifrado se copia solo a un segundo destino FUERA del NAS, con semáforo de antigüedad de la copia — si el NAS muriera, el archivo fiscal no muere con él. **DESTINO DECIDIDO (Paco, 8 nov 2026): Google Drive, vía Cloud Sync nativo del NAS; la carpeta secundaria del respaldo vive dentro de la carpeta sincronizada (p. ej. «PacoSAT Respaldos»). A Drive solo llega el archivo CIFRADO.**"}]},{"title":"3. Listas negras (art. 69, 69-B y 69-B Bis)","blocks":[{"type":"item","state":"✅","text":"Hoy (manual, ya verificado): cruce de contrapartes contra los 16 listados oficiales guardados en ~/workspace/pacosat-listas-sat/."},{"type":"item","state":"🔄","text":"Descarga automática y continua de los listados oficiales desde Datos Abiertos del SAT."},{"type":"item","state":"🔄","text":"Padrón de empresas a monitorear (clientes/proveedores): se puebla solo desde los CFDI y los pagos; alta uno por uno y carga masiva por Excel (Nombre, RFC, Nota)."},{"type":"item","state":"🔄","text":"Validador manual por RFC y por nombre/razón social (69, 69-B o ambas), en tiempo real."},{"type":"item","state":"🔄","text":"Alertas ante CUALQUIER transición (entradas, salidas, desvirtuados; también la línea base inicial) con la exposición por empresa (importes y CFDI en riesgo), alarma si un listado lleva >48 h sin actualizarse y panel «cómo voy» con semáforo por contraparte."},{"type":"item","state":"🔄","text":"Constancia de validación en PDF por empresa (fecha, listados consultados y resultado)."}]},{"title":"4. e.firma y RFC que maneja","blocks":[{"type":"item","state":"✅","text":"Perfil de Mano Fil (MFI6212158B4) con su e.firma en la carpeta protegida del NAS."},{"type":"item","state":"🔄","text":"Subida de e.firma DESDE LA APP por RFC (.cer/.key + contraseña en pantalla), con validación inmediata de pareja, RFC y caducidad; nunca a la base de datos ni a los respaldos."},{"type":"item","state":"🔄","text":"Multi-RFC ampliado: Mano Fil, Elemental Denim (EDE1902136T2), el RFC personal de Paco y los de Rodrigo y José Javier — cada uno con su perfil y su e.firma cuando la aporten."}]},{"title":"5. Constancias y opiniones (solo SAT)","blocks":[{"type":"item","state":"🔄","text":"Descarga mensual automática, activable por RFC, de la constancia de situación fiscal y la opinión de cumplimiento del SAT, archivadas en Expedientes con fecha de emisión."},{"type":"item","state":"🔄","text":"Semáforo de vigencia (verde <60 días, ámbar 60–90, rojo >90) y alerta si una renovación falla o vence."},{"type":"item","state":"🔄","text":"Envío automático por correo a uno o varios destinatarios, con día y hora programables en pantalla clara."}]},{"title":"6. Salidas: reportes, impresión, exportaciones y correo","blocks":[{"type":"item","state":"✅","text":"Representación impresa del CFDI y paquete mensual básico para la contadora."},{"type":"item","state":"🔄","text":"Centro de reportes PDF por periodo, contraparte o concepto, con la identidad de la app."},{"type":"item","state":"🔄","text":"Impresión cuidada de todas las pantallas e impresión por lote de CFDI en un solo PDF."},{"type":"item","state":"🔄","text":"Exportaciones Excel/CSV con formato, también programables."},{"type":"item","state":"🔄","text":"EXPORTACIÓN COMPLETA LEGIBLE en un clic: todos los XML y PDF con su índice, en carpetas por RFC y año, sin depender del formato de respaldo — tus datos son tuyos y salen enteros cuando quieras."},{"type":"item","state":"🔄","text":"Comparativas AÑO CONTRA AÑO por contraparte y en total: de un vistazo, quién te factura más que antes y qué gasto se está disparando."},{"type":"item","state":"🔄","text":"Correo DENTRO de la app: enviar CFDI, reportes y constancias con plantillas, bitácora de envíos y botón de correo de prueba."},{"type":"item","state":"🔄","text":"Informe mensual AUTOMÁTICO a Nora: paquete del mes, base DIOT con desglose, novedades de listas negras y cuentas por cobrar."},{"type":"item","state":"🔄","text":"CIERRE DE MES GUIADO: asistente paso a paso (descargar → conciliar → listas → informe a Nora → respaldo) con semáforo por paso: el mes se cierra siguiendo la lista, sin olvidar nada."},{"type":"item","state":"🔄","text":"Resumen semanal ejecutivo por correo (lunes): la foto de la semana — CFDI nuevos, cancelaciones, por cobrar/pagar y próximos vencimientos."}]},{"title":"7. Dinero","blocks":[{"type":"item","state":"🔄","text":"Conciliación bancaria automática CFDI ↔ estados de cuenta (BBVA/Santander): pagado/no pagado, pagos sin factura y facturas sin pago."},{"type":"item","state":"🔄","text":"Cuentas por cobrar: relación pagos↔facturas persistida, vista «por cobrar» con antigüedad por contraparte."},{"type":"item","state":"🔄","text":"Alerta ROJA de cancelación post-pago: CFDI recibido cancelado después de pagado, con el pago vinculado."},{"type":"item","state":"🔄","text":"Expediente 360 por contraparte: CFDI, pagos, saldos, listas negras y constancias en una sola tarjeta."},{"type":"item","state":"🔄","text":"Cuentas por PAGAR con vencimientos: lo que debes a proveedores (recibidos PPD sin pago), con antigüedad y avisos antes de que venza."},{"type":"item","state":"🔄","text":"Detector de facturas ESPERADAS que no llegaron: si un proveedor recurrente (renta, servicios, igualas) no ha timbrado este mes lo de siempre, aviso — la factura que falta también es un problema."}]},{"title":"8. Cumplimiento","blocks":[{"type":"item","state":"🔄","text":"Calendario fiscal por RFC (DIOT, provisionales, anual, caducidades de e.firma/CSD y de constancias) con semáforo y avisos por correo."},{"type":"item","state":"🔄","text":"IVA del mes estimado por RFC (trasladado y acreditable desde el desglose persistido): la foto fiscal del mes antes de que la arme la contadora."},{"type":"item","state":"🔄","text":"Paquete de defensa por periodo en un clic: CFDI con índice, constancias de validación y opiniones, listo para SAT o banco."},{"type":"item","state":"✅","text":"Validador de RFC con estructura y fecha (al dar de alta un contribuyente)."},{"type":"item","state":"🔄","text":"Reglas de clasificación automática por contraparte/concepto (categoría y deducibilidad editables por Paco) y aviso de ANOMALÍAS: importe inusual de un proveedor recurrente o posible duplicado aproximado."}]},{"title":"9. Experiencia de uso","blocks":[{"type":"item","state":"✅","text":"Panel de salud (e.firma y su caducidad, correo, respaldos, vigilancia) y bitácora."},{"type":"item","state":"🔄","text":"Botón «PROBAR TODO»: autodiagnóstico completo en un clic (e.firma válida, correo operativo, listas al día, respaldo reciente, SAT alcanzable) con un semáforo por prueba."},{"type":"item","state":"✅","text":"Bitácora básica de movimientos del sistema. 🔄 BITÁCORA COMPLETA Y CLICABLE: cada entrada (descarga, verificación, alerta, respaldo, correo, acceso) abre el objeto al que se refiere; filtros por tipo, RFC y resultado; y RESUMEN DE ACTIVIDAD — qué hizo el sistema solo, por día y por semana — consultable y exportable."},{"type":"item","state":"🔄","text":"Semáforos verde/ámbar/rojo en todo el sistema, con fila de semáforos abriendo el Resumen."},{"type":"item","state":"🔄","text":"Sonidos discretos configurables por evento (éxito, aviso, alerta, error) con interruptor y volumen en Ajustes."},{"type":"item","state":"🔄","text":"Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente; los correos de alerta llevan enlace."},{"type":"item","state":"🔄","text":"Acciones directas en tarjetas CFDI (ver, descargar XML, abrir PDF, copiar UUID, imprimir) y arrastrar y soltar para importar en cualquier pantalla; «Descargar ahora» por RFC; buscador global que también ejecuta acciones."},{"type":"item","state":"🔄","text":"PacoSAT instalable en el móvil (PWA) con pantallas adaptadas."},{"type":"item","state":"🔄","text":"MODO OFFLINE: la app abre sin conexión y permite CONSULTAR una copia local cifrada de solo lectura con los datos de los ÚLTIMOS 3 MESES (CFDI con su desglose, estados, por cobrar/pagar, listas negras), con la hora de la última sincronización siempre visible («estás viendo datos de las HH:MM»); en cada conexión se dejan además PREGENERADOS los informes clave de esos 3 meses (resumen mensual, IVA estimado, por cobrar/pagar) para abrirlos o imprimirlos offline. Lo que no puede salir (descargas y consultas al SAT) queda en cola y se ejecuta al volver la conexión. El XML/PDF individual se abre offline si quedó en la caché reciente; el archivo histórico completo vive en el NAS."},{"type":"item","state":"🔄","text":"Acceso en casa sin internet: además del nombre público, PacoSAT responde en la red local del NAS con la misma contraseña, para cuando se caiga internet o el túnel."},{"type":"item","state":"🔄","text":"Preguntas en lenguaje normal sobre los propios datos, calculadas 100 % en local (sin salir del NAS)."},{"type":"item","state":"🔄","text":"Escala: sincronización por diferencias, paginación y caché de cobertura para miles de CFDI."},{"type":"item","state":"✅","text":"/🔄 Sello en el pie y en Ajustes: «PacoSAT {versión} · Modificado el {fecha} a las {hora}» + «Creado por Paco Iglesias» — mantenido y verificado en CADA despliegue."}]},{"title":"9 bis. Principios de experiencia (regla de diseño de Paco)","blocks":[{"type":"item","state":"🔄","text":"INTUITIVO: lenguaje llano; cada término del SAT explicado en una línea; botones con verbos claros («Descargar ahora», «Solicitar este hueco»); ninguna pantalla sin siguiente paso visible."},{"type":"item","state":"🔄","text":"PROACTIVO: el sistema habla primero — pantalla de inicio «HOY EN PacoSAT» con el resumen del día, los pendientes con semáforo y el SIGUIENTE PASO sugerido; avisos antes de que las cosas venzan o se rompan, no después."},{"type":"item","state":"🔄","text":"AMIGABLE: mensajes en tono cercano y claro; estados vacíos que enseñan qué hacer; errores que dicen qué pasó y cómo se arregla, sin códigos crípticos."},{"type":"item","state":"🔄","text":"ÚTIL: cada pantalla termina en una acción posible; nada de información que no lleve a ninguna parte."}]},{"title":"10. Seguridad y privacidad","blocks":[{"type":"item","state":"✅","text":"Todo corre en el NAS de Paco, tras su túnel y su contraseña; los datos no salen salvo al SAT (descargas con e.firma) y al correo que él configure."},{"type":"item","state":"✅","text":"CSP estricta sin unsafe-inline (1.6.9): la política autoriza por huella SHA-256 los únicos bloques de estilo y script de la copia; el servidor calcula la misma política desde el archivo servido."},{"type":"item","state":"✅","text":"La e.firma vive solo en la carpeta protegida; el SAT se contacta únicamente por el Web Service oficial, con disciplina 5002."},{"type":"item","state":"🔄","text":"Acceso invitado de SOLO LECTURA (pensado para la contadora): credencial separada, sin capacidad de cambiar ni descargar masivamente, desactivado por defecto y con registro de accesos."}]},{"title":"Fuera de alcance (decidido por Paco)","blocks":[{"type":"item","state":"","text":"Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT)."}]},{"title":"Cierre del proyecto","blocks":[{"type":"item","state":"📋","text":"**VERSIÓN FINAL A ENTREGAR: 1.7.0** — despliegue conjunto final al NAS con todo lo construido, prueba del SAT de ventana corta (una sola vez) y examen de Paco: entrar y agregar el RFC sin ningún aviso."}]}]};
+<script>const PACOSAT_META = {"version":"1.6.11","created":"2026-11-08T13:42:35-06:00"};
+const PACOSAT_CAPACIDADES = {"updated":"8 nov 2026, 23:05 CST","sections":[{"title":"1. Núcleo CFDI","blocks":[{"type":"item","state":"✅","text":"Importación de XML y ZIP con validación, y vinculación de PDF."},{"type":"item","state":"✅","text":"Visor CFDI profesional: datos completos, conceptos e impuestos, cadena original, Timbre Fiscal, complemento de Pagos 2.0 y representación impresa."},{"type":"item","state":"✅","text":"Conciliación PDF ↔ XML."},{"type":"item","state":"✅","text":"Línea de tiempo por CFDI y buscador global."},{"type":"item","state":"✅","text":"Mapa de cobertura por periodos y gráfica de estados."},{"type":"item","state":"🔄","text":"Persistencia del desglose fiscal al importar (subtotal, IVA por tasa, IEPS, retenciones, método/forma de pago, uso CFDI, tipo de cambio, serie/folio) con re-parseo histórico: base de la DIOT."},{"type":"item","state":"🔄","text":"Detector de errores y duplicados al importar (UUID/folio repetido, RFC receptor equivocado, totales que no cuadran)."}]},{"title":"2. Descarga y vigilancia del SAT","blocks":[{"type":"item","state":"✅","text":"Descarga masiva oficial por Web Service con e.firma (SDK), por RFC y dirección (emitidos/recibidos), con paquetes ZIP."},{"type":"item","state":"✅","text":"Perfiles multi-RFC con cadencia propia (Mano Fil: cada 360 min, ventana 7 días, ambas direcciones)."},{"type":"item","state":"✅","text":"Vigilancia de estado de cada CFDI cada 24 h y de cancelaciones."},{"type":"item","state":"✅","text":"Escudo de criterios 5002 (registro de criterios ya enviados; nunca repetir un criterio idéntico)."},{"type":"item","state":"✅","text":"Solicitudes Metadata (hasta 1.000.000 de registros ligeros por petición) para reconciliar cobertura (1.6.10): automáticas una al día por RFC y a petición por periodo; los CFDI que el SAT conoce y faltan en XML se listan en Cobertura."},{"type":"item","state":"✅","text":"Recibidos SIN filtro de «solo vigentes», registrando el estado inicial de cada CFDI (1.6.10): el conector ya no envía filtro de estado y el estado inicial llega de los metadatos al detalle del CFDI."},{"type":"item","state":"🔄","text":"Blindaje: intención registrada ANTES de enviar («presunto enviado» al arrancar), base de datos con synchronous=FULL a prueba de cortes, timeout duro de 60 s en llamadas al SAT con vigilante del ciclo, y contador de descargas por paquete con tope 5008 y estado terminal claro."},{"type":"item","state":"✅","text":"Carpeta vigilada recursiva: todo CFDI que caiga en la carpeta entra solo."},{"type":"item","state":"✅","text":"Solicitudes frecuentes EN UN CLIC (1.6.10) («mes pasado completo», «este trimestre», «este año») sin teclear fechas: menos errores y menos criterios 5002 quemados por un dedo mal puesto."},{"type":"item","state":"✅","text":"AVISO DE SILENCIO **CONFIGURABLE** + MODO DESCANSO CON **INTERRUPTOR ON/OFF** (petición expresa de Paco: visual, práctico e intuitivo): un interruptor grande y visible — general en la pantalla «Hoy» y uno por RFC — para encender/apagar la vigilancia en un toque, con el estado siempre claro («Vigilando» / «Descansando») y opción de «descansar hasta el [fecha]». Si pasan los días que Paco defina sin entrar ningún CFDI, aviso de posible fallo; durante el descanso no hay descargas ni avisos, y al reanudar el sistema se pone al día solo. El sistema también descansa."},{"type":"item","state":"✅","text":"Respaldo cifrado programado. 🔄 Respaldo partido por RFC y año, sin techo de 100 MB."},{"type":"item","state":"🔄","text":"COPIA EXTERNA AUTOMÁTICA del respaldo: cada respaldo cifrado se copia solo a un segundo destino FUERA del NAS, con semáforo de antigüedad de la copia — si el NAS muriera, el archivo fiscal no muere con él. **DESTINO DECIDIDO (Paco, 8 nov 2026): Google Drive, vía Cloud Sync nativo del NAS; la carpeta secundaria del respaldo vive dentro de la carpeta sincronizada (p. ej. «PacoSAT Respaldos»). A Drive solo llega el archivo CIFRADO.**"}]},{"title":"3. Listas negras (art. 69, 69-B y 69-B Bis)","blocks":[{"type":"item","state":"✅","text":"Hoy (manual, ya verificado): cruce de contrapartes contra los 16 listados oficiales guardados en ~/workspace/pacosat-listas-sat/."},{"type":"item","state":"🔄","text":"Descarga automática y continua de los listados oficiales desde Datos Abiertos del SAT."},{"type":"item","state":"🔄","text":"Padrón de empresas a monitorear (clientes/proveedores): se puebla solo desde los CFDI y los pagos; alta uno por uno y carga masiva por Excel (Nombre, RFC, Nota)."},{"type":"item","state":"🔄","text":"Validador manual por RFC y por nombre/razón social (69, 69-B o ambas), en tiempo real."},{"type":"item","state":"🔄","text":"Alertas ante CUALQUIER transición (entradas, salidas, desvirtuados; también la línea base inicial) con la exposición por empresa (importes y CFDI en riesgo), alarma si un listado lleva >48 h sin actualizarse y panel «cómo voy» con semáforo por contraparte."},{"type":"item","state":"🔄","text":"Constancia de validación en PDF por empresa (fecha, listados consultados y resultado)."}]},{"title":"4. e.firma y RFC que maneja","blocks":[{"type":"item","state":"✅","text":"Perfil de Mano Fil (MFI6212158B4) con su e.firma en la carpeta protegida del NAS."},{"type":"item","state":"🔄","text":"Subida de e.firma DESDE LA APP por RFC (.cer/.key + contraseña en pantalla), con validación inmediata de pareja, RFC y caducidad; nunca a la base de datos ni a los respaldos."},{"type":"item","state":"🔄","text":"Multi-RFC ampliado: Mano Fil, Elemental Denim (EDE1902136T2), el RFC personal de Paco y los de Rodrigo y José Javier — cada uno con su perfil y su e.firma cuando la aporten."}]},{"title":"5. Constancias y opiniones (solo SAT)","blocks":[{"type":"item","state":"🔄","text":"Descarga mensual automática, activable por RFC, de la constancia de situación fiscal y la opinión de cumplimiento del SAT, archivadas en Expedientes con fecha de emisión."},{"type":"item","state":"🔄","text":"Semáforo de vigencia (verde <60 días, ámbar 60–90, rojo >90) y alerta si una renovación falla o vence."},{"type":"item","state":"🔄","text":"Envío automático por correo a uno o varios destinatarios, con día y hora programables en pantalla clara."}]},{"title":"6. Salidas: reportes, impresión, exportaciones y correo","blocks":[{"type":"item","state":"✅","text":"Representación impresa del CFDI y paquete mensual básico para la contadora."},{"type":"item","state":"🔄","text":"Centro de reportes PDF por periodo, contraparte o concepto, con la identidad de la app."},{"type":"item","state":"🔄","text":"Impresión cuidada de todas las pantallas e impresión por lote de CFDI en un solo PDF."},{"type":"item","state":"🔄","text":"Exportaciones Excel/CSV con formato, también programables."},{"type":"item","state":"🔄","text":"EXPORTACIÓN COMPLETA LEGIBLE en un clic: todos los XML y PDF con su índice, en carpetas por RFC y año, sin depender del formato de respaldo — tus datos son tuyos y salen enteros cuando quieras."},{"type":"item","state":"🔄","text":"Comparativas AÑO CONTRA AÑO por contraparte y en total: de un vistazo, quién te factura más que antes y qué gasto se está disparando."},{"type":"item","state":"🔄","text":"Correo DENTRO de la app: enviar CFDI, reportes y constancias con plantillas, bitácora de envíos y botón de correo de prueba."},{"type":"item","state":"🔄","text":"Informe mensual AUTOMÁTICO a Nora: paquete del mes, base DIOT con desglose, novedades de listas negras y cuentas por cobrar."},{"type":"item","state":"🔄","text":"CIERRE DE MES GUIADO: asistente paso a paso (descargar → conciliar → listas → informe a Nora → respaldo) con semáforo por paso: el mes se cierra siguiendo la lista, sin olvidar nada."},{"type":"item","state":"🔄","text":"Resumen semanal ejecutivo por correo (lunes): la foto de la semana — CFDI nuevos, cancelaciones, por cobrar/pagar y próximos vencimientos."}]},{"title":"7. Dinero","blocks":[{"type":"item","state":"🔄","text":"Conciliación bancaria automática CFDI ↔ estados de cuenta (BBVA/Santander): pagado/no pagado, pagos sin factura y facturas sin pago."},{"type":"item","state":"🔄","text":"Cuentas por cobrar: relación pagos↔facturas persistida, vista «por cobrar» con antigüedad por contraparte."},{"type":"item","state":"🔄","text":"Alerta ROJA de cancelación post-pago: CFDI recibido cancelado después de pagado, con el pago vinculado."},{"type":"item","state":"🔄","text":"Expediente 360 por contraparte: CFDI, pagos, saldos, listas negras y constancias en una sola tarjeta."},{"type":"item","state":"🔄","text":"Cuentas por PAGAR con vencimientos: lo que debes a proveedores (recibidos PPD sin pago), con antigüedad y avisos antes de que venza."},{"type":"item","state":"🔄","text":"Detector de facturas ESPERADAS que no llegaron: si un proveedor recurrente (renta, servicios, igualas) no ha timbrado este mes lo de siempre, aviso — la factura que falta también es un problema."}]},{"title":"7 bis. Bancos (apartado propio — entra en esta construcción por orden de Paco, 8 nov 22:46)","blocks":[{"type":"item","state":"🔄","text":"Archivo de estados de cuenta por BANCO, CUENTA y MES: Paco sube el estado (PDF) y el sistema lo guarda ordenado, sin carpetas a mano; pensado para BBVA (cuenta y fondo), Santander (cheques y fondo) y Konfio, y abierto a cualquier banco/cuenta que se dé de alta."},{"type":"item","state":"🔄","text":"LECTURA AUTOMÁTICA de cada estado: saldos inicial/final, abonos y cargos leídos del documento, con la cadena de saldos verificada mes a mes (el saldo final de un mes = el inicial del siguiente; si no cuadra, semáforo)."},{"type":"item","state":"🔄","text":"SEMÁFORO DE FALTANTES: qué meses faltan de qué cuenta, visible de un vistazo."},{"type":"item","state":"🔄","text":"POSICIÓN TOTAL: cuánto hay en cada banco y en total (cuentas y fondos), con su fecha — la foto bancaria completa en una pantalla."},{"type":"item","state":"🔄","text":"Es la base de la conciliación CFDI↔banco (sección 7) y alimenta el expediente 360."}]},{"title":"8. Cumplimiento","blocks":[{"type":"item","state":"🔄","text":"Calendario fiscal por RFC (DIOT, provisionales, anual, caducidades de e.firma/CSD y de constancias) con semáforo y avisos por correo."},{"type":"item","state":"🔄","text":"IVA del mes estimado por RFC (trasladado y acreditable desde el desglose persistido): la foto fiscal del mes antes de que la arme la contadora."},{"type":"item","state":"🔄","text":"Paquete de defensa por periodo en un clic: CFDI con índice, constancias de validación y opiniones, listo para SAT o banco."},{"type":"item","state":"✅","text":"Validador de RFC con estructura y fecha (al dar de alta un contribuyente)."},{"type":"item","state":"🔄","text":"Reglas de clasificación automática por contraparte/concepto (categoría y deducibilidad editables por Paco) y aviso de ANOMALÍAS: importe inusual de un proveedor recurrente o posible duplicado aproximado."}]},{"title":"9. Experiencia de uso","blocks":[{"type":"item","state":"✅","text":"Panel de salud (e.firma y su caducidad, correo, respaldos, vigilancia) y bitácora."},{"type":"item","state":"🔄","text":"Botón «PROBAR TODO»: autodiagnóstico completo en un clic (e.firma válida, correo operativo, listas al día, respaldo reciente, SAT alcanzable) con un semáforo por prueba."},{"type":"item","state":"✅","text":"Bitácora básica de movimientos del sistema. ✅ CLICABLE (1.6.11): cada entrada abre el objeto al que se refiere (el CFDI de una cancelación, el SAT, los respaldos, el archivo). 🔄 Filtros por tipo, RFC y resultado, registro de accesos y RESUMEN DE ACTIVIDAD — qué hizo el sistema solo, por día y por semana — consultable y exportable: ronda final 1.7.0."},{"type":"item","state":"✅","text":"Semáforos verde/ámbar/rojo en todo el sistema, con fila de semáforos abriendo el Resumen (1.6.11)."},{"type":"item","state":"✅","text":"Sonidos discretos configurables por evento (éxito, aviso, alerta, error) con interruptor general y elección por evento en Ajustes (cableados en 1.6.11)."},{"type":"item","state":"✅","text":"Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente (1.6.11). 🔄 Los correos de alerta con enlace a la app quedan para cuando exista la URL pública configurable en los avisos."},{"type":"item","state":"✅","text":"Acciones directas en tarjetas CFDI (ver, descargar XML, abrir PDF, copiar UUID, imprimir) y arrastrar y soltar para importar en cualquier pantalla; «Descargar ahora» por RFC; buscador global que también ejecuta acciones (1.6.11)."},{"type":"item","state":"🔄","text":"PacoSAT instalable en el móvil (PWA) con pantallas adaptadas."},{"type":"item","state":"🔄","text":"MODO OFFLINE: la app abre sin conexión y permite CONSULTAR una copia local cifrada de solo lectura con los datos de los ÚLTIMOS 3 MESES (CFDI con su desglose, estados, por cobrar/pagar, listas negras), con la hora de la última sincronización siempre visible («estás viendo datos de las HH:MM»); en cada conexión se dejan además PREGENERADOS los informes clave de esos 3 meses (resumen mensual, IVA estimado, por cobrar/pagar) para abrirlos o imprimirlos offline. Lo que no puede salir (descargas y consultas al SAT) queda en cola y se ejecuta al volver la conexión. El XML/PDF individual se abre offline si quedó en la caché reciente; el archivo histórico completo vive en el NAS."},{"type":"item","state":"🔄","text":"Acceso en casa sin internet: además del nombre público, PacoSAT responde en la red local del NAS con la misma contraseña, para cuando se caiga internet o el túnel."},{"type":"item","state":"🔄","text":"Preguntas en lenguaje normal sobre los propios datos, calculadas 100 % en local (sin salir del NAS)."},{"type":"item","state":"🔄","text":"Escala: sincronización por diferencias, paginación y caché de cobertura para miles de CFDI."},{"type":"item","state":"✅","text":"/🔄 Sello en el pie y en Ajustes: «PacoSAT {versión} · Modificado el {fecha} a las {hora}» + «Creado por Paco Iglesias» — mantenido y verificado en CADA despliegue."}]},{"title":"9 bis. Principios de experiencia (regla de diseño de Paco)","blocks":[{"type":"item","state":"✅","text":"/🔄 INTUITIVO (aplicado en 1.6.11; revisión final en 1.7.0): lenguaje llano; cada término del SAT explicado en una línea; botones con verbos claros («Descargar ahora», «Solicitar este hueco»); ninguna pantalla sin siguiente paso visible."},{"type":"item","state":"✅","text":"/🔄 PROACTIVO (pantalla «Hoy en PacoSAT» en 1.6.11; revisión final en 1.7.0): el sistema habla primero — pantalla de inicio «HOY EN PacoSAT» con el resumen del día, los pendientes con semáforo y el SIGUIENTE PASO sugerido; avisos antes de que las cosas venzan o se rompan, no después."},{"type":"item","state":"✅","text":"/🔄 AMIGABLE (aplicado en 1.6.11; revisión final en 1.7.0): mensajes en tono cercano y claro; estados vacíos que enseñan qué hacer; errores que dicen qué pasó y cómo se arregla, sin códigos crípticos."},{"type":"item","state":"✅","text":"/🔄 ÚTIL (aplicado en 1.6.11; revisión final en 1.7.0): cada pantalla termina en una acción posible; nada de información que no lleve a ninguna parte."}]},{"title":"10. Seguridad y privacidad","blocks":[{"type":"item","state":"✅","text":"Todo corre en el NAS de Paco, tras su túnel y su contraseña; los datos no salen salvo al SAT (descargas con e.firma) y al correo que él configure."},{"type":"item","state":"✅","text":"CSP estricta sin unsafe-inline (1.6.9): la política autoriza por huella SHA-256 los únicos bloques de estilo y script de la copia; el servidor calcula la misma política desde el archivo servido."},{"type":"item","state":"✅","text":"La e.firma vive solo en la carpeta protegida; el SAT se contacta únicamente por el Web Service oficial, con disciplina 5002."},{"type":"item","state":"🔄","text":"Acceso invitado de SOLO LECTURA (pensado para la contadora): credencial separada, sin capacidad de cambiar ni descargar masivamente, desactivado por defecto y con registro de accesos."}]},{"title":"Fuera de alcance (decidido por Paco)","blocks":[{"type":"item","state":"","text":"Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT)."}]},{"title":"Cierre del proyecto","blocks":[{"type":"item","state":"📋","text":"**VERSIÓN FINAL A ENTREGAR: 1.7.0** — despliegue conjunto final al NAS con todo lo construido, prueba del SAT de ventana corta (una sola vez) y examen de Paco: entrar y agregar el RFC sin ningún aviso."}]}]};
 'use strict';
 const $ = id => document.getElementById(id);
 const KB = 1024;
@@ -411,6 +441,20 @@ function writeBatch(batch, replace = false) {
       tx.abort();
       reject(error);
     }
+  });
+}
+/* Borrado puntual (UX-07, 1.6.11): mantenimiento de cartera. En modo
+   servidor lo registra la auditoría del servicio; en modo local borra
+   de IndexedDB. No hay papelera: la app confirma antes con el detalle
+   de lo que se va a eliminar. */
+function deleteStoreRecords(store, ids) {
+  if (typeof cloudStorage !== 'undefined' && cloudStorage) return satApi('data/delete', { store, ids });
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.oncomplete = resolve;
+    tx.onabort = () => reject(tx.error || new Error('La operación se canceló.'));
+    const table = tx.objectStore(store);
+    for (const id of ids) table.delete(id);
   });
 }
 function decodeXml(raw) {
@@ -709,10 +753,16 @@ function applySettings() {
   const modified = typeof satData !== 'undefined' && satData.buildModified ? new Date(satData.buildModified) : null;
   $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + (modified ? ' · Modificado el ' +
     modified.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
-    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : '');
+    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : '') +
+    ' · Creado por Paco Iglesias';
+  /* Versión corta junto a la marca (UX-30): visible sin bajar al pie. */
+  const sideVersion = $('side-version');
+  if (sideVersion) sideVersion.textContent = 'Versión ' + PACOSAT_META.version;
 }
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
+let docTerm = '', docPage = 0, lastImport = null;
+const invoiceSelection = new Set();
 let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '';
 let submit, importing = false, ready = false;
 const number = new Intl.NumberFormat('es-MX');
@@ -728,6 +778,12 @@ const roles = row => {
 function dateLabel(date) {
   if (date.length < 10) return date;
   return date.slice(8, 10) + '/' + date.slice(5, 7) + '/' + date.slice(0, 4);
+}
+/* 'AAAA-MM-DD HH:MM:SS' → 'dd/mm/aaaa hh:mm': un solo formato humano
+   en todo lo visible (UX-25). */
+function stampLabel(stamp) {
+  if (!stamp || stamp.length < 16) return stamp || '';
+  return stamp.slice(8, 10) + '/' + stamp.slice(5, 7) + '/' + stamp.slice(0, 4) + ' ' + stamp.slice(11, 16);
 }
 function amount(row) {
   const [integer, decimals] = row.total.split('.');
@@ -767,8 +823,15 @@ function tone(frequency, start, duration, type = 'sine', gain = 0.055) {
   osc.connect(amp); amp.connect(ctx.destination);
   osc.start(at); osc.stop(at + duration + 0.05);
 }
+/* Sonidos por evento (1.6.11): además del interruptor general de la
+   cabecera, cada tipo de aviso se puede silenciar por separado en
+   Ajustes. La preferencia vive en este navegador. */
+const soundEventOn = kind => {
+  try { return JSON.parse(prefGet('pacosat-sound-events') || '{}')[kind] !== false; }
+  catch { return true; }
+};
 function soundCue(kind) {
-  if (!soundOn) return;
+  if (!soundOn || !soundEventOn(kind)) return;
   if (kind === 'success') { tone(659, 0, 0.13); tone(880, 0.1, 0.2); }
   else if (kind === 'error') tone(196, 0, 0.22, 'triangle', 0.075);
   else if (kind === 'alert') { tone(880, 0, 0.12); tone(880, 0.18, 0.12); }
@@ -856,8 +919,7 @@ function reportDialog() {
   check(months.length, 'Todavía no hay totales para reportar.');
   const monthSel = select(months.map(key => [key, key.slice(5, 7) + '/' + key.slice(0, 4)]), months[0], 'Mes del reporte');
   dialog('Reporte mensual por RFC', [n('p', 'Vista para imprimir o guardar en PDF del mes elegido. Respeta el contribuyente seleccionado en el selector principal; sin selección, incluye a todos.'),
-    field('Mes', monthSel)], () => printMonthlyReport(monthSel.value));
-  $('save').textContent = 'Generar e imprimir';
+    field('Mes', monthSel)], () => printMonthlyReport(monthSel.value), 'Generar e imprimir');
 }
 function printMonthlyReport(key) {
   const section = $('print-report');
@@ -884,6 +946,17 @@ function printMonthlyReport(key) {
   tableWrap.append(grid(['Contribuyente', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN'],
     rows.length ? rows : [['Sin comprobantes en el mes', '', '', '', '']]));
   section.append(tableWrap);
+  /* Detalle comprobante a comprobante del mes (UX-23): el reporte para
+     la contadora lista cada CFDI, no solo los totales. */
+  const detail = invoices.filter(row => row.date.startsWith(key) && matches(row));
+  if (detail.length) {
+    section.append(n('h3', 'Comprobantes del mes'));
+    const detailWrap = n('div');
+    detailWrap.append(grid(['Fecha', 'UUID', 'Emisor → receptor', 'Tipo', 'Total'],
+      detail.map(row => [dateLabel(row.date), row.id, (row.from.name || row.from.rfc) + ' → ' + (row.to.name || row.to.rfc),
+        KINDS[row.kind], amount(row)])));
+    section.append(detailWrap);
+  }
   let checked = 0, cancelled = 0, efosHits = 0;
   for (const row of invoices) {
     if (!row.date.startsWith(key) || !matches(row)) continue;
@@ -965,12 +1038,19 @@ function buildMonthlyPackage(rfc, monthKey) {
     '<p class="nota">Vigilancia según la última consulta disponible: ' + checked + ' CFDI consultados, ' + cancelled + ' cancelados, ' + efosHits +
     ' con coincidencia 69-B. Importes en MXN sumados al centavo; los de otra moneda se cuentan sin sumar. Generado el ' + generated +
     ' por PacoSAT. Documento de trabajo, no una declaración.</p></body></html>';
-  const names = ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt'];
+  /* Detalle de los CFDI del mes (UX-23): el paquete incluye el listado
+     comprobante a comprobante, no solo los totales. */
+  const detailRows = invoices.filter(row => row.date.startsWith(monthKey) && (row.from.rfc === rfc || row.to.rfc === rfc));
+  const detailCsv = [['UUID', 'Fecha', 'Emisor', 'RFC emisor', 'Receptor', 'RFC receptor', 'Tipo', 'Total', 'Moneda'],
+    ...detailRows.map(row => [row.id, row.date, row.from.name, row.from.rfc, row.to.name, row.to.rfc, KINDS[row.kind], row.total, row.currency])]
+    .map(row => row.map(esc).join(',')).join('\r\n');
+  const names = ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt', 'cfdi-del-mes.csv'];
   const encoder = new TextEncoder();
   const zip = zipStore([
     { name: names[0], data: encoder.encode('\uFEFF' + totalesCsv) },
     { name: names[1], data: encoder.encode('\uFEFF' + diotText) },
     { name: names[2], data: encoder.encode(resumen) },
+    { name: names[4], data: encoder.encode('\uFEFF' + detailCsv) },
     { name: names[3], data: encoder.encode(monthlyPackageManifest(rfc, monthKey, names, generated, appSettings.installName)) }
   ]);
   download(zip, 'PacoSAT-' + rfc + '-' + monthKey + '.zip');
@@ -1191,13 +1271,26 @@ function field(label, input) {
   const el = n('label', label); el.append(input); return el;
 }
 function input(type, props) { return Object.assign(n('input'), { type }, props); }
-function dialog(title, controls, work) {
+function dialog(title, controls, work, confirmLabel) {
   $('dialogTitle').textContent = title;
   $('fields').replaceChildren(...controls);
   $('formError').hidden = true;
   $('save').hidden = !work;
+  /* Cada diálogo nombra su acción real (UX-11): «Enviar solicitud»,
+     «Autorizar», «Crear respaldo»… no siempre «Guardar». */
+  if (work) $('save').textContent = confirmLabel || 'Guardar';
   submit = work;
   $('dialog').showModal();
+  /* Ojo en contraseñas (UX-21): todo campo de contraseña de un diálogo
+     puede mostrarse u ocultarse sin tener que re-teclearlo. */
+  for (const pw of $('fields').querySelectorAll('input[type="password"]')) {
+    const eye = n('button', undefined, 'pw-eye');
+    eye.type = 'button';
+    eye.setAttribute('aria-label', 'Mostrar u ocultar la contraseña');
+    eye.append(icon('eye'));
+    eye.onclick = () => { pw.type = pw.type === 'password' ? 'text' : 'password'; };
+    pw.after(eye);
+  }
 }
 function download(blob, name) {
   const url = URL.createObjectURL(blob);
@@ -1243,6 +1336,83 @@ function render() {
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();
+}
+/* Píldora de estado común (1.6.11): un solo lenguaje de semáforo en
+   toda la app. ok = verde, warn = ámbar, bad = rojo, dim = gris (sin
+   dato o en descanso: no es un problema). Pulsarla lleva a su pantalla. */
+function statusPill(state, label, hint, onClick) {
+  const pill = n('button', undefined, 'status-pill');
+  pill.type = 'button';
+  pill.dataset.state = state;
+  pill.append(n('span', undefined, 'pill-dot'), n('span', label));
+  if (hint) pill.title = hint;
+  if (onClick) pill.onclick = onClick; else pill.disabled = true;
+  return pill;
+}
+function trafficStrip() {
+  const strip = n('div', undefined, 'traffic-strip');
+  strip.setAttribute('aria-label', 'Semáforos de PacoSAT');
+  const items = [];
+  if (typeof satData !== 'undefined' && satData) {
+    const profiles = satData.profiles || [];
+    const unlockedCount = profiles.filter(row => row.unlocked).length;
+    const restingNow = Boolean(satData.rest?.active) || (profiles.length > 0 && profiles.every(row => row.paused));
+    items.push(restingNow ? ['dim', 'Descansando', 'La vigilancia está en pausa: no se envía nada al SAT', () => navigate('sat')]
+      : ['ok', 'Vigilando', 'La vigilancia automática está activa', () => navigate('sat')]);
+    items.push([!profiles.length ? 'dim' : unlockedCount === profiles.length ? 'ok' : 'warn',
+      'SAT · ' + unlockedCount + '/' + profiles.length + ' RFC autorizados', 'Perfiles con e.firma activa', () => navigate('sat')]);
+    items.push([satData.mail?.enabled ? 'ok' : 'dim', satData.mail?.enabled ? 'Correo de avisos activo' : 'Correo sin configurar',
+      'Avisos por correo', () => navigate('sat')]);
+    const sb = satData.scheduledBackup || {};
+    items.push([!sb.enabled ? 'dim' : sb.error ? 'bad' : 'ok',
+      sb.enabled ? 'Respaldo programado' : 'Respaldo sin programar', 'Respaldo automático cifrado', () => navigate('backup')]);
+  }
+  let efos = 0, cancelled = 0;
+  for (const row of invoices) {
+    const state = invoiceStateOf(row);
+    if (state === 'efos') efos++; else if (state === 'Cancelado') cancelled++;
+  }
+  items.push([efos ? 'bad' : cancelled ? 'warn' : 'ok',
+    efos ? number.format(efos) + ' con 69-B' : cancelled ? number.format(cancelled) + ' cancelados' : 'Sin alertas 69-B',
+    'Vigilancia de estados y artículo 69-B', () => navigate('monitor')]);
+  for (const [state, label, hint, go] of items) strip.append(statusPill(state, label, hint, go));
+  return strip;
+}
+/* Pantalla «Hoy en PacoSAT» (1.6.11): resumen del día, pendientes con
+   semáforo y UN siguiente paso sugerido. El interruptor general de
+   descanso vive aquí y en el Centro SAT (la misma pieza). */
+function todayPanel() {
+  const wrap = panel();
+  const head = n('div', undefined, 'panel-head');
+  const titleBox = n('div');
+  const nowDate = new Date();
+  titleBox.append(n('h2', 'Hoy en PacoSAT'),
+    n('p', nowDate.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })));
+  head.append(titleBox);
+  if (typeof satToken !== 'undefined' && satToken && typeof restSwitch === 'function') head.append(restSwitch());
+  wrap.append(head);
+  const todayKey = nowDate.getFullYear() + '-' + String(nowDate.getMonth() + 1).padStart(2, '0') + '-' + String(nowDate.getDate()).padStart(2, '0');
+  const todays = invoices.filter(row => row.date.startsWith(todayKey));
+  let efos = 0, cancelled = 0;
+  for (const row of invoices) {
+    const state = invoiceStateOf(row);
+    if (state === 'efos') efos++; else if (state === 'Cancelado') cancelled++;
+  }
+  wrap.append(n('p', todays.length ?
+    'Hoy se registraron ' + todays.length + (todays.length === 1 ? ' CFDI nuevo.' : ' CFDI nuevos.') :
+    'Hoy todavía no se registran CFDI nuevos.', 'today-line'));
+  let step = null;
+  if (efos) step = ['Revisar los CFDI con 69-B', 'Un emisor en el listado 69-B puede poner en riesgo la deducción de esos comprobantes.', () => navigate('monitor')];
+  else if (cancelled) step = ['Revisar los CFDI cancelados', 'Hay comprobantes cancelados en el SAT: conviene ver cuáles son y si afectan a pagos ya hechos.', () => navigate('monitor')];
+  else if (typeof satData !== 'undefined' && satData && (satData.inbox || []).length) step = ['Importar los paquetes del SAT', 'Hay ' + satData.inbox.length + ' paquete(s) descargados esperando importación.', () => navigate('sat')];
+  else if (!people.length) step = ['Agregar tu primer RFC', 'Sin contribuyentes no hay expediente: empieza registrando un RFC.', addPerson];
+  else if (typeof satData !== 'undefined' && satData && (satData.profiles || []).some(row => !row.unlocked)) step = ['Autorizar la e.firma de los RFC pendientes', 'Sin e.firma activa no hay descarga automática para ese RFC.', () => navigate('sat')];
+  if (step) {
+    const box = n('div', undefined, 'next-step');
+    box.append(n('strong', 'Siguiente paso · ' + step[0]), n('p', step[1]), action('Hacerlo ahora', step[2], 'primary', 'arrow'));
+    wrap.append(box);
+  } else wrap.append(n('p', 'Todo en orden: no hay pendientes con semáforo. Buen día.', 'today-line'));
+  return wrap;
 }
 function home() {
   if (!ready) {
@@ -1290,10 +1460,15 @@ function home() {
       if (counts.has(row.from.rfc)) counts.get(row.from.rfc)[1]++;
     }
     for (const doc of documents) if (counts.has(doc.rfc)) counts.get(doc.rfc)[2]++;
-    tasks.append(grid(['Contribuyente', 'Recibidos', 'Emitidos', 'PDF', 'Acción'], visiblePeople.map(p => [
-      cell(p.name, p.id), ...counts.get(p.id).map(value => number.format(value)),
-      action('Abrir expediente', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('docs'); })
-    ])));
+    tasks.append(grid(['Contribuyente', 'Recibidos', 'Emitidos', 'PDF', 'Acción'], visiblePeople.map(p => {
+      /* Dos destinos claros (UX-29): «Facturas» va al archivo del RFC y
+         «Expedientes» a sus PDF; «Abrir expediente» a secas confundía. */
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Facturas', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('invoices'); }),
+        action('Expedientes', () => { scope = p.id; $('scope').value = scope; docFilter = ''; navigate('docs'); }),
+        action('Renombrar', () => renamePerson(p)));
+      return [cell(p.name, p.id), ...counts.get(p.id).map(value => number.format(value)), acts];
+    })));
   }
   const history = panel('Actividad reciente');
   if (newsCount) history.append(n('p', newsCount === 1 ? '1 novedad desde tu última visita' : number.format(newsCount) + ' novedades desde tu última visita', 'news-note'));
@@ -1303,6 +1478,22 @@ function home() {
     for (const row of activity.slice(0, 8)) {
       const item = n('div', undefined, 'activity-item');
       const kind = row.event ? (row.event.startsWith('Cancelación') ? 'alert' : 'event') : (row.name.startsWith('SAT') ? 'sat' : 'import');
+      /* Bitácora clicable (1.6.11): cada entrada abre el objeto al que
+         se refiere — el CFDI de una cancelación, la pantalla del SAT,
+         los respaldos o el archivo de facturas de un lote importado. */
+      const uuidMatch = (row.event || '').match(/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/);
+      const linkedInvoice = uuidMatch ? invoices.find(inv => inv.id === uuidMatch[0].toUpperCase()) : null;
+      const openTarget = linkedInvoice ? () => invoiceDetail(linkedInvoice) :
+        row.event?.includes('Respaldo') ? () => navigate('backup') :
+        kind === 'sat' || row.event?.includes('SAT') ? () => navigate('sat') :
+        !row.event ? () => navigate('invoices') : null;
+      if (openTarget) {
+        item.classList.add('activity-link');
+        item.setAttribute('role', 'button');
+        item.tabIndex = 0;
+        item.onclick = openTarget;
+        item.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTarget(); } };
+      }
       const badge = n('span', kind === 'alert' ? 'Alerta' : kind === 'sat' ? 'SAT' : kind === 'event' ? 'Evento' : 'Lote', 'activity-kind');
       badge.dataset.kind = kind;
       const body = n('div', undefined, 'activity-body');
@@ -1319,7 +1510,23 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  return [banner, metrics, kpiRow(selection), monthlyChart(), ...(selection.length ? [fiscalDonut(selection), weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
+  const blocks = [banner, todayPanel(), trafficStrip(), metrics, kpiRow(selection), monthlyChart()];
+  if (lastImport) {
+    /* Tarjeta persistente de la última importación (UX-13). */
+    const card = panel('Última importación');
+    card.append(n('p', lastImport.added + ' nuevos · ' + lastImport.duplicates + ' duplicados · ' + lastImport.review +
+      ' por revisar · ' + localDateTime(lastImport.at)));
+    const acts = n('div', undefined, 'actions');
+    acts.append(action('Ver facturas', () => navigate('invoices'), undefined, 'file'));
+    if (lastImport.dupIds.length) acts.append(action('Ver los UUID duplicados', () => {
+      dialog('UUID duplicados en la última importación',
+        [n('p', 'Estos folios ya estaban en tu expediente y no se importaron dos veces:'), ...lastImport.dupIds.map(id => n('p', id))]);
+    }));
+    card.append(acts);
+    blocks.push(card);
+  }
+  blocks.push(...(selection.length ? [fiscalDonut(selection), weeklyActivity(selection)] : []), secondary, tasks, totalsPanel());
+  return blocks;
 }
 
 function weeklyActivity(rows) {
@@ -1385,10 +1592,42 @@ function invoiceScreen() {
   const state = select([['', 'Todos los estados SAT'], ['Vigente', 'Vigente'], ['Cancelado', 'Cancelado'], ['efos', 'Con 69-B'], ['none', 'Sin consulta']], invoiceState, 'Estado SAT');
   const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
   const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
+  /* Selección múltiple (UX-14): descargar varios XML en un ZIP. */
+  const zipButton = action('Descargar seleccionados (ZIP)', async () => {
+    const entries = [];
+    for (const id of invoiceSelection) {
+      const file = await readStore('files', 'xml:' + id);
+      if (file) entries.push({ name: id + '.xml', data: bytes(await file.blob.arrayBuffer()) });
+    }
+    check(entries.length, 'Ninguno de los seleccionados tiene XML guardado.');
+    download(zipStore(entries), 'CFDI-seleccionados.zip');
+    announce(entries.length + ' XML descargados en un ZIP.');
+  }, undefined, 'down');
+  const chips = n('div', undefined, 'filter-chips');
+  const clearFilters = () => {
+    term = ''; month = ''; invoiceKind = ''; invoiceState = ''; direction = 'Todos'; invoicePage = 0; render();
+  };
   const result = n('div');
   const update = () => {
     const rows = invoiceRows();
     exportButton.disabled = !rows.length;
+    zipButton.disabled = !invoiceSelection.size;
+    /* Chips de filtros activos con su ✕ (UX-04): lo aplicado se ve y
+       se quita sin cazar controles; y «Limpiar filtros» siempre a mano. */
+    chips.replaceChildren();
+    const activeChips = [];
+    if (term) activeChips.push(['«' + term + '»', () => { term = ''; render(); }]);
+    if (month) activeChips.push(['Mes ' + month.slice(5, 7) + '/' + month.slice(0, 4), () => { month = ''; render(); }]);
+    if (invoiceKind) activeChips.push([KINDS[invoiceKind], () => { invoiceKind = ''; render(); }]);
+    if (invoiceState) activeChips.push(['Estado: ' + invoiceState, () => { invoiceState = ''; render(); }]);
+    if (direction !== 'Todos') activeChips.push([direction, () => { direction = 'Todos'; render(); }]);
+    for (const [label, clear] of activeChips) {
+      const chip = n('button', label + ' ✕', 'filter-chip');
+      chip.type = 'button';
+      chip.onclick = clear;
+      chips.append(chip);
+    }
+    if (activeChips.length) chips.append(action('Limpiar filtros', clearFilters));
     invoicePage = Math.min(invoicePage, Math.max(0, Math.ceil(rows.length / 35) - 1));
     const sliced = rows.slice(invoicePage * 35, (invoicePage + 1) * 35);
     const foot = n('div', undefined, 'table-foot');
@@ -1401,10 +1640,17 @@ function invoiceScreen() {
       prev.disabled = invoicePage === 0; next.disabled = (invoicePage + 1) * 35 >= rows.length;
       options.append(prev, n('span', String(invoicePage + 1)), next); foot.append(options);
     }
-    const content = sliced.length ? grid(['Emisor → receptor', 'Fecha', 'Tipo', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => [
-      cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
-      dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)
-    ])) : empty('Sin coincidencias', 'Importa un lote o cambia los filtros.');
+    const content = sliced.length ? grid(['', 'Emisor → receptor', 'Fecha', 'Tipo', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => {
+      const pick = input('checkbox');
+      pick.checked = invoiceSelection.has(row.id);
+      pick.setAttribute('aria-label', 'Seleccionar el CFDI ' + row.id);
+      pick.onchange = () => {
+        if (pick.checked) invoiceSelection.add(row.id); else invoiceSelection.delete(row.id);
+        zipButton.disabled = !invoiceSelection.size;
+      };
+      return [pick, cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
+        dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)];
+    })) : empty('Sin coincidencias', 'Importa un lote o cambia los filtros.', action('Limpiar filtros', clearFilters, 'primary'));
     result.replaceChildren(content, foot);
   };
   search.oninput = () => { term = search.value; invoicePage = 0; update(); };
@@ -1412,8 +1658,8 @@ function invoiceScreen() {
   type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
   state.onchange = () => { invoiceState = state.value; invoicePage = 0; update(); };
   order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
-  controls.append(search, period, type, state, order, exportButton);
-  list.append(tabs, controls, result);
+  controls.append(search, period, type, state, order, exportButton, zipButton);
+  list.append(tabs, controls, chips, result);
   update();
   return [list];
 }
@@ -1421,13 +1667,44 @@ function documentScreen() {
   const list = panel('Documentos del expediente');
   const filters = n('div', undefined, 'filters');
   const choice = select([['', 'Todos los documentos'], ...DOCUMENTS.map(x => [x, x])], docFilter, 'Tipo de documento');
-  choice.onchange = () => { docFilter = choice.value; render(); };
-  filters.append(choice); list.append(filters);
-  const rows = documents.filter(doc => (!scope || doc.rfc === scope) && (!docFilter || doc.kind === docFilter));
-  if (rows.length) list.append(grid(['Documento', 'RFC', 'Fecha', 'Periodo', 'Acción'], rows.map(doc => [
-    cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', action('Ver PDF', () => viewPdf(doc))
-  ])));
-  else list.append(empty('Sin documentos', 'Archiva un PDF o consulta los trámites en el Centro SAT.'));
+  choice.onchange = () => { docFilter = choice.value; docPage = 0; render(); };
+  /* Buscador y paginación como en Facturas (UX-16): con cientos de PDF
+     ya no toca hacer scroll infinito. */
+  const search = input('search', { value: docTerm, placeholder: 'Buscar por nombre o folio fiscal' });
+  search.setAttribute('aria-label', 'Buscar documentos');
+  search.oninput = () => { docTerm = search.value; docPage = 0; paintDocs(); };
+  filters.append(choice, search);
+  list.append(filters);
+  const result = n('div');
+  list.append(result);
+  function paintDocs() {
+    const needle = docTerm.trim().toLocaleLowerCase('es-MX');
+    const rows = documents.filter(doc => (!scope || doc.rfc === scope) && (!docFilter || doc.kind === docFilter) &&
+      (!needle || (doc.name + ' ' + (doc.uuid || '')).toLocaleLowerCase('es-MX').includes(needle)));
+    docPage = Math.min(docPage, Math.max(0, Math.ceil(rows.length / 35) - 1));
+    const sliced = rows.slice(docPage * 35, (docPage + 1) * 35);
+    result.replaceChildren();
+    if (sliced.length) result.append(grid(['Documento', 'RFC', 'Fecha', 'Periodo', 'Acción'], sliced.map(doc => {
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Ver PDF', () => viewPdf(doc)));
+      if (doc.uuid) acts.append(action('Desvincular', () => unlinkDocument(doc)));
+      acts.append(action('Eliminar', () => deleteDocument(doc)));
+      return [cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', acts];
+    })));
+    else result.append(empty('Sin documentos', 'Archiva un PDF o consulta los trámites en el Centro SAT.'));
+    const foot = n('div', undefined, 'table-foot');
+    foot.append(n('span', number.format(rows.length) + ' documentos'));
+    if (rows.length > 35) {
+      const options = n('div', undefined, 'actions');
+      const prev = action('Anterior', () => { docPage--; paintDocs(); });
+      const next = action('Siguiente', () => { docPage++; paintDocs(); });
+      prev.disabled = docPage === 0; next.disabled = (docPage + 1) * 35 >= rows.length;
+      options.append(prev, n('span', String(docPage + 1)), next);
+      foot.append(options);
+    }
+    result.append(foot);
+  }
+  paintDocs();
   return [list];
 }
 function satScreen() {
@@ -1452,7 +1729,9 @@ function satScreen() {
 function backupScreen() {
   const help = n('section', undefined, 'guide');
   const desc = n('div');
-  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', 'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de PacoSAT, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
+  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', typeof cloudStorage !== 'undefined' && cloudStorage ?
+    'El respaldo se cifra con tu contraseña y tus datos viven en tu NAS. Descarga también una copia fuera del NAS de vez en cuando (la copia externa automática va a Google Drive vía Cloud Sync). Restaurarlo reemplaza los expedientes actuales.' :
+    'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de PacoSAT, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
   const options = n('div', undefined, 'actions');
   options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
   help.append(desc, options);
@@ -1604,15 +1883,17 @@ $('invoice-pdf').onchange = () => {
 function operationsScreen() {
   const selected = invoices.filter(matches);
   const docs = documents.filter(d => d.kind === 'Factura PDF' && (!scope || d.rfc === scope));
-  const alerts = panel('Bandeja de atención por RFC');
+  /* Una sola bandeja (UX-18): la de Vigilancia SAT. Operaciones resume
+     el conteo y enlaza; ya no duplica la lista con otros criterios. */
+  const alerts = panel('Bandeja de atención');
   const pending = selected.filter(row => {
     const state = fiscalResults.get(row.id);
     return !state || state.error || state.sat?.state !== 'Vigente' || state.efos?.length;
   });
-  alerts.append(n('p', 'Sin consulta no significa vigente. Las coincidencias 69-B conservan su categoría y requieren revisión.'));
-  if (pending.length) alerts.append(grid(['RFC emisor', 'Comprobante', 'Resultado', 'Acción'], pending.slice(0,100).map(row => [row.from.rfc, row.id, statusCell(row.id), action('Revisar CFDI', () => invoiceDetail(row))])));
-  else alerts.append(empty('Sin pendientes en los resultados cargados', 'Consulta Vigilancia SAT para actualizar el seguimiento.'));
-  alerts.append(n('p', pending.length + ' pendientes; se muestran hasta 100. Usa el selector de contribuyente para acotar.'));
+  alerts.append(n('p', pending.length ?
+    pending.length + ' comprobantes requieren atención según la vigilancia (sin consulta no significa vigente; las coincidencias 69-B conservan su categoría).' :
+    'Sin pendientes en los resultados cargados. La bandeja completa vive en Vigilancia SAT.'));
+  alerts.append(action('Abrir Vigilancia SAT', () => { monitorFilter = 'attention'; navigate('monitor'); }, 'primary', 'shield'));
   const reconcile = panel('Conciliación XML y PDF');
   const unlinked = docs.filter(d => !d.uuid || !invoices.some(row => row.id === d.uuid && [row.from.rfc,row.to.rfc].includes(d.rfc)));
   const noPdf = selected.filter(row => !docs.some(d => d.uuid === row.id && [row.from.rfc,row.to.rfc].includes(d.rfc)));
@@ -1622,7 +1903,7 @@ function operationsScreen() {
   const health = panel('Estado de operación');
   health.append(grid(['Componente', 'Estado'], [
     ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : isStorageBlocked() ? 'Bloqueado por otra pestaña' : 'No disponible'],
-    ['Servicio SAT', !satToken ? 'Abre Iniciar-PacoSAT.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
+    ['Servicio SAT', !satToken ? (typeof cloudStorage !== 'undefined' && cloudStorage ? 'Servicio no alcanzado: revisa que el NAS y el túnel estén en marcha' : 'Abre Iniciar-PacoSAT.cmd para conectarlo') : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
     ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
@@ -1639,6 +1920,11 @@ function operationsScreen() {
   ]));
   const buttons = n('div', undefined, 'actions');
   buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
+  if (satToken && satData.mail?.enabled) buttons.append(action('Enviar correo de prueba', async () => {
+    await satApi('mail/test', {});
+    announce('Correo de prueba enviado a ' + satData.mail.recipient + '.');
+    soundCue('success');
+  }, undefined, 'bell'));
   health.append(buttons);
   /* Salud del sistema (1.6.5): caducidad real de cada e.firma (leída del
      certificado al desbloquear; «sin dato» si nunca se leyó), última
@@ -1725,8 +2011,46 @@ async function addPerson() {
     await writeBatch({ people: [{ id: rfc, name: label }] });
     scope = rfc;
     await refresh(); announce('Expediente creado para ' + rfc + '.');
-  });
+    /* Siguiente paso visible (UX-24): el alta no termina en el Resumen
+       sin guía; se ofrecen las dos acciones naturales del expediente.
+       Se difiere un instante porque el propio diálogo del alta se está
+       cerrando al terminar este envío. */
+    setTimeout(() => {
+      const next = n('div', undefined, 'actions');
+      next.append(action('Importar sus XML/ZIP', () => { $('dialog').close(); chooseImport(); }, 'primary', 'up'),
+        action('Autorizar su e.firma', () => { $('dialog').close(); if (typeof unlockDialog === 'function') unlockDialog(rfc); }, undefined, 'lock'));
+      dialog('Expediente creado · ' + rfc, [n('p', '¿Qué sigue? Importa los XML que ya tengas de este RFC o autoriza su e.firma para que PacoSAT descargue solo.'), next]);
+    }, 80);
+  }, 'Agregar contribuyente');
   paint();
+}
+/* Mantenimiento de cartera (UX-07, 1.6.11): renombrar contribuyentes y
+   eliminar o desvincular documentos, siempre con confirmación clara y
+   asiento en la bitácora. Sin papelera: por eso se avisa antes. */
+async function renamePerson(person) {
+  const name = input('text', { required: true, maxLength: 120, value: person.name });
+  dialog('Renombrar contribuyente', [n('p', 'El RFC ' + person.id + ' no cambia; solo el nombre visible en PacoSAT.'),
+    field('Nombre o razón social', name)], async () => {
+    check(name.value.trim(), 'Escribe un nombre o razón social.');
+    await writeBatch({ people: [{ id: person.id, name: name.value.trim() }] });
+    await refresh(); announce('Contribuyente renombrado a «' + name.value.trim() + '».');
+  }, 'Renombrar');
+}
+function deleteDocument(doc) {
+  dialog('Eliminar documento', [n('p', 'Se eliminará «' + doc.name + '» (' + doc.kind + ' · ' + doc.rfc + ') del expediente, con su PDF. ' +
+    'No hay papelera: si dudas, crea antes un respaldo cifrado.')], async () => {
+    await deleteStoreRecords('documents', [doc.id]);
+    await deleteStoreRecords('files', [doc.id]);
+    await logEvent('Documento eliminado: ' + doc.name);
+    await refresh(); announce('Documento eliminado.');
+  }, 'Eliminar documento');
+}
+function unlinkDocument(doc) {
+  dialog('Desvincular PDF del CFDI', [n('p', '«' + doc.name + '» dejará de estar vinculado al folio ' + doc.uuid + '. El PDF se queda en el expediente.')], async () => {
+    await writeBatch({ documents: [{ ...doc, uuid: '' }] });
+    await logEvent('PDF desvinculado: ' + doc.name);
+    await refresh(); announce('PDF desvinculado del CFDI.');
+  }, 'Desvincular');
 }
 async function chooseImport() {
   await requireStorage();
@@ -1742,7 +2066,8 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
   if (!people.length) return announce('Agrega primero los RFC que quieres importar.', true);
   importing = true;
   $('primary').disabled = true;
-  let added = 0, duplicates = 0, review = 0;
+  let added = 0, duplicates = 0, review = 0, scopeRejected = 0;
+  const dupIds = [];
   const issues = [];
   const pending = new Map();
   const known = scopes();
@@ -1766,8 +2091,14 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
       check(!requiredRfc || row.from.rfc === requiredRfc || row.to.rfc === requiredRfc,
         'No corresponde a ' + requiredRfc + '. Emisor ' + row.from.rfc + ' · Receptor ' + row.to.rfc + '.');
       check(known.has(row.from.rfc) || known.has(row.to.rfc), 'Los RFC del comprobante no están registrados.');
-    } catch (error) { issue(name, error); return; }
-    if (seen.has(row.id)) { duplicates++; return; }
+    } catch (error) {
+      /* UX-03: si hay un RFC seleccionado, avisar cuántos archivos se
+         fueron a revisión SOLO por el alcance, para que no parezca que
+         «desaparecieron» facturas de otros RFC. */
+      if (String(error.message).startsWith('No corresponde a')) scopeRejected++;
+      issue(name, error); return;
+    }
+    if (seen.has(row.id)) { duplicates++; if (dupIds.length < 50) dupIds.push(row.id); return; }
     seen.add(row.id);
     pending.set(row.id, { row, file: { id: 'xml:' + row.id, blob: new Blob([xml], { type: 'application/xml' }) } });
     pendingSize += xml.length;
@@ -1808,7 +2139,11 @@ async function importBatch(source, requiredRfc = scope, { quiet = false } = {}) 
       date: new Date().toISOString(), added, duplicates, review, issues
     }] });
     if (!quiet) {
+      /* Tarjeta de resultado persistente (UX-13): el resumen vive en el
+         Resumen («Última importación») además del aviso superior. */
+      lastImport = { at: Date.now(), added, duplicates, review, dupIds };
       announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
+        (scopeRejected ? '\n' + scopeRejected + ' archivo(s) no corresponden al RFC seleccionado (' + requiredRfc + ') y quedaron por revisar: cambia el selector a «Todos los RFC» para importarlos.' : '') +
         (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
       if (!review) soundCue('success'); else if (added) soundCue('notice');
     }
@@ -2062,11 +2397,28 @@ function invoiceDetail(row) {
 }
 function invoiceActions(row) {
   const wrap = n('div', undefined, 'actions');
-  wrap.append(action('Ver CFDI', () => invoiceDetail(row)), action('Ver XML', async () => {
-    const file = await readStore('files', 'xml:' + row.id);
-    check(file, 'Archivo no encontrado.');
-    await viewXml(file.blob, row.id + '.xml');
-  }));
+  /* Acciones directas por fila (UX-14): lo esencial sin abrir el
+     detalle — ver, descargar el XML, imprimir y copiar el UUID. */
+  wrap.append(action('Ver CFDI', () => invoiceDetail(row)),
+    action('Descargar XML', async () => {
+      const file = await readStore('files', 'xml:' + row.id);
+      check(file, 'Archivo no encontrado.');
+      download(file.blob, row.id + '.xml');
+    }, undefined, 'down'),
+    action('Imprimir', async () => {
+      const file = await readStore('files', 'xml:' + row.id);
+      check(file, 'Archivo no encontrado.');
+      cfdiPrint(row, parseCfdiFull(bytes(await file.blob.arrayBuffer())));
+    }, undefined, 'print'),
+    action('Copiar UUID', async () => {
+      try { await navigator.clipboard.writeText(row.id); announce('UUID copiado: ' + row.id); }
+      catch { announce('No se pudo copiar al portapapeles en este navegador.', true); }
+    }),
+    action('Ver XML', async () => {
+      const file = await readStore('files', 'xml:' + row.id);
+      check(file, 'Archivo no encontrado.');
+      await viewXml(file.blob, row.id + '.xml');
+    }));
   return wrap;
 }
 async function viewXml(file, name) {
@@ -2084,6 +2436,14 @@ async function viewXml(file, name) {
         cell(row.to.name || row.to.rfc, 'Receptor · ' + row.to.rfc), cell(row.id, 'UUID · ' + amount(row)));
       const known = scopes();
       if (!known.has(row.from.rfc) && !known.has(row.to.rfc)) fields.push(n('p', 'Para importarlo, agrega el RFC del emisor o del receptor que corresponda a tu expediente.'));
+      else {
+        /* Sin callejón sin salida (UX-15): si el comprobante encaja en
+           la cartera, se importa desde el propio visor. */
+        fields.push(action('Importar este XML', async () => {
+          $('dialog').close();
+          await importBatch([new File([file], name || 'comprobante.xml', { type: 'application/xml' })]);
+        }, 'primary', 'up'));
+      }
     } catch (error) { fields.push(n('p', 'Revisión del importador · ' + error.message)); }
   }
   const viewer = n('pre', text, 'xml-view');
@@ -2199,13 +2559,14 @@ async function backupDialog() {
   check(!importing && crypto.subtle, 'El respaldo no está disponible en este navegador o hay una importación activa.');
   const password = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
   const repeat = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
-  dialog('Crear respaldo cifrado', [field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
+  dialog('Crear respaldo cifrado', [n('p', 'Sin esta contraseña el respaldo NO se puede abrir: no hay forma de recuperarla. Guárdala en tu gestor de contraseñas.', 'news-note'),
+    field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
     check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
     download(await encryptBackup(await snapshot(), password.value), 'PacoSAT-' + new Date().toISOString().slice(0, 10) + '.faro');
     await logEvent('Respaldo cifrado creado');
     announce('Respaldo cifrado generado.');
     soundCue('success');
-  });
+  }, 'Crear respaldo');
 }
 /* ZIP sin compresión (método «stored») construido en el navegador para
    el paquete mensual: basta el CRC y el directorio central que ya sabe
@@ -2245,26 +2606,42 @@ async function restoreDialog(file) {
   await requireStorage();
   check(!importing && crypto.subtle, 'Espera a que termine la importación o abre la app en un navegador compatible.');
   const password = input('password', { required: true, autocomplete: 'off' });
-  const confirmation = input('checkbox', { required: true });
-  dialog('Restaurar respaldo', [n('p', 'Los expedientes actuales de PacoSAT se reemplazarán por los del respaldo.'), field('Contraseña del respaldo', password),
-    field('Confirmo que quiero reemplazar los datos actuales', confirmation)], async () => {
-    check(confirmation.checked, 'Confirma el reemplazo de los datos.');
+  /* Restauración segura (UX-08): primero se LEE el respaldo y se enseña
+     su contenido; nada se reemplaza hasta la confirmación del paso 2,
+     que además ofrece guardar una copia cifrada de lo actual. */
+  dialog('Restaurar respaldo', [n('p', 'Primero se lee el respaldo y se muestra qué contiene. Nada se reemplaza hasta que confirmes en el paso siguiente.'), field('Contraseña del respaldo', password)], async () => {
     const rawBackup = await decryptBackup(file, password.value);
     const contents = await validateBackup(rawBackup);
-    await writeBatch(contents, true);
-    /* Estado operativo (1.6.4): si el respaldo lo trae y hay servidor, se
-       restaura también en el servidor. Los respaldos anteriores a 1.6.4 no
-       lo traen y se restauran como siempre. */
-    let operationsNote = '';
-    if (rawBackup.operations && typeof satToken !== 'undefined' && satToken) {
-      await satApi('backup/operations', rawBackup.operations);
-      await pollSat();
-      operationsNote = ' También se restauró el estado operativo (descargas, criterios 5002 y avisos pendientes); desbloquea cada perfil para reanudar.';
-    }
-    await refresh();
-    await logEvent('Respaldo restaurado desde un archivo cifrado');
-    announce('Respaldo restaurado.' + operationsNote);
-  });
+    const labels = { people: 'contribuyentes', invoices: 'CFDI', documents: 'documentos', files: 'archivos', activity: 'eventos de actividad' };
+    const summary = STORES.map(name => contents[name].length + ' ' + labels[name]).join(' · ');
+    const saveFirst = input('checkbox'); saveFirst.checked = true;
+    const confirm = input('checkbox', { required: true });
+    setTimeout(() => {
+      dialog('Confirmar restauración', [
+        n('p', 'Este respaldo contiene: ' + summary + '.'),
+        rawBackup.operations ? n('p', 'Incluye el estado operativo (descargas, criterios 5002 y avisos pendientes).') :
+          n('p', 'No incluye estado operativo (es un respaldo anterior): tras restaurar, desbloquea cada perfil para reanudar las descargas.'),
+        n('p', 'Al restaurar se REEMPLAZAN los expedientes actuales por los del respaldo.'),
+        field('Guardar antes una copia cifrada de lo actual (con la contraseña de este respaldo)', saveFirst),
+        field('Confirmo que quiero reemplazar los datos actuales', confirm)], async () => {
+        check(confirm.checked, 'Confirma el reemplazo de los datos.');
+        if (saveFirst.checked) {
+          download(await encryptBackup(await snapshot(), password.value),
+            'PacoSAT-antes-de-restaurar-' + new Date().toISOString().slice(0, 10) + '.faro');
+        }
+        await writeBatch(contents, true);
+        let operationsNote = '';
+        if (rawBackup.operations && typeof satToken !== 'undefined' && satToken) {
+          await satApi('backup/operations', rawBackup.operations);
+          await pollSat();
+          operationsNote = ' También se restauró el estado operativo (descargas, criterios 5002 y avisos pendientes); desbloquea cada perfil para reanudar.';
+        }
+        await refresh();
+        await logEvent('Respaldo restaurado desde un archivo cifrado');
+        announce('Respaldo restaurado.' + operationsNote);
+      }, 'Restaurar ahora');
+    }, 80);
+  }, 'Leer el respaldo');
 }
 const handle = work => () => Promise.resolve().then(work).catch(error => announce(error.message, true));
 $('add').onclick = handle(addPerson);
@@ -2292,12 +2669,35 @@ const globalSearchInput = $('global-search');
 function runGlobalSearch() {
   const query = globalSearchInput.value.trim();
   if (!query) return;
+  /* El buscador también EJECUTA acciones (1.6.11): nombres de pantalla
+     y órdenes cortas («descargar ahora MFI…», «crear respaldo», «ir a
+     cobertura») se resuelven antes de tratar el texto como búsqueda. */
+  const lower = query.toLocaleLowerCase('es-MX');
+  const screensByWord = [['resumen', 'home'], ['inicio', 'home'], ['hoy', 'home'], ['facturas', 'invoices'], ['cfdi', 'invoices'],
+    ['expedientes', 'docs'], ['documentos', 'docs'], ['centro sat', 'sat'], ['descargas', 'sat'], ['vigilancia', 'monitor'],
+    ['69-b', 'monitor'], ['operaciones', 'operations'], ['alertas', 'operations'], ['cobertura', 'coverage'], ['huecos', 'coverage'],
+    ['respaldos', 'backup'], ['respaldo', 'backup'], ['diot', 'diot'], ['ajustes', 'settings'], ['qué incluye', 'capacidades'], ['capacidades', 'capacidades']];
+  const downloadMatch = lower.match(/^descargar(?: ahora)?\s+([a-z0-9]{12,13})$/i);
+  if (downloadMatch && typeof satData !== 'undefined' && satData) {
+    const rfc = downloadMatch[1].toUpperCase();
+    const profile = (satData.profiles || []).find(row => row.rfc === rfc);
+    if (profile?.unlocked) {
+      satApi('run-now', { rfc }).then(data => { satData = data; announce('Revisión inmediata de ' + rfc + ' ejecutada.'); soundCue('success'); })
+        .catch(error => announce(error.message, true));
+      return;
+    }
+  }
+  const screenHit = screensByWord.find(([word]) => lower === word || lower === 'ir a ' + word || lower === 'abrir ' + word);
+  if (screenHit) { navigate(screenHit[1]); announce('Abriendo «' + query + '».'); return; }
+  if (lower === 'crear respaldo' || lower === 'hacer respaldo') { navigate('backup'); backupDialog(); return; }
+  const hadFilters = Boolean(term || month || invoiceKind || invoiceState);
   term = query; invoiceState = ''; invoiceKind = ''; month = ''; invoicePage = 0;
   navigate('invoices');
   const found = invoiceRows();
   if (found.length === 1) invoiceDetail(found[0]);
-  else announce(found.length ? number.format(found.length) + ' comprobantes coinciden con «' + query + '».' :
-    'Sin comprobantes para «' + query + '».', !found.length);
+  else announce((hadFilters ? 'Filtros anteriores limpiados. ' : '') +
+    (found.length ? number.format(found.length) + ' comprobantes coinciden con «' + query + '».' :
+    'Sin comprobantes para «' + query + '».'), !found.length);
 }
 globalSearchInput.addEventListener('keydown', event => {
   if (event.key === 'Enter') { event.preventDefault(); runGlobalSearch(); }
@@ -2415,6 +2815,20 @@ const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos'
 const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
 const criteriaNotes = { disponible: 'Criterio disponible', ultima: 'Criterio: última solicitud disponible', agotado: 'Criterio agotado ante el SAT (5002)' };
 
+/* Errores del servidor en lenguaje claro (UX-20): cada mensaje críptico
+   conocido se traduce a qué pasó y qué hacer. Los que ya vienen claros
+   (la mayoría desde la 1.6.7) pasan tal cual. */
+const FRIENDLY_ERRORS = [
+  [/sesión local inválida/i, 'El servicio se reinició y la sesión caducó: pulsa «Actualizar estado» o recarga la página para reconectar.'],
+  [/^host inválido/i, 'El servicio rechazó la dirección de acceso: entra por la dirección oficial de PacoSAT en tu NAS.'],
+  [/^solicitud inválida/i, 'La solicitud no es válida tal como se envió: revisa el RFC y el periodo e inténtalo de nuevo.'],
+  [/^cfdi de otro rfc/i, 'Ese CFDI es de otro RFC: cambia el contribuyente seleccionado o registra ese RFC en tu cartera.'],
+  [/almacenamiento todavía no está disponible/i, 'El almacenamiento aún se está preparando: espera unos segundos y reintenta; si persiste, cierra las demás pestañas de PacoSAT.']
+];
+function friendlyError(message) {
+  for (const [pattern, text] of FRIENDLY_ERRORS) if (pattern.test(message)) return text;
+  return message;
+}
 async function satApi(route, data) {
   const headers = { 'X-PacoSAT-Token': satToken };
   if (data !== undefined) headers['Content-Type'] = 'application/json';
@@ -2424,7 +2838,7 @@ async function satApi(route, data) {
   });
   if (!response.ok) {
     const failed = await response.json().catch(() => ({}));
-    const error = new Error(failed.error || 'El servicio local no respondió.');
+    const error = new Error(friendlyError(failed.error || 'El servicio local no respondió.'));
     error.guard = failed.guard || null;
     throw error;
   }
@@ -2439,6 +2853,36 @@ function selectPerson() {
   check(people.length, 'Agrega un contribuyente antes de configurar el SAT.');
   return select(people.map(person => [person.id, person.name + ' · ' + person.id]), scope || people[0].id);
 }
+/* Interruptor general de descanso (1.6.10, compartido en 1.6.11): la
+   misma pieza vive en el Centro SAT y en la pantalla «Hoy en PacoSAT».
+   Un toque para descansar o reactivar; la fecha se pide solo si se
+   elige «Descansar hasta…». */
+function restSwitch() {
+  const wrap = n('div', undefined, 'rest-switch');
+  const active = Boolean(satData.rest?.active);
+  const label = n('span', undefined, 'rest-label');
+  label.append(n('strong', active ? '🌙 Descansando' : '🟢 Vigilando'),
+    n('small', active ? 'Sin envíos al SAT ni avisos' + (satData.rest.until && satData.rest.until < Date.UTC(2099, 0, 1) ? ' hasta ' + localDateTime(satData.rest.until) : ' (sin fecha: se reactiva con este interruptor)') :
+      'Descarga y avisos automáticos activos'));
+  const toggle = n('button', active ? 'Reactivar' : 'Descansar', 'rest-toggle');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-pressed', String(active));
+  toggle.onclick = async () => {
+    if (active) {
+      satData = await satApi('rest', { until: 0 });
+      announce('Descanso general terminado. PacoSAT se pone al día con la ventana pendiente.');
+    } else {
+      /* Un toque, sin formularios: descanso sin fecha (se reactiva con
+         el mismo interruptor). La fecha se elige con «Descansar hasta…». */
+      satData = await satApi('rest', { until: Date.UTC(2100, 0, 1) });
+      announce('PacoSAT entra en descanso general: sin descargas ni avisos hasta que lo reactives.');
+    }
+    render();
+  };
+  wrap.append(label, toggle);
+  if (!active) wrap.append(action('Descansar hasta…', restDialog, undefined, 'bell'));
+  return wrap;
+}
 function connectedSatScreen() {
   const guide = n('section', undefined, 'guide');
   const info = n('div');
@@ -2449,13 +2893,7 @@ function connectedSatScreen() {
     action('Solicitar un periodo', requestDialog, undefined, 'sync'));
   guide.append(info, controls);
   const restBar = n('div', undefined, 'panel-head');
-  const restState = satData.rest?.active ?
-    cell('Descanso general ACTIVO hasta ' + localDateTime(satData.rest.until), 'No se envía nada al SAT ni se generan avisos. Al vencer la fecha, todo se reanuda solo con la ventana pendiente.') :
-    cell('Vigilancia activa', 'El descanso general apaga todas las descargas y avisos hasta la fecha que elijas.');
-  const restButtons = n('div', undefined, 'actions');
-  if (satData.rest?.active) restButtons.append(action('Reactivar ahora', async () => { satData = await satApi('rest', { until: 0 }); fillSat(); announce('Descanso general terminado. PacoSAT se pone al día.'); }));
-  else restButtons.append(action('Descansar hasta…', restDialog, undefined, 'bell'));
-  restBar.append(restState, restButtons);
+  restBar.append(cell('Modo descanso general', 'Un toque apaga todas las descargas y los avisos; al reanudar, PacoSAT se pone al día solo.'), restSwitch());
   guide.append(restBar);
   const container = n('div'); container.id = 'sat-live';
   fillSat(container);
@@ -2470,7 +2908,7 @@ function fillSat(target = $('sat-live')) {
   if (satError) schedules.append(empty('No se pudo leer el estado', satError, action('Actualizar', pollSat)));
   else {
     const profiles = satData.profiles.filter(row => !scope || row.rfc === scope);
-    if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Agrega o selecciona un RFC y autoriza su e.firma para activar la revisión.'));
+    if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Agrega o selecciona un RFC y autoriza su e.firma para activar la revisión.', action('Configurar mi primer RFC', () => unlockDialog(), 'primary', 'lock')));
     else schedules.append(grid(['RFC', 'Frecuencia', 'Próxima revisión', 'Estado', 'Acción'], profiles.map(row => {
       const restingProfile = Boolean(row.paused) || (row.pauseUntil || 0) > Date.now();
       const buttons = n('div', undefined, 'actions');
@@ -2484,6 +2922,13 @@ function fillSat(target = $('sat-live')) {
         satData = await satApi('pause', { rfc: row.rfc, paused: true });
         fillSat(); announce(row.rfc + ' entra en descanso: sin descargas ni avisos.');
       }), action('Hasta…', () => pauseUntilDialog(row)));
+      if (row.unlocked && !restingProfile) buttons.append(action('Descargar ahora', async () => {
+        /* UX-06: fuerza el ciclo de este RFC al momento (el servidor
+           aplica los mismos frenos: descanso o bloqueo lo impiden). */
+        satData = await satApi('run-now', { rfc: row.rfc });
+        fillSat(); announce('Revisión inmediata de ' + row.rfc + ' ejecutada: solicitudes programadas y paquetes al día.');
+        soundCue('success');
+      }, undefined, 'sync'));
       return [
         cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma')),
         (row.minutes / 60) + ' h · últimos ' + row.days + ' días',
@@ -2508,7 +2953,15 @@ function fillSat(target = $('sat-live')) {
     satData.mail.error || 'Avisos de CFDI recibidos nuevos. El correo lleva el conteo, sin adjuntar los XML.');
   const buttons = n('div', undefined, 'actions');
   buttons.append(action('Configurar SMTP', mailDialog, undefined, 'lock'));
-  if (satData.mail.enabled) buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSat(); }));
+  if (satData.mail.enabled) {
+    buttons.append(action('Enviar correo de prueba', async () => {
+      /* UX-09: la primera prueba del SMTP no debe ser un aviso real. */
+      await satApi('mail/test', {});
+      announce('Correo de prueba enviado a ' + satData.mail.recipient + '. Revisa tu bandeja: si llegó, los avisos funcionarán.');
+      soundCue('success');
+    }, undefined, 'bell'));
+    buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSat(); }));
+  }
   bar.append(notice, buttons); alerts.append(bar);
   const silence = panel('Aviso de silencio');
   const silenceBar = n('div', undefined, 'panel-head');
@@ -2552,7 +3005,7 @@ function unlockDialog(rfc) {
   const person = selectPerson();
   if (rfc && people.some(row => row.id === rfc)) person.value = rfc;
   const defaults = satData.profiles.find(row => row.rfc === person.value);
-  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults?.minutes || 240));
+  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['360','Cada 6 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults?.minutes || 240));
   const days = input('number', { min: 1, max: 31, value: defaults?.days || 7, required: true });
   const direction = select(Object.entries(directions), defaults?.direction || 'received');
   const certificate = input('file', { required: true, accept: '.cer' });
@@ -2571,15 +3024,16 @@ function unlockDialog(rfc) {
       direction: direction.value, certificate: await fileData(certificate.files[0]), key: await fileData(key.files[0]), password: password.value });
     password.value = '';
     fillSat(); announce('Sincronización autorizada para ' + person.value + '.');
-  });
+  }, 'Autorizar');
 }
 function guardChoice(guard) {
   return new Promise(resolve => {
     const box = n('div');
     box.append(n('h3', guard.state === 'agotado' ? 'Criterio agotado ante el SAT (5002)' : 'Este criterio ya se solicitó una vez'),
       n('p', guard.message),
-      n('p', 'Ventana del criterio: ' + guard.startAt + ' a ' + guard.endAt + '. Al mover el inicio a ' +
-        guard.shiftedStartAt + ' el criterio es otro y no gasta las solicitudes de este.'));
+      /* Fechas siempre en formato humano (UX-25): nada de ISO crudo. */
+      n('p', 'Ventana del criterio: ' + stampLabel(guard.startAt) + ' a ' + stampLabel(guard.endAt) + '. Al mover el inicio a ' +
+        stampLabel(guard.shiftedStartAt) + ' el criterio es otro y no gasta las solicitudes de este.'));
     if (guard.state === 'agotado') box.append(n('p',
       'Si solo necesitas reconciliar el histórico o revisar estados, pide el mismo periodo como Metadatos: ' +
       'es otro tipo de solicitud, con su propio criterio, y no gasta las solicitudes de CFDI.'));
@@ -2591,12 +3045,20 @@ function guardChoice(guard) {
     $('fields').replaceChildren(box);
   });
 }
-function requestDialog() {
+function requestDialog(preset) {
   const person = selectPerson();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
   const start = input('date', { max: today, value: today.slice(0, 8) + '01', required: true });
   const end = input('date', { max: today, value: today, required: true });
   const direction = select([['received', 'Recibidos'], ['issued', 'Emitidos']], 'received');
+  /* Preselección (UX-05): desde un hueco de Cobertura el diálogo nace
+     con el RFC, el sentido y los extremos exactos del hueco. */
+  if (preset) {
+    if (preset.rfc) person.value = preset.rfc;
+    if (preset.direction) direction.value = preset.direction;
+    if (preset.start) start.value = preset.start;
+    if (preset.end) end.value = preset.end;
+  }
   const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Metadatos (registros ligeros, para reconciliar)']], 'cfdi');
   /* Periodos frecuentes en un clic (1.6.10): sin teclear fechas. */
   const quick = n('div', undefined, 'actions');
@@ -2626,7 +3088,7 @@ function requestDialog() {
       }
     }
     fillSat(); announce('Solicitud enviada. PacoSAT revisará cuándo libera el paquete el SAT.');
-  });
+  }, 'Enviar solicitud');
 }
 function mailDialog() {
   const recipient = input('email', { required: true, value: satData.mail.recipient || '', maxLength: 200 });
@@ -2642,7 +3104,7 @@ function mailDialog() {
       host: host.value.trim(), port: Number(port.value), user: user.value, password: password.value });
     password.value = '';
     fillSat(); announce('Avisos activados. Se enviarán al detectar nuevos CFDI recibidos.');
-  });
+  }, 'Activar avisos');
 }
 
 async function pollSat() {
@@ -2710,7 +3172,13 @@ function statusCell(id) {
   wrap.append(badge);
   if (item?.checked) wrap.append(n('small', 'Consultado ' + localDateTime(item.checked)));
   if (item?.sat?.cancellation) wrap.append(n('small', item.sat.cancellation));
-  if (item?.efos.length) wrap.append(n('small', '69-B · ' + item.efos.join(' / ')));
+  if (item?.efos.length) {
+    wrap.append(n('small', '69-B · ' + item.efos.join(' / ')));
+    /* Qué significa y qué hacer, en lenguaje llano (UX-19). */
+    wrap.append(n('small', item.efos.includes('Definitivo') ?
+      'El SAT confirmó operaciones inexistentes de este RFC: esos CFDI no deben deducirse. Avisa a tu contadora.' :
+      'El SAT presume operaciones inexistentes de este RFC: pide aclaración al emisor y avisa a tu contadora antes de deducir.'));
+  }
   else if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS.'));
   if (item?.error) wrap.append(n('small', 'Consulta pendiente de reintento.'));
   return wrap;
@@ -2776,8 +3244,16 @@ function fiscalDonut(rows) {
   const chartWrap = n('div', undefined, 'chart-wrap'); chartWrap.append(svg);
   const legend = n('div', undefined, 'chart-legend');
   for (const segment of segments) {
-    const span = n('span');
+    /* La leyenda también abre (1.6.11): cada estado filtra el archivo. */
+    const span = n('button', undefined, 'legend-item');
+    span.type = 'button';
     span.append(n('i', undefined, 'sw-donut-' + segment.key), document.createTextNode(segment.label + ' ' + number.format(segment.value)));
+    span.onclick = () => {
+      invoiceState = segment.key === 'vigente' ? 'Vigente' : segment.key === 'cancelado' ? 'Cancelado' :
+        segment.key === 'efos' ? 'efos' : 'none';
+      invoicePage = 0;
+      navigate('invoices');
+    };
     legend.append(span);
   }
   wrap.append(chartWrap, legend);
@@ -2891,14 +3367,19 @@ function coverageScreen() {
   const gaps = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
   if (!gaps.length) gapsPanel.append(n('p', 'Sin huecos: en cada RFC y sentido, los tramos descargados forman una cadena continua.'));
   else {
-    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Para cubrir uno, pídelo desde el Centro SAT; si el criterio exacto ya se envió, desplaza un extremo un segundo.'));
+    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Con «Solicitar este hueco» el diálogo se abre ya rellenado con el RFC, el sentido y los extremos exactos; si el criterio exacto ya se envió, desplaza un extremo un segundo.'));
     const duration = seconds => seconds < 90 ? seconds + ' s' : seconds < 5400 ? Math.round(seconds / 60) + ' min' :
       seconds < 172800 ? (seconds / 3600).toFixed(1).replace('.', ',') + ' h' : Math.round(seconds / 86400) + ' días';
-    gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo'], gaps.map(gap => [gap.rfc,
+    gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo', 'Acción'], gaps.map(gap => [gap.rfc,
       gap.direction === 'received' ? 'Recibidos' : 'Emitidos',
       gap.from.slice(0, 10) === gap.to.slice(0, 10) ? gap.from.slice(0, 16) + ' → ' + gap.to.slice(11, 16) :
         gap.from.slice(0, 16) + ' → ' + gap.to.slice(0, 16),
-      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura del blindaje ±1 s' : 'Hueco'])));
+      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura del blindaje ±1 s' : 'Hueco',
+      /* El hueco se pide desde la propia pantalla (UX-05): el diálogo
+         nace rellenado; los micro-huecos son costuras de ±1 s y no se
+         piden (se cosen solos al mover un extremo). */
+      gap.micro ? n('span', '—') : action('Solicitar este hueco', () => requestDialog({
+        rfc: gap.rfc, direction: gap.direction, start: gap.from.slice(0, 10), end: gap.to.slice(0, 10) }))])));
   }
   screens.push(gapsPanel);
   /* Metadatos (1.6.10): lo que el SAT conoce según las solicitudes
@@ -2960,6 +3441,7 @@ function coverageHeatmap(rfc, daysForRfc) {
     const week = Math.floor((first - firstSunday) / (7 * 86400000));
     svg.append(el('text', { x: week * pitch + 1, y: 10 }, months[month]));
   }
+  const detail = n('p', 'Toca un día del mapa para ver su detalle aquí.', 'hm-detail');
   for (let offset = 0; offset < 371; offset++) {
     const date = new Date(firstSunday + offset * 86400000);
     if (date.getUTCFullYear() !== Number(year)) continue;
@@ -2969,13 +3451,20 @@ function coverageHeatmap(rfc, daysForRfc) {
       width: cell, height: cell, rx: 2, class: 'hm-l' + level });
     rect.append(el('title', {}, key + ' · recibidos: ' + (received.has(key) ? 'cubierto' : 'sin cubrir') +
       ' · emitidos: ' + (issued.has(key) ? 'cubierto' : 'sin cubrir')));
+    /* El detalle por día también con tacto y teclado (UX-26), no solo
+       con el tooltip del ratón. */
+    rect.style.cursor = 'pointer';
+    rect.addEventListener('click', () => {
+      detail.textContent = dateLabel(key) + ' · recibidos: ' + (received.has(key) ? 'cubierto' : 'sin cubrir') +
+        ' · emitidos: ' + (issued.has(key) ? 'cubierto' : 'sin cubrir');
+    });
     svg.append(rect);
   }
   const scroll = n('div', undefined, 'hm-scroll'); scroll.append(svg);
   const legend = n('div', undefined, 'chart-legend');
   const item = (cls, label) => { const span = n('span'); span.append(n('i', undefined, cls), document.createTextNode(label)); return span; };
   legend.append(item('sw-hm0', 'Sin cubrir'), item('sw-hm1', 'Un sentido'), item('sw-hm2', 'Recibidos y emitidos'));
-  wrap.append(scroll, legend);
+  wrap.append(scroll, legend, detail);
   return wrap;
 }
 
@@ -3069,6 +3558,7 @@ function settingsScreen() {
   const facts = n('div', undefined, 'facts');
   const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
   facts.append(fact('Versión', 'PacoSAT ' + PACOSAT_META.version),
+    fact('Autor', 'Creado por Paco Iglesias'),
     fact('Creación del software', stampText(PACOSAT_META.created) + ' (primer commit del repositorio)'));
   if (satToken && satData.buildModified) facts.append(fact('Última modificación de esta copia', stampText(new Date(satData.buildModified).toISOString())));
   if (satToken && satData.serverStartedAt) facts.append(fact('Esta instancia se inició', stampText(new Date(satData.serverStartedAt).toISOString())));
@@ -3077,6 +3567,33 @@ function settingsScreen() {
     'Sin servidor, los ajustes se guardan en este navegador. La fecha de inicio de la instancia solo existe en modo servidor y por eso no se muestra aquí.'));
   about.append(aboutBody);
   panels.push(about);
+  /* Sonidos por evento (1.6.11): el interruptor general vive en la
+     cabecera; aquí se elige qué eventos suenan. Se guarda al momento en
+     este navegador, sin pasar por «Guardar ajustes». */
+  const sounds = panel('Sonidos de la interfaz');
+  const soundsBody = n('div', undefined, 'portal');
+  soundsBody.append(n('p', 'Sonidos discretos al completar acciones. El botón de altavoz de la cabecera los apaga todos.'));
+  const soundPrefs = (() => { try { return JSON.parse(prefGet('pacosat-sound-events') || '{}'); } catch { return {}; } })();
+  for (const [kind, label] of [['success', 'Éxito (importación terminada, respaldo creado)'],
+    ['notice', 'Avisos (novedades y confirmaciones)'], ['alert', 'Alertas (algo requiere tu atención)'],
+    ['error', 'Errores (una acción falló)']]) {
+    const toggle = input('checkbox');
+    toggle.checked = soundPrefs[kind] !== false;
+    toggle.onchange = () => {
+      const prefs = (() => { try { return JSON.parse(prefGet('pacosat-sound-events') || '{}'); } catch { return {}; } })();
+      prefs[kind] = toggle.checked;
+      prefSet('pacosat-sound-events', JSON.stringify(prefs));
+      if (toggle.checked) soundCue(kind);
+    };
+    soundsBody.append(field(label, toggle));
+  }
+  sounds.append(soundsBody);
+  panels.push(sounds);
+  /* Guardar también al pie (UX-17): el botón de la cabecera queda lejos
+     al hacer scroll en esta pantalla. */
+  const saveBar = n('div', undefined, 'actions');
+  saveBar.append(action('Guardar ajustes', saveAppSettings, 'primary', 'check'));
+  panels.push(saveBar);
   return panels;
 }
 async function saveAppSettings() {

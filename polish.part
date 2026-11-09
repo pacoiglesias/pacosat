@@ -45,7 +45,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .timeline-empty{color:var(--muted);margin:4px 0}
 .top-search input{background:var(--nav-field);border:1px solid var(--nav-border);color:var(--nav-text);border-radius:8px;padding:6px 10px;min-width:200px;font:inherit;font-size:13px}
 .top-search input::placeholder{color:var(--nav-muted)}
-@media(max-width:900px){.top-search{display:none}}
+@media(max-width:900px){.top-search input{min-width:120px;width:38vw}}
 
 /* Personalización 1.6.6: paleta de acentos como tokens del sistema
    de diseño. Cada valor cumple contraste AA (texto sobre superficie,
@@ -94,3 +94,32 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .print-seals p{margin:3px 0}
 .cap-row{display:flex;gap:9px;align-items:flex-start;padding:5px 0}
 .cap-row .tag{flex:none;margin-top:1px}
+
+/* ===== 1.6.11 · Semáforos, Hoy, un clic ===== */
+:root{--pill-ok-bg:#e2f1e6;--pill-ok-ink:#14532d;--pill-warn-bg:#fdf0d2;--pill-warn-ink:#7a4a00;--pill-bad-bg:#fde3e0;--pill-bad-ink:#8f1d17;--pill-dim-bg:#eceff3;--pill-dim-ink:#4b5563}
+@media (prefers-color-scheme:dark){html:not([data-theme="light"]){--pill-ok-bg:#173a26;--pill-ok-ink:#9fd8b0;--pill-warn-bg:#4a380f;--pill-warn-ink:#ffd88a;--pill-bad-bg:#4c1d1a;--pill-bad-ink:#ffb3ab;--pill-dim-bg:#2a2f36;--pill-dim-ink:#c3cad2}}
+html[data-theme="dark"]{--pill-ok-bg:#173a26;--pill-ok-ink:#9fd8b0;--pill-warn-bg:#4a380f;--pill-warn-ink:#ffd88a;--pill-bad-bg:#4c1d1a;--pill-bad-ink:#ffb3ab;--pill-dim-bg:#2a2f36;--pill-dim-ink:#c3cad2}
+.status-pill{display:inline-flex;align-items:center;gap:7px;border-radius:100px;padding:6px 12px;font-size:13px;font-weight:650;border:1px solid transparent;cursor:pointer}
+.status-pill .pill-dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}
+.status-pill[data-state="ok"]{background:var(--pill-ok-bg);color:var(--pill-ok-ink)}
+.status-pill[data-state="warn"]{background:var(--pill-warn-bg);color:var(--pill-warn-ink)}
+.status-pill[data-state="bad"]{background:var(--pill-bad-bg);color:var(--pill-bad-ink)}
+.status-pill[data-state="dim"]{background:var(--pill-dim-bg);color:var(--pill-dim-ink)}
+.traffic-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.today-line{padding:0 15px 6px}
+.next-step{margin:6px 15px 15px;padding:13px 15px;border:1px solid var(--border);border-radius:11px;background:var(--guide-bg);display:grid;gap:6px;justify-items:start}
+.rest-switch{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.rest-label{display:grid;gap:1px}
+.rest-label small{color:var(--muted);font-size:12px}
+.rest-toggle[aria-pressed="true"]{background:var(--pill-warn-bg);color:var(--pill-warn-ink);border-color:transparent}
+.filter-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;padding:0 15px}
+.filter-chips:not(:empty){padding:10px 15px;border-top:1px solid var(--border)}
+.filter-chip{border-radius:100px;padding:5px 11px;font-size:12.5px;background:var(--surface-2)}
+.pw-eye{padding:5px 8px;margin-top:4px;justify-self:start}
+.activity-link{cursor:pointer}
+.activity-link:hover{background:var(--surface-2)}
+.legend-item{background:none;border:none;padding:2px 4px;font:inherit;color:inherit;cursor:pointer;display:inline-flex;gap:6px;align-items:center}
+.hm-detail{padding:0 15px 13px;color:var(--muted)}
+.side-version{color:var(--nav-muted);font-size:12px;padding:0 4px}
+body.drag-active::after{content:"Suelta los archivos para importar";position:fixed;inset:auto 0 22px 0;margin:0 auto;width:max-content;max-width:92vw;background:var(--green);color:var(--on-accent);padding:11px 18px;border-radius:100px;font-weight:700;z-index:60;box-shadow:0 10px 30px var(--shadow-color)}
+td button{padding:7px 10px}

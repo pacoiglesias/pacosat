@@ -1,15 +1,17 @@
 function operationsScreen() {
   const selected = invoices.filter(matches);
   const docs = documents.filter(d => d.kind === 'Factura PDF' && (!scope || d.rfc === scope));
-  const alerts = panel('Bandeja de atención por RFC');
+  /* Una sola bandeja (UX-18): la de Vigilancia SAT. Operaciones resume
+     el conteo y enlaza; ya no duplica la lista con otros criterios. */
+  const alerts = panel('Bandeja de atención');
   const pending = selected.filter(row => {
     const state = fiscalResults.get(row.id);
     return !state || state.error || state.sat?.state !== 'Vigente' || state.efos?.length;
   });
-  alerts.append(n('p', 'Sin consulta no significa vigente. Las coincidencias 69-B conservan su categoría y requieren revisión.'));
-  if (pending.length) alerts.append(grid(['RFC emisor', 'Comprobante', 'Resultado', 'Acción'], pending.slice(0,100).map(row => [row.from.rfc, row.id, statusCell(row.id), action('Revisar CFDI', () => invoiceDetail(row))])));
-  else alerts.append(empty('Sin pendientes en los resultados cargados', 'Consulta Vigilancia SAT para actualizar el seguimiento.'));
-  alerts.append(n('p', pending.length + ' pendientes; se muestran hasta 100. Usa el selector de contribuyente para acotar.'));
+  alerts.append(n('p', pending.length ?
+    pending.length + ' comprobantes requieren atención según la vigilancia (sin consulta no significa vigente; las coincidencias 69-B conservan su categoría).' :
+    'Sin pendientes en los resultados cargados. La bandeja completa vive en Vigilancia SAT.'));
+  alerts.append(action('Abrir Vigilancia SAT', () => { monitorFilter = 'attention'; navigate('monitor'); }, 'primary', 'shield'));
   const reconcile = panel('Conciliación XML y PDF');
   const unlinked = docs.filter(d => !d.uuid || !invoices.some(row => row.id === d.uuid && [row.from.rfc,row.to.rfc].includes(d.rfc)));
   const noPdf = selected.filter(row => !docs.some(d => d.uuid === row.id && [row.from.rfc,row.to.rfc].includes(d.rfc)));
@@ -19,7 +21,7 @@ function operationsScreen() {
   const health = panel('Estado de operación');
   health.append(grid(['Componente', 'Estado'], [
     ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : isStorageBlocked() ? 'Bloqueado por otra pestaña' : 'No disponible'],
-    ['Servicio SAT', !satToken ? 'Abre Iniciar-PacoSAT.cmd para conectarlo' : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
+    ['Servicio SAT', !satToken ? (typeof cloudStorage !== 'undefined' && cloudStorage ? 'Servicio no alcanzado: revisa que el NAS y el túnel estén en marcha' : 'Abre Iniciar-PacoSAT.cmd para conectarlo') : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
     ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
@@ -36,6 +38,11 @@ function operationsScreen() {
   ]));
   const buttons = n('div', undefined, 'actions');
   buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
+  if (satToken && satData.mail?.enabled) buttons.append(action('Enviar correo de prueba', async () => {
+    await satApi('mail/test', {});
+    announce('Correo de prueba enviado a ' + satData.mail.recipient + '.');
+    soundCue('success');
+  }, undefined, 'bell'));
   health.append(buttons);
   /* Salud del sistema (1.6.5): caducidad real de cada e.firma (leída del
      certificado al desbloquear; «sin dato» si nunca se leyó), última

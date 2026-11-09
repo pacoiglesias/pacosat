@@ -1,6 +1,6 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Última modificación: 8 nov 2026, 22:34 CST**
+**Última modificación: 8 nov 2026, 23:05 CST**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro (pantalla «Qué incluye PacoSAT») y se actualiza en cada ronda y cada despliegue, junto con el sello de versión y hora de creación.
@@ -66,6 +66,13 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - 🔄 Cuentas por PAGAR con vencimientos: lo que debes a proveedores (recibidos PPD sin pago), con antigüedad y avisos antes de que venza.
 - 🔄 Detector de facturas ESPERADAS que no llegaron: si un proveedor recurrente (renta, servicios, igualas) no ha timbrado este mes lo de siempre, aviso — la factura que falta también es un problema.
 
+## 7 bis. Bancos (apartado propio — entra en esta construcción por orden de Paco, 8 nov 22:46)
+- 🔄 Archivo de estados de cuenta por BANCO, CUENTA y MES: Paco sube el estado (PDF) y el sistema lo guarda ordenado, sin carpetas a mano; pensado para BBVA (cuenta y fondo), Santander (cheques y fondo) y Konfio, y abierto a cualquier banco/cuenta que se dé de alta.
+- 🔄 LECTURA AUTOMÁTICA de cada estado: saldos inicial/final, abonos y cargos leídos del documento, con la cadena de saldos verificada mes a mes (el saldo final de un mes = el inicial del siguiente; si no cuadra, semáforo).
+- 🔄 SEMÁFORO DE FALTANTES: qué meses faltan de qué cuenta, visible de un vistazo.
+- 🔄 POSICIÓN TOTAL: cuánto hay en cada banco y en total (cuentas y fondos), con su fecha — la foto bancaria completa en una pantalla.
+- 🔄 Es la base de la conciliación CFDI↔banco (sección 7) y alimenta el expediente 360.
+
 ## 8. Cumplimiento
 - 🔄 Calendario fiscal por RFC (DIOT, provisionales, anual, caducidades de e.firma/CSD y de constancias) con semáforo y avisos por correo.
 - 🔄 IVA del mes estimado por RFC (trasladado y acreditable desde el desglose persistido): la foto fiscal del mes antes de que la arme la contadora.
@@ -76,11 +83,11 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 ## 9. Experiencia de uso
 - ✅ Panel de salud (e.firma y su caducidad, correo, respaldos, vigilancia) y bitácora.
 - 🔄 Botón «PROBAR TODO»: autodiagnóstico completo en un clic (e.firma válida, correo operativo, listas al día, respaldo reciente, SAT alcanzable) con un semáforo por prueba.
-- ✅ Bitácora básica de movimientos del sistema. 🔄 BITÁCORA COMPLETA Y CLICABLE: cada entrada (descarga, verificación, alerta, respaldo, correo, acceso) abre el objeto al que se refiere; filtros por tipo, RFC y resultado; y RESUMEN DE ACTIVIDAD — qué hizo el sistema solo, por día y por semana — consultable y exportable.
-- 🔄 Semáforos verde/ámbar/rojo en todo el sistema, con fila de semáforos abriendo el Resumen.
-- 🔄 Sonidos discretos configurables por evento (éxito, aviso, alerta, error) con interruptor y volumen en Ajustes.
-- 🔄 Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente; los correos de alerta llevan enlace.
-- 🔄 Acciones directas en tarjetas CFDI (ver, descargar XML, abrir PDF, copiar UUID, imprimir) y arrastrar y soltar para importar en cualquier pantalla; «Descargar ahora» por RFC; buscador global que también ejecuta acciones.
+- ✅ Bitácora básica de movimientos del sistema. ✅ CLICABLE (1.6.11): cada entrada abre el objeto al que se refiere (el CFDI de una cancelación, el SAT, los respaldos, el archivo). 🔄 Filtros por tipo, RFC y resultado, registro de accesos y RESUMEN DE ACTIVIDAD — qué hizo el sistema solo, por día y por semana — consultable y exportable: ronda final 1.7.0.
+- ✅ Semáforos verde/ámbar/rojo en todo el sistema, con fila de semáforos abriendo el Resumen (1.6.11).
+- ✅ Sonidos discretos configurables por evento (éxito, aviso, alerta, error) con interruptor general y elección por evento en Ajustes (cableados en 1.6.11).
+- ✅ Click para abrir: cada tarjeta, fila, gráfico, periodo de cobertura y contraparte abre su documento o expediente (1.6.11). 🔄 Los correos de alerta con enlace a la app quedan para cuando exista la URL pública configurable en los avisos.
+- ✅ Acciones directas en tarjetas CFDI (ver, descargar XML, abrir PDF, copiar UUID, imprimir) y arrastrar y soltar para importar en cualquier pantalla; «Descargar ahora» por RFC; buscador global que también ejecuta acciones (1.6.11).
 - 🔄 PacoSAT instalable en el móvil (PWA) con pantallas adaptadas.
 - 🔄 MODO OFFLINE: la app abre sin conexión y permite CONSULTAR una copia local cifrada de solo lectura con los datos de los ÚLTIMOS 3 MESES (CFDI con su desglose, estados, por cobrar/pagar, listas negras), con la hora de la última sincronización siempre visible («estás viendo datos de las HH:MM»); en cada conexión se dejan además PREGENERADOS los informes clave de esos 3 meses (resumen mensual, IVA estimado, por cobrar/pagar) para abrirlos o imprimirlos offline. Lo que no puede salir (descargas y consultas al SAT) queda en cola y se ejecuta al volver la conexión. El XML/PDF individual se abre offline si quedó en la caché reciente; el archivo histórico completo vive en el NAS.
 - 🔄 Acceso en casa sin internet: además del nombre público, PacoSAT responde en la red local del NAS con la misma contraseña, para cuando se caiga internet o el túnel.
@@ -89,10 +96,10 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 - ✅/🔄 Sello en el pie y en Ajustes: «PacoSAT {versión} · Modificado el {fecha} a las {hora}» + «Creado por Paco Iglesias» — mantenido y verificado en CADA despliegue.
 
 ## 9 bis. Principios de experiencia (regla de diseño de Paco)
-- 🔄 INTUITIVO: lenguaje llano; cada término del SAT explicado en una línea; botones con verbos claros («Descargar ahora», «Solicitar este hueco»); ninguna pantalla sin siguiente paso visible.
-- 🔄 PROACTIVO: el sistema habla primero — pantalla de inicio «HOY EN PacoSAT» con el resumen del día, los pendientes con semáforo y el SIGUIENTE PASO sugerido; avisos antes de que las cosas venzan o se rompan, no después.
-- 🔄 AMIGABLE: mensajes en tono cercano y claro; estados vacíos que enseñan qué hacer; errores que dicen qué pasó y cómo se arregla, sin códigos crípticos.
-- 🔄 ÚTIL: cada pantalla termina en una acción posible; nada de información que no lleve a ninguna parte.
+- ✅/🔄 INTUITIVO (aplicado en 1.6.11; revisión final en 1.7.0): lenguaje llano; cada término del SAT explicado en una línea; botones con verbos claros («Descargar ahora», «Solicitar este hueco»); ninguna pantalla sin siguiente paso visible.
+- ✅/🔄 PROACTIVO (pantalla «Hoy en PacoSAT» en 1.6.11; revisión final en 1.7.0): el sistema habla primero — pantalla de inicio «HOY EN PacoSAT» con el resumen del día, los pendientes con semáforo y el SIGUIENTE PASO sugerido; avisos antes de que las cosas venzan o se rompan, no después.
+- ✅/🔄 AMIGABLE (aplicado en 1.6.11; revisión final en 1.7.0): mensajes en tono cercano y claro; estados vacíos que enseñan qué hacer; errores que dicen qué pasó y cómo se arregla, sin códigos crípticos.
+- ✅/🔄 ÚTIL (aplicado en 1.6.11; revisión final en 1.7.0): cada pantalla termina en una acción posible; nada de información que no lleve a ninguna parte.
 
 ## 10. Seguridad y privacidad
 - ✅ Todo corre en el NAS de Paco, tras su túnel y su contraseña; los datos no salen salvo al SAT (descargas con e.firma) y al correo que él configure.

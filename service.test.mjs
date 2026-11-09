@@ -106,7 +106,15 @@ try {
   assert.equal(state.jobs.length, 3); /* 1.6.10: CFDI + Metadata diario + siguiente CFDI */
   assert.equal(state.inbox.filter(row => row.newCount).length, 0);
   assert.equal(sent.length, 1);
+  /* 1.6.11: «Descargar ahora» por RFC, correo de prueba y borrado
+     puntual de registros (UX-06, UX-09, UX-07). */
+  assert.equal((await call('/api/run-now', { rfc: 'XXX000000XX0' })).status, 404);
+  assert.equal((await call('/api/run-now', { rfc })).status, 200);
+  assert.equal((await call('/api/mail/test', {})).status, 200);
+  assert.equal(sent.length, 2);
+  assert.equal(sent[1].subject, 'PacoSAT · Correo de prueba');
   assert.equal((await call('/api/lock', { rfc })).status, 200);
+  assert.equal((await call('/api/run-now', { rfc })).status, 409); /* bloqueado: no se envía nada */
   time += 60 * 60000;
   await service.tick();
   assert.equal(calls.length, 3); /* 1.6.10: dos CFDI y un Metadata */

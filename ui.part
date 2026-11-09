@@ -40,10 +40,16 @@ function applySettings() {
   const modified = typeof satData !== 'undefined' && satData.buildModified ? new Date(satData.buildModified) : null;
   $('app-footer').textContent = 'PacoSAT ' + PACOSAT_META.version + (modified ? ' · Modificado el ' +
     modified.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
-    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : '');
+    ' a las ' + modified.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }) : '') +
+    ' · Creado por Paco Iglesias';
+  /* Versión corta junto a la marca (UX-30): visible sin bajar al pie. */
+  const sideVersion = $('side-version');
+  if (sideVersion) sideVersion.textContent = 'Versión ' + PACOSAT_META.version;
 }
 let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
+let docTerm = '', docPage = 0, lastImport = null;
+const invoiceSelection = new Set();
 let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '';
 let submit, importing = false, ready = false;
 const number = new Intl.NumberFormat('es-MX');
@@ -59,6 +65,12 @@ const roles = row => {
 function dateLabel(date) {
   if (date.length < 10) return date;
   return date.slice(8, 10) + '/' + date.slice(5, 7) + '/' + date.slice(0, 4);
+}
+/* 'AAAA-MM-DD HH:MM:SS' → 'dd/mm/aaaa hh:mm': un solo formato humano
+   en todo lo visible (UX-25). */
+function stampLabel(stamp) {
+  if (!stamp || stamp.length < 16) return stamp || '';
+  return stamp.slice(8, 10) + '/' + stamp.slice(5, 7) + '/' + stamp.slice(0, 4) + ' ' + stamp.slice(11, 16);
 }
 function amount(row) {
   const [integer, decimals] = row.total.split('.');
@@ -98,8 +110,15 @@ function tone(frequency, start, duration, type = 'sine', gain = 0.055) {
   osc.connect(amp); amp.connect(ctx.destination);
   osc.start(at); osc.stop(at + duration + 0.05);
 }
+/* Sonidos por evento (1.6.11): además del interruptor general de la
+   cabecera, cada tipo de aviso se puede silenciar por separado en
+   Ajustes. La preferencia vive en este navegador. */
+const soundEventOn = kind => {
+  try { return JSON.parse(prefGet('pacosat-sound-events') || '{}')[kind] !== false; }
+  catch { return true; }
+};
 function soundCue(kind) {
-  if (!soundOn) return;
+  if (!soundOn || !soundEventOn(kind)) return;
   if (kind === 'success') { tone(659, 0, 0.13); tone(880, 0.1, 0.2); }
   else if (kind === 'error') tone(196, 0, 0.22, 'triangle', 0.075);
   else if (kind === 'alert') { tone(880, 0, 0.12); tone(880, 0.18, 0.12); }
@@ -187,8 +206,7 @@ function reportDialog() {
   check(months.length, 'Todavía no hay totales para reportar.');
   const monthSel = select(months.map(key => [key, key.slice(5, 7) + '/' + key.slice(0, 4)]), months[0], 'Mes del reporte');
   dialog('Reporte mensual por RFC', [n('p', 'Vista para imprimir o guardar en PDF del mes elegido. Respeta el contribuyente seleccionado en el selector principal; sin selección, incluye a todos.'),
-    field('Mes', monthSel)], () => printMonthlyReport(monthSel.value));
-  $('save').textContent = 'Generar e imprimir';
+    field('Mes', monthSel)], () => printMonthlyReport(monthSel.value), 'Generar e imprimir');
 }
 function printMonthlyReport(key) {
   const section = $('print-report');
@@ -215,6 +233,17 @@ function printMonthlyReport(key) {
   tableWrap.append(grid(['Contribuyente', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN'],
     rows.length ? rows : [['Sin comprobantes en el mes', '', '', '', '']]));
   section.append(tableWrap);
+  /* Detalle comprobante a comprobante del mes (UX-23): el reporte para
+     la contadora lista cada CFDI, no solo los totales. */
+  const detail = invoices.filter(row => row.date.startsWith(key) && matches(row));
+  if (detail.length) {
+    section.append(n('h3', 'Comprobantes del mes'));
+    const detailWrap = n('div');
+    detailWrap.append(grid(['Fecha', 'UUID', 'Emisor → receptor', 'Tipo', 'Total'],
+      detail.map(row => [dateLabel(row.date), row.id, (row.from.name || row.from.rfc) + ' → ' + (row.to.name || row.to.rfc),
+        KINDS[row.kind], amount(row)])));
+    section.append(detailWrap);
+  }
   let checked = 0, cancelled = 0, efosHits = 0;
   for (const row of invoices) {
     if (!row.date.startsWith(key) || !matches(row)) continue;
@@ -296,12 +325,19 @@ function buildMonthlyPackage(rfc, monthKey) {
     '<p class="nota">Vigilancia según la última consulta disponible: ' + checked + ' CFDI consultados, ' + cancelled + ' cancelados, ' + efosHits +
     ' con coincidencia 69-B. Importes en MXN sumados al centavo; los de otra moneda se cuentan sin sumar. Generado el ' + generated +
     ' por PacoSAT. Documento de trabajo, no una declaración.</p></body></html>';
-  const names = ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt'];
+  /* Detalle de los CFDI del mes (UX-23): el paquete incluye el listado
+     comprobante a comprobante, no solo los totales. */
+  const detailRows = invoices.filter(row => row.date.startsWith(monthKey) && (row.from.rfc === rfc || row.to.rfc === rfc));
+  const detailCsv = [['UUID', 'Fecha', 'Emisor', 'RFC emisor', 'Receptor', 'RFC receptor', 'Tipo', 'Total', 'Moneda'],
+    ...detailRows.map(row => [row.id, row.date, row.from.name, row.from.rfc, row.to.name, row.to.rfc, KINDS[row.kind], row.total, row.currency])]
+    .map(row => row.map(esc).join(',')).join('\r\n');
+  const names = ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt', 'cfdi-del-mes.csv'];
   const encoder = new TextEncoder();
   const zip = zipStore([
     { name: names[0], data: encoder.encode('\uFEFF' + totalesCsv) },
     { name: names[1], data: encoder.encode('\uFEFF' + diotText) },
     { name: names[2], data: encoder.encode(resumen) },
+    { name: names[4], data: encoder.encode('\uFEFF' + detailCsv) },
     { name: names[3], data: encoder.encode(monthlyPackageManifest(rfc, monthKey, names, generated, appSettings.installName)) }
   ]);
   download(zip, 'PacoSAT-' + rfc + '-' + monthKey + '.zip');
@@ -522,13 +558,26 @@ function field(label, input) {
   const el = n('label', label); el.append(input); return el;
 }
 function input(type, props) { return Object.assign(n('input'), { type }, props); }
-function dialog(title, controls, work) {
+function dialog(title, controls, work, confirmLabel) {
   $('dialogTitle').textContent = title;
   $('fields').replaceChildren(...controls);
   $('formError').hidden = true;
   $('save').hidden = !work;
+  /* Cada diálogo nombra su acción real (UX-11): «Enviar solicitud»,
+     «Autorizar», «Crear respaldo»… no siempre «Guardar». */
+  if (work) $('save').textContent = confirmLabel || 'Guardar';
   submit = work;
   $('dialog').showModal();
+  /* Ojo en contraseñas (UX-21): todo campo de contraseña de un diálogo
+     puede mostrarse u ocultarse sin tener que re-teclearlo. */
+  for (const pw of $('fields').querySelectorAll('input[type="password"]')) {
+    const eye = n('button', undefined, 'pw-eye');
+    eye.type = 'button';
+    eye.setAttribute('aria-label', 'Mostrar u ocultar la contraseña');
+    eye.append(icon('eye'));
+    eye.onclick = () => { pw.type = pw.type === 'password' ? 'text' : 'password'; };
+    pw.after(eye);
+  }
 }
 function download(blob, name) {
   const url = URL.createObjectURL(blob);
@@ -574,6 +623,83 @@ function render() {
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();
+}
+/* Píldora de estado común (1.6.11): un solo lenguaje de semáforo en
+   toda la app. ok = verde, warn = ámbar, bad = rojo, dim = gris (sin
+   dato o en descanso: no es un problema). Pulsarla lleva a su pantalla. */
+function statusPill(state, label, hint, onClick) {
+  const pill = n('button', undefined, 'status-pill');
+  pill.type = 'button';
+  pill.dataset.state = state;
+  pill.append(n('span', undefined, 'pill-dot'), n('span', label));
+  if (hint) pill.title = hint;
+  if (onClick) pill.onclick = onClick; else pill.disabled = true;
+  return pill;
+}
+function trafficStrip() {
+  const strip = n('div', undefined, 'traffic-strip');
+  strip.setAttribute('aria-label', 'Semáforos de PacoSAT');
+  const items = [];
+  if (typeof satData !== 'undefined' && satData) {
+    const profiles = satData.profiles || [];
+    const unlockedCount = profiles.filter(row => row.unlocked).length;
+    const restingNow = Boolean(satData.rest?.active) || (profiles.length > 0 && profiles.every(row => row.paused));
+    items.push(restingNow ? ['dim', 'Descansando', 'La vigilancia está en pausa: no se envía nada al SAT', () => navigate('sat')]
+      : ['ok', 'Vigilando', 'La vigilancia automática está activa', () => navigate('sat')]);
+    items.push([!profiles.length ? 'dim' : unlockedCount === profiles.length ? 'ok' : 'warn',
+      'SAT · ' + unlockedCount + '/' + profiles.length + ' RFC autorizados', 'Perfiles con e.firma activa', () => navigate('sat')]);
+    items.push([satData.mail?.enabled ? 'ok' : 'dim', satData.mail?.enabled ? 'Correo de avisos activo' : 'Correo sin configurar',
+      'Avisos por correo', () => navigate('sat')]);
+    const sb = satData.scheduledBackup || {};
+    items.push([!sb.enabled ? 'dim' : sb.error ? 'bad' : 'ok',
+      sb.enabled ? 'Respaldo programado' : 'Respaldo sin programar', 'Respaldo automático cifrado', () => navigate('backup')]);
+  }
+  let efos = 0, cancelled = 0;
+  for (const row of invoices) {
+    const state = invoiceStateOf(row);
+    if (state === 'efos') efos++; else if (state === 'Cancelado') cancelled++;
+  }
+  items.push([efos ? 'bad' : cancelled ? 'warn' : 'ok',
+    efos ? number.format(efos) + ' con 69-B' : cancelled ? number.format(cancelled) + ' cancelados' : 'Sin alertas 69-B',
+    'Vigilancia de estados y artículo 69-B', () => navigate('monitor')]);
+  for (const [state, label, hint, go] of items) strip.append(statusPill(state, label, hint, go));
+  return strip;
+}
+/* Pantalla «Hoy en PacoSAT» (1.6.11): resumen del día, pendientes con
+   semáforo y UN siguiente paso sugerido. El interruptor general de
+   descanso vive aquí y en el Centro SAT (la misma pieza). */
+function todayPanel() {
+  const wrap = panel();
+  const head = n('div', undefined, 'panel-head');
+  const titleBox = n('div');
+  const nowDate = new Date();
+  titleBox.append(n('h2', 'Hoy en PacoSAT'),
+    n('p', nowDate.toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })));
+  head.append(titleBox);
+  if (typeof satToken !== 'undefined' && satToken && typeof restSwitch === 'function') head.append(restSwitch());
+  wrap.append(head);
+  const todayKey = nowDate.getFullYear() + '-' + String(nowDate.getMonth() + 1).padStart(2, '0') + '-' + String(nowDate.getDate()).padStart(2, '0');
+  const todays = invoices.filter(row => row.date.startsWith(todayKey));
+  let efos = 0, cancelled = 0;
+  for (const row of invoices) {
+    const state = invoiceStateOf(row);
+    if (state === 'efos') efos++; else if (state === 'Cancelado') cancelled++;
+  }
+  wrap.append(n('p', todays.length ?
+    'Hoy se registraron ' + todays.length + (todays.length === 1 ? ' CFDI nuevo.' : ' CFDI nuevos.') :
+    'Hoy todavía no se registran CFDI nuevos.', 'today-line'));
+  let step = null;
+  if (efos) step = ['Revisar los CFDI con 69-B', 'Un emisor en el listado 69-B puede poner en riesgo la deducción de esos comprobantes.', () => navigate('monitor')];
+  else if (cancelled) step = ['Revisar los CFDI cancelados', 'Hay comprobantes cancelados en el SAT: conviene ver cuáles son y si afectan a pagos ya hechos.', () => navigate('monitor')];
+  else if (typeof satData !== 'undefined' && satData && (satData.inbox || []).length) step = ['Importar los paquetes del SAT', 'Hay ' + satData.inbox.length + ' paquete(s) descargados esperando importación.', () => navigate('sat')];
+  else if (!people.length) step = ['Agregar tu primer RFC', 'Sin contribuyentes no hay expediente: empieza registrando un RFC.', addPerson];
+  else if (typeof satData !== 'undefined' && satData && (satData.profiles || []).some(row => !row.unlocked)) step = ['Autorizar la e.firma de los RFC pendientes', 'Sin e.firma activa no hay descarga automática para ese RFC.', () => navigate('sat')];
+  if (step) {
+    const box = n('div', undefined, 'next-step');
+    box.append(n('strong', 'Siguiente paso · ' + step[0]), n('p', step[1]), action('Hacerlo ahora', step[2], 'primary', 'arrow'));
+    wrap.append(box);
+  } else wrap.append(n('p', 'Todo en orden: no hay pendientes con semáforo. Buen día.', 'today-line'));
+  return wrap;
 }
 function home() {
   if (!ready) {
@@ -621,10 +747,15 @@ function home() {
       if (counts.has(row.from.rfc)) counts.get(row.from.rfc)[1]++;
     }
     for (const doc of documents) if (counts.has(doc.rfc)) counts.get(doc.rfc)[2]++;
-    tasks.append(grid(['Contribuyente', 'Recibidos', 'Emitidos', 'PDF', 'Acción'], visiblePeople.map(p => [
-      cell(p.name, p.id), ...counts.get(p.id).map(value => number.format(value)),
-      action('Abrir expediente', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('docs'); })
-    ])));
+    tasks.append(grid(['Contribuyente', 'Recibidos', 'Emitidos', 'PDF', 'Acción'], visiblePeople.map(p => {
+      /* Dos destinos claros (UX-29): «Facturas» va al archivo del RFC y
+         «Expedientes» a sus PDF; «Abrir expediente» a secas confundía. */
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Facturas', () => { scope = p.id; $('scope').value = scope; invoicePage = 0; navigate('invoices'); }),
+        action('Expedientes', () => { scope = p.id; $('scope').value = scope; docFilter = ''; navigate('docs'); }),
+        action('Renombrar', () => renamePerson(p)));
+      return [cell(p.name, p.id), ...counts.get(p.id).map(value => number.format(value)), acts];
+    })));
   }
   const history = panel('Actividad reciente');
   if (newsCount) history.append(n('p', newsCount === 1 ? '1 novedad desde tu última visita' : number.format(newsCount) + ' novedades desde tu última visita', 'news-note'));
@@ -634,6 +765,22 @@ function home() {
     for (const row of activity.slice(0, 8)) {
       const item = n('div', undefined, 'activity-item');
       const kind = row.event ? (row.event.startsWith('Cancelación') ? 'alert' : 'event') : (row.name.startsWith('SAT') ? 'sat' : 'import');
+      /* Bitácora clicable (1.6.11): cada entrada abre el objeto al que
+         se refiere — el CFDI de una cancelación, la pantalla del SAT,
+         los respaldos o el archivo de facturas de un lote importado. */
+      const uuidMatch = (row.event || '').match(/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/);
+      const linkedInvoice = uuidMatch ? invoices.find(inv => inv.id === uuidMatch[0].toUpperCase()) : null;
+      const openTarget = linkedInvoice ? () => invoiceDetail(linkedInvoice) :
+        row.event?.includes('Respaldo') ? () => navigate('backup') :
+        kind === 'sat' || row.event?.includes('SAT') ? () => navigate('sat') :
+        !row.event ? () => navigate('invoices') : null;
+      if (openTarget) {
+        item.classList.add('activity-link');
+        item.setAttribute('role', 'button');
+        item.tabIndex = 0;
+        item.onclick = openTarget;
+        item.onkeydown = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openTarget(); } };
+      }
       const badge = n('span', kind === 'alert' ? 'Alerta' : kind === 'sat' ? 'SAT' : kind === 'event' ? 'Evento' : 'Lote', 'activity-kind');
       badge.dataset.kind = kind;
       const body = n('div', undefined, 'activity-body');
@@ -650,7 +797,23 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  return [banner, metrics, kpiRow(selection), monthlyChart(), ...(selection.length ? [fiscalDonut(selection), weeklyActivity(selection)] : []), secondary, tasks, totalsPanel()];
+  const blocks = [banner, todayPanel(), trafficStrip(), metrics, kpiRow(selection), monthlyChart()];
+  if (lastImport) {
+    /* Tarjeta persistente de la última importación (UX-13). */
+    const card = panel('Última importación');
+    card.append(n('p', lastImport.added + ' nuevos · ' + lastImport.duplicates + ' duplicados · ' + lastImport.review +
+      ' por revisar · ' + localDateTime(lastImport.at)));
+    const acts = n('div', undefined, 'actions');
+    acts.append(action('Ver facturas', () => navigate('invoices'), undefined, 'file'));
+    if (lastImport.dupIds.length) acts.append(action('Ver los UUID duplicados', () => {
+      dialog('UUID duplicados en la última importación',
+        [n('p', 'Estos folios ya estaban en tu expediente y no se importaron dos veces:'), ...lastImport.dupIds.map(id => n('p', id))]);
+    }));
+    card.append(acts);
+    blocks.push(card);
+  }
+  blocks.push(...(selection.length ? [fiscalDonut(selection), weeklyActivity(selection)] : []), secondary, tasks, totalsPanel());
+  return blocks;
 }
 
 function weeklyActivity(rows) {
@@ -716,10 +879,42 @@ function invoiceScreen() {
   const state = select([['', 'Todos los estados SAT'], ['Vigente', 'Vigente'], ['Cancelado', 'Cancelado'], ['efos', 'Con 69-B'], ['none', 'Sin consulta']], invoiceState, 'Estado SAT');
   const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
   const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
+  /* Selección múltiple (UX-14): descargar varios XML en un ZIP. */
+  const zipButton = action('Descargar seleccionados (ZIP)', async () => {
+    const entries = [];
+    for (const id of invoiceSelection) {
+      const file = await readStore('files', 'xml:' + id);
+      if (file) entries.push({ name: id + '.xml', data: bytes(await file.blob.arrayBuffer()) });
+    }
+    check(entries.length, 'Ninguno de los seleccionados tiene XML guardado.');
+    download(zipStore(entries), 'CFDI-seleccionados.zip');
+    announce(entries.length + ' XML descargados en un ZIP.');
+  }, undefined, 'down');
+  const chips = n('div', undefined, 'filter-chips');
+  const clearFilters = () => {
+    term = ''; month = ''; invoiceKind = ''; invoiceState = ''; direction = 'Todos'; invoicePage = 0; render();
+  };
   const result = n('div');
   const update = () => {
     const rows = invoiceRows();
     exportButton.disabled = !rows.length;
+    zipButton.disabled = !invoiceSelection.size;
+    /* Chips de filtros activos con su ✕ (UX-04): lo aplicado se ve y
+       se quita sin cazar controles; y «Limpiar filtros» siempre a mano. */
+    chips.replaceChildren();
+    const activeChips = [];
+    if (term) activeChips.push(['«' + term + '»', () => { term = ''; render(); }]);
+    if (month) activeChips.push(['Mes ' + month.slice(5, 7) + '/' + month.slice(0, 4), () => { month = ''; render(); }]);
+    if (invoiceKind) activeChips.push([KINDS[invoiceKind], () => { invoiceKind = ''; render(); }]);
+    if (invoiceState) activeChips.push(['Estado: ' + invoiceState, () => { invoiceState = ''; render(); }]);
+    if (direction !== 'Todos') activeChips.push([direction, () => { direction = 'Todos'; render(); }]);
+    for (const [label, clear] of activeChips) {
+      const chip = n('button', label + ' ✕', 'filter-chip');
+      chip.type = 'button';
+      chip.onclick = clear;
+      chips.append(chip);
+    }
+    if (activeChips.length) chips.append(action('Limpiar filtros', clearFilters));
     invoicePage = Math.min(invoicePage, Math.max(0, Math.ceil(rows.length / 35) - 1));
     const sliced = rows.slice(invoicePage * 35, (invoicePage + 1) * 35);
     const foot = n('div', undefined, 'table-foot');
@@ -732,10 +927,17 @@ function invoiceScreen() {
       prev.disabled = invoicePage === 0; next.disabled = (invoicePage + 1) * 35 >= rows.length;
       options.append(prev, n('span', String(invoicePage + 1)), next); foot.append(options);
     }
-    const content = sliced.length ? grid(['Emisor → receptor', 'Fecha', 'Tipo', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => [
-      cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
-      dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)
-    ])) : empty('Sin coincidencias', 'Importa un lote o cambia los filtros.');
+    const content = sliced.length ? grid(['', 'Emisor → receptor', 'Fecha', 'Tipo', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => {
+      const pick = input('checkbox');
+      pick.checked = invoiceSelection.has(row.id);
+      pick.setAttribute('aria-label', 'Seleccionar el CFDI ' + row.id);
+      pick.onchange = () => {
+        if (pick.checked) invoiceSelection.add(row.id); else invoiceSelection.delete(row.id);
+        zipButton.disabled = !invoiceSelection.size;
+      };
+      return [pick, cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
+        dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)];
+    })) : empty('Sin coincidencias', 'Importa un lote o cambia los filtros.', action('Limpiar filtros', clearFilters, 'primary'));
     result.replaceChildren(content, foot);
   };
   search.oninput = () => { term = search.value; invoicePage = 0; update(); };
@@ -743,8 +945,8 @@ function invoiceScreen() {
   type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
   state.onchange = () => { invoiceState = state.value; invoicePage = 0; update(); };
   order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
-  controls.append(search, period, type, state, order, exportButton);
-  list.append(tabs, controls, result);
+  controls.append(search, period, type, state, order, exportButton, zipButton);
+  list.append(tabs, controls, chips, result);
   update();
   return [list];
 }
@@ -752,13 +954,44 @@ function documentScreen() {
   const list = panel('Documentos del expediente');
   const filters = n('div', undefined, 'filters');
   const choice = select([['', 'Todos los documentos'], ...DOCUMENTS.map(x => [x, x])], docFilter, 'Tipo de documento');
-  choice.onchange = () => { docFilter = choice.value; render(); };
-  filters.append(choice); list.append(filters);
-  const rows = documents.filter(doc => (!scope || doc.rfc === scope) && (!docFilter || doc.kind === docFilter));
-  if (rows.length) list.append(grid(['Documento', 'RFC', 'Fecha', 'Periodo', 'Acción'], rows.map(doc => [
-    cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', action('Ver PDF', () => viewPdf(doc))
-  ])));
-  else list.append(empty('Sin documentos', 'Archiva un PDF o consulta los trámites en el Centro SAT.'));
+  choice.onchange = () => { docFilter = choice.value; docPage = 0; render(); };
+  /* Buscador y paginación como en Facturas (UX-16): con cientos de PDF
+     ya no toca hacer scroll infinito. */
+  const search = input('search', { value: docTerm, placeholder: 'Buscar por nombre o folio fiscal' });
+  search.setAttribute('aria-label', 'Buscar documentos');
+  search.oninput = () => { docTerm = search.value; docPage = 0; paintDocs(); };
+  filters.append(choice, search);
+  list.append(filters);
+  const result = n('div');
+  list.append(result);
+  function paintDocs() {
+    const needle = docTerm.trim().toLocaleLowerCase('es-MX');
+    const rows = documents.filter(doc => (!scope || doc.rfc === scope) && (!docFilter || doc.kind === docFilter) &&
+      (!needle || (doc.name + ' ' + (doc.uuid || '')).toLocaleLowerCase('es-MX').includes(needle)));
+    docPage = Math.min(docPage, Math.max(0, Math.ceil(rows.length / 35) - 1));
+    const sliced = rows.slice(docPage * 35, (docPage + 1) * 35);
+    result.replaceChildren();
+    if (sliced.length) result.append(grid(['Documento', 'RFC', 'Fecha', 'Periodo', 'Acción'], sliced.map(doc => {
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Ver PDF', () => viewPdf(doc)));
+      if (doc.uuid) acts.append(action('Desvincular', () => unlinkDocument(doc)));
+      acts.append(action('Eliminar', () => deleteDocument(doc)));
+      return [cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', acts];
+    })));
+    else result.append(empty('Sin documentos', 'Archiva un PDF o consulta los trámites en el Centro SAT.'));
+    const foot = n('div', undefined, 'table-foot');
+    foot.append(n('span', number.format(rows.length) + ' documentos'));
+    if (rows.length > 35) {
+      const options = n('div', undefined, 'actions');
+      const prev = action('Anterior', () => { docPage--; paintDocs(); });
+      const next = action('Siguiente', () => { docPage++; paintDocs(); });
+      prev.disabled = docPage === 0; next.disabled = (docPage + 1) * 35 >= rows.length;
+      options.append(prev, n('span', String(docPage + 1)), next);
+      foot.append(options);
+    }
+    result.append(foot);
+  }
+  paintDocs();
   return [list];
 }
 function satScreen() {
@@ -783,7 +1016,9 @@ function satScreen() {
 function backupScreen() {
   const help = n('section', undefined, 'guide');
   const desc = n('div');
-  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', 'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de PacoSAT, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
+  desc.append(n('h2', 'Copia de todos tus RFC'), n('p', typeof cloudStorage !== 'undefined' && cloudStorage ?
+    'El respaldo se cifra con tu contraseña y tus datos viven en tu NAS. Descarga también una copia fuera del NAS de vez en cuando (la copia externa automática va a Google Drive vía Cloud Sync). Restaurarlo reemplaza los expedientes actuales.' :
+    'El respaldo se cifra con tu contraseña. Guárdalo antes de mover el archivo de PacoSAT, cambiar de navegador o borrar sus datos. Restaurarlo reemplaza los expedientes actuales.'));
   const options = n('div', undefined, 'actions');
   options.append(action('Restaurar respaldo', () => $('restore').click(), undefined, 'box'));
   help.append(desc, options);

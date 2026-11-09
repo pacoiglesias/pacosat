@@ -1204,6 +1204,32 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
   }
 
+  /* Ciclo completo de un perfil (1.6.11): verificar lo pendiente,
+     programar CFDI y metadatos y anotar el resultado. Lo usa el tick y
+     también el botón «Descargar ahora» por RFC. */
+  async function runProfileCycle(profile, time) {
+    const active = unlocked.get(profile.rfc);
+    if (!active || profilePaused(profile, time)) return;
+    const outcome = await verifyJobs(profile, active, time);
+    for (const job of outcome.terminal) {
+      const isMeta = job.kind === 'metadata';
+      queueAlert('job-terminal', 'job:' + job.id,
+        isMeta ? 'PacoSAT · Una solicitud de metadatos al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus) :
+          'PacoSAT · Una solicitud al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus),
+        isMeta ?
+          'La solicitud de metadatos del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
+          (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT. La reconciliación de ese periodo se reintentará en el siguiente ciclo diario de metadatos.' :
+          'La solicitud del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
+          (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT y no entregará paquetes. Crea una solicitud nueva para un periodo ' +
+          'distinto desde el Centro SAT; no reintentes la misma, porque el SAT limita las solicitudes por periodo.', time);
+    }
+    const scheduleAttempted = profile.nextRun <= time;
+    if (scheduleAttempted) await schedule(profile, active.connector, time);
+    if (scheduleAttempted) await scheduleMetadata(profile, active.connector, time);
+    const profileError = scheduleAttempted ? (db.prepare('SELECT error FROM profiles WHERE rfc=?').get(profile.rfc)?.error || '') : '';
+    noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
+      Boolean(profileError) || outcome.stuck > 0, time);
+  }
   async function tick() {
     if (busy) return;
     busy = true;
@@ -1223,29 +1249,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           if (!getState('catchup:' + profile.rfc)) setState('catchup:' + profile.rfc, String(since));
       }
       if (!isResting) {
-        for (const profile of db.prepare('SELECT * FROM profiles').all()) {
-          const active = unlocked.get(profile.rfc);
-          if (!active || profilePaused(profile, time)) continue;
-          const outcome = await verifyJobs(profile, active, time);
-          for (const job of outcome.terminal) {
-            const isMeta = job.kind === 'metadata';
-            queueAlert('job-terminal', 'job:' + job.id,
-              isMeta ? 'PacoSAT · Una solicitud de metadatos al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus) :
-                'PacoSAT · Una solicitud al SAT quedó ' + (jobStateLabel[job.afterStatus] || job.afterStatus),
-              isMeta ?
-                'La solicitud de metadatos del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
-                (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT. La reconciliación de ese periodo se reintentará en el siguiente ciclo diario de metadatos.' :
-                'La solicitud del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
-                (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT y no entregará paquetes. Crea una solicitud nueva para un periodo ' +
-                'distinto desde el Centro SAT; no reintentes la misma, porque el SAT limita las solicitudes por periodo.', time);
-          }
-          const scheduleAttempted = profile.nextRun <= time;
-          if (scheduleAttempted) await schedule(profile, active.connector, time);
-          if (scheduleAttempted) await scheduleMetadata(profile, active.connector, time);
-          const profileError = scheduleAttempted ? (db.prepare('SELECT error FROM profiles WHERE rfc=?').get(profile.rfc)?.error || '') : '';
-          noteDownloadOutcome(profile.rfc, scheduleAttempted || outcome.attempted > 0,
-            Boolean(profileError) || outcome.stuck > 0, time);
-        }
+        for (const profile of db.prepare('SELECT * FROM profiles').all())
+          await runProfileCycle(profile, time);
         reconcileCoverageGaps(time);
         checkCertExpiries(time);
         checkSilence(time);
@@ -1490,6 +1495,54 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(Number.isInteger(x.days) && x.days >= 0 && x.days <= 365, 'El umbral debe ser de 0 a 365 días.');
         setSetting('silenceDays', x.days ? String(x.days) : '');
         return json(res, overview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/run-now') {
+        /* «Descargar ahora» por RFC (UX-06, 1.6.11): fuerza el ciclo de
+           ese perfil al momento, con los mismos frenos que el tick: en
+           descanso (general o del RFC) o bloqueado no se envía nada. */
+        const x = await body(req);
+        const profile = db.prepare('SELECT * FROM profiles WHERE rfc=?').get(String(x.rfc || ''));
+        need(profile, 'Ese RFC no está configurado en el servidor.', 404);
+        need(!resting(), 'PacoSAT está en descanso general: desactívalo para descargar ahora.', 409);
+        need(!profilePaused(profile), 'Ese RFC está en descanso: reanúdalo para descargar ahora.', 409);
+        need(unlocked.has(profile.rfc), 'Ese RFC está bloqueado: autoriza su e.firma primero.', 409);
+        need(!busy, 'El servicio está en un ciclo de revisión: espera unos segundos y reintenta.', 409);
+        busy = true;
+        try {
+          const time = now();
+          await runProfileCycle(profile, time);
+          await notify(time);
+          await sendAlerts(time);
+        } finally { busy = false; }
+        return json(res, overview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/mail/test') {
+        /* Correo de prueba (UX-09, 1.6.11): la primera verificación del
+           SMTP no debe ser un aviso real perdido. */
+        await body(req);
+        need(mail, 'El correo de avisos no está activo: configúralo primero en el Centro SAT.', 409);
+        try {
+          await mail.transport.sendMail({ from: displayFrom(mail.from), to: mail.recipient,
+            subject: 'PacoSAT · Correo de prueba',
+            text: 'Este correo confirma que los avisos de PacoSAT llegan bien a esta dirección.\n' +
+              'Si lo recibiste, la configuración de correo funciona y los avisos reales también llegarán.',
+            messageId: '<pacosat-prueba-' + Date.now() + '@pacosat.local>' });
+        } catch (error) {
+          return json(res, { error: 'El servidor de correo rechazó el envío: ' + error.message }, 502);
+        }
+        return json(res, { ok: true });
+      }
+      if (cloud && req.method === 'POST' && url.pathname === '/api/data/delete') {
+        /* Borrado puntual de registros (UX-07, 1.6.11): mantenimiento de
+           cartera con confirmación en la app y asiento en la bitácora (el cliente registra el evento). */
+        const x = await body(req);
+        need(stores.includes(x.store) && Array.isArray(x.ids) && x.ids.length && x.ids.length <= 500 &&
+          x.ids.every(id => typeof id === 'string' && id.length <= 220), 'Borrado inválido.');
+        let removed = 0;
+        const del = db.prepare('DELETE FROM records WHERE store=? AND id=?');
+        for (const id of x.ids) removed += del.run(x.store, id).changes;
+        storageRevision++;
+        return json(res, { removed, revision: storageRevision });
       }
       if (req.method === 'POST' && url.pathname === '/api/retry') {
         const x = await body(req);

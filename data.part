@@ -126,6 +126,20 @@ function writeBatch(batch, replace = false) {
     }
   });
 }
+/* Borrado puntual (UX-07, 1.6.11): mantenimiento de cartera. En modo
+   servidor lo registra la auditoría del servicio; en modo local borra
+   de IndexedDB. No hay papelera: la app confirma antes con el detalle
+   de lo que se va a eliminar. */
+function deleteStoreRecords(store, ids) {
+  if (typeof cloudStorage !== 'undefined' && cloudStorage) return satApi('data/delete', { store, ids });
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    tx.oncomplete = resolve;
+    tx.onabort = () => reject(tx.error || new Error('La operación se canceló.'));
+    const table = tx.objectStore(store);
+    for (const id of ids) table.delete(id);
+  });
+}
 function decodeXml(raw) {
   const lead = new TextDecoder('windows-1252').decode(raw.subarray(0, 256));
   const declaration = lead.match(/^\s*<\?xml[^>]*encoding\s*=\s*["']([^"']+)/i);

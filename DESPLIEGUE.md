@@ -1,6 +1,8 @@
 # Despliegue de PacoSAT en el NAS
 
-**Última modificación: 8 nov 2026, 22:23 CST**
+**Última modificación: 8 nov 2026, 23:05 CST**
+
+**Nombre público (decisión de Paco, 8 nov 2026):** el acceso es **https://pacosat.iglesiasmurrieta.com** en todo: `PACOSAT_DOMAIN=pacosat.iglesiasmurrieta.com` en el compose del NAS, el túnel de Cloudflare y cualquier enlace que la app ponga en sus correos salen de ese nombre. El nombre anterior, `sat.iglesiasmurrieta.com`, queda como **alias con redirección** al nuevo durante la transición (se mantiene el registro DNS y una regla de redirección en el túnel/proxy hasta que Paco diga retirarlo). El cambio de túnel/DNS se hace en el despliegue final; el código no contiene el nombre (llega por `PACOSAT_ORIGIN`)— solo esta documentación y los ejemplos lo fijan.
 
 La vía PRINCIPAL de despliegue es descargar la imagen ya construida: al fusionar a `main`, GitHub Actions construye la imagen y la publica en GHCR como `ghcr.io/pacoiglesias/pacosat:<versión>` (y `:latest`). El NAS no compila nada: descarga y recrea. La configuración y los secretos viven SOLO en el NAS (carpeta `pacosat-secrets` y variables del compose desplegado); GitHub nunca entra al NAS.
 

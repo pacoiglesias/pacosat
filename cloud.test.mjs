@@ -46,6 +46,11 @@ try {
   const renamed = [{ ...people[0], name: 'Nombre actualizado' }];
   assert.equal((await request('/api/storage', { batch: { people: renamed } })).status, 200);
   assert.deepEqual(await (await request('/api/storage?store=people')).json(), renamed);
+  /* Borrado puntual (UX-07, 1.6.11): elimina solo los ids pedidos. */
+  const deleted = await (await request('/api/data/delete', { store: 'people', ids: [renamed[0].id] })).json();
+  assert.equal(deleted.removed, 1);
+  assert.deepEqual(await (await request('/api/storage?store=people')).json(), []);
+  assert.equal((await request('/api/data/delete', { store: 'fake', ids: ['x'] })).status, 400);
   assert.notEqual((await (await request('/api/status')).json()).cloudRevision, before);
   console.log('OK: control del proxy, almacenamiento central, actualización, revisión, transacción y candidatos PDF.');
 } finally { service.close(); }
