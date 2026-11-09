@@ -1,6 +1,6 @@
 # PacoSAT · satfacturas
 
-Versión 1.6.6 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
+Versión 1.6.7 para pruebas controladas. Aplicación propia sin Firebase para organizar CFDI y documentos de varios RFC.
 La instancia en modo servidor se publica tras un proxy HTTPS con autenticación; consulta [SERVIDOR.md](SERVIDOR.md).
 
 ## Inicio en Windows
@@ -44,6 +44,7 @@ Abre http://127.0.0.1:43729. Abrir solo el HTML no activa el servicio SAT.
 - **Ajustes de identidad** (vista «Ajustes»): nombre de la instalación en la cabecera, el reporte mensual y el manifiesto del paquete; **logo opcional** (PNG/JPG/SVG seguro, hasta 200 KB, validado por su contenido real) guardado en el servidor; **color de acento** con 7 opciones de la paleta del sistema de diseño (contraste AA en claro y oscuro) más el predeterminado; y **nombre del remitente** para los correos del sistema. Los ajustes viven **en el servidor** (su base de datos, junto al estado operativo): sobreviven a reinicios y redespliegues, viajan en el respaldo completo y se restauran con él — nunca en pacosat-secrets.
 - **Versión y sellos visibles**: un pie discreto en todas las pantallas («PacoSAT {versión} · Modificado el {fecha} a las {hora}») y el bloque «Acerca de» en Ajustes con la versión, la fecha de creación del software (primer commit del repositorio) y el inicio de la instancia en modo servidor. Los sellos salen de datos reales (la generación y el archivo servido), nunca de datos tecleados.
 - El intervalo de descarga de un perfil admite **cualquier valor entre 60 y 1440 minutos** tanto en la API como en el archivo de arranque (la cadencia de revisión de CFDI nuevos es de 360 minutos, cada 6 horas).
+- **Visor CFDI profesional**: el detalle de cada comprobante muestra la representación completa parseada de su XML — cabecera (versión, serie y folio, fecha, lugar de expedición, tipo, forma y método de pago, moneda, certificado, uso de CFDI), emisor y receptor completos (régimen y domicilio fiscal), tabla de conceptos con sus impuestos, totales con desglose (traslados por impuesto y tasa, retenciones), el Timbre Fiscal Digital entero (UUID, PAC, certificados y los sellos y la cadena original en secciones plegables con botón de copiar), el complemento de Pagos 2.0 con sus documentos relacionados y cualquier otro complemento detectado por nombre. Incluye el estado en el SAT según la vigilancia, la historia del comprobante, copiar el UUID con un clic, descargar el XML, abrir el PDF vinculado (o el aviso de que no hay ninguno) y una **representación impresa tipo factura** con la identidad de Ajustes y los sellos en letra pequeña. La tarjeta resumen se queda como cabecera del detalle y en los listados.
 - Respaldo cifrado de expedientes y restauración.
 - Modo servidor con SQLite, proxy HTTPS y configuración privada; consulta [SERVIDOR.md](SERVIDOR.md).
 

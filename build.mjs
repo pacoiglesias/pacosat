@@ -22,4 +22,4 @@ const layout = read('layout.part')
 const css = ['style.part','design.part','polish.part'].map(read).join('\n');
 const script = meta + ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','monitor-ui.part','coverage-ui.part','settings-ui.part'].map(read).join('\n');
 write('Faro-Fiscal.html', layout.replace('/*STYLES*/', () => css).replace('/*SCRIPT*/', () => script));
-write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, zipXml, rfcCheckDigit, validateRfc };\n');
+write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, zipXml, rfcCheckDigit, validateRfc };\n');

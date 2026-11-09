@@ -156,6 +156,105 @@ function parseXml(raw, Parser = DOMParser) {
   const seal = (attr(root, 'Sello', 'sello') || attr(stamp, 'SelloCFD', 'selloCFD')).slice(-8);
   return { id: uuid, from, to, date, kind, total, currency, concepts, seal };
 }
+/* Representación COMPLETA del comprobante para el visor profesional
+   (1.6.7): cabecera, partes, conceptos con sus impuestos, totales con
+   desglose, Timbre Fiscal Digital, complemento de Pagos 2.0 y nombre de
+   cualquier otro complemento. A diferencia del importador (parseXml),
+   es tolerante: un CFDI sin timbre o con datos incompletos se muestra
+   igualmente, con el timbre en null. Los importes viajan como cadenas
+   exactas del XML; nada se recalcula ni se inventa. La cadena original
+   del timbre se GENERA desde los campos del propio TFD con el formato
+   de la especificación del SAT (||1.1|UUID|Fecha|RFC PAC|Sello CFD|
+   Nº certificado SAT||), como hace cualquier verificador. */
+function parseCfdiFull(raw, Parser = DOMParser) {
+  check(raw.length && raw.length <= 8 * MB, 'XML vacío o mayor de 8 MB.');
+  const xml = decodeXml(raw);
+  check(!/<!DOCTYPE|<!ENTITY/i.test(xml), 'El XML contiene declaraciones no admitidas.');
+  const doc = new Parser().parseFromString(xml, 'application/xml');
+  const root = doc.documentElement;
+  check(root.localName === 'Comprobante' && /^http:\/\/www\.sat\.gob\.mx\/cfd\/[34]$/.test(root.namespaceURI) &&
+    !doc.getElementsByTagName('parsererror').length, 'No es un CFDI con estructura XML válida.');
+  const elements = node => Array.from(node?.children || node?.childNodes || []).filter(item => item.nodeType === 1);
+  const child = (node, name) => elements(node).find(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const childNs = (node, name, ns) => elements(node).find(item => item.localName === name && item.namespaceURI === ns);
+  const kids = (node, name) => elements(node).filter(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const attr = (node, key, fallback = key) => node?.getAttribute(key) || node?.getAttribute(fallback) || '';
+  const taxesOf = node => {
+    const wrap = child(node, 'Impuestos');
+    const list = (holder, itemName, fields) => kids(child(wrap, holder), itemName).map(item =>
+      Object.fromEntries(fields.map(([out, key]) => [out, attr(item, key)])));
+    return {
+      traslados: list('Traslados', 'Traslado', [['base', 'Base'], ['impuesto', 'Impuesto'], ['tipoFactor', 'TipoFactor'], ['tasa', 'TasaOCuota'], ['importe', 'Importe']]),
+      retenciones: list('Retenciones', 'Retencion', [['base', 'Base'], ['impuesto', 'Impuesto'], ['importe', 'Importe'], ['tipoFactor', 'TipoFactor'], ['tasa', 'TasaOCuota']])
+    };
+  };
+  const globalTaxes = taxesOf(root);
+  const impuestosNode = child(root, 'Impuestos');
+  const legacy = { INGRESO: 'I', EGRESO: 'E', TRASLADO: 'T', PAGO: 'P', NÓMINA: 'N', NOMINA: 'N' };
+  const rawKind = attr(root, 'TipoDeComprobante', 'tipoDeComprobante').toUpperCase();
+  const emisorNode = child(root, 'Emisor'), receptorNode = child(root, 'Receptor');
+  const complemento = child(root, 'Complemento');
+  const stamp = complemento?.getElementsByTagNameNS('http://www.sat.gob.mx/TimbreFiscalDigital', 'TimbreFiscalDigital')[0] || null;
+  let timbre = null;
+  if (stamp) {
+    const t = { uuid: attr(stamp, 'UUID').toUpperCase(), fechaTimbrado: attr(stamp, 'FechaTimbrado'),
+      rfcProvCertif: attr(stamp, 'RfcProvCertif'), noCertificadoSAT: attr(stamp, 'NoCertificadoSAT'),
+      selloCfd: attr(stamp, 'SelloCFD'), selloSat: attr(stamp, 'SelloSAT'), version: attr(stamp, 'Version') || '1.1' };
+    t.cadenaOriginal = '||' + t.version + '|' + t.uuid + '|' + t.fechaTimbrado + '|' + t.rfcProvCertif + '|' + t.selloCfd + '|' + t.noCertificadoSAT + '||';
+    timbre = t;
+  }
+  let pagos = null;
+  const pagosNode = complemento ? childNs(complemento, 'Pagos', 'http://www.sat.gob.mx/Pagos20') : null;
+  if (pagosNode) {
+    const ns = 'http://www.sat.gob.mx/Pagos20';
+    const inNs = (node, name) => elements(node).filter(item => item.localName === name && item.namespaceURI === ns);
+    const totalesNode = inNs(pagosNode, 'Totales')[0] || null;
+    pagos = {
+      totales: totalesNode ? Object.fromEntries(['TotalRetencionesIVA', 'TotalRetencionesISR', 'TotalRetencionesIEPS',
+        'TotalTrasladosBaseIVA16', 'TotalTrasladosImpuestoIVA16', 'TotalTrasladosBaseIVA8', 'TotalTrasladosImpuestoIVA8',
+        'TotalTrasladosBaseIVA0', 'TotalTrasladosImpuestoIVA0', 'TotalTrasladosBaseIVAExento', 'MontoTotalPagos']
+        .map(key => [key, attr(totalesNode, key)]).filter(([, value]) => value !== '')) : {},
+      pagos: inNs(pagosNode, 'Pago').map(pago => ({
+        fechaPago: attr(pago, 'FechaPago'), formaDePagoP: attr(pago, 'FormaDePagoP'), monedaP: attr(pago, 'MonedaP'),
+        tipoCambioP: attr(pago, 'TipoCambioP'), monto: attr(pago, 'Monto'), numOperacion: attr(pago, 'NumOperacion'),
+        documentos: inNs(pago, 'DoctoRelacionado').map(docto => ({
+          idDocumento: attr(docto, 'IdDocumento').toUpperCase(), serie: attr(docto, 'Serie'), folio: attr(docto, 'Folio'),
+          monedaDr: attr(docto, 'MonedaDR'), equivalenciaDr: attr(docto, 'EquivalenciaDR'),
+          numParcialidad: attr(docto, 'NumParcialidad'), impSaldoAnt: attr(docto, 'ImpSaldoAnt'),
+          impPagado: attr(docto, 'ImpPagado'), impSaldoInsoluto: attr(docto, 'ImpSaldoInsoluto'),
+          objetoImpDr: attr(docto, 'ObjetoImpDR')
+        }))
+      }))
+    };
+  }
+  const otrosComplementos = complemento ? elements(complemento)
+    .filter(item => item !== stamp && item !== pagosNode)
+    .map(item => item.localName + (attr(item, 'Version') ? ' ' + attr(item, 'Version') : '')) : [];
+  return {
+    version: attr(root, 'Version', 'version'), serie: attr(root, 'Serie', 'serie'), folio: attr(root, 'Folio', 'folio'),
+    fecha: attr(root, 'Fecha', 'fecha'), lugarExpedicion: attr(root, 'LugarExpedicion'),
+    tipoRaw: rawKind, kind: legacy[rawKind] || rawKind, formaPago: attr(root, 'FormaPago'), metodoPago: attr(root, 'MetodoPago'),
+    condiciones: attr(root, 'CondicionesDePago'), moneda: attr(root, 'Moneda', 'moneda').toUpperCase(),
+    tipoCambio: attr(root, 'TipoCambio'), subTotal: attr(root, 'SubTotal'), descuento: attr(root, 'Descuento'),
+    total: attr(root, 'Total', 'total'), noCertificado: attr(root, 'NoCertificado'), exportacion: attr(root, 'Exportacion'),
+    sello: attr(root, 'Sello', 'sello'), certificado: attr(root, 'Certificado'),
+    emisor: { rfc: attr(emisorNode, 'Rfc', 'rfc').toUpperCase(), nombre: attr(emisorNode, 'Nombre', 'nombre'), regimen: attr(emisorNode, 'RegimenFiscal') },
+    receptor: { rfc: attr(receptorNode, 'Rfc', 'rfc').toUpperCase(), nombre: attr(receptorNode, 'Nombre', 'nombre'),
+      regimen: attr(receptorNode, 'RegimenFiscalReceptor'), domicilioFiscal: attr(receptorNode, 'DomicilioFiscalReceptor'),
+      usoCfdi: attr(receptorNode, 'UsoCFDI') },
+    conceptos: kids(child(root, 'Conceptos'), 'Concepto').map(item => {
+      const taxes = taxesOf(item);
+      return { claveProdServ: attr(item, 'ClaveProdServ'), noIdentificacion: attr(item, 'NoIdentificacion'),
+        cantidad: attr(item, 'Cantidad'), claveUnidad: attr(item, 'ClaveUnidad'), unidad: attr(item, 'Unidad'),
+        descripcion: attr(item, 'Descripcion', 'descripcion'), valorUnitario: attr(item, 'ValorUnitario'),
+        descuento: attr(item, 'Descuento'), importe: attr(item, 'Importe'), objetoImp: attr(item, 'ObjetoImp'),
+        traslados: taxes.traslados, retenciones: taxes.retenciones };
+    }),
+    impuestos: { traslados: globalTaxes.traslados, retenciones: globalTaxes.retenciones,
+      totalTrasladados: attr(impuestosNode, 'TotalImpuestosTrasladados'), totalRetenidos: attr(impuestosNode, 'TotalImpuestosRetenidos') },
+    timbre, pagos, otrosComplementos
+  };
+}
 const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
   let value = index;
   for (let bit = 0; bit < 8; bit++) value = (value >>> 1) ^ ((value & 1) ? 0xedb88320 : 0);
@@ -259,4 +358,4 @@ async function decryptBackup(file, password) {
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
-export { crc32, parseXml, zipXml, rfcCheckDigit, validateRfc };
+export { crc32, parseXml, parseCfdiFull, zipXml, rfcCheckDigit, validateRfc };

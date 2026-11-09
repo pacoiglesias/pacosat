@@ -191,6 +191,18 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
 .swatch[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--ok-ink)}
 .swatch-dot{width:15px;height:15px;border-radius:50%;display:inline-block;border:1px solid var(--border)}
 .logo-preview{width:52px;height:52px;object-fit:contain;border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+
+/* Visor CFDI profesional (1.6.7) y datos «Acerca de» (1.6.6). */
+.cfdi-dialog{width:min(940px,calc(100% - 24px))}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px;margin:10px 0}
+.facts>div{display:grid;gap:2px;padding:9px 11px;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;min-width:0}
+.facts small{color:var(--muted);font-size:10.5px;font-weight:700;letter-spacing:.08em}
+.facts strong{font-size:13.5px;overflow-wrap:anywhere}
+.seal-details{margin:8px 0;border:1px solid var(--border);border-radius:9px;padding:9px 11px}
+.seal-details summary{cursor:pointer;font-weight:650}
+.seal-details pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;max-height:130px;overflow:auto}
+.print-seals{font-size:9.5px;overflow-wrap:anywhere}
+.print-seals p{margin:3px 0}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -268,7 +280,7 @@ body{-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}button
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
   <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
 </dialog>
-<script>const PACOSAT_META = {"version":"1.6.6","created":"2026-11-08T13:42:35-06:00"};
+<script>const PACOSAT_META = {"version":"1.6.7","created":"2026-11-08T13:42:35-06:00"};
 'use strict';
 const $ = id => document.getElementById(id);
 const KB = 1024;
@@ -426,6 +438,105 @@ function parseXml(raw, Parser = DOMParser) {
     .map(item => attr(item, 'Descripcion', 'descripcion').slice(0, 220));
   const seal = (attr(root, 'Sello', 'sello') || attr(stamp, 'SelloCFD', 'selloCFD')).slice(-8);
   return { id: uuid, from, to, date, kind, total, currency, concepts, seal };
+}
+/* Representación COMPLETA del comprobante para el visor profesional
+   (1.6.7): cabecera, partes, conceptos con sus impuestos, totales con
+   desglose, Timbre Fiscal Digital, complemento de Pagos 2.0 y nombre de
+   cualquier otro complemento. A diferencia del importador (parseXml),
+   es tolerante: un CFDI sin timbre o con datos incompletos se muestra
+   igualmente, con el timbre en null. Los importes viajan como cadenas
+   exactas del XML; nada se recalcula ni se inventa. La cadena original
+   del timbre se GENERA desde los campos del propio TFD con el formato
+   de la especificación del SAT (||1.1|UUID|Fecha|RFC PAC|Sello CFD|
+   Nº certificado SAT||), como hace cualquier verificador. */
+function parseCfdiFull(raw, Parser = DOMParser) {
+  check(raw.length && raw.length <= 8 * MB, 'XML vacío o mayor de 8 MB.');
+  const xml = decodeXml(raw);
+  check(!/<!DOCTYPE|<!ENTITY/i.test(xml), 'El XML contiene declaraciones no admitidas.');
+  const doc = new Parser().parseFromString(xml, 'application/xml');
+  const root = doc.documentElement;
+  check(root.localName === 'Comprobante' && /^http:\/\/www\.sat\.gob\.mx\/cfd\/[34]$/.test(root.namespaceURI) &&
+    !doc.getElementsByTagName('parsererror').length, 'No es un CFDI con estructura XML válida.');
+  const elements = node => Array.from(node?.children || node?.childNodes || []).filter(item => item.nodeType === 1);
+  const child = (node, name) => elements(node).find(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const childNs = (node, name, ns) => elements(node).find(item => item.localName === name && item.namespaceURI === ns);
+  const kids = (node, name) => elements(node).filter(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const attr = (node, key, fallback = key) => node?.getAttribute(key) || node?.getAttribute(fallback) || '';
+  const taxesOf = node => {
+    const wrap = child(node, 'Impuestos');
+    const list = (holder, itemName, fields) => kids(child(wrap, holder), itemName).map(item =>
+      Object.fromEntries(fields.map(([out, key]) => [out, attr(item, key)])));
+    return {
+      traslados: list('Traslados', 'Traslado', [['base', 'Base'], ['impuesto', 'Impuesto'], ['tipoFactor', 'TipoFactor'], ['tasa', 'TasaOCuota'], ['importe', 'Importe']]),
+      retenciones: list('Retenciones', 'Retencion', [['base', 'Base'], ['impuesto', 'Impuesto'], ['importe', 'Importe'], ['tipoFactor', 'TipoFactor'], ['tasa', 'TasaOCuota']])
+    };
+  };
+  const globalTaxes = taxesOf(root);
+  const impuestosNode = child(root, 'Impuestos');
+  const legacy = { INGRESO: 'I', EGRESO: 'E', TRASLADO: 'T', PAGO: 'P', NÓMINA: 'N', NOMINA: 'N' };
+  const rawKind = attr(root, 'TipoDeComprobante', 'tipoDeComprobante').toUpperCase();
+  const emisorNode = child(root, 'Emisor'), receptorNode = child(root, 'Receptor');
+  const complemento = child(root, 'Complemento');
+  const stamp = complemento?.getElementsByTagNameNS('http://www.sat.gob.mx/TimbreFiscalDigital', 'TimbreFiscalDigital')[0] || null;
+  let timbre = null;
+  if (stamp) {
+    const t = { uuid: attr(stamp, 'UUID').toUpperCase(), fechaTimbrado: attr(stamp, 'FechaTimbrado'),
+      rfcProvCertif: attr(stamp, 'RfcProvCertif'), noCertificadoSAT: attr(stamp, 'NoCertificadoSAT'),
+      selloCfd: attr(stamp, 'SelloCFD'), selloSat: attr(stamp, 'SelloSAT'), version: attr(stamp, 'Version') || '1.1' };
+    t.cadenaOriginal = '||' + t.version + '|' + t.uuid + '|' + t.fechaTimbrado + '|' + t.rfcProvCertif + '|' + t.selloCfd + '|' + t.noCertificadoSAT + '||';
+    timbre = t;
+  }
+  let pagos = null;
+  const pagosNode = complemento ? childNs(complemento, 'Pagos', 'http://www.sat.gob.mx/Pagos20') : null;
+  if (pagosNode) {
+    const ns = 'http://www.sat.gob.mx/Pagos20';
+    const inNs = (node, name) => elements(node).filter(item => item.localName === name && item.namespaceURI === ns);
+    const totalesNode = inNs(pagosNode, 'Totales')[0] || null;
+    pagos = {
+      totales: totalesNode ? Object.fromEntries(['TotalRetencionesIVA', 'TotalRetencionesISR', 'TotalRetencionesIEPS',
+        'TotalTrasladosBaseIVA16', 'TotalTrasladosImpuestoIVA16', 'TotalTrasladosBaseIVA8', 'TotalTrasladosImpuestoIVA8',
+        'TotalTrasladosBaseIVA0', 'TotalTrasladosImpuestoIVA0', 'TotalTrasladosBaseIVAExento', 'MontoTotalPagos']
+        .map(key => [key, attr(totalesNode, key)]).filter(([, value]) => value !== '')) : {},
+      pagos: inNs(pagosNode, 'Pago').map(pago => ({
+        fechaPago: attr(pago, 'FechaPago'), formaDePagoP: attr(pago, 'FormaDePagoP'), monedaP: attr(pago, 'MonedaP'),
+        tipoCambioP: attr(pago, 'TipoCambioP'), monto: attr(pago, 'Monto'), numOperacion: attr(pago, 'NumOperacion'),
+        documentos: inNs(pago, 'DoctoRelacionado').map(docto => ({
+          idDocumento: attr(docto, 'IdDocumento').toUpperCase(), serie: attr(docto, 'Serie'), folio: attr(docto, 'Folio'),
+          monedaDr: attr(docto, 'MonedaDR'), equivalenciaDr: attr(docto, 'EquivalenciaDR'),
+          numParcialidad: attr(docto, 'NumParcialidad'), impSaldoAnt: attr(docto, 'ImpSaldoAnt'),
+          impPagado: attr(docto, 'ImpPagado'), impSaldoInsoluto: attr(docto, 'ImpSaldoInsoluto'),
+          objetoImpDr: attr(docto, 'ObjetoImpDR')
+        }))
+      }))
+    };
+  }
+  const otrosComplementos = complemento ? elements(complemento)
+    .filter(item => item !== stamp && item !== pagosNode)
+    .map(item => item.localName + (attr(item, 'Version') ? ' ' + attr(item, 'Version') : '')) : [];
+  return {
+    version: attr(root, 'Version', 'version'), serie: attr(root, 'Serie', 'serie'), folio: attr(root, 'Folio', 'folio'),
+    fecha: attr(root, 'Fecha', 'fecha'), lugarExpedicion: attr(root, 'LugarExpedicion'),
+    tipoRaw: rawKind, kind: legacy[rawKind] || rawKind, formaPago: attr(root, 'FormaPago'), metodoPago: attr(root, 'MetodoPago'),
+    condiciones: attr(root, 'CondicionesDePago'), moneda: attr(root, 'Moneda', 'moneda').toUpperCase(),
+    tipoCambio: attr(root, 'TipoCambio'), subTotal: attr(root, 'SubTotal'), descuento: attr(root, 'Descuento'),
+    total: attr(root, 'Total', 'total'), noCertificado: attr(root, 'NoCertificado'), exportacion: attr(root, 'Exportacion'),
+    sello: attr(root, 'Sello', 'sello'), certificado: attr(root, 'Certificado'),
+    emisor: { rfc: attr(emisorNode, 'Rfc', 'rfc').toUpperCase(), nombre: attr(emisorNode, 'Nombre', 'nombre'), regimen: attr(emisorNode, 'RegimenFiscal') },
+    receptor: { rfc: attr(receptorNode, 'Rfc', 'rfc').toUpperCase(), nombre: attr(receptorNode, 'Nombre', 'nombre'),
+      regimen: attr(receptorNode, 'RegimenFiscalReceptor'), domicilioFiscal: attr(receptorNode, 'DomicilioFiscalReceptor'),
+      usoCfdi: attr(receptorNode, 'UsoCFDI') },
+    conceptos: kids(child(root, 'Conceptos'), 'Concepto').map(item => {
+      const taxes = taxesOf(item);
+      return { claveProdServ: attr(item, 'ClaveProdServ'), noIdentificacion: attr(item, 'NoIdentificacion'),
+        cantidad: attr(item, 'Cantidad'), claveUnidad: attr(item, 'ClaveUnidad'), unidad: attr(item, 'Unidad'),
+        descripcion: attr(item, 'Descripcion', 'descripcion'), valorUnitario: attr(item, 'ValorUnitario'),
+        descuento: attr(item, 'Descuento'), importe: attr(item, 'Importe'), objetoImp: attr(item, 'ObjetoImp'),
+        traslados: taxes.traslados, retenciones: taxes.retenciones };
+    }),
+    impuestos: { traslados: globalTaxes.traslados, retenciones: globalTaxes.retenciones,
+      totalTrasladados: attr(impuestosNode, 'TotalImpuestosTrasladados'), totalRetenidos: attr(impuestosNode, 'TotalImpuestosRetenidos') },
+    timbre, pagos, otrosComplementos
+  };
 }
 const crcTable = Uint32Array.from({ length: 256 }, (_, index) => {
   let value = index;
@@ -1701,9 +1812,68 @@ function addDocument() {
     announce('PDF archivado en ' + taxpayer.value + '.');
   });
 }
+const TAX_NAMES = { '001': 'ISR', '002': 'IVA', '003': 'IEPS' };
+const taxLabel = code => TAX_NAMES[code] || code;
+async function copyText(text, label) {
+  try { await navigator.clipboard.writeText(text); announce(label + ' copiado al portapapeles.'); }
+  catch { announce('No se pudo copiar automáticamente; selecciona el texto y cópialo manualmente.', true); }
+}
+/* Visor CFDI profesional (1.6.7): la tarjeta resumen se queda arriba y
+   debajo va la representación completa parseada del XML guardado —
+   cabecera, partes, conceptos con impuestos, totales con desglose,
+   timbre con sellos plegables, Pagos 2.0 y demás complementos — con el
+   estado de la vigilancia, la historia, y las acciones de copiar UUID,
+   descargar el XML, abrir el PDF vinculado e imprimir el comprobante. */
+function cfdiPrint(row, full) {
+  const section = $('print-report');
+  section.replaceChildren();
+  const head = n('div', undefined, 'report-head');
+  if (appSettings.logoData) {
+    const logo = n('img', undefined, 'report-logo');
+    logo.src = appSettings.logoData;
+    logo.alt = '';
+    head.append(logo);
+  }
+  head.append(n('div', (appSettings.installName || 'PacoSAT') + ' · COMPROBANTE FISCAL', 'hero-kicker'),
+    n('h1', KINDS[full.kind] + (full.serie || full.folio ? ' ' + [full.serie, full.folio].filter(Boolean).join('-') : '')),
+    n('p', full.emisor.nombre + ' (' + full.emisor.rfc + ') → ' + full.receptor.nombre + ' (' + full.receptor.rfc + ')' +
+      ' · ' + full.fecha + (full.timbre ? ' · Folio fiscal ' + full.timbre.uuid : ' · Sin timbre fiscal'), 'report-meta'));
+  section.append(head);
+  const fields = n('div');
+  fields.append(grid(['Dato', 'Valor'], [
+    ['Fecha de emisión', full.fecha], ['Lugar de expedición', full.lugarExpedicion || '—'],
+    ['Forma / método de pago', [full.formaPago, full.metodoPago].filter(Boolean).join(' / ') || '—'],
+    ['Moneda', full.moneda + (full.tipoCambio ? ' · TC ' + full.tipoCambio : '')],
+    ['Régimen emisor', full.emisor.regimen || '—'],
+    ['Receptor', full.receptor.nombre + ' · ' + full.receptor.rfc + ' · Régimen ' + (full.receptor.regimen || '—') +
+      ' · CP ' + (full.receptor.domicilioFiscal || '—') + ' · Uso ' + (full.receptor.usoCfdi || '—')],
+    ['Nº de certificado del emisor', full.noCertificado || '—']
+  ]));
+  section.append(fields);
+  const concepts = n('div');
+  concepts.append(grid(['Descripción', 'Cantidad', 'Unidad', 'V. unitario', 'Importe'],
+    full.conceptos.map(c => [c.descripcion, c.cantidad, c.unidad || c.claveUnidad, '$' + c.valorUnitario, '$' + c.importe])));
+  section.append(concepts);
+  const totals = [['Subtotal', '$' + full.subTotal]];
+  if (full.descuento) totals.push(['Descuento', '−$' + full.descuento]);
+  for (const t of full.impuestos.traslados) totals.push([taxLabel(t.impuesto) + ' trasladado ' + (t.tasa ? t.tasa + ' ' + t.tipoFactor : t.tipoFactor), '$' + t.importe]);
+  for (const t of full.impuestos.retenciones) totals.push([taxLabel(t.impuesto) + ' retenido', '−$' + t.importe]);
+  totals.push(['Total', '$' + full.total + ' ' + full.moneda]);
+  const totalsWrap = n('div');
+  totalsWrap.append(grid(['Totales', 'Importe'], totals));
+  section.append(totalsWrap);
+  if (full.timbre) {
+    const timbre = n('div', undefined, 'report-note print-seals');
+    timbre.append(n('p', 'Timbre Fiscal Digital · UUID ' + full.timbre.uuid + ' · Timbrado ' + full.timbre.fechaTimbrado +
+      ' · PAC ' + full.timbre.rfcProvCertif + ' · Certificado SAT ' + full.timbre.noCertificadoSAT),
+      n('p', 'Sello del CFDI: ' + full.timbre.selloCfd),
+      n('p', 'Sello del SAT: ' + full.timbre.selloSat),
+      n('p', 'Cadena original: ' + full.timbre.cadenaOriginal));
+    section.append(timbre);
+  }
+  setTimeout(() => window.print(), 80);
+}
 function invoiceDetail(row) {
-  const descriptions = n('ul');
-  for (const item of row.concepts) descriptions.append(n('li', item));
   const summary = n('div', undefined, 'invoice-summary');
   const headline = n('div');
   headline.append(n('span', rowRole(row), 'period-chip'), n('h3', amount(row)), n('p', KINDS[row.kind] + ' · ' + dateLabel(row.date)));
@@ -1716,26 +1886,126 @@ function invoiceDetail(row) {
   summary.append(headline, parties, cell(row.id, 'Folio fiscal'));
   summary.append(statusCell(row.id));
   const contents = [summary];
-  if (row.concepts.length) {
-    const section = n('section', undefined, 'invoice-concepts');
-    section.append(n('h3', 'Conceptos del comprobante'), descriptions);
-    contents.push(section);
-  }
   const linked = documents.filter(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id && (!scope || doc.rfc === scope));
-  for (const doc of linked) contents.push(action('Ver PDF · ' + doc.rfc, () => {
+  const actionsRow = n('div', undefined, 'actions');
+  actionsRow.append(
+    action('Copiar UUID', () => copyText(row.id, 'UUID'), undefined, 'file'),
+    action('Descargar XML original', async () => {
+      const file = await readStore('files', 'xml:' + row.id);
+      check(file, 'Archivo no encontrado.');
+      download(file.blob, row.id + '.xml');
+    }, undefined, 'down'));
+  for (const doc of linked) actionsRow.append(action('Ver PDF · ' + doc.rfc, () => {
     $('dialog').addEventListener('close', () => viewPdf(doc).catch(error => announce(error.message, true)), { once: true });
     $('dialog').close();
   }, undefined, 'file'));
+  if (!linked.length) actionsRow.append(n('span', 'Sin PDF vinculado a este CFDI.', 'timeline-empty'));
+  contents.push(actionsRow);
+  /* Representación completa: se rellena al leer el XML guardado. */
+  const fullSection = n('section', undefined, 'invoice-concepts');
+  fullSection.append(n('h3', 'Comprobante completo'));
+  const fullBody = n('div');
+  fullBody.append(n('p', 'Leyendo el XML guardado…', 'timeline-empty'));
+  fullSection.append(fullBody);
+  contents.push(fullSection);
+  (async () => {
+    try {
+      const file = await readStore('files', 'xml:' + row.id);
+      check(file, 'El XML original no está en este equipo.');
+      const full = parseCfdiFull(bytes(await file.blob.arrayBuffer()));
+      fullBody.replaceChildren();
+      const facts = n('div', undefined, 'facts');
+      const fact = (label, value) => { if (!value) return; const box = n('div'); box.append(n('small', label), n('strong', value)); return box; };
+      [fact('Versión', full.version), fact('Serie y folio', [full.serie, full.folio].filter(Boolean).join(' · ')),
+        fact('Fecha de emisión', full.fecha), fact('Lugar de expedición', full.lugarExpedicion),
+        fact('Tipo', KINDS[full.kind] + ' (' + full.tipoRaw + ')'), fact('Forma de pago', full.formaPago),
+        fact('Método de pago', full.metodoPago), fact('Moneda', full.moneda + (full.tipoCambio ? ' · TC ' + full.tipoCambio : '')),
+        fact('Nº de certificado', full.noCertificado), fact('Exportación', full.exportacion),
+        fact('Uso de CFDI', full.receptor.usoCfdi), fact('Condiciones', full.condiciones)
+      ].forEach(box => box && facts.append(box));
+      const partiesFull = n('div', undefined, 'invoice-parties');
+      for (const [label, party, extra] of [['EMISOR', full.emisor, 'Régimen ' + (full.emisor.regimen || '—')],
+        ['RECEPTOR', full.receptor, 'Régimen ' + (full.receptor.regimen || '—') + ' · CP ' + (full.receptor.domicilioFiscal || '—')]]) {
+        const box = n('div');
+        box.append(n('small', label), n('strong', party.nombre || party.rfc), n('span', party.rfc), n('span', extra));
+        partiesFull.append(box);
+      }
+      fullBody.append(facts, partiesFull);
+      if (full.conceptos.length) {
+        const table = n('div', undefined, 'table-wrap');
+        table.append(grid(['Clave', 'Descripción', 'Cantidad', 'V. unitario', 'Importe', 'Impuestos'],
+          full.conceptos.map(c => [c.claveProdServ, c.descripcion + (c.descuento ? ' (desc. $' + c.descuento + ')' : ''),
+            c.cantidad + ' ' + (c.unidad || c.claveUnidad), '$' + c.valorUnitario, '$' + c.importe,
+            [...c.traslados.map(t => taxLabel(t.impuesto) + ' ' + (t.tasa || '') + ' $' + t.importe),
+              ...c.retenciones.map(t => taxLabel(t.impuesto) + ' ret. $' + t.importe)].join(' · ') || '—'])));
+        fullBody.append(table);
+      }
+      const totalsRows = [['Subtotal', '$' + full.subTotal]];
+      if (full.descuento) totalsRows.push(['Descuento', '−$' + full.descuento]);
+      for (const t of full.impuestos.traslados) totalsRows.push([taxLabel(t.impuesto) + ' trasladado ' + (t.tasa ? t.tasa + ' ' + t.tipoFactor : t.tipoFactor), '$' + t.importe]);
+      for (const t of full.impuestos.retenciones) totalsRows.push([taxLabel(t.impuesto) + ' retenido', '−$' + t.importe]);
+      if (full.impuestos.totalTrasladados) totalsRows.push(['Total impuestos trasladados', '$' + full.impuestos.totalTrasladados]);
+      if (full.impuestos.totalRetenidos) totalsRows.push(['Total impuestos retenidos', '−$' + full.impuestos.totalRetenidos]);
+      totalsRows.push(['Total', '$' + full.total + ' ' + full.moneda]);
+      const totalsWrap = n('div', undefined, 'table-wrap');
+      totalsWrap.append(grid(['Totales con desglose', 'Importe'], totalsRows));
+      fullBody.append(totalsWrap);
+      if (full.timbre) {
+        const timbreBox = n('div');
+        timbreBox.append(n('h3', 'Timbre Fiscal Digital'));
+        const tfacts = n('div', undefined, 'facts');
+        const tfact = (label, value) => { if (!value) return; const box = n('div'); box.append(n('small', label), n('strong', value)); return box; };
+        [tfact('UUID', full.timbre.uuid), tfact('Fecha de timbrado', full.timbre.fechaTimbrado),
+          tfact('RFC del PAC', full.timbre.rfcProvCertif), tfact('Certificado del SAT', full.timbre.noCertificadoSAT),
+          tfact('Certificado del emisor', full.noCertificado)].forEach(box => box && tfacts.append(box));
+        timbreBox.append(tfacts);
+        for (const [label, value] of [['Sello del CFDI', full.timbre.selloCfd], ['Sello del SAT', full.timbre.selloSat],
+          ['Cadena original del timbre', full.timbre.cadenaOriginal]]) {
+          const details = n('details', undefined, 'seal-details');
+          const summaryEl = n('summary', label);
+          const pre = n('pre', value, 'xml-view');
+          details.append(summaryEl, pre, action('Copiar', () => copyText(value, label)));
+          timbreBox.append(details);
+        }
+        fullBody.append(timbreBox);
+      } else fullBody.append(n('p', 'Este comprobante no tiene Timbre Fiscal Digital (no está timbrado).', 'timeline-empty'));
+      if (full.pagos) {
+        const pagosBox = n('div');
+        pagosBox.append(n('h3', 'Complemento de pagos 2.0'));
+        for (const pago of full.pagos.pagos) {
+          pagosBox.append(n('p', 'Pago del ' + pago.fechaPago + ' · Forma ' + (pago.formaDePagoP || '—') + ' · ' +
+            (pago.monto ? '$' + pago.monto + ' ' + pago.monedaP : 'Sin monto') + (pago.numOperacion ? ' · Operación ' + pago.numOperacion : '')));
+          if (pago.documentos.length) {
+            const docs = n('div', undefined, 'table-wrap');
+            docs.append(grid(['Documento (UUID)', 'Folio', 'Parcialidad', 'Saldo anterior', 'Pagado', 'Saldo insoluto'],
+              pago.documentos.map(d => [d.idDocumento, [d.serie, d.folio].filter(Boolean).join('-') || '—', d.numParcialidad,
+                '$' + d.impSaldoAnt, '$' + d.impPagado, '$' + d.impSaldoInsoluto])));
+            pagosBox.append(docs);
+          }
+        }
+        if (full.pagos.totales.MontoTotalPagos) pagosBox.append(n('p', 'Monto total de pagos: $' + full.pagos.totales.MontoTotalPagos));
+        fullBody.append(pagosBox);
+      }
+      for (const name of full.otrosComplementos) pagosChip(fullBody, name);
+      actionsRow.append(action('Imprimir comprobante', () => cfdiPrint(row, full), 'primary', 'print'));
+    } catch (error) { fullBody.replaceChildren(n('p', error.message, 'timeline-empty')); }
+  })();
+  function pagosChip(parent, name) {
+    const chip = n('p', 'Otro complemento detectado: ' + name, 'timeline-empty');
+    parent.append(chip);
+  }
   /* Historia del CFDI (1.6.5): línea de tiempo solo con datos guardados.
      La emisión y el PDF salen del expediente local; descargas, consultas
      de estado y avisos los aporta el servidor desde jobs y la vigilancia.
      Lo que no tenga histórico, no aparece. */
   const timelineSection = n('section', undefined, 'invoice-concepts');
+  timelineSection.id = 'cfdi-timeline';
   timelineSection.append(n('h3', 'Historia del comprobante'));
   const timelineList = n('div', undefined, 'timeline');
   timelineList.append(n('p', 'Cargando historia…', 'timeline-empty'));
   timelineSection.append(timelineList);
   contents.push(timelineSection);
+  actionsRow.append(action('Ver historia', () => timelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' })));
   (async () => {
     const events = [{ at: row.date, label: 'CFDI emitido', detail: KINDS[row.kind] + ' · ' + amount(row) }];
     for (const doc of linked) events.push({ at: null, label: 'PDF vinculado', detail: doc.name });
@@ -1753,13 +2023,9 @@ function invoiceDetail(row) {
       return item;
     }));
   })();
-  contents.push(action('Descargar XML original', async () => {
-    const file = await readStore('files', 'xml:' + row.id);
-    check(file, 'Archivo no encontrado.');
-    download(file.blob, row.id + '.xml');
-  }, undefined, 'down'));
   dialog('Detalle del CFDI', contents);
   $('dialog').classList.add('invoice-dialog');
+  $('dialog').classList.add('cfdi-dialog');
 }
 function invoiceActions(row) {
   const wrap = n('div', undefined, 'actions');

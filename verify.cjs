@@ -214,5 +214,69 @@ async function collect(stream) {
       assert.equal(first, created);
     }
   } catch { /* sin git en el entorno de verificación: nada que contrastar */ }
-  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados, paquete mensual, paleta AA y sellos de la copia.');
+  /* Visor CFDI profesional (1.6.7): parseo completo contra CFDI fixture
+     reales (DOM real de @xmldom/xmldom inyectado, como en el navegador)
+     con los totales cuadrados al centavo contra el propio XML. */
+  const { DOMParser } = require('@xmldom/xmldom');
+  const centsOf = value => Math.round(Number(value) * 100);
+  const CFDI_HEAD = '<?xml version="1.0" encoding="UTF-8"?><cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" ';
+  const ingresoXml = CFDI_HEAD + 'Version="4.0" Serie="A" Folio="773" Fecha="2026-10-05T09:12:00" FormaPago="03" MetodoPago="PUE" Moneda="MXN" SubTotal="1000.00" Total="1160.00" TipoDeComprobante="I" LugarExpedicion="90800" NoCertificado="00001000000700000001" Exportacion="01" Sello="SELLOX" Certificado="CERTX">' +
+    '<cfdi:Emisor Rfc="MFI6212158B4" Nombre="MANO FIL SA" RegimenFiscal="601"/>' +
+    '<cfdi:Receptor Rfc="TCH850701RM1" Nombre="TIENDAS CHEDRAUI SA DE CV" DomicilioFiscalReceptor="90800" RegimenFiscalReceptor="601" UsoCFDI="G03"/>' +
+    '<cfdi:Conceptos>' +
+    '<cfdi:Concepto ClaveProdServ="53111600" Cantidad="10" ClaveUnidad="H87" Unidad="Pieza" Descripcion="Cobertor matrimonial" ValorUnitario="60.00" Importe="600.00" ObjetoImp="02"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="600.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="96.00"/></cfdi:Traslados></cfdi:Impuestos></cfdi:Concepto>' +
+    '<cfdi:Concepto ClaveProdServ="53111600" Cantidad="8" ClaveUnidad="H87" Unidad="Pieza" Descripcion="Cobertor individual" ValorUnitario="50.00" Importe="400.00" ObjetoImp="02"><cfdi:Impuestos><cfdi:Traslados><cfdi:Traslado Base="400.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="64.00"/></cfdi:Traslados></cfdi:Impuestos></cfdi:Concepto>' +
+    '</cfdi:Conceptos>' +
+    '<cfdi:Impuestos TotalImpuestosTrasladados="160.00"><cfdi:Traslados><cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="160.00"/></cfdi:Traslados></cfdi:Impuestos>' +
+    '<cfdi:Complemento><tfd:TimbreFiscalDigital xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital" Version="1.1" UUID="12345678-1234-1234-1234-1234567890AB" FechaTimbrado="2026-10-05T09:13:44" RfcProvCertif="SAT970701NN3" SelloCFD="SELLOCFD123" NoCertificadoSAT="00001000000700000002" SelloSAT="SELLOSAT456"/></cfdi:Complemento></cfdi:Comprobante>';
+  const ingreso = context.parseCfdiFull(Buffer.from(ingresoXml), DOMParser);
+  assert.equal(ingreso.kind, 'I');
+  assert.equal(ingreso.serie + '-' + ingreso.folio, 'A-773');
+  assert.equal(ingreso.emisor.regimen, '601');
+  assert.equal(ingreso.receptor.domicilioFiscal, '90800');
+  assert.equal(ingreso.receptor.usoCfdi, 'G03');
+  assert.equal(ingreso.conceptos.length, 2);
+  assert.equal(ingreso.conceptos.reduce((sum, c) => sum + centsOf(c.importe), 0), centsOf(ingreso.subTotal));
+  assert.equal(ingreso.conceptos.reduce((sum, c) => sum + c.traslados.reduce((s, t) => s + centsOf(t.importe), 0), 0), centsOf(ingreso.impuestos.totalTrasladados));
+  assert.equal(centsOf(ingreso.subTotal) + centsOf(ingreso.impuestos.totalTrasladados), centsOf(ingreso.total));
+  assert.equal(ingreso.timbre.uuid, '12345678-1234-1234-1234-1234567890AB');
+  assert.equal(ingreso.timbre.cadenaOriginal, '||1.1|12345678-1234-1234-1234-1234567890AB|2026-10-05T09:13:44|SAT970701NN3|SELLOCFD123|00001000000700000002||');
+  assert.deepEqual([...ingreso.otrosComplementos], []);
+  /* El UUID parseado es la misma llave que usa la vigilancia: si el SAT
+     lo marca Cancelado, el estado que el visor pinta es «Cancelado». */
+  context.fiscalResults?.clear?.();
+  vm.runInContext("fiscalResults.set('12345678-1234-1234-1234-1234567890AB', { sat: { state: 'Cancelado' }, efos: [] });", context);
+  assert.equal(context.fiscalStateCounts([{ id: ingreso.timbre.uuid }]).cancelado, 1);
+  const retencionesXml = CFDI_HEAD + 'Version="4.0" Fecha="2026-10-06T10:00:00" Moneda="MXN" SubTotal="10000.00" Total="9533.33" TipoDeComprobante="I" LugarExpedicion="90800">' +
+    '<cfdi:Emisor Rfc="AAA010101AAA" Nombre="PRESTADOR" RegimenFiscal="612"/><cfdi:Receptor Rfc="MFI6212158B4" Nombre="MANO FIL SA" DomicilioFiscalReceptor="90800" RegimenFiscalReceptor="601" UsoCFDI="G03"/>' +
+    '<cfdi:Conceptos><cfdi:Concepto ClaveProdServ="54111500" Cantidad="1" ClaveUnidad="E48" Descripcion="Servicios" ValorUnitario="10000.00" Importe="10000.00" ObjetoImp="02"/></cfdi:Conceptos>' +
+    '<cfdi:Impuestos TotalImpuestosTrasladados="1600.00" TotalImpuestosRetenidos="2066.67"><cfdi:Traslados><cfdi:Traslado Base="10000.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="1600.00"/></cfdi:Traslados>' +
+    '<cfdi:Retenciones><cfdi:Retencion Impuesto="002" Importe="1066.67"/><cfdi:Retencion Impuesto="001" Importe="1000.00"/></cfdi:Retenciones></cfdi:Impuestos></cfdi:Comprobante>';
+  const conRet = context.parseCfdiFull(Buffer.from(retencionesXml), DOMParser);
+  assert.equal(conRet.impuestos.retenciones.length, 2);
+  assert.equal(centsOf(conRet.subTotal) + centsOf(conRet.impuestos.totalTrasladados) - centsOf(conRet.impuestos.totalRetenidos), centsOf(conRet.total));
+  const pagoXml = CFDI_HEAD + 'Version="4.0" Fecha="2026-10-20T12:00:00" Moneda="XXX" SubTotal="0" Total="0" TipoDeComprobante="P" LugarExpedicion="90800">' +
+    '<cfdi:Emisor Rfc="MFI6212158B4" Nombre="MANO FIL SA" RegimenFiscal="601"/><cfdi:Receptor Rfc="TCH850701RM1" Nombre="TIENDAS CHEDRAUI SA DE CV" DomicilioFiscalReceptor="90800" RegimenFiscalReceptor="601" UsoCFDI="CP01"/>' +
+    '<cfdi:Conceptos><cfdi:Concepto ClaveProdServ="84111506" Cantidad="1" ClaveUnidad="ACT" Descripcion="Pago" ValorUnitario="0" Importe="0" ObjetoImp="01"/></cfdi:Conceptos>' +
+    '<cfdi:Complemento><pago20:Pagos xmlns:pago20="http://www.sat.gob.mx/Pagos20" Version="2.0">' +
+    '<pago20:Totales TotalTrasladosBaseIVA16="1000.00" TotalTrasladosImpuestoIVA16="160.00" MontoTotalPagos="1360.00"/>' +
+    '<pago20:Pago FechaPago="2026-10-20T00:00:00" FormaDePagoP="03" MonedaP="MXN" Monto="1360.00">' +
+    '<pago20:DoctoRelacionado IdDocumento="12345678-1234-1234-1234-1234567890AB" MonedaDR="MXN" NumParcialidad="1" ImpSaldoAnt="1160.00" ImpPagado="1160.00" ImpSaldoInsoluto="0.00"/>' +
+    '<pago20:DoctoRelacionado IdDocumento="22345678-1234-1234-1234-1234567890AB" Serie="B" Folio="88" MonedaDR="MXN" NumParcialidad="2" ImpSaldoAnt="500.00" ImpPagado="200.00" ImpSaldoInsoluto="300.00"/>' +
+    '</pago20:Pago></pago20:Pagos></cfdi:Complemento></cfdi:Comprobante>';
+  const pago = context.parseCfdiFull(Buffer.from(pagoXml), DOMParser);
+  assert.equal(pago.kind, 'P');
+  assert.equal(pago.timbre, null);
+  assert.equal(pago.pagos.pagos.length, 1);
+  assert.equal(pago.pagos.pagos[0].documentos.length, 2);
+  for (const docRel of pago.pagos.pagos[0].documentos)
+    assert.equal(centsOf(docRel.impSaldoAnt) - centsOf(docRel.impPagado), centsOf(docRel.impSaldoInsoluto));
+  assert.equal(pago.pagos.totales.MontoTotalPagos, '1360.00');
+  const sinTimbreXml = ingresoXml.replace(/<cfdi:Complemento>.*<\/cfdi:Complemento>/, '');
+  const sinTimbre = context.parseCfdiFull(Buffer.from(sinTimbreXml), DOMParser);
+  assert.equal(sinTimbre.timbre, null);
+  assert.equal(sinTimbre.pagos, null);
+  assert.equal(sinTimbre.conceptos.length, 2);
+  assert.equal(sinTimbre.total, '1160.00');
+  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados, paquete mensual, paleta AA, sellos de la copia y visor CFDI completo.');
 })().catch(error => { console.error(error); process.exitCode = 1; });
