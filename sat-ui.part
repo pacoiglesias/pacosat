@@ -37,6 +37,26 @@ async function satApi(route, data) {
   }
   return response.headers.get('Content-Type') === 'application/zip' ? response.blob() : response.json();
 }
+/* satApiBlob(): como satApi(), pero la respuesta es siempre un Blob
+   (el ZIP del paquete de defensa de Cumplimiento), sin pasar por el
+   desvío JSON de satApi ni depender de su Content-Type exacto. Se
+   llamaba desde la 1.6.18 y nunca se definió (hotfix 1.7.3). El error
+   se traduce igual que en satApi(). */
+async function satApiBlob(route, data) {
+  const headers = { 'X-PacoSAT-Token': satToken };
+  if (data !== undefined) headers['Content-Type'] = 'application/json';
+  const response = await fetch('/api/' + route, {
+    method: data === undefined ? 'GET' : 'POST', headers,
+    body: data === undefined ? undefined : JSON.stringify(data)
+  });
+  if (!response.ok) {
+    const failed = await response.json().catch(() => ({}));
+    const error = new Error(friendlyError(failed.error || 'El servicio local no respondió.'));
+    error.guard = failed.guard || null;
+    throw error;
+  }
+  return response.blob();
+}
 
 function localDateTime(value) {
   if (!value) return 'Al activar';
