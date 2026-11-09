@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createPacoSATService, pacosatCriteriaKey } from './local-server.mjs';
+import { X509Certificate } from 'node:crypto';
 import { invoiceCandidates } from './pdf-invoice.mjs';
 import { crc32 } from './xml-core.mjs';
 import { decryptBackupBuffer } from './backup-core.mjs';
@@ -479,3 +480,82 @@ try {
   assert.equal(robStatus.watchFolder.incidents, 1);
   console.log('OK: ingesta robusta: archivo que crece espera a estabilizarse, tamaño rechazado antes de leer, ZIP mixto a incidencias con desglose por archivo y aviso.');
 } finally { robService.close(); }
+
+// --- 1.6.5: caducidad de la e.firma con avisos por umbral ---
+/* Certificado autofirmado de PRUEBA generado para esta suite (su llave
+   privada no está en el repo y el conector SAT está simulado): solo se
+   usa para comprobar que el servidor lee y persiste su notAfter real. */
+const CERT_B64 = 'MIIDEzCCAfugAwIBAgIUfFs/rHFz67k3fvC0q/J/MXrXGY0wDQYJKoZIhvcNAQELBQAwGTEXMBUGA1UEAwwOUGFjb1NBVCBQcnVlYmEwHhcNMjYxMTA5MDEwNDUxWhcNMzYxMTA2MDEwNDUxWjAZMRcwFQYDVQQDDA5QYWNvU0FUIFBydWViYTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALapu0VKqM0A+oN20MgwDgfjCV78C+snlMJTe2t4M+fYR1EU5fx4U0hmcA9vjErIlNfEpG3CVg+cf7M7w56IbCTcQ36g3/4rmGv1E9WBeb5iGxu0XrxGcj/rHFxW8p0UFjfqJf2qM+SfYSscg2jw/xsD730N9z5C1Q0FPF3n3ygekeL871HFINvo9uxlMLwK2crdU4NFJzARMlV6LZlvi+9l1jmGOzgP/Ldg1uhJThWoH2th36/NcAnIhaUXFQtoRb6MlMT9WWLDAJMpLcmrGLfFhbZkz+svrM6bz51P9xJECCxinHTiEF00hSaD2ceWfgNMFG4SNbjz1zJucaiC0tsCAwEAAaNTMFEwHQYDVR0OBBYEFNk7BZ5VXVB+IQ5edFRi/NkvKodZMB8GA1UdIwQYMBaAFNk7BZ5VXVB+IQ5edFRi/NkvKodZMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQELBQADggEBAGu4dnfasM2J9JClmUYc+dLrrRgJ5/jbEGNSng61Ydm9vqDuFnGZ4jBPtIIiAX9zdKfxM0pgkzJrdI6N1F5X3zxoIlRKYePlOqL2Wiz2XSvFT/6m8m1X8oN3tKYTp4jgcapmJvX+7rJjX73fRAYeklnLvhIsGcNPWhHilnhS6bccxDmYnR2JEcdwqomZem7QhKGNXMmljIVv3Q6GrERk0sFzvau3xDdLhmJyOKAM06x3xIv9MDOiPFSHdZbNqCXlQaBVmx3/UCEssgXiFi2D6HOg0T4dFNoswqi34gporXtb/MwaJjv5+Icb0StMVAjOypFMdHQtdNTE+U2WzxDHBvU=';
+const certExpected = Date.parse(new X509Certificate(Buffer.from(CERT_B64, 'base64')).validTo);
+let certTime = certExpected - 100 * 86400000;
+const certSent = [];
+const certService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+  now: () => certTime,
+  makeConnector: async () => ({ parser: FixtureParser, connector: {
+    request: async () => 'cert-req', check: async () => ({ status: 'pending', packages: [] }), download: async () => Buffer.alloc(0) } }),
+  makeMailer: () => ({ verify: async () => true, sendMail: async payload => { certSent.push(payload); } }) });
+const certApi = harnessFor(certService);
+try {
+  await certApi.init();
+  await certService.bootstrap({ mail: { host: 'smtp.example.com', port: 587, from: 'from@example.com',
+    recipient: 'to@example.com', user: '', password: '' } });
+  assert.equal((await certApi.call('/api/unlock', { rfc: 'XAXX010101000', minutes: 1440, days: 7, direction: 'received',
+    password: 'simulated', certificate: CERT_B64, key: 'YQ==' })).status, 200);
+  const certStatus = await (await certApi.call('/api/status')).json();
+  assert.equal(certStatus.profiles[0].certExpires, certExpected);
+  const certMails = () => certSent.filter(mail => /e\.firma/.test(mail.subject));
+  await certService.tick();
+  assert.equal(certMails().length, 0);
+  certTime = certExpected - 89 * 86400000;
+  await certService.tick();
+  assert.equal(certMails().length, 1);
+  assert.match(certMails()[0].subject, /vence en 89 días/);
+  await certService.tick();
+  assert.equal(certMails().length, 1);
+  certTime = certExpected - 29 * 86400000;
+  await certService.tick();
+  assert.equal(certMails().length, 3);
+  certTime = certExpected + 86400000;
+  await certService.tick();
+  assert.equal(certMails().length, 4);
+  assert.match(certMails()[3].subject, /vencida o vence hoy/);
+  console.log('OK: caducidad de e.firma leída del certificado real, persistida y con un aviso por umbral (90/60/30/0) sin duplicados.');
+} finally { certService.close(); }
+
+// --- 1.6.5: historia de un CFDI desde los datos guardados ---
+const histBase = mkdtempSync(join(tmpdir(), 'pacosat-165-hist-'));
+const histFile = join(histBase, 'historia.sqlite');
+const HIST_ID = '12345678-1234-1234-1234-1234567890AB';
+{
+  const boot = createPacoSATService({ dbFile: histFile, origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+    makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
+  boot.close();
+  const seed = new DatabaseSync(histFile);
+  seed.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES ('XAXX010101000',1440,7,'received',0,'')").run();
+  seed.prepare("INSERT INTO records(store,id,value) VALUES ('invoices',?,?)").run(HIST_ID, JSON.stringify({
+    id: HIST_ID, from: { rfc: 'AAA010101AAA', name: 'Emisor' }, to: { rfc: 'XAXX010101000', name: 'Receptor' },
+    date: '2026-10-05T10:00:00', kind: 'I', total: '100.00', currency: 'MXN', concepts: [], seal: '' }));
+  seed.prepare("INSERT INTO records(store,id,value) VALUES ('documents',?,?)").run('pdf:hist', JSON.stringify({
+    id: 'pdf:hist', rfc: 'XAXX010101000', kind: 'Factura PDF', date: '2026-10-05', period: '', name: 'factura-octubre.pdf', uuid: HIST_ID }));
+  seed.prepare("INSERT INTO jobs(rfc,direction,periodStart,periodEnd,startAt,endAt,requestId,status,imported,due,created,error,checks) VALUES ('XAXX010101000','received','2026-10-01','2026-10-07','2026-10-01 00:00:00','2026-10-07 23:59:59','hist-1','finished',?,'0',?,'',0)")
+    .run(JSON.stringify([HIST_ID]), Date.parse('2026-10-08T15:00:00Z'));
+  seed.prepare("INSERT INTO cfdi_watch(id,emitter,receiver,total,seal,next,checked,result,error) VALUES (?,?,?,?,?,0,?,'Vigente','')")
+    .run(HIST_ID, 'AAA010101AAA', 'XAXX010101000', '100.00', '', Date.parse('2026-10-09T15:00:00Z'));
+  seed.prepare("INSERT INTO cancellation_alert(id,due,sent) VALUES (?,?,1)").run(HIST_ID, Date.parse('2026-10-10T15:00:00Z'));
+  seed.close();
+}
+const histService = createPacoSATService({ dbFile: histFile, origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+  makeMailer: () => ({ verify: async () => true, sendMail: async () => {} }) });
+const histApi = harnessFor(histService);
+try {
+  await histApi.init();
+  const history = await (await histApi.call('/api/invoice-history?id=' + HIST_ID)).json();
+  assert.deepEqual(history.events.map(event => event.kind), ['emission', 'download', 'status', 'alert', 'pdf']);
+  assert.match(history.events[1].detail, /Periodo 2026-10-01 a 2026-10-07/);
+  assert.equal(history.events[2].detail, 'Vigente');
+  assert.equal(history.events[3].detail, 'Aviso enviado por correo');
+  assert.equal(history.events[4].detail, 'factura-octubre.pdf');
+  const empty = await (await histApi.call('/api/invoice-history?id=00000000-0000-0000-0000-000000000000')).json();
+  assert.deepEqual(empty.events, []);
+  console.log('OK: historia del CFDI armada solo con datos guardados (emisión, descarga, consulta, aviso, PDF) y vacía sin inventar eventos.');
+} finally { histService.close(); }

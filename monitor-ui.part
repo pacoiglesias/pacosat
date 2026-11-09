@@ -20,6 +20,74 @@ function statusCell(id) {
   if (item?.error) wrap.append(n('small', 'Consulta pendiente de reintento.'));
   return wrap;
 }
+/* Anillo de estados (1.6.5): resume los mismos datos de la vigilancia
+   que alimentan el filtro por estado del archivo (invoiceStateOf): la
+   coincidencia 69-B manda sobre el estado, y cualquier estado distinto
+   de Vigente/Cancelado cuenta como «sin consulta» en el anillo (el
+   detalle fino queda en Vigilancia y en el listado). */
+function fiscalStateCounts(rows) {
+  const counts = { vigente: 0, cancelado: 0, efos: 0, sin: 0 };
+  for (const row of rows) {
+    const state = invoiceStateOf(row);
+    if (state === 'efos') counts.efos++;
+    else if (state === 'Vigente') counts.vigente++;
+    else if (state === 'Cancelado') counts.cancelado++;
+    else counts.sin++;
+  }
+  return counts;
+}
+function donutSegments(counts) {
+  const order = [['vigente', 'Vigentes'], ['cancelado', 'Cancelados'], ['efos', 'Con 69-B'], ['sin', 'Sin consulta']];
+  const total = order.reduce((sum, [key]) => sum + (counts[key] || 0), 0);
+  let acc = 0;
+  return order.map(([key, label]) => {
+    const value = counts[key] || 0;
+    const frac = total ? value / total : 0;
+    const segment = { key, label, value, frac, start: acc };
+    acc += frac;
+    return segment;
+  });
+}
+function fiscalDonut(rows) {
+  const wrap = panel('Estados según la vigilancia SAT');
+  const segments = donutSegments(fiscalStateCounts(rows));
+  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
+  if (!total) {
+    wrap.append(empty('Sin comprobantes en la selección', 'El anillo resume los estados de la vigilancia para los CFDI del contribuyente elegido.'));
+    return wrap;
+  }
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  const el = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  svg.setAttribute('viewBox', '0 0 120 120'); svg.setAttribute('class', 'donut'); svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Anillo de estados de los CFDI según la vigilancia SAT: ' +
+    segments.filter(segment => segment.value).map(segment => segment.label + ' ' + segment.value).join(', '));
+  svg.append(el('title', {}, 'Estados de ' + total + ' CFDI según la vigilancia SAT'));
+  const ring = el('g', { transform: 'rotate(-90 60 60)' });
+  ring.append(el('circle', { cx: 60, cy: 60, r: 52, class: 'donut-track', pathLength: 100 }));
+  for (const segment of segments) {
+    if (!segment.value) continue;
+    ring.append(el('circle', { cx: 60, cy: 60, r: 52, class: 'donut-seg donut-' + segment.key, pathLength: 100,
+      'stroke-dasharray': (segment.frac * 100).toFixed(2) + ' 100', 'stroke-dashoffset': (-segment.start * 100).toFixed(2) }));
+  }
+  svg.append(ring);
+  svg.append(el('text', { x: 60, y: 62, class: 'donut-total' }, number.format(total)));
+  svg.append(el('text', { x: 60, y: 76, class: 'donut-caption' }, 'CFDI'));
+  const chartWrap = n('div', undefined, 'chart-wrap'); chartWrap.append(svg);
+  const legend = n('div', undefined, 'chart-legend');
+  for (const segment of segments) {
+    const span = n('span');
+    span.append(n('i', undefined, 'sw-donut-' + segment.key), document.createTextNode(segment.label + ' ' + number.format(segment.value)));
+    legend.append(span);
+  }
+  wrap.append(chartWrap, legend);
+  return wrap;
+}
 function monitorScreen() {
   const overview = panel('Seguimiento fiscal');
   const header = n('div', undefined, 'panel-head');

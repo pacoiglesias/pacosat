@@ -99,5 +99,37 @@ async function collect(stream) {
     assert.ok(copied.has(file), 'El Dockerfile no copia ' + file + ' y el servidor lo importa.');
     assert.ok(allowed.has(file), 'El .dockerignore no permite ' + file + ' y el servidor lo importa.');
   }
-  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz y completitud de la imagen Docker.');
+  /* Anillo de estados (1.6.5): agregación contra fixtures con estados
+     mezclados, usando el MISMO invoiceStateOf del filtro del archivo
+     (la coincidencia 69-B manda sobre el estado SAT). */
+  const uiSource = fs.readFileSync('ui.part', 'utf8');
+  const monitorSource = fs.readFileSync('monitor-ui.part', 'utf8');
+  vm.runInContext('var fiscalResults = new Map();\n' +
+    "fiscalResults.set('a', { sat: { state: 'Vigente' }, efos: [] });\n" +
+    "fiscalResults.set('b', { sat: { state: 'Cancelado' }, efos: [] });\n" +
+    "fiscalResults.set('c', { sat: { state: 'Cancelado' }, efos: ['Definitivo'] });\n" +
+    "fiscalResults.set('d', { sat: { state: 'Vigente' }, efos: [] });\n" +
+    "fiscalResults.set('e', { sat: { state: 'No encontrado' }, efos: [] });\n" +
+    uiSource.slice(uiSource.indexOf('const invoiceStateOf'), uiSource.indexOf('function invoiceRows')) +
+    monitorSource.slice(monitorSource.indexOf('function fiscalStateCounts'), monitorSource.indexOf('function fiscalDonut')) +
+    "var __rows = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => ({ id }));\n" +
+    'globalThis.__donut = { counts: fiscalStateCounts(__rows), segments: donutSegments(fiscalStateCounts(__rows)) };', context);
+  assert.deepEqual(context.__donut.counts, { vigente: 2, cancelado: 1, efos: 1, sin: 2 });
+  assert.equal(context.__donut.segments.reduce((sum, seg) => sum + seg.value, 0), 6);
+  assert.ok(Math.abs(context.__donut.segments.reduce((sum, seg) => sum + seg.frac, 0) - 1) < 1e-9);
+  assert.equal(context.__donut.segments[1].start, context.__donut.segments[0].frac);
+  /* Paquete mensual (1.6.5): el ZIP se escribe con zipStore y se relee
+     con el propio zipXml; el manifiesto nombra el contenido exacto. */
+  const wfSource = fs.readFileSync('workflows.part', 'utf8');
+  vm.runInContext(wfSource.slice(wfSource.indexOf('function zipStore'), wfSource.indexOf('function restoreDialog')), context);
+  const manifest = context.monthlyPackageManifest('XAXX010101000', '2026-10',
+    ['totales.csv', 'base-diot.csv', 'resumen.html', 'manifiesto.txt'], '8/11/2026, 10:00');
+  assert.ok(manifest.includes('RFC: XAXX010101000') && manifest.includes('Mes: 2026-10') && manifest.includes('- base-diot.csv'));
+  const zipBlob = context.zipStore([{ name: 'totales.csv', data: new TextEncoder().encode('a,b\n1,2') },
+    { name: 'manifiesto.txt', data: manifest }]);
+  const entries = await collect(zipXml(new Uint8Array(await zipBlob.arrayBuffer())));
+  assert.deepEqual(entries.map(entry => entry.name), ['totales.csv', 'manifiesto.txt']);
+  assert.equal(new TextDecoder().decode(entries[0].xml), 'a,b\n1,2');
+  assert.equal(new TextDecoder().decode(entries[1].xml), manifest);
+  console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados y paquete mensual.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -1,6 +1,6 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -201,6 +201,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     /* 1.6.4: contador de verificaciones pendientes por solicitud, para la
        espera creciente (backoff) de verifyJobs. */
     if (!jobColumns.includes('checks')) db.exec("ALTER TABLE jobs ADD COLUMN checks INTEGER NOT NULL DEFAULT 0");
+    /* 1.6.5: caducidad real del certificado de la e.firma por perfil
+       (epoch ms); NULL cuando nunca se pudo leer: «sin dato», jamás una
+       fecha inventada. */
+    const profileColumns = db.prepare('PRAGMA table_info(profiles)').all().map(row => row.name);
+    if (!profileColumns.includes('certExpires')) db.exec("ALTER TABLE profiles ADD COLUMN certExpires INTEGER");
     for (const job of db.prepare("SELECT * FROM jobs WHERE startAt=''").all()) {
       const endAt = job.periodEnd + ' ' + (job.periodEnd === day(job.created) ? clock.format(job.created) : '23:59:59');
       db.prepare('UPDATE jobs SET startAt=?,endAt=? WHERE id=?').run(job.periodStart + ' 00:00:00', endAt, job.id);
@@ -215,6 +220,42 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
   });
 
+  /* Caducidad de la e.firma (1.6.5): se lee la fecha notAfter del
+     certificado X.509 al desbloquear o al arrancar con un perfil, y se
+     persiste en el perfil (viaja también en el respaldo operativo). Si el
+     certificado no se puede interpretar, queda «sin dato»: nunca se
+     inventa una fecha. */
+  function certExpiryMs(buffer) {
+    for (const input of [buffer, buffer?.toString('utf8')]) {
+      try {
+        const ms = Date.parse(new X509Certificate(input).validTo);
+        if (Number.isFinite(ms)) return ms;
+      } catch { /* probar la siguiente representación */ }
+    }
+    return null;
+  }
+  function recordCertExpiry(rfc, buffer) {
+    const expires = certExpiryMs(buffer);
+    if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, rfc);
+    return expires;
+  }
+  /* Avisos de caducidad: una sola vez por umbral (90, 60, 30 y 0 días) y
+     por certificado — la referencia del aviso incluye la fecha de
+     caducidad, así un certificado renovado vuelve a tener sus avisos. */
+  function checkCertExpiries(time) {
+    for (const profile of db.prepare('SELECT rfc,certExpires FROM profiles WHERE certExpires IS NOT NULL').all()) {
+      const daysLeft = Math.ceil((profile.certExpires - time) / DAY);
+      for (const threshold of [90, 60, 30, 0]) {
+        if (daysLeft > threshold) continue;
+        queueAlert('cert-expiry', 'cert:' + profile.rfc + ':' + profile.certExpires + ':' + threshold,
+          threshold === 0 ? 'PacoSAT · La e.firma de ' + profile.rfc + ' está vencida o vence hoy' :
+            'PacoSAT · La e.firma de ' + profile.rfc + ' vence en ' + Math.max(daysLeft, 0) + ' días',
+          'El certificado de la e.firma del RFC ' + profile.rfc + ' caduca el ' + day(profile.certExpires) +
+          '. Sin e.firma vigente PacoSAT no puede descargar CFDI del SAT. Renuévala en el SAT y vuelve a desbloquear el perfil en el Centro SAT con el certificado nuevo.', time);
+      }
+    }
+  }
+
   async function bootstrap(config) {
     for (const row of config.profiles || []) {
       try {
@@ -222,11 +263,13 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           [60,120,240,720,1440].includes(row.minutes) && Number.isInteger(row.days) && row.days >= 1 && row.days <= 31 &&
           ['received','issued','both'].includes(row.direction), 'Perfil inicial inválido.');
         const certificate = readFileSync(row.certificatePath), privateKey = readFileSync(row.keyPath);
+        const expires = certExpiryMs(certificate);
         let active;
         try { active = await makeConnector({ rfc: row.rfc, certificate, privateKey, password: row.password }); }
         finally { certificate.fill(0); privateKey.fill(0); }
         db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,0,'') ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error='' ")
           .run(row.rfc, row.minutes, row.days, row.direction);
+        if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, row.rfc);
         putMetadata('people', { id: row.rfc, name: row.name });
         unlocked.set(row.rfc, active);
       } catch { console.error('PacoSAT: un perfil de e.firma del archivo de arranque no pudo activarse.'); }
@@ -270,7 +313,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   function overview() {
     return {
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
-      profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc) })),
+      profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc),
+        lastSatSuccess: db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(row.rfc)?.last || null })),
       jobs: db.prepare('SELECT id,rfc,direction,periodStart,periodEnd,startAt,endAt,status,due,created,error,checks FROM jobs ORDER BY id DESC LIMIT 35').all()
         .map(row => { const info = criteriaInfo(criteriaFromJob(row));
           return { ...row, criteriaState: info.state, criteriaCount: info.count }; }),
@@ -353,7 +397,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      (los registros ya llevan RFC y fecha; el estado operativo, pequeño,
      iría completo en cada parte) — queda documentado, no implementado. */
   const OPERATIONS_TABLES = [
-    ['profiles', ['rfc', 'minutes', 'days', 'direction', 'nextRun', 'error']],
+    ['profiles', ['rfc', 'minutes', 'days', 'direction', 'nextRun', 'error', 'certExpires']],
     ['jobs', ['id', 'rfc', 'direction', 'periodStart', 'periodEnd', 'startAt', 'endAt', 'requestId', 'status', 'imported', 'due', 'created', 'error', 'checks']],
     ['packages', ['id', 'job', 'remoteId', 'rfc', 'newCount', 'review']],
     ['notices', ['id', 'package', 'rfc', 'recipient', 'count', 'due', 'sent', 'error']],
@@ -951,6 +995,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           Boolean(profileError) || outcome.stuck > 0, time);
       }
       reconcileCoverageGaps(time);
+      checkCertExpiries(time);
       await scanWatchFolder(time);
       await runScheduledBackup(time);
       await notify(time);
@@ -993,6 +1038,44 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (req.method === 'POST' && url.pathname === '/api/backup/verify') {
         await body(req);
         return json(res, verifyLatestBackup(now(), 'manual'));
+      }
+      /* Historia de un CFDI (1.6.5): línea de tiempo armada SOLO con datos
+         ya guardados — emisión (del propio XML), descargas del SAT que lo
+         incluyeron (jobs.imported), consultas de estado de la vigilancia,
+         aviso de cancelación y PDF vinculado. Lo que no exista, no se
+         muestra: ningún evento se fabrica. */
+      if (req.method === 'GET' && url.pathname === '/api/invoice-history') {
+        const id = url.searchParams.get('id') || '';
+        need(id.length > 0 && id.length <= 40, 'Folio fiscal inválido.');
+        const events = [];
+        const invoiceRow = db.prepare("SELECT value FROM records WHERE store='invoices' AND id=?").get(id);
+        if (invoiceRow) {
+          const invoice = JSON.parse(invoiceRow.value);
+          events.push({ at: invoice.date, kind: 'emission', label: 'CFDI emitido',
+            detail: 'Tipo ' + invoice.kind + ' · ' + invoice.from.rfc + ' → ' + invoice.to.rfc + ' · ' + invoice.total + ' ' + (invoice.currency || 'MXN') });
+        }
+        for (const job of db.prepare("SELECT * FROM jobs WHERE status='finished'").all()) {
+          let imported = [];
+          try { imported = JSON.parse(job.imported || '[]'); } catch { imported = []; }
+          if (Array.isArray(imported) && imported.includes(id)) events.push({ at: new Date(job.created).toISOString(), kind: 'download',
+            label: 'Descargado del SAT', detail: 'Periodo ' + job.periodStart + ' a ' + job.periodEnd + ' · ' + (job.direction === 'received' ? 'recibidos' : 'emitidos') + ' · ' + job.rfc });
+        }
+        if (tableExists('cfdi_watch')) {
+          const watch = db.prepare('SELECT checked,result FROM cfdi_watch WHERE id=?').get(id);
+          if (watch?.checked) events.push({ at: new Date(watch.checked).toISOString(), kind: 'status',
+            label: 'Estado consultado en el SAT', detail: watch.result || 'Sin resultado' });
+          const cancel = db.prepare('SELECT due,sent FROM cancellation_alert WHERE id=?').get(id);
+          if (cancel) events.push({ at: cancel.due ? new Date(cancel.due).toISOString() : null, kind: 'alert',
+            label: 'Aviso de cancelación', detail: cancel.sent ? 'Aviso enviado por correo' : 'Aviso pendiente de envío' });
+        }
+        for (const docRow of db.prepare("SELECT value FROM records WHERE store='documents'").all()) {
+          try {
+            const doc = JSON.parse(docRow.value);
+            if (doc.kind === 'Factura PDF' && doc.uuid === id) events.push({ at: null, kind: 'pdf', label: 'PDF vinculado', detail: doc.name || '' });
+          } catch { /* documento ilegible: no forma parte de la historia */ }
+        }
+        events.sort((a, b) => (a.at || '9999').localeCompare(b.at || '9999'));
+        return json(res, { events });
       }
       if (req.method === 'POST' && url.pathname === '/api/monitor') {
         const { ids = [], records = [] } = await body(req);
@@ -1059,12 +1142,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(['received', 'issued', 'both'].includes(x.direction), 'Elige emitidos o recibidos.');
         need(typeof x.password === 'string' && x.password.length > 0 && x.password.length <= 256, 'Ingresa la contraseña de la e.firma.');
         const certificate = keyData(x.certificate), privateKey = keyData(x.key);
+        const expires = certExpiryMs(certificate);
         let active;
         try { active = await makeConnector({ rfc: x.rfc, certificate, privateKey, password: x.password }); }
         catch (error) { need(false, message(error), 422); }
         finally { certificate.fill(0); privateKey.fill(0); x.password = ''; }
         db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,?,?) ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error=''")
           .run(x.rfc, x.minutes, x.days, x.direction, 0, '');
+        if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, x.rfc);
         unlocked.set(x.rfc, active);
         return json(res, overview());
       }
