@@ -102,7 +102,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '' }) {
   const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
   db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
@@ -307,6 +307,41 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, rfc);
     return expires;
   }
+  /* RFC dentro del certificado (1.6.12): el SAT lo trae en el campo
+     serialNumber del sujeto (a veces acompañado del CURP: se toma el
+     token con forma exacta de RFC). Sin coincidencia clara, ''. */
+  function certRfc(buffer) {
+    const tokenRfc = text => (String(text).toUpperCase().split(/[^A-ZÑ&0-9]+/)
+      .find(token => /^[A-ZÑ&]{3,4}[0-9]{6}[A-Z0-9]{3}$/.test(token))) || '';
+    for (const input of [buffer, buffer?.toString('utf8')]) {
+      try {
+        const subject = new X509Certificate(input).subject || '';
+        const serialLine = subject.split(/\r?\n/).find(line => line.startsWith('serialNumber='));
+        const found = (serialLine && tokenRfc(serialLine)) || tokenRfc(subject);
+        if (found) return found;
+      } catch { /* probar la siguiente representación */ }
+    }
+    return '';
+  }
+  /* Carpeta protegida de e.firma (1.6.12): los .cer/.key subidos desde
+     la app y su índice (contraseña y agenda por RFC) viven SOLO aquí —
+     por defecto junto a la base de datos del servidor, o donde diga
+     PACOSAT_EFIRMA_DIR (en el NAS: la carpeta pacosat-secrets). Nunca
+     entran en la BD, en los respaldos ni en las exportaciones. */
+  const efirmaBase = efirmaDir ? String(efirmaDir) : join(dirname(dbFile), 'efirma');
+  const efirmaPath = (rfc, ext) => join(efirmaBase, rfc + ext);
+  const efirmaIndexPath = join(efirmaBase, 'perfiles.json');
+  function readEfirmaIndex() {
+    try { return JSON.parse(readFileSync(efirmaIndexPath, 'utf8')); } catch { return {}; }
+  }
+  function writeEfirmaFiles(rfc, certificate, privateKey, meta) {
+    mkdirSync(efirmaBase, { recursive: true, mode: 0o700 });
+    writeFileSync(efirmaPath(rfc, '.cer'), certificate, { mode: 0o600 });
+    writeFileSync(efirmaPath(rfc, '.key'), privateKey, { mode: 0o600 });
+    const index = readEfirmaIndex();
+    index[rfc] = meta;
+    writeFileSync(efirmaIndexPath, JSON.stringify(index, null, 2), { mode: 0o600 });
+  }
   /* Avisos de caducidad: una sola vez por umbral (90, 60, 30 y 0 días) y
      por certificado — la referencia del aviso incluye la fecha de
      caducidad, así un certificado renovado vuelve a tener sus avisos. */
@@ -341,6 +376,23 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         putMetadata('people', { id: row.rfc, name: row.name });
         unlocked.set(row.rfc, active);
       } catch { console.error('PacoSAT: un perfil de e.firma del archivo de arranque no pudo activarse.'); }
+    }
+    /* Perfiles guardados desde la app (1.6.12): se activan igual que los
+       del archivo de arranque, desde la carpeta protegida de e.firma.
+       Si un RFC está en ambos sitios, manda el de la app (es el más
+       reciente: lo subió Paco desde la pantalla). */
+    for (const [rfc, meta] of Object.entries(readEfirmaIndex())) {
+      try {
+        const certificate = readFileSync(efirmaPath(rfc, '.cer')), privateKey = readFileSync(efirmaPath(rfc, '.key'));
+        const expires = certExpiryMs(certificate);
+        let active;
+        try { active = await makeConnector({ rfc, certificate, privateKey, password: meta.password }); }
+        finally { certificate.fill(0); privateKey.fill(0); }
+        db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,0,'') ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error='' ")
+          .run(rfc, meta.minutes, meta.days, meta.direction);
+        if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, rfc);
+        unlocked.set(rfc, active);
+      } catch { console.error('PacoSAT: un perfil de e.firma guardado desde la app no pudo activarse.'); }
     }
     if (config.watchFolder?.path) inbox.dir = String(config.watchFolder.path);
     if (config.backup?.password) {
@@ -385,6 +437,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       buildModified: servedBuildModified,
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
       profiles: db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc),
+        efirmaStored: existsSync(efirmaPath(row.rfc, '.cer')),
         lastSatSuccess: db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(row.rfc)?.last || null })),
       jobs: db.prepare('SELECT id,rfc,direction,kind,periodStart,periodEnd,startAt,endAt,status,due,created,error,checks FROM jobs ORDER BY id DESC LIMIT 35').all()
         .map(row => { const info = criteriaInfo(criteriaFromJob(row));
@@ -1424,6 +1477,40 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         db.prepare('UPDATE packages SET archive=NULL WHERE id=?').run(Number(packageRoute[1]));
         return json(res, { ok: true });
       }
+      if (req.method === 'POST' && url.pathname === '/api/efirma') {
+        /* e.firma desde la app (1.6.12): «Probar y guardar». Se valida
+           TODO antes de escribir nada — certificado legible, el RFC del
+           certificado coincide con el pedido, caducidad futura y pareja
+           .cer/.key/contraseña aceptada por el conector — y solo
+           entonces los archivos van a la carpeta protegida del servidor
+           y el perfil queda activo y persistente entre reinicios. */
+        const x = await body(req);
+        const shape = validateRfc(typeof x.rfc === 'string' ? x.rfc : '');
+        need(shape.level !== 'structure', shape.error || 'RFC inválido.');
+        need(Number.isInteger(x.minutes) && x.minutes >= 60 && x.minutes <= 1440, 'El intervalo debe ser de 60 a 1440 minutos.');
+        need(Number.isInteger(x.days) && x.days >= 1 && x.days <= 31, 'El periodo de revisión debe ser de 1 a 31 días.');
+        need(['received', 'issued', 'both'].includes(x.direction), 'Elige emitidos o recibidos.');
+        need(typeof x.password === 'string' && x.password.length > 0 && x.password.length <= 256, 'Ingresa la contraseña de la e.firma.');
+        const certificate = keyData(x.certificate), privateKey = keyData(x.key);
+        try {
+          const owner = certRfc(certificate);
+          need(owner, 'El archivo .cer no se pudo leer como certificado: súbelo de nuevo.');
+          need(owner === x.rfc, 'El certificado es del RFC ' + owner + ', no de ' + x.rfc + ': revisa qué e.firma estás subiendo. No se guardó nada.');
+          const expires = certExpiryMs(certificate);
+          need(expires, 'No se pudo leer la caducidad del certificado. No se guardó nada.');
+          need(expires > now(), 'Esta e.firma caducó el ' + day(expires) + ': renuévala en el SAT y sube la nueva. No se guardó nada.');
+          let active;
+          try { active = await makeConnector({ rfc: x.rfc, certificate, privateKey, password: x.password }); }
+          catch (error) { need(false, 'La llave y la contraseña no cuadran con el certificado: ' + message(error) + ' No se guardó nada.', 422); }
+          writeEfirmaFiles(x.rfc, certificate, privateKey,
+            { password: x.password, minutes: x.minutes, days: x.days, direction: x.direction });
+          db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,?,?) ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error=''")
+            .run(x.rfc, x.minutes, x.days, x.direction, 0, '');
+          db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, x.rfc);
+          unlocked.set(x.rfc, active);
+        } finally { certificate.fill(0); privateKey.fill(0); x.password = ''; }
+        return json(res, overview());
+      }
       if (req.method === 'POST' && url.pathname === '/api/unlock') {
         const x = await body(req);
         const unlockShape = validateRfc(typeof x.rfc === 'string' ? x.rfc : '');
@@ -1617,6 +1704,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   need(origin === new URL(origin).origin && (!proxyKey || (proxyKey.length >= 32 && origin.startsWith('https://'))) &&
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
   const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '',
+    efirmaDir: process.env.PACOSAT_EFIRMA_DIR || '',
     buildModified: statSync(new URL('./Faro-Fiscal.html', import.meta.url)).mtimeMs });
   const server = createServer(service.handle);
   server.requestTimeout = 90000;

@@ -80,6 +80,7 @@ function connectedSatScreen() {
     n('p', 'Autoriza la e.firma por RFC. PacoSAT solicita CFDI, descarga los paquetes y los incorpora al expediente. El servicio puede seguir abierto aunque cierres la pestaña.'));
   const controls = n('div', undefined, 'actions');
   controls.append(action('Configurar RFC', () => unlockDialog(), 'primary', 'lock'),
+    action('Subir e.firma', () => efirmaDialog(), undefined, 'key'),
     action('Solicitar un periodo', requestDialog, undefined, 'sync'));
   guide.append(info, controls);
   const restBar = n('div', undefined, 'panel-head');
@@ -120,7 +121,8 @@ function fillSat(target = $('sat-live')) {
         soundCue('success');
       }, undefined, 'sync'));
       return [
-        cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma')),
+        cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma') +
+          (row.efirmaStored ? ' · Guardada en el servidor' : '')),
         (row.minutes / 60) + ' h · últimos ' + row.days + ' días',
         row.unlocked ? localDateTime(row.nextRun) : 'En pausa',
         restingProfile ? cell('Descansando', row.pauseUntil ? 'Hasta ' + localDateTime(row.pauseUntil) : 'Hasta que lo reanudes') : cell('Vigilando', 'Descargas y avisos activos'),
@@ -202,7 +204,7 @@ function unlockDialog(rfc) {
   const key = input('file', { required: true, accept: '.key' });
   const password = input('password', { required: true, maxLength: 256, autocomplete: 'off' });
   dialog('Autorizar sincronización', [
-    n('p', 'La contraseña y la llave se usan en este equipo. Al reiniciar el servicio, vuelve a autorizar cada RFC.'),
+    n('p', 'Autorización solo para esta sesión del servicio: al reiniciar habrá que autorizar de nuevo. Para que la e.firma quede guardada y se reactive sola, usa «Subir e.firma».'),
     field('Contribuyente', person), field('Qué revisar', direction), field('Frecuencia', interval), field('Días de búsqueda', days),
     field('Certificado .cer', certificate), field('Llave privada .key', key), field('Contraseña de la e.firma', password)
   ], async () => {
@@ -215,6 +217,40 @@ function unlockDialog(rfc) {
     password.value = '';
     fillSat(); announce('Sincronización autorizada para ' + person.value + '.');
   }, 'Autorizar');
+}
+function efirmaDialog(prefillRfc) {
+  const person = selectPerson();
+  if (prefillRfc && people.some(row => row.id === prefillRfc)) person.value = prefillRfc;
+  const defaults = (satData.profiles || []).find(row => row.rfc === person.value) || {};
+  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['360','Cada 6 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults.minutes || 360));
+  const days = input('number', { min: 1, max: 31, value: defaults.days || 7, required: true });
+  const direction = select(Object.entries(directions), defaults.direction || 'received');
+  const certificate = input('file', { required: true, accept: '.cer' });
+  const key = input('file', { required: true, accept: '.key' });
+  const password = input('password', { required: true, maxLength: 256, autocomplete: 'off' });
+  /* «Probar y guardar» (1.6.12): el servidor comprueba TODO antes de
+     guardar — que el certificado sea de este RFC, que no esté caducado
+     y que la llave y la contraseña cuadren — y la e.firma queda en la
+     carpeta protegida del servidor, activa también tras reiniciar.
+     Si algo no cuadra, no se guarda nada y lo anterior no se toca. */
+  dialog('Subir e.firma al servidor', [
+    n('p', 'La e.firma se guarda solo en la carpeta protegida del servidor: nunca entra en la base de datos ni en los respaldos. Antes de guardar se comprueba que el certificado sea de este RFC, que esté vigente y que la llave y la contraseña cuadren; si algo falla, no se guarda nada.'),
+    field('Contribuyente', person), field('Qué revisar', direction), field('Frecuencia', interval), field('Días de búsqueda', days),
+    field('Certificado .cer', certificate), field('Llave privada .key', key), field('Contraseña de la e.firma', password)
+  ], async () => {
+    const fileData = async file => {
+      check(file && file.size <= 32 * KB, 'Selecciona un archivo de e.firma válido.');
+      return encode64(bytes(await file.arrayBuffer()));
+    };
+    satData = await satApi('efirma', { rfc: person.value, minutes: Number(interval.value), days: Number(days.value),
+      direction: direction.value, certificate: await fileData(certificate.files[0]), key: await fileData(key.files[0]), password: password.value });
+    password.value = '';
+    fillSat();
+    const profile = satData.profiles.find(row => row.rfc === person.value);
+    announce('e.firma guardada y activa para ' + person.value +
+      (profile?.certExpires ? '. Vigente hasta el ' + localDateTime(profile.certExpires) : '') + '. Se reactivará sola tras cada reinicio.');
+    soundCue('success');
+  }, 'Probar y guardar');
 }
 function guardChoice(guard) {
   return new Promise(resolve => {

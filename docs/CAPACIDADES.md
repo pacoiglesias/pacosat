@@ -1,6 +1,6 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Última modificación: 8 nov 2026, 23:05 CST**
+**Última modificación: 8 nov 2026, 23:20 CST**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro (pantalla «Qué incluye PacoSAT») y se actualiza en cada ronda y cada despliegue, junto con el sello de versión y hora de creación.
@@ -38,7 +38,7 @@ Este documento es la FUENTE del listado de capacidades: la app lo muestra dentro
 
 ## 4. e.firma y RFC que maneja
 - ✅ Perfil de Mano Fil (MFI6212158B4) con su e.firma en la carpeta protegida del NAS.
-- 🔄 Subida de e.firma DESDE LA APP por RFC (.cer/.key + contraseña en pantalla), con validación inmediata de pareja, RFC y caducidad; nunca a la base de datos ni a los respaldos.
+- ✅ Subida de e.firma DESDE LA APP por RFC (.cer/.key + contraseña en pantalla), con validación inmediata de pareja, RFC y caducidad antes de guardar nada; queda en la carpeta protegida del servidor y se reactiva sola tras reiniciar; nunca a la base de datos ni a los respaldos (1.6.12).
 - 🔄 Multi-RFC ampliado: Mano Fil, Elemental Denim (EDE1902136T2), el RFC personal de Paco y los de Rodrigo y José Javier — cada uno con su perfil y su e.firma cuando la aporten.
 
 ## 5. Constancias y opiniones (solo SAT)

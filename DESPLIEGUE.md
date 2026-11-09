@@ -1,6 +1,6 @@
 # Despliegue de PacoSAT en el NAS
 
-**Última modificación: 8 nov 2026, 23:05 CST**
+**Última modificación: 8 nov 2026, 23:20 CST**
 
 **Nombre público (decisión de Paco, 8 nov 2026):** el acceso es **https://pacosat.iglesiasmurrieta.com** en todo: `PACOSAT_DOMAIN=pacosat.iglesiasmurrieta.com` en el compose del NAS, el túnel de Cloudflare y cualquier enlace que la app ponga en sus correos salen de ese nombre. El nombre anterior, `sat.iglesiasmurrieta.com`, queda como **alias con redirección** al nuevo durante la transición (se mantiene el registro DNS y una regla de redirección en el túnel/proxy hasta que Paco diga retirarlo). El cambio de túnel/DNS se hace en el despliegue final; el código no contiene el nombre (llega por `PACOSAT_ORIGIN`)— solo esta documentación y los ejemplos lo fijan.
 
@@ -18,13 +18,18 @@ services:
       PACOSAT_PROXY_KEY: ${PACOSAT_PROXY_KEY:?Configura PACOSAT_PROXY_KEY}
       PACOSAT_DATA_DIR: /var/lib/pacosat
       PACOSAT_STARTUP_CONFIG: /run/pacosat-secrets/config.json
+      PACOSAT_EFIRMA_DIR: /run/pacosat-secrets/efirma
     volumes:
       - pacosat-data:/var/lib/pacosat
-      - ./pacosat-secrets:/run/pacosat-secrets:ro
+      - ./pacosat-secrets:/run/pacosat-secrets
   # El servicio `proxy` (Caddy) y los volúmenes no cambian: ver compose.yml del repo.
 ```
 
 El paquete GHCR debe ser público (o el NAS debe iniciar sesión en GHCR con un token de solo lectura) para que `docker compose pull` funcione sin pasos extra.
+
+## e.firma subida desde la app (1.6.12)
+
+Con «Subir e.firma» (Centro SAT), Paco guarda el .cer/.key y la contraseña de cada RFC **desde la propia app**: el servidor lo valida todo antes de escribir (RFC del certificado, caducidad, pareja llave/contraseña) y deja los archivos en la carpeta que diga `PACOSAT_EFIRMA_DIR` — en este despliegue, `pacosat-secrets/efirma`, por eso el volumen de secretos se monta **sin `:ro`** — con permisos 0600, y los reactiva solo en cada arranque. Esa carpeta nunca entra en la base de datos, en los respaldos ni en las exportaciones: vive y muere en el NAS. Sin la variable, la carpeta por defecto es `efirma/` junto a la base de datos (dentro del volumen de datos). Los perfiles del `config.json` de arranque siguen funcionando igual que antes; si un RFC está en ambos sitios, manda el subido desde la app.
 
 ## Actualizar a una versión nueva
 
