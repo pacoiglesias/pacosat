@@ -3,6 +3,7 @@ const screens = {
   operations: ['Centro de operaciones', 'Pendientes, conciliación y estado por contribuyente.', 'Actualizar estado'],
   home: ['Resumen fiscal', 'Facturas y documentos de tus contribuyentes en un solo lugar.', 'Importar XML / ZIP'],
   invoices: ['Facturas CFDI', 'Busca por nombre, RFC o UUID y abre el comprobante sin perder tus filtros.', 'Importar XML / ZIP'],
+  visor: ['Visor de comprobantes', 'La tabla viva de tus CFDI: emisor, receptor, fecha, tipo, monto y estado, filtrable y con descarga directa.', 'Actualizar'],
   docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
   sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
   coverage: ['Cobertura de descarga', 'Qué periodos están descargados por RFC, dónde quedan huecos y el mapa anual de días cubiertos.', 'Actualizar estado'],
@@ -693,7 +694,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, avisos: avisosScreen, operations: operationsScreen, invoices: invoiceScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
+  const content = ({ home, avisos: avisosScreen, operations: operationsScreen, invoices: invoiceScreen, visor: visorScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();
@@ -773,6 +774,70 @@ function todayPanel() {
     box.append(n('strong', 'Siguiente paso · ' + step[0]), n('p', step[1]), action('Hacerlo ahora', step[2], 'primary', 'arrow'));
     wrap.append(box);
   } else wrap.append(n('p', 'Todo en orden: no hay pendientes con semáforo. Buen día.', 'today-line'));
+  /* Transparencia (1.9.0): qué hizo el sistema, qué falta y qué
+     vence — sin que Paco tenga que adivinarlo. Se rellena con los
+     datos del servidor cuando está disponible. */
+  const clarity = n('div', undefined, 'today-clarity');
+  const colHizo = n('div', undefined, 'today-col');
+  colHizo.append(n('h3', 'Lo que el sistema ya hizo'));
+  const colFalta = n('div', undefined, 'today-col');
+  colFalta.append(n('h3', 'Lo que falta'));
+  const colVence = n('div', undefined, 'today-col');
+  colVence.append(n('h3', 'Lo que vence'));
+  clarity.append(colHizo, colFalta, colVence);
+  wrap.append(clarity);
+  const line = (col, text, go) => {
+    const row = n('p', text, 'today-line');
+    if (go) { const btn = n('button', 'Ver', 'soft small'); btn.onclick = go; row.append(' ', btn); }
+    col.append(row);
+  };
+  (async () => {
+    try {
+      if (typeof satToken === 'undefined' || !satToken) {
+        line(colFalta, 'Abre PacoSAT desde el servidor de tu casa para ver aquí el trabajo del sistema, los pendientes y los vencimientos.');
+        return;
+      }
+      const [avisos, reconcile, checklist, satdocs] = await Promise.all([
+        satApi('notices').catch(() => null),
+        satApi('reconcile').catch(() => null),
+        satApi('reports/checklist?month=' + todayKey.slice(0, 7)).catch(() => null),
+        satApi('satdocs').catch(() => null)]);
+      if (!wrap.isConnected) return;
+      /* Lo que hizo: historial del Centro y conciliaciones vivas. */
+      const resueltos = (avisos?.historial || []).filter(item => item.resuelto && String(item.resuelto).startsWith(todayKey));
+      line(colHizo, resueltos.length
+        ? 'Hoy se solventaron ' + resueltos.length + ' aviso(s): ' + resueltos.slice(0, 2).map(item => item.titulo).join('; ') + (resueltos.length > 2 ? '…' : '') + '.'
+        : 'Hoy no se ha cerrado ningún aviso todavía.', () => navigate('avisos'));
+      if (reconcile) line(colHizo, 'Conciliaciones confirmadas y vigentes: ' + reconcile.confirmed.length + '.', () => navigate('dinero'));
+      const informes = (avisos?.historial || []).filter(item => item.kind === 'informe').length;
+      if (informes) line(colHizo, 'Informes mensuales enviados en el historial: ' + informes + '.');
+      if (!resueltos.length && !reconcile) line(colHizo, 'Sin actividad registrada hoy: el sistema vigila en silencio.');
+      /* Lo que falta: avisos abiertos y pasos del cierre en rojo/ámbar. */
+      if (avisos?.counts?.total) line(colFalta, avisos.counts.total + ' aviso(s) abiertos: ' +
+        [avisos.counts.mal ? avisos.counts.mal + ' por corregir' : '', avisos.counts.falta ? avisos.counts.falta + ' que faltan' : '',
+          avisos.counts.espera ? avisos.counts.espera + ' en espera' : ''].filter(Boolean).join(', ') + '.',
+        () => navigate('avisos'));
+      else line(colFalta, 'Sin avisos abiertos: nada esperando por ti en el Centro.');
+      if (checklist) {
+        const pending = checklist.items.filter(item => item.level !== 'ok');
+        line(colFalta, pending.length
+          ? 'Cierre de ' + checklist.month + ': faltan ' + pending.map(item => item.label.toLocaleLowerCase('es-MX')).join(', ') + '.'
+          : 'Cierre de ' + checklist.month + ': los 10 pasos están en verde.', () => navigate('salidas'));
+      }
+      /* Lo que vence: avisos con fecha y documentos por caducar. */
+      const upcoming = (avisos?.avisos || []).filter(item => item.vence)
+        .sort((a, b) => String(a.vence).localeCompare(String(b.vence))).slice(0, 3);
+      for (const item of upcoming)
+        line(colVence, item.titulo + ' — vence el ' + new Date(item.vence).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) +
+          (item.responsable ? ' (lo resuelve ' + item.responsable + ')' : '') + '.', () => navigate('avisos'));
+      for (const profile of satdocs?.profiles || []) {
+        for (const [doc, label] of [[profile.constancia, 'Constancia'], [profile.opinion, 'Opinión']])
+          if (doc && doc.level !== 'ok') line(colVence, label + ' de ' + profile.rfc + ': lleva ' + doc.ageDays +
+            ' días; toca renovarla.', () => navigate('sat'));
+      }
+      if (!upcoming.length) line(colVence, 'Sin vencimientos a la vista en los avisos.');
+    } catch { /* la transparencia es un extra: nunca rompe el Resumen */ }
+  })();
   return wrap;
 }
 function home() {

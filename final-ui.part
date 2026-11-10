@@ -310,6 +310,34 @@ function guestPanel() {
       };
       form.append(fieldWrap('Contraseña', password), save, toggle);
       body.append(form);
+      /* Alcance por RFC (1.9.0): sin marcar ninguno, el invitado ve
+         todos los RFC (como antes); marcando, SOLO ve esos RFC —
+         el filtro se aplica en el servidor, no en la pantalla. Con
+         alcance, Bancos y el paquete sin conexión quedan fuera. */
+      const scopeBox = n('div', undefined, 'sat-form');
+      scopeBox.append(n('strong', 'Alcance por RFC'));
+      scopeBox.append(n('p', config.rfcs?.length
+        ? 'Este acceso solo ve: ' + config.rfcs.join(', ') + '. Bancos y el paquete sin conexión quedan fuera de su alcance.'
+        : 'Sin límite: este acceso ve TODOS los RFC. Marca abajo los que quieras permitir y guarda.', 'muted'));
+      const checks = new Map();
+      for (const person of people) {
+        const label = n('label', undefined, 'switch-line');
+        const box = input('checkbox', { checked: (config.rfcs || []).includes(person.id) });
+        checks.set(person.id, box);
+        label.append(box, n('span', person.name + ' · ' + person.id));
+        scopeBox.append(label);
+      }
+      const saveScope = n('button', 'Guardar alcance', 'soft');
+      saveScope.onclick = async () => {
+        try {
+          const rfcs = [...checks.entries()].filter(([, box]) => box.checked).map(([rfc]) => rfc);
+          await satApi('guest/config', { rfcs });
+          announce(rfcs.length ? 'Alcance guardado: el invitado solo verá ' + rfcs.join(', ') + '.' : 'Alcance guardado: sin límite por RFC.');
+          draw();
+        } catch (error) { toast(error.message, 'error'); }
+      };
+      scopeBox.append(saveScope);
+      body.append(scopeBox);
       const log = await satApi('access-log');
       if (log.entries.length) {
         body.append(n('h4', 'Bitácora de accesos'));

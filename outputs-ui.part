@@ -195,6 +195,37 @@ function monthClosePanel(month) {
     if (go) { const btn = n('button', actionLabel, 'soft'); btn.onclick = go; row.append(btn); }
     list.append(row);
   };
+  /* 1.9.0: la MISMA lista que viaja en el paquete de la contadora,
+     calculada en el servidor con cifras reales (conciliación,
+     complementos, PUE, cancelaciones, faltantes…). Si el servidor
+     no responde, se cae a los pasos locales de siempre. */
+  if (satToken) {
+    list.append(n('p', 'Comprobando el mes en el servidor…', 'muted'));
+    (async () => {
+      try {
+        const data = await satApi('reports/checklist?month=' + encodeURIComponent(month));
+        if (!list.isConnected) return;
+        list.replaceChildren();
+        const GO = { cfdi: ['Ver facturas', () => navigate('invoices')], conciliacion: ['Ir a Dinero', () => navigate('dinero')],
+          complementos: ['Ir a Dinero', () => navigate('dinero')], pue: ['Ir a Dinero', () => navigate('dinero')],
+          cancelaciones: ['Ir a Vigilancia', () => navigate('monitor')], faltantes: ['Ir al Centro SAT', () => navigate('sat')],
+          respaldo: ['Ver operaciones', () => navigate('operations')], constancias: ['Ir al Centro SAT', () => navigate('sat')],
+          informe: ['Ver informes', () => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' })],
+          desglose: ['Ir arriba', () => window.scrollTo({ top: 0, behavior: 'smooth' })] };
+        data.items.forEach((item, index) => {
+          const go = GO[item.key];
+          step(item.level, (index + 1) + ' · ' + item.label, item.detail, go ? go[0] : '', go ? go[1] : null);
+        });
+        return;
+      } catch { if (list.isConnected) list.replaceChildren(); }
+      monthCloseLocalSteps(step, month);
+    })();
+    return panelEl;
+  }
+  monthCloseLocalSteps(step, month);
+  return panelEl;
+}
+function monthCloseLocalSteps(step, month) {
   const monthRows = outMonthInvoices(month);
   step(monthRows.length ? 'ok' : 'warn', '1 · CFDI del mes en el expediente',
     monthRows.length ? monthRows.length + ' CFDI con fecha del mes.' : 'No hay CFDI con fecha de ese mes.',
@@ -213,7 +244,6 @@ function monthClosePanel(month) {
   } else step('dim', '3 · Respaldo y constancias', 'En modo local se revisan en Operaciones y en el expediente.', 'Ver operaciones', () => navigate('operations'));
   step('dim', '5 · Informe a la contadora', satToken ? 'El paquete del mes se envía desde «Informes automáticos» aquí abajo o solo el día programado.' : 'Descarga el paquete mensual desde Operaciones y envíalo por tu correo.',
     'Ver operaciones', () => navigate('operations'));
-  return panelEl;
 }
 function composeMailDialog(preset = {}) {
   const to = input('text', { placeholder: 'destinatario@ejemplo.com, otro@ejemplo.com', value: preset.to || '' });

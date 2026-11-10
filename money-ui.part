@@ -226,27 +226,107 @@ function renderReconcile(out, movements, paidBy) {
     !results.some(result => result.match?.id === row.id));
   out.append(n('p', 'Facturas con saldo que ningún movimiento cubre: ' + unpaid.length + ' (detalle en Por cobrar / Por pagar).', 'muted'));
 }
+/* Conciliación ASISTIDA (1.9.0): el servidor propone los vínculos
+   con su porqué y nada se aplica sin tu decisión. Confirmar guarda
+   el vínculo (se ve en el cierre mensual); Deshacer lo retira y
+   queda en el historial; «Sin factura» marca el movimiento como
+   legítimo sin factura (comisión, impuesto, traspaso). */
+const RECONCILE_MODE_LABEL = { total: 'Pago completo', parcial: 'Pago parcial (saldo)',
+  multiple: 'Un pago, varias facturas', complemento: 'Vía complemento de pago', manual: 'Vínculo manual' };
+async function renderAssistedReconcile(out) {
+  out.replaceChildren(n('p', 'Consultando las propuestas del sistema…', 'muted'));
+  try {
+    const data = await satApi('reconcile');
+    const movementsData = await satApi('banks/movements');
+    out.replaceChildren();
+    out.append(n('p', 'Movimientos: ' + data.counts.movements + ' · ya conciliados: ' + data.counts.matched +
+      ' · sin identificar: ' + data.counts.unmatched + ' · marcados sin factura: ' + data.counts.ignored));
+    if (!data.suggestions.length && !data.confirmed.length)
+      out.append(empty('Nada que proponer todavía',
+        'Cuando haya movimientos en Bancos y facturas con saldo, el sistema propondrá aquí los vínculos explicando por qué.'));
+    for (const suggestion of data.suggestions) {
+      const card = n('div', undefined, 'cp-row');
+      const head = n('div');
+      head.append(statusPill('warn', 'Propuesta'),
+        n('span', suggestion.movement.date + ' · ' + (suggestion.movement.concept || '') + ' · $' + suggestion.movement.amount));
+      card.append(head);
+      for (const candidate of suggestion.candidates) {
+        const box = n('div', undefined, 'reconcile-candidate');
+        const names = candidate.invoices.map(inv => (inv.from?.name || inv.to?.name || inv.uuid.slice(0, 8) + '…')).join(' + ');
+        box.append(n('p', (RECONCILE_MODE_LABEL[candidate.mode] || candidate.mode) + ': ' + names +
+          candidate.invoices.map(inv => ' ($' + inv.amount + ')').join('')));
+        box.append(n('p', 'Por qué: ' + candidate.why.join(' · ') + '.', 'muted'));
+        const confirm = n('button', 'Confirmar este vínculo', 'soft');
+        confirm.onclick = async () => {
+          try {
+            await satApi('reconcile/confirm', { movementId: suggestion.movement.id, mode: candidate.mode,
+              why: candidate.why.join(' · '),
+              invoices: candidate.invoices.map(inv => ({ uuid: inv.uuid, amountCents: Number(moneyCents(inv.amount)) })) });
+            toast('Vínculo guardado: queda en la conciliación y en el cierre mensual.');
+            renderAssistedReconcile(out);
+          } catch (error) { toast(error.message, 'error'); }
+        };
+        box.append(confirm);
+        card.append(box);
+      }
+      out.append(card);
+    }
+    const activeConfirmed = (data.confirmed || []).filter(item => item.estado === 'activo');
+    if (activeConfirmed.length) {
+      out.append(n('h3', 'Vínculos confirmados'));
+      for (const match of activeConfirmed) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill('ok', 'Conciliado'),
+          n('span', (match.movement?.date || '') + ' · ' + (match.movement?.concept || '') + ' · $' + match.amount +
+            ' → ' + match.invoices.map(inv => inv.uuid.slice(0, 8) + '…').join(' + ') + ' (' + (RECONCILE_MODE_LABEL[match.mode] || match.mode) + ')'));
+        const undo = n('button', 'Deshacer', 'soft');
+        undo.onclick = async () => {
+          try { await satApi('reconcile/undo', { matchId: match.id });
+            toast('Vínculo deshecho: el movimiento vuelve a las propuestas.');
+            renderAssistedReconcile(out);
+          } catch (error) { toast(error.message, 'error'); }
+        };
+        row.append(undo);
+        out.append(row);
+      }
+    }
+    const unmatched = (movementsData.movements || []).filter(mv => !mv.conciliado && !mv.sinFactura &&
+      !data.suggestions.some(s => s.movement.id === mv.id)).slice(0, 20);
+    if (unmatched.length) {
+      out.append(n('h3', 'Sin propuesta automática'));
+      out.append(n('p', 'El sistema no encontró vínculo para estos movimientos. Si uno no lleva factura (comisión, impuesto, traspaso), márcalo y saldrá de los pendientes del cierre.', 'muted'));
+      for (const mv of unmatched) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill('dim', 'Sin identificar'),
+          n('span', mv.date + ' · ' + (mv.concept || '') + ' · $' + mv.amount));
+        const ignore = n('button', 'Marcar sin factura', 'soft');
+        ignore.onclick = async () => {
+          try { await satApi('reconcile/ignore', { movementId: mv.id, nota: 'Marcado sin factura desde la conciliación' });
+            toast('Marcado como sin factura: no saldrá en los pendientes del cierre.');
+            renderAssistedReconcile(out);
+          } catch (error) { toast(error.message, 'error'); }
+        };
+        row.append(ignore);
+        out.append(row);
+      }
+    }
+  } catch (error) {
+    out.replaceChildren(n('p', 'No se pudo consultar la conciliación: ' + error.message, 'muted'));
+  }
+}
 function reconcilePanel(paidBy) {
-  const panelEl = panel('Conciliación bancaria', 'Cruza movimientos con tus facturas por importe y fecha: qué está pagado, qué pago no tiene factura y qué factura sigue sin pago. Los movimientos salen de un CSV o de los estados archivados en Bancos.');
+  const panelEl = panel('Conciliación bancaria', 'El sistema propone cómo enlazar cada movimiento con su factura o su complemento, explicando por qué; tú confirmas o deshaces. Los movimientos salen de los estados archivados en Bancos, o de un CSV para un cruce rápido en pantalla.');
   const file = input('file', { accept: '.csv,text/csv' });
   file.hidden = true;
   const out = n('div');
   const btn = n('button', 'Importar movimientos CSV', 'soft');
   btn.onclick = () => file.click();
   panelEl.append(btn, file);
-  /* Alimentación desde Bancos (1.6.19): los movimientos de los
-     estados archivados entran por el mismo cruceta. */
+  /* Alimentación desde Bancos: conciliación asistida del servidor
+     (1.9.0), persistida y deshacible. */
   if (satToken) {
-    const fromBank = n('button', 'Usar movimientos de Bancos', 'soft');
-    fromBank.onclick = async () => {
-      try {
-        const data = await satApi('banks/movements');
-        check(data.movements.length, 'Aún no hay movimientos: sube primero los estados en la pantalla Bancos.');
-        const movements = data.movements.map(movement => ({ date: movement.date, concept: movement.concept,
-          amountCents: Number(moneyCents(movement.amount)), charge: '', credit: '' }));
-        renderReconcile(out, movements, paidBy);
-      } catch (error) { toast(error.message, 'error'); }
-    };
+    const fromBank = n('button', 'Conciliación asistida con Bancos', 'soft');
+    fromBank.onclick = () => renderAssistedReconcile(out);
     panelEl.append(fromBank);
   }
   file.onchange = async () => {

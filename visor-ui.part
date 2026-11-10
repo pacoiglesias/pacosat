@@ -1,0 +1,145 @@
+/* ===== Visor de comprobantes (1.9.0, punto 1 del plan) =====
+   La tabla viva que Paco pidió, tipo buzón de recepción: emisor,
+   receptor, fecha, tipo, monto y estado, con filtros por fecha,
+   tipo, RFC, emitidos/recibidos y pagado/no pagado, y las acciones
+   por fila — Descargar XML, Descargar PDF, Previsualizar y Marcar
+   como pagado. Se alimenta de las mismas tiendas que llenan las
+   importaciones y las descargas del SAT: al importar o descargar,
+   la pantalla se actualiza sola con el resto de la app. */
+let visorDesde = '', visorHasta = '', visorTipo = '', visorSentido = '', visorPago = '', visorTexto = '';
+const visorMarcados = new Set(); /* pagos marcados en esta sesión (el saldo oficial vive en el servidor) */
+function visorEstadoPago(row, paidBy) {
+  if (row.kind !== 'I') return { label: '—', state: 'dim' };
+  if (visorMarcados.has(row.id)) return { label: 'Pagada', state: 'ok' };
+  const { balance, paid } = balanceOf(row, paidBy);
+  if (balance <= 0n) return { label: 'Pagada', state: 'ok' };
+  if (paid > 0n) return { label: 'Parcial', state: 'warn' };
+  return { label: 'Pendiente', state: 'warn' };
+}
+function visorScreen() {
+  const wrap = n('div');
+  const paidBy = paidByMap();
+  const own = new Set(people.map(person => person.id));
+  const head = panel('Visor de comprobantes',
+    'Todos tus CFDI en una tabla viva, como el buzón de recepción: filtra, previsualiza y descarga sin salir de aquí. Se actualiza solo cuando importas o descargas del SAT.');
+  /* Filtros */
+  const filters = n('div', undefined, 'filters');
+  const desde = input('date', { value: visorDesde, 'aria-label': 'Desde' });
+  desde.onchange = () => { visorDesde = desde.value; render(); };
+  const hasta = input('date', { value: visorHasta, 'aria-label': 'Hasta' });
+  hasta.onchange = () => { visorHasta = hasta.value; render(); };
+  const tipo = select([['', 'Todo tipo'], ...Object.entries(KINDS).map(([key, label]) => [key, label])], visorTipo, 'Tipo de comprobante');
+  tipo.onchange = () => { visorTipo = tipo.value; render(); };
+  const sentido = select([['', 'Emitidos y recibidos'], ['emitidos', 'Solo emitidos'], ['recibidos', 'Solo recibidos']], visorSentido, 'Sentido');
+  sentido.onchange = () => { visorSentido = sentido.value; render(); };
+  const pago = select([['', 'Pagados y pendientes'], ['pagado', 'Pagados'], ['pendiente', 'Pendientes'], ['parcial', 'Parciales']], visorPago, 'Estado de pago');
+  pago.onchange = () => { visorPago = pago.value; render(); };
+  const texto = input('search', { placeholder: 'Emisor, receptor o RFC…', value: visorTexto, 'aria-label': 'Buscar por emisor, receptor o RFC' });
+  texto.oninput = () => { visorTexto = texto.value; clearTimeout(texto._t); texto._t = setTimeout(render, 250); };
+  const limpiar = n('button', 'Limpiar filtros', 'soft small');
+  limpiar.onclick = () => { visorDesde = visorHasta = visorTipo = visorSentido = visorPago = visorTexto = ''; render(); };
+  filters.append(desde, hasta, tipo, sentido, pago, texto, limpiar);
+  head.append(filters);
+  /* Filtrado */
+  const needle = visorTexto.trim().toLocaleLowerCase('es-MX');
+  const rows = invoices.filter(row => {
+    if (scope && !(row.from?.rfc === scope || row.to?.rfc === scope)) return false;
+    if (visorDesde && row.date < visorDesde) return false;
+    if (visorHasta && row.date > visorHasta) return false;
+    if (visorTipo && row.kind !== visorTipo) return false;
+    if (visorSentido === 'emitidos' && !own.has(row.from?.rfc)) return false;
+    if (visorSentido === 'recibidos' && !own.has(row.to?.rfc)) return false;
+    if (needle && ![row.from?.name, row.from?.rfc, row.to?.name, row.to?.rfc]
+      .some(value => (value || '').toLocaleLowerCase('es-MX').includes(needle))) return false;
+    if (visorPago) {
+      const estado = visorEstadoPago(row, paidBy);
+      if (visorPago === 'pagado' && estado.label !== 'Pagada') return false;
+      if (visorPago === 'pendiente' && estado.label !== 'Pendiente') return false;
+      if (visorPago === 'parcial' && estado.label !== 'Parcial') return false;
+    }
+    return true;
+  });
+  head.append(n('p', number.format(rows.length) + ' comprobantes con estos filtros' +
+    (rows.length > 200 ? ' (se muestran los 200 más recientes)' : ''), 'muted'));
+  if (!rows.length) {
+    head.append(empty('Sin comprobantes con estos filtros',
+      invoices.length ? 'Prueba a limpiar los filtros: el expediente tiene ' + number.format(invoices.length) + ' comprobantes.'
+        : 'Aún no tienes comprobantes: descárgalos del SAT desde el Centro SAT o impórtalos desde Facturas.'));
+    wrap.append(head);
+    return [wrap];
+  }
+  /* Tabla */
+  const tableWrap = n('div', undefined, 'table-wrap');
+  const table = n('table', undefined, 'visor-table');
+  const thead = n('thead');
+  const hrow = n('tr');
+  for (const label of ['Emisor', 'Receptor', 'Fecha', 'Tipo', 'Monto', 'Estado', 'Acciones']) hrow.append(n('th', label));
+  thead.append(hrow);
+  const tbody = n('tbody');
+  for (const row of rows.slice(0, 200)) {
+    const tr = n('tr');
+    const emisor = n('td'); emisor.append(document.createTextNode(row.from?.name || ''), n('small', row.from?.rfc || ''));
+    const receptor = n('td'); receptor.append(document.createTextNode(row.to?.name || ''), n('small', row.to?.rfc || ''));
+    const estadoPago = visorEstadoPago(row, paidBy);
+    const satState = typeof invoiceStateOf === 'function' ? invoiceStateOf(row) : '';
+    const estadoCell = n('td');
+    estadoCell.append(statusPill(satState === 'Cancelado' ? 'bad' : estadoPago.state,
+      satState === 'Cancelado' ? 'Cancelado' : estadoPago.label));
+    const actionsCell = n('td');
+    const actions = n('div', undefined, 'actions');
+    const preview = n('button', 'Previsualizar', 'soft small');
+    preview.onclick = () => invoiceDetail(row);
+    const xmlBtn = n('button', 'XML', 'soft small');
+    xmlBtn.onclick = async () => {
+      try {
+        const file = await readStore('files', 'xml:' + row.id);
+        check(file, 'El XML de este comprobante no está guardado en este equipo.');
+        download(file.blob, row.id + '.xml');
+      } catch (error) { toast(error.message, 'error'); }
+    };
+    actions.append(preview, xmlBtn);
+    const linkedPdf = documents.find(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id);
+    const pdfBtn = n('button', 'PDF', 'soft small');
+    pdfBtn.disabled = !linkedPdf;
+    pdfBtn.title = linkedPdf ? 'Descargar el PDF vinculado' : 'Este CFDI no tiene PDF vinculado: vincúlalo desde su detalle';
+    pdfBtn.onclick = async () => {
+      try {
+        const file = await readStore('files', linkedPdf.id);
+        check(file, 'El PDF vinculado ya no está en este equipo.');
+        download(file.blob, linkedPdf.name || (row.id + '.pdf'));
+      } catch (error) { toast(error.message, 'error'); }
+    };
+    actions.append(pdfBtn);
+    if (row.kind === 'I' && estadoPago.label !== 'Pagada' && satState !== 'Cancelado') {
+      const payBtn = n('button', 'Marcar pagado', 'primary small');
+      payBtn.disabled = !satToken;
+      payBtn.title = satToken ? 'Registrar el pago por el saldo vivo' : 'Disponible en la copia del servidor (el NAS)';
+      payBtn.onclick = () => visorMarkPaid(row);
+      actions.append(payBtn);
+    }
+    actionsCell.append(actions);
+    const monto = n('td', '$' + money(row.total), 'num');
+    tr.append(emisor, receptor, n('td', dateLabel(row.date)), n('td', KINDS[row.kind] || row.kind), monto, estadoCell, actionsCell);
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  tableWrap.append(table);
+  head.append(tableWrap);
+  wrap.append(head);
+  return [wrap];
+}
+function visorMarkPaid(row) {
+  const nota = input('text', { placeholder: 'Ej. Pagado por transferencia el día 10' });
+  const hoy = new Date();
+  const fecha = input('date', { value: hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0') });
+  dialog('Marcar como pagado',
+    [n('p', 'Vas a registrar el pago de «' + (row.from?.name || row.id) + '» por su saldo vivo. Queda en el historial de pagos manuales y alimenta Dinero, el Centro de Avisos y el cierre mensual; si después llega el complemento, PacoSAT lo enlaza igual.'),
+     field('Fecha del pago', fecha),
+     field('Nota (opcional)', nota)],
+    async () => {
+      await satApi('money/mark-paid', { uuid: row.id, nota: nota.value.trim(), fecha: fecha.value });
+      visorMarcados.add(row.id);
+      toast('Pago registrado para ' + row.id.slice(0, 8) + '…', 'ok');
+      render();
+    }, 'Marcar pagado');
+}

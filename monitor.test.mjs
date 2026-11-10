@@ -1,9 +1,29 @@
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { createMonitor, parseEfos, soapQuery } from './sat-monitor.mjs';
+import { createMonitor, parseEfos, soapQuery, normalizeTotalForQuery, querySat } from './sat-monitor.mjs';
 const day = 86400000, hour = 3600000;
 const cfdi = { id: '12345678-1234-1234-1234-1234567890AB', emitter: 'AAA010101AAA', receiver: 'XAXX010101000', total: '80.50', seal: '+/abcd==' };
-assert.match(soapQuery(cfdi), /tt=80\.500000&amp;fe=%2B%2Fabcd%3D%3D/);
+/* Expresión impresa normalizada (1.9.0, barrido de comunidades): el
+   total va sin ceros no significativos — el formato de seis decimales
+   es la causa documentada del N-601 — y el UUID en mayúsculas. */
+assert.match(soapQuery(cfdi), /tt=80\.5&amp;fe=%2B%2Fabcd%3D%3D/);
+assert.equal(normalizeTotalForQuery('0.99'), '0.99');
+assert.equal(normalizeTotalForQuery('1.00'), '1.0');
+assert.equal(normalizeTotalForQuery('0.00'), '0.0');
+assert.equal(normalizeTotalForQuery('115860.80'), '115860.8');
+assert.equal(normalizeTotalForQuery('204000'), '204000.0');
+assert.match(soapQuery({ ...cfdi, id: cfdi.id.toLowerCase() }), /id=12345678-1234-1234-1234-1234567890AB/);
+/* N-601 y N-602 se distinguen: formato rechazado ≠ no encontrado. */
+{
+  const acuseXml = (code) => '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
+    '<ConsultaResponse xmlns="http://tempuri.org/"><ConsultaResult xmlns:a="http://schemas.datacontract.org/2004/07/Sat.Cfdi.Negocio.ConsultaCfdi.Servicio" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">' +
+    '<a:CodigoEstatus>' + code + '</a:CodigoEstatus><a:EsCancelable>NoCancelable</a:EsCancelable><a:Estado></a:Estado>' +
+    '<a:EstatusCancelacion></a:EstatusCancelacion><a:ValidacionEFOS></a:ValidacionEFOS></ConsultaResult></ConsultaResponse></s:Body></s:Envelope>';
+  const fakeRequest = (code) => async () => ({ ok: true, status: 200,
+    body: (async function* () { yield Buffer.from(acuseXml(code)); })() });
+  assert.equal((await querySat(cfdi, fakeRequest('N - 601'))).state, 'Formato rechazado');
+  assert.equal((await querySat(cfdi, fakeRequest('N - 602'))).state, 'No encontrado');
+}
 assert.throws(() => soapQuery({ ...cfdi, total: '1e20' }), /datos requeridos/);
 const efos = parseEfos('Listado 69-B\r\nNo.,RFC,Nombre del Contribuyente,Situación del contribuyente\r\n1,AAA010101AAA,"Nombre, SA",Presunto\r\n2,AAA010101AAA,Nombre,Definitivo\r\n3,BBB010101BBB,Otro,Sentencia favorable');
 assert.deepEqual([...efos.get(cfdi.emitter)], ['Presunto','Definitivo']);

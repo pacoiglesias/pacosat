@@ -1,11 +1,11 @@
 {
   "name": "pacosat",
-  "version": "1.8.0",
+  "version": "1.9.0",
   "description": "Expediente fiscal privado con importación CFDI y seguimiento SAT",
   "scripts": {
     "build": "node build.mjs",
     "start": "node local-server.mjs",
-    "test": "node --test sat-direct.test.mjs service.test.mjs cloud.test.mjs monitor.test.mjs rfc.test.mjs storage.test.mjs boot.test.mjs metadata.test.mjs efirma.test.mjs lists.test.mjs satdocs.test.mjs sat-doc-fetch.test.mjs blindaje.test.mjs anti5002.test.mjs outputs.test.mjs money.test.mjs fiscal.test.mjs banks.test.mjs avisos.test.mjs final.test.mjs vigilancia.test.mjs && node verify.cjs",
+    "test": "node --test sat-direct.test.mjs service.test.mjs cloud.test.mjs monitor.test.mjs rfc.test.mjs storage.test.mjs boot.test.mjs metadata.test.mjs efirma.test.mjs lists.test.mjs satdocs.test.mjs sat-doc-fetch.test.mjs blindaje.test.mjs anti5002.test.mjs outputs.test.mjs money.test.mjs fiscal.test.mjs banks.test.mjs avisos.test.mjs final.test.mjs vigilancia.test.mjs sat-doc-browser.test.mjs sat-declaraciones.test.mjs ronda190.test.mjs && node verify.cjs",
     "check": "npm run build && npm test"
   },
   "private": true,
@@ -16,6 +16,7 @@
     "@nodecfdi/sat-ws-descarga-masiva": "2.0.0",
     "@xmldom/xmldom": "0.9.12",
     "nodemailer": "10.4.0",
-    "pdfjs-dist": "6.5.438"
+    "pdfjs-dist": "6.5.438",
+    "playwright-core": "^1.64.1"
   }
 }

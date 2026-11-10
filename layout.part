@@ -43,6 +43,7 @@
     <button data-view="avisos"><svg><use href="#i-alert"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
     <button data-view="operations"><svg><use href="#i-bell"/></svg> Operaciones y alertas</button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas CFDI</button>
+    <button data-view="visor"><svg><use href="#i-eye"/></svg> Visor de comprobantes</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Expedientes y PDF</button>
     <span class="nav-caption nav-divider">ADMINISTRACIÓN</span>
     <button data-view="sat"><svg><use href="#i-sync"/></svg> Centro SAT</button>

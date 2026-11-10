@@ -67,6 +67,8 @@ let avisosInflight = null;
 let avisosFetchedAt = 0;
 /* Selección múltiple para acciones por lote (ronda de correcciones). */
 const avisosSeleccion = new Set();
+/* Filtro por RFC propio del Centro (1.9.0). */
+let avisosRfcFiltro = '';
 let avisosVisibles = [];
 const AVISOS_CLASES = [
   ['necesita', 'Lo que el sistema necesita de ti', 'alert'],
@@ -112,6 +114,11 @@ function avisoMeta(aviso) {
   if (aviso.nombre) bits.push(aviso.nombre + (aviso.contraparte ? ' · ' + aviso.contraparte : ''));
   else if (aviso.contraparte) bits.push(aviso.contraparte);
   if (aviso.importe) bits.push('$' + money(aviso.importe));
+  /* 1.9.0: de qué RFC propio es, quién lo resuelve y cuándo vence —
+     como datos en la tarjeta, no escondidos en el texto. */
+  if (aviso.rfc) bits.push('RFC ' + aviso.rfc);
+  if (aviso.responsable) bits.push('lo resuelve ' + aviso.responsable);
+  if (aviso.vence) bits.push('vence el ' + avisoFecha(aviso.vence));
   if (aviso.baseline) bits.push('línea base (histórico)');
   bits.push('desde el ' + avisoFecha(aviso.creado));
   return bits.join(' · ');
@@ -174,10 +181,23 @@ function avisosScreen() {
     return [wrap];
   }
   const data = avisosCache;
+  /* Filtro por RFC propio (1.9.0): con varios RFC, cada quien ve
+     solo lo suyo sin abrir cada tarjeta. */
+  const rfcsConAvisos = Object.keys(data.porRfc || {});
+  if (avisosRfcFiltro && !rfcsConAvisos.includes(avisosRfcFiltro)) avisosRfcFiltro = '';
+  const visiblesPorRfc = aviso => !avisosRfcFiltro || aviso.rfc === avisosRfcFiltro;
   /* Resumen por clases: las tres, siempre visibles. */
   const resumen = panel('Tus avisos', data.counts.total
     ? number.format(data.counts.total) + ' abiertos. Los de «línea base» son la foto inicial de tu histórico: están en el panel, sin correos ni atrasos retroactivos.'
     : 'Sin avisos abiertos. Todo en orden.');
+  if (rfcsConAvisos.length > 1) {
+    const filtro = n('div', undefined, 'filters');
+    const picker = select([['', 'Todos los RFC'], ...rfcsConAvisos.map(rfc => [rfc, 'RFC ' + rfc + ' (' + data.porRfc[rfc] + ')'])],
+      avisosRfcFiltro, 'Filtrar avisos por RFC');
+    picker.onchange = () => { avisosRfcFiltro = picker.value; render(); };
+    filtro.append(picker);
+    resumen.append(filtro);
+  }
   const strip = n('div', undefined, 'traffic-strip');
   for (const [clase, etiqueta] of AVISOS_CLASES)
     strip.append(statusPill(data.counts[clase] ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
@@ -187,13 +207,13 @@ function avisosScreen() {
   strip.append(update);
   resumen.append(strip);
   /* Barra por lote: selección múltiple sobre los avisos visibles. */
-  avisosVisibles = data.avisos.map(aviso => aviso.id);
+  avisosVisibles = data.avisos.filter(visiblesPorRfc).map(aviso => aviso.id);
   for (const id of [...avisosSeleccion]) if (!avisosVisibles.includes(id)) avisosSeleccion.delete(id);
   if (data.counts.total) resumen.append(avisosBatchBar());
   wrap.append(resumen);
   wrap.append(avisosConfigPanel(data.config));
   for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
-    const deClase = data.avisos.filter(aviso => aviso.clase === clase);
+    const deClase = data.avisos.filter(aviso => aviso.clase === clase && visiblesPorRfc(aviso));
     if (!deClase.length) continue;
     const section = panel(etiqueta + ' (' + number.format(deClase.length) + ')');
     for (const aviso of deClase) section.append(avisoCard(aviso));
@@ -312,6 +332,22 @@ function avisoCard(aviso) {
   card.append(head);
   if (aviso.detalle) card.append(n('p', aviso.detalle));
   card.append(n('p', avisoMeta(aviso), 'muted'));
+  /* Siguiente paso y responsable (1.9.0): la tarjeta dice qué toca
+     hacer y quién lo hace; el responsable se puede reasignar aquí. */
+  if (aviso.accion) card.append(n('p', 'Siguiente paso: ' + aviso.accion, 'aviso-next'));
+  const respRow = n('div', undefined, 'traffic-strip');
+  respRow.append(n('span', 'Lo resuelve:', 'muted'));
+  const respPicker = select([['Paco', 'Paco'], ['Contadora', 'La contadora']], aviso.responsable || 'Paco', 'Responsable del aviso');
+  respPicker.onchange = async () => {
+    try {
+      avisosCache = await satApi('notices/responsable', { id: aviso.id, responsable: respPicker.value });
+      avisosFetchedAt = Date.now();
+      toast('Responsable actualizado: lo resuelve ' + respPicker.value + '.', 'ok');
+      render();
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  respRow.append(respPicker);
+  card.append(respRow);
   const actions = n('div', undefined, 'traffic-strip');
   if (aviso.kind === 'saldo' && aviso.estado === 'por-confirmar') {
     const si = n('button', aviso.direccion === 'cobrar' ? 'Sí, ya pagó' : 'Sí, ya se pagó', 'primary small');
