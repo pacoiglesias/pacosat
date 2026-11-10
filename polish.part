@@ -171,3 +171,24 @@ td button{padding:7px 10px}
 .today-col h3{margin:0 0 6px;font-size:14px}
 .today-line{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .visor-table td:nth-child(3),.visor-table td:nth-child(4){white-space:nowrap}
+
+/* ===== 1.10.0 · Pagos al banco (añadir al final de polish.part) ===== */
+.pagos-table { border-collapse: collapse; width: 100%; margin: 8px 0 4px; font-size: 14px; }
+.pagos-table th { text-align: left; padding: 6px 8px; border-bottom: 2px solid var(--line, #d8d8d8); font-weight: 600; }
+.pagos-table td { padding: 6px 8px; border-bottom: 1px solid var(--line, #e3e3e3); vertical-align: middle; }
+.pagos-cell { cursor: pointer; border-radius: 6px; }
+.pagos-cell:hover { background: rgba(37, 99, 235, .08); }
+.pagos-num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pagos-over td { background: rgba(220, 38, 38, .07); }
+.pagos-total { font-weight: 700; font-size: 16px; margin: 4px 0 10px; }
+.pagos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px 14px; margin: 8px 0; }
+.pagos-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.pagos-field span { opacity: .8; }
+.pagos-form { margin-top: 16px; border-top: 1px solid var(--line, #e3e3e3); padding-top: 10px; }
+.pagos-form h3 { margin: 4px 0 8px; }
+.pagos-warn { border: 1px solid rgba(217, 119, 6, .5); background: rgba(217, 119, 6, .08); border-radius: 8px; padding: 8px 12px; margin: 10px 0; }
+.pagos-seed { border: 1px dashed rgba(37, 99, 235, .5); border-radius: 8px; padding: 10px 12px; margin: 8px 0 12px; }
+.pagos-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.pagos-lines th:nth-child(2), .pagos-lines td:nth-child(2) { min-width: 210px; }
+.pagos-lines th:nth-child(3), .pagos-lines td:nth-child(3) { white-space: nowrap; }
+.pagos-lines th:nth-child(6), .pagos-lines td:nth-child(6) { min-width: 108px; }

@@ -763,6 +763,7 @@ $('primary').onclick = handle(async () => {
   if (page === 'dinero') { navigate('salidas'); return; }
   if (page === 'cumplimiento') { navigate('cumplimiento'); const monthInput = document.querySelector('#main input[type="month"]'); if (monthInput) { monthInput.focus(); } return; }
   if (page === 'bancos') { navigate('bancos'); return; }
+  if (page === 'pagos') { render(); return; }
   if (page === 'preguntas') { navigate('preguntas'); const q = document.querySelector('#main input[type="text"]'); if (q) q.focus(); return; }
   if (page === 'offline') { navigate('offline'); return; }
   return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :

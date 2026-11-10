@@ -13,6 +13,7 @@ const screens = {
   diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV'],
   salidas: ['Salidas', 'Reportes, IVA del mes, comparativas, cierre de mes, correo desde la app e informes automáticos.', 'Exportación completa'],
   dinero: ['Dinero', 'Por cobrar y por pagar con antigüedad, facturas esperadas, expediente 360 y conciliación bancaria.', 'Abrir Salidas'],
+  pagos: ['Pagos al banco', 'Catálogo de beneficiarios con cuenta y CLABE validadas y la preparación de los pagos del mes en tablas espejo del banco, listas para copiar.', 'Actualizar'],
   cumplimiento: ['Cumplimiento', 'Calendario fiscal con semáforo, detector de errores y duplicados, anomalías, reglas de clasificación y paquete de defensa.', 'Crear paquete de defensa'],
   bancos: ['Bancos', 'Estados de cuenta archivados por banco y mes, con lectura de saldos, cadena verificada, faltantes y posición total.', 'Añadir cuenta'],
   preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Preguntar'],
@@ -694,7 +695,7 @@ function render() {
   }
   $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, avisos: avisosScreen, operations: operationsScreen, invoices: invoiceScreen, visor: visorScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
+  const content = ({ home, avisos: avisosScreen, operations: operationsScreen, invoices: invoiceScreen, visor: visorScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, pagos: pagosScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();
