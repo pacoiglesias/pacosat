@@ -186,6 +186,17 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     CREATE TABLE IF NOT EXISTS sat_documents (id TEXT PRIMARY KEY, rfc TEXT NOT NULL, kind TEXT NOT NULL,
       issuedAt INTEGER NOT NULL DEFAULT 0, fileId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'auto',
       created INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+    /* Diario de corridas del descargador (1.10.1): cada intento de
+       descarga —automático o a mano— deja su diario con los pasos
+       en lenguaje llano (hora y URL de cada paso) y, si falló
+       dentro del navegador, la captura de pantalla y el volcado
+       HTML de la página en el punto del fallo (records 'files',
+       ids shotId/htmlId), para revisar el error sin repetir la
+       corrida. Se conservan las últimas 20 por RFC. */
+    CREATE TABLE IF NOT EXISTS sat_doc_runs (id TEXT PRIMARY KEY, rfc TEXT NOT NULL, kind TEXT NOT NULL,
+      started INTEGER NOT NULL DEFAULT 0, finished INTEGER NOT NULL DEFAULT 0, ok INTEGER NOT NULL DEFAULT 0,
+      error TEXT NOT NULL DEFAULT '', steps TEXT NOT NULL DEFAULT '[]',
+      shotId TEXT NOT NULL DEFAULT '', htmlId TEXT NOT NULL DEFAULT '');
     /* Bitácora de correos enviados desde la app (1.6.16). */
     /* Bancos (1.6.19): cuentas libres, estados archivados con su
        lectura y movimientos para la conciliación de Dinero. */
@@ -936,6 +947,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['blacklist_meta', ['listId', 'fetched', 'next', 'count', 'declared', 'error']],
     ['list_events', ['id', 'at', 'listId', 'rfc', 'change', 'detail']],
     ['sat_documents', ['id', 'rfc', 'kind', 'issuedAt', 'fileId', 'source', 'created', 'error']],
+    ['sat_doc_runs', ['id', 'rfc', 'kind', 'started', 'finished', 'ok', 'error', 'steps', 'shotId', 'htmlId']],
     ['package_attempts', ['job', 'remoteId', 'attempts']],
     ['mail_sends', ['id', 'at', 'recipients', 'subject', 'kind', 'ok', 'error']],
     /* Bancos y Avisos en el respaldo (1.9.0, punto 2 del plan): hasta
@@ -3129,21 +3141,88 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     });
     return fileId;
   }
+  /* Diario de una corrida (1.10.1): guarda los pasos y, si el
+     fallo trajo la foto del momento (error.diag del navegador:
+     captura + HTML de la página), la archiva como records para
+     poder verla y bajarla desde la propia pantalla. */
+  function saveSatDocRun(rfc, kind, started, finished, ok, errorText, steps, diag) {
+    const id = randomUUID();
+    let shotId = '', htmlId = '';
+    if (diag) {
+      if (diag.screenshot && diag.screenshot.length) {
+        shotId = 'diag:' + id + ':shot';
+        db.prepare("INSERT OR REPLACE INTO records(store,id,value,data,mime) VALUES ('files',?,NULL,?,'image/png')")
+          .run(shotId, Buffer.isBuffer(diag.screenshot) ? diag.screenshot : Buffer.from(diag.screenshot));
+      }
+      if (diag.html) {
+        htmlId = 'diag:' + id + ':html';
+        db.prepare("INSERT OR REPLACE INTO records(store,id,value,data,mime) VALUES ('files',?,NULL,?,'text/html; charset=utf-8')")
+          .run(htmlId, Buffer.from(String(diag.html), 'utf8'));
+      }
+    }
+    db.prepare('INSERT INTO sat_doc_runs(id,rfc,kind,started,finished,ok,error,steps,shotId,htmlId) VALUES (?,?,?,?,?,?,?,?,?,?)')
+      .run(id, rfc, kind, started, finished, ok ? 1 : 0, errorText || '', JSON.stringify(steps || []), shotId, htmlId);
+    /* Solo las últimas 20 corridas por RFC: el diario sirve para
+       revisar el fallo reciente, no como archivo eterno. */
+    const stale = db.prepare('SELECT id,shotId,htmlId FROM sat_doc_runs WHERE rfc=? ORDER BY started DESC LIMIT -1 OFFSET 20').all(rfc);
+    for (const row of stale) {
+      for (const fileId of [row.shotId, row.htmlId]) {
+        if (fileId) db.prepare("DELETE FROM records WHERE store='files' AND id=?").run(fileId);
+      }
+      db.prepare('DELETE FROM sat_doc_runs WHERE id=?').run(row.id);
+    }
+    return id;
+  }
+  function satDocRuns(rfc, limit = 8) {
+    return db.prepare('SELECT id,kind,started,finished,ok,error,steps,shotId,htmlId FROM sat_doc_runs WHERE rfc=? ORDER BY started DESC LIMIT ?')
+      .all(rfc, limit).map(row => ({ id: row.id, kind: row.kind, started: row.started, finished: row.finished,
+        ok: Boolean(row.ok), error: row.error, steps: JSON.parse(row.steps || '[]'),
+        hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }));
+  }
   async function runSatDocAttempt(rfc, kind, time) {
     const state = satDocsState();
     state[rfc] = state[rfc] || {};
     state[rfc][kind + 'Attempt'] = time;
     saveSatDocsState(state);
+    /* Progreso visible y diario (1.10.1): cada paso se persiste en
+       el estado en cuanto ocurre. La pantalla lo enseña EN VIVO
+       mientras la corrida sigue en el servidor (la descarga corre
+       aquí, no en el navegador de Paco) y, si refresca o vuelve
+       después, enseña el estado real —en curso con su paso actual
+       o el resultado— en vez de un «Descargando del portal…» mudo
+       que no dice si se conectó ni qué está haciendo. */
+    const steps = [];
+    const pushStep = (at, text, url) => {
+      const entry = { at, text: String(text || ''), url: String(url || '') };
+      steps.push(entry);
+      const current = satDocsState();
+      current[rfc] = current[rfc] || {};
+      current[rfc].progress = { kind, running: true, step: entry.text, at: entry.at, steps: steps.slice(-12) };
+      saveSatDocsState(current);
+    };
+    const finishProgress = (ok, finalText) => {
+      const current = satDocsState();
+      current[rfc] = current[rfc] || {};
+      current[rfc].progress = { kind, running: false, ok, step: finalText, at: now(), steps: steps.slice(-12) };
+      saveSatDocsState(current);
+    };
+    pushStep(time, 'Conectando con el SAT…', '');
+    const hooks = { step: (text, url) => pushStep(now(), text, url) };
     try {
       if (!satDocFetch) throw new Error('La descarga automática desde el portal del SAT no está disponible en esta instalación todavía: sube el PDF en esta pantalla y quedará archivado y vigilado igual.');
-      const result = await satDocFetch({ rfc }, kind);
+      const result = await satDocFetch({ rfc }, kind, hooks);
       const content = result?.content;
       if (!content || !(Buffer.isBuffer(content) ? content.length : String(content).length))
         throw new Error('El portal del SAT no devolvió el documento.');
       const issuedAt = result.issuedAt ? Date.parse(result.issuedAt) || time : time;
+      pushStep(now(), 'Guardando en Expedientes…', '');
       archiveSatDoc(rfc, kind, content, issuedAt, 'auto', time, result.fileName);
-      state[rfc][kind + 'Month'] = new Date(time).toISOString().slice(0, 7);
-      saveSatDocsState(state);
+      const doneState = satDocsState();
+      doneState[rfc] = doneState[rfc] || {};
+      doneState[rfc][kind + 'Month'] = new Date(time).toISOString().slice(0, 7);
+      saveSatDocsState(doneState);
+      finishProgress(true, 'Guardado en Expedientes');
+      saveSatDocRun(rfc, kind, time, now(), true, '', steps, null);
       /* Envío automático a los destinatarios configurados. */
       const config = satDocsConfig()[rfc] || {};
       const recipients = String(config.recipients || '').split(/[,;]/).map(item => item.trim()).filter(Boolean);
@@ -3172,6 +3251,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         'PacoSAT · No se pudo descargar ' + DOC_KIND_LABEL[kind] + ' de ' + rfc,
         'El intento de descarga automática falló: ' + message(error) +
         ' El documento seguirá vigilado por antigüedad; también puedes subir el PDF a mano en el Centro SAT.', time);
+      finishProgress(false, message(error));
+      saveSatDocRun(rfc, kind, time, now(), false, message(error), steps, error?.diag || null);
       return { ok: false, error: message(error) };
     }
   }
@@ -3212,6 +3293,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (failure && (!latest || failure.created >= latest.created)) view.lastError = failure.error;
       }
       view.lastAttempt = Math.max(state[profile.rfc]?.constanciaAttempt || 0, state[profile.rfc]?.opinionAttempt || 0);
+      /* Progreso de la última corrida y su diario (1.10.1): la
+         pantalla los enseña en vivo y al volver tras refrescar. */
+      view.progress = state[profile.rfc]?.progress || null;
+      view.runs = satDocRuns(profile.rfc);
       return view;
     });
   }
@@ -3657,6 +3742,24 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(raw.length <= 16 * 1024 * 1024 && raw.subarray(0, 4).toString() === '%PDF', 'El archivo no es un PDF válido de hasta 16 MB.');
         archiveSatDoc(x.rfc, x.kind, raw, issuedAt, 'manual', now(), String(x.name || '').slice(0, 180) || undefined);
         return json(res, { profiles: satDocsOverview(now()) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/satdocs/artifact') {
+        /* Artefactos del diario de una corrida (1.10.1): la captura
+           de pantalla o el volcado HTML de la página tal como quedó
+           en el punto del fallo, para revisar el error con la foto
+           delante en vez de repetir la corrida a ciegas. */
+        const run = db.prepare('SELECT * FROM sat_doc_runs WHERE id=?').get(String(url.searchParams.get('run') || ''));
+        need(run, 'Esa corrida del diario ya no existe.', 404);
+        const part = String(url.searchParams.get('part') || '');
+        need(part === 'shot' || part === 'html', 'Parte del diario inválida.');
+        const fileId = part === 'shot' ? run.shotId : run.htmlId;
+        need(fileId, 'Esa corrida no guardó esa parte del diario.', 404);
+        const file = readFileRecord(fileId);
+        need(file, 'Ese archivo del diario ya no existe.', 404);
+        const stamp = new Date(run.started).toISOString().slice(0, 10);
+        const name = 'diario-' + run.rfc + '-' + run.kind + '-' + stamp + (part === 'shot' ? '-captura.png' : '-pagina.html');
+        res.writeHead(200, { 'content-type': file.mime, 'content-disposition': 'attachment; filename="' + name + '"' });
+        return res.end(file.buffer);
       }
       if (req.method === 'POST' && url.pathname === '/api/mail/send') {
         /* Correo desde la app (1.6.16): con adjuntos del expediente o
@@ -4640,7 +4743,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           process.env.PACOSAT_EFIRMA_DIR || join(path, 'efirma')) }),
         launchDriver: createPlaywrightDriverFactory({
           executablePath: process.env.PACOSAT_CHROMIUM_PATH || '/usr/bin/chromium' }),
-        timeoutMs: 90_000 }) }),
+        /* 150 s (1.10.1): sat-dm presupuesta hasta 180 s solo para
+           el login FIEL; el aterrizaje tras firmar puede tardar
+           decenas de segundos en un portal lento. */
+        timeoutMs: 150_000 }) }),
     /* Declaraciones y acuses (1.9.0, punto 7): dos conectores
        (mensuales y anuales) sobre la misma sesión del navegador. */
     satDeclFetch: createSatDeclFetch({

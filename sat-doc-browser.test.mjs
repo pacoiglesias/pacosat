@@ -237,6 +237,116 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
   server.close();
 }
 
+/* 11 · Progreso en lenguaje llano (1.10.1): el flujo emite los
+     pasos por el gancho, en orden y con la URL del momento, para
+     que el servidor los persista y la pantalla los enseñe en vivo. */
+{
+  const page = new FakePage({ pdf: PDF,
+    afterLogin: 'https://wwwmat.sat.gob.mx/operacion/43824/reimprime-tus-acuses-del-rfc' });
+  const steps = [];
+  const result = await fetchDocumentInBrowser({ page, kind: 'constancia',
+    creds: { ...CREDS, key: KEY_3DES },
+    hooks: { step: (text, url) => steps.push({ text, url }) } });
+  assert.deepEqual(result.content, PDF);
+  assert.deepEqual(steps.map(item => item.text),
+    ['Conectando con el SAT…', 'Firmando con tu e.firma…', 'Pidiendo la constancia…']);
+  assert.ok(steps.every(item => typeof item.url === 'string'));
+}
+
+/* 12 · El error del navegador viaja con su diagnóstico (1.10.1):
+     captura y HTML de la página en el punto del fallo, para que el
+     servidor lo guarde en el diario de la corrida. */
+{
+  const page = new FakePage({ noButton: true });
+  page.diagnostics = async () => ({ url: 'https://login.example.test/fiel',
+    screenshot: Buffer.from([0x89, 0x50, 0x4e, 0x47]), html: '<html><body>acceso</body></html>' });
+  const { launch } = fakeDriver(page);
+  const fetchDiag = createSatDocBrowserFetch({ launchDriver: launch,
+    resolveCredentials: async () => ({ ...CREDS, key: KEY_3DES }) });
+  const error = await fetchDiag({ rfc: RFC }, 'constancia').then(() => null, e => e);
+  assert.equal(error.code, 'respuesta-inesperada');
+  assert.equal(error.diag.url, 'https://login.example.test/fiel');
+  assert.deepEqual([...error.diag.screenshot], [0x89, 0x50, 0x4e, 0x47]);
+  assert.ok(error.diag.html.includes('acceso'));
+}
+
+/* 13 · NAVEGADOR REAL contra la FORMA REAL del portal (1.10.1):
+     la entrada cae en «Acceso por contraseña» y el acceso con
+     e.firma NAVEGA a otra página cuyo formulario trae los inputs
+     de archivo ocultos (display:none) — la forma exacta que mató
+     la primera corrida real de la 1.9.0 (timeout esperando
+     #fileCertificate sin esperar a que el documento nuevo lo
+     trajera) —. El login la atraviesa entera; el rechazo en
+     pantalla se detecta por su #divError y diagnostics() entrega
+     la foto del momento. */
+{
+  const shellPath = join(homedir(), '.cache/ms-playwright/chromium_headless_shell-1248',
+    'chrome-headless-shell-linux64/chrome-headless-shell');
+  const executablePath = process.env.PACOSAT_CHROMIUM_PATH ||
+    (existsSync(shellPath) ? shellPath : '/usr/bin/chromium');
+  const passwordPage = (href) => `<!doctype html><html><body>
+    <h1>SAT Autenticación</h1>
+    <form id="IDPLogin"><input type="text" id="rfc" name="Ecom_User_ID">
+    <input type="password" id="password" name="Ecom_Password">
+    <input type="submit" id="submit" value="Enviar">
+    <a id="buttonFiel" href="${href}">e.firma</a></form></body></html>`;
+  const fielPage = (onclick) => `<!doctype html><html><body>
+    <h1>Acceso con e.firma</h1>
+    <form id="certform" method="post">
+      <input class="Box" type="text" id="txtCertificate" readonly>
+      <input type="file" style="display: none" accept=".cer" id="fileCertificate">
+      <input class="Box" type="text" id="txtPrivateKey" readonly>
+      <input type="file" style="display: none" accept=".key" id="filePrivateKey">
+      <input type="password" id="privateKeyPassword" name="privateKeyPassword">
+      <div id="divError" style="display:none">Certificado, clave privada o contraseña de clave privada inválidos</div>
+      <input type="button" id="submit" value="Enviar" onclick="${onclick}">
+    </form></body></html>`;
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    if (url.pathname === '/PTSC/IdcSiat/IdcGeneraConstancia.jsf') {
+      res.setHeader('content-type', 'application/pdf'); res.end(PDF); return;
+    }
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    if (url.pathname === '/lanzador-v2') res.end(passwordPage('/fiel-v2'));
+    else if (url.pathname === '/fiel-v2') res.end(fielPage("location.href='/operacion/43824/reimprime'"));
+    else if (url.pathname === '/operacion/43824/reimprime') res.end('<html><body><a href="/PTSC/IdcSiat/IdcGeneraConstancia.jsf">Generar Constancia</a></body></html>');
+    else if (url.pathname === '/lanzador-rechazo') res.end(passwordPage('/fiel-rechazo'));
+    else if (url.pathname === '/fiel-rechazo') res.end(fielPage("document.getElementById('divError').style.display='block'"));
+    else { res.statusCode = 404; res.end('no'); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  let driver = null;
+  try {
+    driver = await createPlaywrightDriverFactory({ executablePath })();
+  } catch (error) {
+    console.log('OMITIDA (sin Chromium en este entorno): prueba de la forma real del portal — ' +
+      (error.code || error.message));
+  }
+  if (driver) {
+    try {
+      const page = await driver.newPage();
+      const csf = await fetchDocumentInBrowser({ page, kind: 'constancia',
+        creds: { ...CREDS, key: KEY_3DES }, urls: { constancia: base + '/lanzador-v2' } });
+      assert.deepEqual(csf.content, PDF,
+        'constancia a través de la navegación real a la página de e.firma con inputs ocultos');
+      const diag = await page.diagnostics();
+      assert.equal(diag.screenshot[0], 0x89, 'diagnostics entrega la captura PNG');
+      assert.ok(diag.html.includes('Generar Constancia'), 'diagnostics entrega el HTML de la página');
+      const rejected = await fetchDocumentInBrowser({ page, kind: 'constancia',
+        creds: { ...CREDS, key: KEY_3DES }, urls: { constancia: base + '/lanzador-rechazo' } })
+        .then(() => null, e => e);
+      assert.equal(rejected.code, 'portal-rechaza');
+      assert.match(rejected.message, /inválidos/);
+      console.log('OK extra: la FORMA REAL del portal (navegación a e.firma, inputs ocultos) ' +
+        'se atraviesa en Chromium local y el rechazo deja diagnóstico.');
+    } finally {
+      await driver.close();
+    }
+  }
+  server.close();
+}
+
 console.log('OK: sidecar de navegador — llave AES convertida a 3DES legible por el motor JS ' +
   'del portal, constancia capturada de la respuesta, opinión por su fase de respuesta completa ' +
   'en Base64, rebote y rechazo diferenciados, pipeline HTTP→navegador con caducada sin red.');

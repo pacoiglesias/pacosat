@@ -56,23 +56,120 @@ function satDocsSection() {
       const run = n('button', 'Descargar ahora', 'soft');
       run.onclick = async () => {
         run.disabled = true; run.textContent = 'Descargando del portal…';
+        /* Progreso EN VIVO (1.10.1): la corrida sigue en el servidor
+           aunque esta petición tarde lo que tarde; mientras tanto se
+           consulta el estado cada pocos segundos y se pintan los
+           pasos tal como ocurren — si se conectó, si está firmando,
+           qué está pidiendo — sin refrescar la página. Al terminar,
+           el sondeo se detiene y la tarjeta se repinta entera. */
+        const poller = setInterval(async () => {
+          try {
+            const fresh = await satApi('satdocs');
+            for (const item of fresh.profiles) {
+              const box = body.querySelector('[data-progress-for="' + item.rfc + '"]');
+              if (box) renderSatDocProgress(box, item);
+              if (!item.progress?.running) {
+                const runs = body.querySelector('[data-runs-for="' + item.rfc + '"]');
+                if (runs) renderSatDocRuns(runs, item);
+              }
+            }
+          } catch { /* un fallo de sondeo no tumba la descarga */ }
+        }, 2500);
         try {
           const data = await satApi('satdocs/run', { rfc: profile.rfc });
           const failed = Object.values(data.results).filter(result => !result.ok).length;
-          toast(failed ? 'El portal no entregó ' + failed + ' documento(s): quedó registrado y avisado.' :
+          toast(failed ? 'El portal no entregó ' + failed + ' documento(s): quedó registrado en el diario y avisado.' :
             'Documentos descargados, archivados y enviados.', failed ? 'error' : 'ok');
           fill(data);
         } catch (error) { toast(error.message, 'error'); fill(); }
+        finally { clearInterval(poller); }
       };
       const upload = n('button', 'Subir PDF a mano', 'soft');
       upload.onclick = () => satDocUploadDialog(profile.rfc, fill);
       actions.append(run, upload);
       card.append(actions);
+      /* Progreso persistido de la última corrida (o de la que sigue
+         en curso en el servidor) y el diario de corridas: al volver
+         a esta pantalla —aunque se haya refrescado— se ve el estado
+         real, no una pantalla muda. */
+      const progressBox = n('div', undefined, 'sat-progress');
+      progressBox.dataset.progressFor = profile.rfc;
+      card.append(progressBox);
+      renderSatDocProgress(progressBox, profile);
+      const runsBox = n('div', undefined, 'sat-runs');
+      runsBox.dataset.runsFor = profile.rfc;
+      card.append(runsBox);
+      renderSatDocRuns(runsBox, profile);
       body.append(card);
     }
   };
   fill();
   return section;
+}
+/* Pasos de una corrida, en lenguaje llano y con su hora: los
+   mismos que el servidor persiste mientras descarga. */
+function satDocStepList(steps, withUrl) {
+  const list = n('ol', undefined, 'sat-steps');
+  for (const step of steps || []) {
+    const item = n('li');
+    item.append(
+      n('span', new Date(step.at).toLocaleTimeString('es-MX',
+        { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'sat-step-time'),
+      n('span', step.text + (withUrl && step.url ? ' · ' + step.url : '')));
+    list.append(item);
+  }
+  return list;
+}
+function renderSatDocProgress(box, profile) {
+  box.replaceChildren();
+  const progress = profile.progress;
+  if (!progress || !Array.isArray(progress.steps) || !progress.steps.length) return;
+  const head = n('p', undefined, 'sat-progress-head');
+  head.append(n('strong', progress.running ? 'Descargando ahora · ' : 'Última descarga · '),
+    n('span', (progress.kind === 'opinion' ? 'Opinión de cumplimiento' : 'Constancia') + ' — ' + progress.step));
+  box.append(head, satDocStepList(progress.steps, false));
+  if (progress.running) {
+    box.append(n('p', 'La descarga sigue en el servidor: puedes refrescar o salir y volver; al regresar verás el estado real.', 'sat-progress-note'));
+  }
+}
+/* El diario: cada corrida con su resultado y sus pasos; si falló
+   dentro del navegador, la captura y el HTML de la página en el
+   punto del fallo se pueden ver y bajar desde aquí. */
+function renderSatDocRuns(box, profile) {
+  box.replaceChildren();
+  const runs = Array.isArray(profile.runs) ? profile.runs : [];
+  if (!runs.length) return;
+  box.append(n('h4', 'Diario de descargas', 'sat-runs-title'));
+  for (const run of runs.slice(0, 5)) {
+    const details = n('details', undefined, 'sat-run');
+    const summary = n('summary', localDateTime(run.started) + ' · ' +
+      (run.kind === 'opinion' ? 'Opinión' : 'Constancia') +
+      (run.ok ? ' · Guardada en Expedientes' : ' · Falló'));
+    details.append(summary);
+    if (!run.ok && run.error) details.append(n('p', run.error, 'error-text'));
+    details.append(satDocStepList(run.steps, true));
+    if (run.hasShot || run.hasHtml) {
+      const files = n('div', undefined, 'sat-run-files');
+      if (run.hasShot) {
+        const shot = n('button', 'Bajar la captura de la página', 'soft');
+        shot.onclick = async () => {
+          try { download(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=shot'), 'captura-del-fallo.png'); }
+          catch (error) { toast(error.message, 'error'); }
+        };
+        files.append(shot);
+      }
+      if (run.hasHtml) {
+        const html = n('button', 'Bajar el HTML de la página', 'soft');
+        html.onclick = async () => {
+          try { download(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'); }
+          catch (error) { toast(error.message, 'error'); }
+        };
+        files.append(html);
+      }
+      details.append(files);
+    }
+    box.append(details);
+  }
 }
 function satDocUploadDialog(rfc, fill) {
   const kind = n('select');
