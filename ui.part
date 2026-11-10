@@ -1,26 +1,37 @@
+/* Mapa ÚNICO de pantallas (1.11.0): los 9 destinos del menú más
+   Preguntas (vive en la barra superior). Título, frase de para qué
+   (la tarea, no el sistema) y acción principal con verbo + objeto.
+   Las vistas absorbidas no tienen entrada: navigate() las traduce
+   al destino y la pestaña/sección que les corresponde (VIEW_ALIASES),
+   así ningún enlace interno viejo se rompe y ninguna función se
+   pierde (tabla de correspondencia de flujos.md §1). */
 const screens = {
-  avisos: ['Centro de Avisos', 'Lo que está mal, lo que falta y lo que el sistema necesita de ti: todo dentro, solventable.', 'Actualizar avisos'],
-  operations: ['Centro de operaciones', 'Pendientes, conciliación y estado por contribuyente.', 'Actualizar estado'],
-  home: ['Resumen fiscal', 'Facturas y documentos de tus contribuyentes en un solo lugar.', 'Importar XML / ZIP'],
-  invoices: ['Facturas CFDI', 'Busca por nombre, RFC o UUID y abre el comprobante sin perder tus filtros.', 'Importar XML / ZIP'],
-  visor: ['Visor de comprobantes', 'La tabla viva de tus CFDI: emisor, receptor, fecha, tipo, monto y estado, filtrable y con descarga directa.', 'Actualizar'],
-  docs: ['Expedientes fiscales', 'Constancias, cédulas, opiniones, declaraciones y acuses por RFC.', 'Archivar PDF'],
-  sat: ['Centro SAT', 'Abre el trámite oficial e importa los archivos a tu expediente.', 'Importar paquete'],
-  coverage: ['Cobertura de descarga', 'Qué periodos están descargados por RFC, dónde quedan huecos y el mapa anual de días cubiertos.', 'Actualizar estado'],
-  monitor: ['Vigilancia SAT', 'Consulta el estado oficial de tus CFDI y los RFC publicados en el artículo 69-B.', 'Actualizar resultados'],
-  lists: ['Listas negras', 'Listados oficiales del SAT cruzados con tus contrapartes: quién consta, desde cuándo y cuánto te ha facturado.', 'Actualizar listados'],
-  backup: ['Respaldos', 'Guarda una copia cifrada o restaura una anterior.', 'Crear respaldo'],
-  diot: ['Base para la DIOT', 'Totales por proveedor y mes desde los CFDI recibidos. Base de trabajo para la contadora, no la declaración.', 'Exportar CSV'],
-  salidas: ['Salidas', 'Reportes, IVA del mes, comparativas, cierre de mes, correo desde la app e informes automáticos.', 'Exportación completa'],
-  dinero: ['Dinero', 'Por cobrar y por pagar con antigüedad, facturas esperadas, expediente 360 y conciliación bancaria.', 'Abrir Salidas'],
-  pagos: ['Pagos al banco', 'Catálogo de beneficiarios con cuenta y CLABE validadas y la preparación de los pagos del mes en tablas espejo del banco, listas para copiar.', 'Actualizar'],
-  cumplimiento: ['Cumplimiento', 'Calendario fiscal con semáforo, detector de errores y duplicados, anomalías, reglas de clasificación y paquete de defensa.', 'Crear paquete de defensa'],
-  bancos: ['Bancos', 'Estados de cuenta archivados por banco y mes, con lectura de saldos, cadena verificada, faltantes y posición total.', 'Añadir cuenta'],
-  preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Preguntar'],
-  offline: ['Sin conexión', 'Tu copia cifrada de los últimos 3 meses con los informes pregenerados, para consultar cuando no haya red.', 'Sincronizar ahora'],
-  settings: ['Ajustes', 'Nombre, logo, color de acento y remitente de los correos de esta instalación.', 'Guardar ajustes'],
-  capacidades: ['Qué incluye PacoSAT', 'El documento vivo de capacidades: qué está incluido, qué está en construcción y qué viene después.', 'Ir a Ajustes']
+  home: ['Hoy', 'Cómo amanece todo: qué hizo el sistema, qué falta y qué vence.', 'Importar XML / ZIP'],
+  avisos: ['Avisos', 'Lo que está mal, lo que falta y lo que el sistema necesita de ti.', 'Revisar avisos ahora'],
+  invoices: ['Facturas', 'Todos tus CFDI: emitidos y recibidos, su estado en el SAT y su PDF, en una sola tabla.', 'Importar XML / ZIP'],
+  docs: ['Documentos', 'Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados, con «Ver» de un clic.', 'Archivar PDF'],
+  dinero: ['Dinero', 'Cuánto debes, cuánto te deben y qué ya se movió.', 'Abrir Cierre y reportes'],
+  pagos: ['Pagos al banco', 'Prepara los pagos del mes en tres pasos y llévate las tablas para el banco.', 'Preparar los pagos'],
+  sat: ['SAT', 'Descarga tus facturas, tu constancia y tus declaraciones del SAT.', 'Importar paquete'],
+  salidas: ['Cierre y reportes', 'Cierra el mes paso a paso, mira qué vence y prepara lo de tu contadora.', 'Exportación completa'],
+  settings: ['Ajustes', 'Contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema y acerca de.', 'Guardar ajustes'],
+  preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Preguntar']
 };
+/* Vistas de la 1.10.x → destino nuevo (y su pestaña o sección). */
+const VIEW_ALIASES = {
+  visor: ['invoices'],
+  operations: ['settings', 'sistema'],
+  backup: ['settings', 'respaldos'],
+  offline: ['settings', 'sinconexion'],
+  capacidades: ['settings', 'acerca'],
+  monitor: ['sat', 'estado'],
+  lists: ['sat', 'listas'],
+  coverage: ['sat', 'descargado'],
+  cumplimiento: ['salidas', 'calendario'],
+  diot: ['salidas', 'diot'],
+  bancos: ['dinero', 'bancos']
+};
+let satTab = 'descargar', dineroTab = 'dinero', cierreSection = 'cierre', ajustesSection = 'general';
 const portals = [
   ['Descargar CFDI', 'Consulta emitidos y recibidos y descarga un paquete desde el SAT.', 'https://wwwmat.sat.gob.mx/consultas/42968/consulta-y-recuperacion-de-comprobantes-(nuevo)'],
   ['Constancia y CIF', 'Obtén la constancia de situación fiscal con cédula de identificación.', 'https://www.sat.gob.mx/portal/public/tramites/constancia-de-situacion-fiscal'],
@@ -60,7 +71,7 @@ let people = [], invoices = [], documents = [], activity = [];
 let page = 'home', scope = '', direction = 'Todos', docFilter = '', term = '', month = '', invoicePage = 0;
 let docTerm = '', docPage = 0, lastImport = null;
 const invoiceSelection = new Set();
-let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '';
+let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '', invoicePayState = '';
 let submit, importing = false, ready = false;
 const number = new Intl.NumberFormat('es-MX');
 const scopes = () => new Map(people.map(person => [person.id, person.name]));
@@ -160,6 +171,16 @@ function initPrefs() {
   }
   const themeButton = $('theme-toggle');
   if (themeButton) themeButton.onclick = () => { prefSet('pacosat-theme', themeIsDark() ? 'light' : 'dark'); applyTheme(); };
+  /* Preguntas vive en la barra superior (1.11.0): icono global, no
+     destino de menú. */
+  const askButton = $('ask-button');
+  if (askButton) askButton.onclick = () => navigate('preguntas');
+  /* «Más» del móvil: abre la columna completa como hoja. */
+  const moreButton = $('more-button');
+  if (moreButton) moreButton.onclick = () => {
+    const frame = document.querySelector('.frame');
+    if (frame) frame.classList.toggle('sheet-open');
+  };
   const unlock = () => { if (soundOn) ensureAudio(); };
   window.addEventListener('pointerdown', unlock, { once: true });
   window.addEventListener('keydown', unlock, { once: true });
@@ -425,40 +446,6 @@ function exportDiotCsv() {
   download(new Blob(['\uFEFF', diotCsv()], { type: 'text/csv;charset=utf-8' }), 'Base-DIOT-' + (scope || 'todos') + '.csv');
   announce('Base DIOT exportada en CSV.');
 }
-function kpiRow(selection) {
-  const wrap = n('div', undefined, 'kpis');
-  const consulted = selection.filter(row => fiscalResults.get(row.id)?.sat);
-  const vigentes = consulted.filter(row => fiscalResults.get(row.id).sat.state === 'Vigente').length;
-  const cancelados = consulted.filter(row => fiscalResults.get(row.id).sat.state === 'Cancelado').length;
-  const efosCount = selection.filter(row => fiscalResults.get(row.id)?.efos?.length).length;
-  const monthKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit' }).format();
-  let issuedCents = 0n, receivedCents = 0n;
-  for (const row of selection) {
-    if (!row.date.startsWith(monthKey) || (row.currency && row.currency !== 'MXN')) continue;
-    const role = roles(row);
-    if (role.issued) issuedCents += totalCents(row);
-    if (role.received) receivedCents += totalCents(row);
-  }
-  const pendingJobs = satData.jobs.filter(job => job.status === 'pending').length;
-  const lastSync = satData.jobs.length ? Math.max(...satData.jobs.map(job => job.created)) : (activity[0] ? Date.parse(activity[0].date) : 0);
-  const card = (label, glyph, value, note, cls) => {
-    const el = n('article', undefined, 'kpi' + (cls ? ' ' + cls : ''));
-    const head = n('div', label, 'kpi-label'); head.prepend(icon(glyph));
-    el.append(head, n('strong', value), n('small', note));
-    return el;
-  };
-  wrap.append(
-    card('CFDI vigentes', 'shield', number.format(vigentes), consulted.length ? 'De ' + number.format(consulted.length) + ' consultados al SAT' : 'Sin consultas de vigilancia todavía'),
-    card('CFDI cancelados', 'alert', number.format(cancelados), efosCount ? number.format(efosCount) + ' con coincidencia 69-B' : 'Sin coincidencias 69-B en lo consultado'),
-    card('Importe del mes', 'chart', '$' + centsLabel(issuedCents + receivedCents),
-      'Emitidos $' + centsLabel(issuedCents) + ' · Recibidos $' + centsLabel(receivedCents) + ' · ' + monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4), 'split'),
-    card('Descargas en curso', 'sync', number.format(pendingJobs + satData.inbox.length),
-      number.format(pendingJobs) + ' solicitudes pendientes · ' + number.format(satData.inbox.length) + ' paquetes por importar'),
-    card('Última actividad', 'clock', lastSync ? localDateTime(lastSync) : '—',
-      activity.length ? 'Bitácora con ' + number.format(activity.length) + ' registros' : 'Sin registros todavía')
-  );
-  return wrap;
-}
 function monthlyChart() {
   const byMonth = new Map();
   for (const group of monthlyTotals().values()) for (const [key, g] of group.months) {
@@ -495,12 +482,26 @@ function monthlyChart() {
   keys.forEach((key, index) => {
     const entry = byMonth.get(key);
     const center = 10 + slot * index + slot / 2;
+    /* Rótulos fuera de la barra y ESCALONADOS por serie (1.11.0):
+       emitidos 19 px por encima de su barra, recibidos 5 px; si en
+       un mes las dos cifras quedan a menos de 13 px (barras de
+       altura parecida), la de recibidos sube lo justo para no
+       pisar a la otra — con el tope del gráfico como límite. La
+       cifra completa vive siempre en el título de cada barra. */
+    const labelY = {};
+    for (const [kind, cents] of [['issued', entry.issued], ['received', entry.received]]) {
+      if (!cents) continue;
+      const h = max ? Math.max(1, Math.round(Number(cents) / Number(max) * height)) : 0;
+      labelY[kind] = base - h - (kind === 'issued' ? 19 : 5);
+    }
+    if (labelY.issued !== undefined && labelY.received !== undefined && Math.abs(labelY.issued - labelY.received) < 13)
+      labelY.received = Math.max(11, labelY.issued - 14);
     for (const [kind, cents, offset] of [['issued', entry.issued, -barW - 2], ['received', entry.received, 2]]) {
       const h = max ? Math.max(1, Math.round(Number(cents) / Number(max) * height)) : 0;
       if (cents) {
         const bar = el('rect', { x: center + offset, y: base - h, width: barW, height: h, rx: 3, class: 'bar-' + kind });
         bar.append(el('title', {}, (kind === 'issued' ? 'Emitidos ' : 'Recibidos ') + key + ': $' + centsLabel(cents)));
-        svg.append(bar, el('text', { x: center + offset + barW / 2, y: base - h - 5, 'text-anchor': 'middle' }, shortMoney(cents)));
+        svg.append(bar, el('text', { x: center + offset + barW / 2, y: labelY[kind], 'text-anchor': 'middle' }, shortMoney(cents)));
       }
     }
     svg.append(el('text', { x: center, y: base + 18, 'text-anchor': 'middle' }, key.slice(5, 7) + '/' + key.slice(0, 4)));
@@ -673,17 +674,58 @@ async function refresh(skipRender = false) {
   if (!skipRender) render();
 }
 function navigate(view) {
+  const alias = VIEW_ALIASES[view];
+  if (alias) {
+    view = alias[0];
+    if (alias[1]) {
+      if (view === 'sat') satTab = alias[1];
+      else if (view === 'settings') ajustesSection = alias[1];
+      else if (view === 'salidas') cierreSection = alias[1];
+      else if (view === 'dinero') dineroTab = alias[1];
+    }
+  }
   page = view;
+  /* El resultado de una importación vive en su pantalla (sistema
+     visual §5): al cambiar de pantalla se despide solo. */
+  const result = $('activity-result');
+  if (result) result.hidden = true;
+  const frame = document.querySelector('.frame');
+  if (frame) frame.classList.remove('sheet-open');
   for (const button of document.querySelectorAll('[data-view]')) {
     if (button.dataset.view === page) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
   render();
 }
+/* Atajo para otras pantallas: ir a SAT en su pestaña de descarga. */
+function showSatDownload() { satTab = 'descargar'; navigate('sat'); }
+/* Barra de pestañas/secciones con el patrón único (.tabbar). */
+function tabbar(items, current, pick) {
+  const bar = n('div', undefined, 'tabbar');
+  bar.setAttribute('role', 'tablist');
+  for (const [key, label] of items) {
+    const button = n('button', label);
+    button.type = 'button';
+    button.setAttribute('role', 'tab');
+    button.setAttribute('aria-selected', String(key === current));
+    button.onclick = () => pick(key);
+    bar.append(button);
+  }
+  return bar;
+}
+/* La acción principal de SAT y de Ajustes depende de la pestaña o
+   sección en curso: una sola etiqueta por contexto, siempre con
+   verbo + objeto. */
+function primaryLabel() {
+  if (page === 'sat') return { descargar: 'Importar paquete', estado: 'Revisar mis CFDI ahora', listas: 'Actualizar listados', descargado: 'Actualizar estado' }[satTab] || 'Importar paquete';
+  if (page === 'settings') return { general: 'Guardar ajustes', contribuyentes: 'Agregar RFC', correo: 'Guardar el correo', respaldos: 'Crear respaldo', sinconexion: 'Sincronizar ahora', sistema: 'Actualizar estado', acerca: 'Ver la versión' }[ajustesSection] || 'Guardar ajustes';
+  if (page === 'salidas') return { cierre: 'Exportación completa', calendario: 'Crear paquete de defensa', diot: 'Exportar CSV', reportes: 'Exportación completa' }[cierreSection] || 'Exportación completa';
+  return screens[page][2];
+}
 function render() {
-  const [title, description, button] = screens[page];
+  const [title, description] = screens[page];
   $('title').textContent = title;
-  $('crumb').textContent = page === 'home' ? 'Resumen' : title;
+  $('crumb').textContent = title;
   $('subtitle').textContent = description;
   $('eyebrow').textContent = scope || 'ESPACIO FISCAL';
   const headerCounts = $('counters');
@@ -693,9 +735,14 @@ function render() {
     headerCounts.textContent = people.length ?
       number.format(selectedCount) + ' CFDI · ' + number.format(docsCount) + ' PDF · ' + people.length + ' RFC' : '';
   }
-  $('primary').replaceChildren(icon(page === 'backup' ? 'lock' : page === 'diot' ? 'down' : 'up'), n('span', button));
+  /* Importar vive en Hoy y en Facturas: fuera de ahí, la cabecera no
+     lleva «Abrir XML / Factura PDF» (sistema visual §4). */
+  const importingHere = page === 'home' || page === 'invoices';
+  if ($('inspect')) $('inspect').hidden = !importingHere;
+  if ($('pdf-import')) $('pdf-import').hidden = !importingHere;
+  $('primary').replaceChildren(icon(page === 'settings' && ajustesSection === 'respaldos' ? 'lock' : page === 'salidas' && cierreSection === 'diot' ? 'down' : 'up'), n('span', primaryLabel()));
   $('primary').disabled = !ready || importing;
-  const content = ({ home, avisos: avisosScreen, operations: operationsScreen, invoices: invoiceScreen, visor: visorScreen, docs: documentScreen, sat: satScreen, monitor: monitorScreen, lists: listsScreen, backup: backupScreen, diot: diotScreen, salidas: salidasScreen, dinero: dineroScreen, pagos: pagosScreen, cumplimiento: cumplimientoScreen, bancos: bancosScreen, preguntas: preguntasScreen, offline: offlineScreen, coverage: coverageScreen, settings: settingsScreen, capacidades: capacidadesScreen })[page]();
+  const content = ({ home, avisos: avisosScreen, invoices: invoiceScreen, docs: docsView, dinero: dineroView, pagos: pagosScreen, sat: satView, salidas: cierreView, settings: ajustesView, preguntas: preguntasScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
   $('body').replaceChildren(...content);
   applySettings();
@@ -744,6 +791,9 @@ function trafficStrip() {
 /* Pantalla «Hoy en PacoSAT» (1.6.11): resumen del día, pendientes con
    semáforo y UN siguiente paso sugerido. El interruptor general de
    descanso vive aquí y en el Centro SAT (la misma pieza). */
+/* Caché compartida del panel «Hoy» (1.11.0); la invalida el pulso
+   cuando detecta cambios en el servidor. */
+let todayCache = { at: 0, data: null };
 function todayPanel() {
   const wrap = panel();
   const head = n('div', undefined, 'panel-head');
@@ -798,11 +848,17 @@ function todayPanel() {
         line(colFalta, 'Abre PacoSAT desde el servidor de tu casa para ver aquí el trabajo del sistema, los pendientes y los vencimientos.');
         return;
       }
-      const [avisos, reconcile, checklist, satdocs] = await Promise.all([
-        satApi('notices').catch(() => null),
-        satApi('reconcile').catch(() => null),
-        satApi('reports/checklist?month=' + todayKey.slice(0, 7)).catch(() => null),
-        satApi('satdocs').catch(() => null)]);
+      /* Caché de 30 s en memoria (1.11.0): el panel «Hoy» consume
+         lo que el pulso único ya trajo en vez de lanzar sus 4
+         llamadas en cada pintado. */
+      if (!todayCache.data || Date.now() - todayCache.at > 30000) {
+        todayCache = { at: Date.now(), data: await Promise.all([
+          satApi('notices').catch(() => null),
+          satApi('reconcile').catch(() => null),
+          satApi('reports/checklist?month=' + todayKey.slice(0, 7)).catch(() => null),
+          satApi('satdocs').catch(() => null)]) };
+      }
+      const [avisos, reconcile, checklist, satdocs] = todayCache.data;
       if (!wrap.isConnected) return;
       /* Lo que hizo: historial del Centro y conciliaciones vivas. */
       const resueltos = (avisos?.historial || []).filter(item => item.resuelto && String(item.resuelto).startsWith(todayKey));
@@ -859,7 +915,7 @@ function home() {
     n('p', scope ? scope : people.length ? people.length + (people.length === 1 ? ' contribuyente en tu cartera' : ' contribuyentes en tu cartera') : 'Agrega tu primer RFC para abrir un expediente.'));
   const shortcuts = n('div', undefined, 'hero-actions');
   shortcuts.append(people.length ? action('Ver facturas', () => navigate('invoices'), undefined, 'file') : action('Agregar contribuyente', addPerson, undefined, 'plus'),
-    action('Centro SAT', () => navigate('sat'), undefined, 'sync'));
+    action('SAT', () => navigate('sat'), undefined, 'sync'));
   banner.append(copy, shortcuts);
   const metrics = n('div', undefined, 'cards');
   for (const [label, value, glyph, open] of [
@@ -937,7 +993,12 @@ function home() {
   }
   const secondary = n('div', undefined, 'dashboard-grid');
   secondary.append(recent, history);
-  const blocks = [banner, todayPanel(), avisosHoyPanel(), trafficStrip(), metrics, kpiRow(selection), monthlyChart()];
+  /* Hoy manda la tarjeta «Hoy» (1.11.0): primero y en grande. Fuera
+     el panel de avisos incrustado (su resumen vive en las líneas de
+     la propia tarjeta, con enlace a Avisos), fuera la fila de KPI
+     que repetía conteos (con ceros sin acción) y fuera los gráficos
+     que duplicaban los totales: queda UN gráfico y UNA tabla. */
+  const blocks = [todayPanel(), banner, metrics, trafficStrip(), monthlyChart()];
   if (lastImport) {
     /* Tarjeta persistente de la última importación (UX-13). */
     const card = panel('Última importación');
@@ -952,49 +1013,36 @@ function home() {
     card.append(acts);
     blocks.push(card);
   }
-  blocks.push(...(selection.length ? [fiscalDonut(selection), weeklyActivity(selection)] : []), secondary, tasks, totalsPanel());
+  blocks.push(secondary, tasks, totalsPanel());
   return blocks;
 }
 
-function weeklyActivity(rows) {
-  const chart = panel();
-  const header = n('div', undefined, 'panel-head');
-  const heading = n('div');
-  heading.append(n('h2', 'Actividad de comprobantes'), n('p', 'Siete días hasta la última fecha de emisión registrada.'));
-  const end = Date.parse(rows[0].date.slice(0, 10) + 'T00:00:00Z');
-  if (!Number.isFinite(end)) return chart;
-  const dates = Array.from({ length: 7 }, (_, index) => new Date(end - (6 - index) * 86400000).toISOString().slice(0, 10));
-  const counts = new Map(dates.map(date => [date, 0]));
-  for (const row of rows) {
-    const key = row.date.slice(0, 10);
-    if (counts.has(key)) counts.set(key, counts.get(key) + 1);
-  }
-  const maximum = Math.max(1, ...counts.values());
-  header.append(heading, n('span', dateLabel(dates[0]) + ' – ' + dateLabel(dates.at(-1)), 'period-chip'));
-  const bars = n('div', undefined, 'activity-bars');
-  bars.setAttribute('aria-label', 'Comprobantes por día');
-  for (const [date, count] of counts) {
-    const column = n('div', undefined, 'activity-day');
-    const meter = n('meter');
-    meter.min = 0; meter.max = maximum; meter.value = count;
-    meter.setAttribute('aria-label', dateLabel(date) + ', ' + count + ' comprobantes');
-    column.append(n('strong', number.format(count)), meter, n('span', dateLabel(date).slice(0, 5)));
-    bars.append(column);
-  }
-  chart.append(header, bars);
-  return chart;
-}
 const invoiceStateOf = row => {
   const item = fiscalResults.get(row.id);
   if (item?.efos?.length) return 'efos';
   return item?.sat?.state || 'none';
 };
+/* Estado de pago por fila (del Visor, absorbido en la fusión de
+   Facturas de la 1.11.0): el saldo oficial vive en el servidor
+   (paidByMap/balanceOf de Dinero); visorMarcados recuerda lo
+   marcado en esta sesión. */
+const visorMarcados = new Set();
+function visorEstadoPago(row, paidBy) {
+  if (row.kind !== 'I') return { label: '—', state: 'dim' };
+  if (visorMarcados.has(row.id)) return { label: 'Pagada', state: 'ok' };
+  const { balance, paid } = balanceOf(row, paidBy);
+  if (balance <= 0n) return { label: 'Pagada', state: 'ok' };
+  if (paid > 0n) return { label: 'Parcial', state: 'warn' };
+  return { label: 'Pendiente', state: 'warn' };
+}
 function invoiceRows() {
   const needle = term.trim().toLocaleLowerCase('es-MX');
   const known = scopes();
+  const paidBy = invoicePayState ? paidByMap() : null;
   const matchScope = row => scope ? row.from.rfc === scope || row.to.rfc === scope : known.has(row.from.rfc) || known.has(row.to.rfc);
   const filtered = invoices.filter(row => matchScope(row) && (!month || row.date.startsWith(month)) && (!invoiceKind || row.kind === invoiceKind) &&
     (!invoiceState || invoiceStateOf(row) === invoiceState) &&
+    (!invoicePayState || visorEstadoPago(row, paidBy).label.toLocaleLowerCase('es-MX') === invoicePayState) &&
     (direction === 'Todos' || (direction === 'Recibidos' ? (scope ? row.to.rfc === scope : known.has(row.to.rfc)) : (scope ? row.from.rfc === scope : known.has(row.from.rfc)))) &&
     [row.id, row.from.rfc, row.to.rfc, row.from.name, row.to.name].some(text => text.toLocaleLowerCase('es-MX').includes(needle)));
   return invoiceOrder === 'oldest' ? filtered.reverse() : filtered;
@@ -1016,7 +1064,8 @@ function invoiceScreen() {
   search.setAttribute('aria-label', 'Buscar comprobantes');
   const period = input('month', { value: month }); period.setAttribute('aria-label', 'Mes de emisión');
   const type = select([['', 'Todos los tipos'], ...Object.entries(KINDS)], invoiceKind, 'Tipo de CFDI');
-  const state = select([['', 'Todos los estados SAT'], ['Vigente', 'Vigente'], ['Cancelado', 'Cancelado'], ['efos', 'Con 69-B'], ['none', 'Sin consulta']], invoiceState, 'Estado SAT');
+  const state = select([['', 'Todos los estados SAT'], ['Vigente', 'Vigente'], ['Cancelado', 'Cancelado'], ['efos', 'Con 69-B'], ['none', 'Sin revisar todavía']], invoiceState, 'Estado SAT');
+  const payState = select([['', 'Pagadas y pendientes'], ['pagada', 'Pagadas'], ['pendiente', 'Pendientes'], ['parcial', 'Parciales']], invoicePayState, 'Estado de pago');
   const order = select([['recent', 'Más recientes'], ['oldest', 'Más antiguos']], invoiceOrder, 'Orden');
   const exportButton = action('Exportar CSV', exportCsv, undefined, 'down');
   /* Importar carpeta en 2 toques desde Facturas (1.7.4, pieza 1):
@@ -1055,11 +1104,12 @@ function invoiceScreen() {
   }, undefined, 'print');
   const chips = n('div', undefined, 'filter-chips');
   const clearFilters = () => {
-    term = ''; month = ''; invoiceKind = ''; invoiceState = ''; direction = 'Todos'; invoicePage = 0; render();
+    term = ''; month = ''; invoiceKind = ''; invoiceState = ''; invoicePayState = ''; direction = 'Todos'; invoicePage = 0; render();
   };
   const result = n('div');
   const update = () => {
     const rows = invoiceRows();
+    const paidBy = paidByMap();
     exportButton.disabled = !rows.length;
     zipButton.disabled = !invoiceSelection.size;
     printButton.disabled = !invoiceSelection.size;
@@ -1100,8 +1150,21 @@ function invoiceScreen() {
         zipButton.disabled = !invoiceSelection.size;
     printButton.disabled = !invoiceSelection.size;
       };
+      /* Fusión Facturas/Visor (1.11.0): la fila lleva las DOS
+         píldoras — estado en el SAT (con su fecha, vía statusCell)
+         y estado de pago (Pagada/Parcial/Pendiente, del Visor). */
+      const estadoStack = n('div', undefined, 'estado-stack');
+      estadoStack.style.display = 'flex';
+      estadoStack.style.flexDirection = 'column';
+      estadoStack.style.gap = '4px';
+      estadoStack.style.alignItems = 'flex-start';
+      estadoStack.append(statusCell(row.id));
+      if (row.kind === 'I') {
+        const pago = visorEstadoPago(row, paidBy);
+        estadoStack.append(statusPill(pago.state, pago.label, 'Estado de pago según Dinero'));
+      }
       return [pick, cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
-        dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), statusCell(row.id), invoiceActions(row)];
+        dateLabel(row.date), cell(KINDS[row.kind], rowRole(row)), amount(row), estadoStack, invoiceActions(row)];
     })) : empty('Sin coincidencias', 'Importa un lote o cambia los filtros.', action('Limpiar filtros', clearFilters, 'primary'));
     result.replaceChildren(content, foot);
   };
@@ -1109,8 +1172,14 @@ function invoiceScreen() {
   period.onchange = () => { month = period.value; invoicePage = 0; update(); };
   type.onchange = () => { invoiceKind = type.value; invoicePage = 0; update(); };
   state.onchange = () => { invoiceState = state.value; invoicePage = 0; update(); };
+  payState.onchange = () => { invoicePayState = payState.value; invoicePage = 0; update(); };
   order.onchange = () => { invoiceOrder = order.value; invoicePage = 0; update(); };
-  controls.append(search, period, type, state, order, exportButton, folderButton, zipButton, printButton);
+  controls.append(search, period, type, state, payState, order, exportButton, folderButton, zipButton, printButton);
+  /* Si hay CFDI sin revisar, el camino a revisarlos vive en la
+     propia tabla (flujos §3.4): un toque y la revisión corre en
+     SAT › Estado de mis CFDI. */
+  if (invoices.filter(matches).some(row => invoiceStateOf(row) === 'none'))
+    controls.append(action('Revisar mis CFDI ahora', () => navigate('monitor'), undefined, 'shield'));
   list.append(tabs, controls, chips, result);
   update();
   return [list];
@@ -1143,7 +1212,7 @@ function documentScreen() {
       acts.append(action('Eliminar', () => deleteDocument(doc)));
       return [cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', acts];
     })));
-    else result.append(empty('Sin documentos', 'Archiva un PDF o consulta los trámites en el Centro SAT.'));
+    else result.append(empty('Sin documentos', 'Archiva un PDF o pide tu constancia y tu opinión en las tarjetas de aquí abajo.'));
     const foot = n('div', undefined, 'table-foot');
     foot.append(n('span', number.format(rows.length) + ' documentos'));
     if (rows.length > 35) {
@@ -1159,8 +1228,7 @@ function documentScreen() {
   paintDocs();
   return [list];
 }
-function satScreen() {
-  if (typeof satToken !== 'undefined' && satToken) return connectedSatScreen();
+function satGuideScreen() {
   const guide = n('section', undefined, 'guide');
   const info = n('div');
   info.append(n('h2', 'Descarga en el SAT e importa en PacoSAT'), n('p', 'Descarga el ZIP en el portal e impórtalo aquí. PacoSAT asigna los XML a los RFC registrados y omite los UUID repetidos. La descarga automática desde el SAT aún no está habilitada.'));
@@ -1218,5 +1286,171 @@ function backupScreen() {
     screens.push(auto);
   }
   return screens;
+}
+
+/* ===== Vistas compuestas de la 1.11.0 (menú de 9 destinos) =====
+   Cada destino compone las pantallas de siempre SIN reescribir sus
+   motores: SAT = portada de tareas + 4 pestañas; Documentos = el
+   expediente + las tarjetas del SAT (constancia/opinión y
+   declaraciones, que salen del Centro SAT); Dinero = por cobrar y
+   pagar + Bancos en pestaña; Cierre y reportes = cierre guiado +
+   calendario + DIOT + reportes; Ajustes = secciones que absorben
+   Respaldos, Sin conexión, Operaciones y Capacidades. */
+function satPortada() {
+  const wrap = panel('Qué quieres hacer');
+  const tasks = [
+    ['Descargar CFDI', 'Trae tus facturas del SAT: PacoSAT las pide y las importa solo.', 'descargar'],
+    ['Estado de mis CFDI', 'Cuáles están vigentes, cancelados o en el listado 69-B, en lenguaje claro.', 'estado'],
+    ['Listas 69-B', 'Los listados oficiales del SAT cruzados con tus proveedores y clientes.', 'listas'],
+    ['Qué tengo descargado', 'Qué meses tienes completos y qué meses te faltan, por RFC.', 'descargado']
+  ];
+  for (const [title, summary, tab] of tasks) {
+    const item = n('div', undefined, 'portal');
+    const body = n('div');
+    body.append(n('strong', title), n('p', summary));
+    item.append(body, action(tab === 'estado' ? 'Revisar mis CFDI ahora' : 'Abrir', () => {
+      if (tab === 'estado') { satTab = 'estado'; navigate('sat'); pollMonitor(); }
+      else { satTab = tab; navigate('sat'); }
+    }, tab === 'estado' ? 'primary' : undefined, tab === 'estado' ? 'shield' : undefined));
+    wrap.append(item);
+  }
+  const docs = n('div', undefined, 'portal');
+  const docsBody = n('div');
+  docsBody.append(n('strong', 'Constancia, opinión y declaraciones'), n('p', 'Están en Documentos, con su estado y su «Ver» de un clic.'));
+  docs.append(docsBody, action('Ir a Documentos', () => navigate('docs'), undefined, 'folder'));
+  wrap.append(docs);
+  return wrap;
+}
+function satView() {
+  if (typeof satToken === 'undefined' || !satToken) return satGuideScreen();
+  const parts = [satPortada(), tabbar([['descargar', 'Descargar CFDI'], ['estado', 'Estado de mis CFDI'], ['listas', 'Listas 69-B'], ['descargado', 'Qué tengo descargado']],
+    satTab, key => { satTab = key; render(); })];
+  if (satTab === 'descargar') parts.push(...satDownloadScreen());
+  else if (satTab === 'estado') parts.push(...monitorScreen());
+  else if (satTab === 'listas') parts.push(...listsScreen());
+  else parts.push(...coverageScreen());
+  return parts;
+}
+function docsView() {
+  const parts = documentScreen();
+  if (typeof satToken !== 'undefined' && satToken && typeof satDocsSection === 'function') {
+    parts.push(satDocsSection());
+    if (typeof declaracionesSection === 'function') parts.push(declaracionesSection());
+  }
+  return parts;
+}
+function dineroView() {
+  const parts = [tabbar([['dinero', 'Por cobrar y pagar'], ['bancos', 'Bancos']], dineroTab, key => { dineroTab = key; render(); })];
+  parts.push(...(dineroTab === 'bancos' ? bancosScreen() : dineroScreen()));
+  return parts;
+}
+/* Cierre guiado: la checklist que el servidor ya calcula, pintada
+   como pasos con estado y su acción en cada paso (antes solo se
+   leía, resumida, dentro de Hoy). */
+function cierreGuiadoPanel() {
+  const wrap = panel('Cierre del mes, paso a paso');
+  const now = new Date();
+  const monthKey = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  const body = n('div');
+  body.append(n('p', 'Consultando los pasos del cierre…'));
+  wrap.append(body);
+  const goFor = label => {
+    const text = label.toLocaleLowerCase('es-MX');
+    if (/factur|cfdi|comprobante|descarg/.test(text)) return () => navigate('invoices');
+    if (/concilia|banco|cuenta/.test(text)) return () => navigate('dinero');
+    if (/respaldo|copia/.test(text)) return () => navigate('backup');
+    if (/diot/.test(text)) return () => { cierreSection = 'diot'; render(); };
+    if (/informe|reporte|correo|contadora/.test(text)) return () => { cierreSection = 'reportes'; render(); };
+    if (/pago|dinero|saldo/.test(text)) return () => navigate('dinero');
+    return () => navigate('avisos');
+  };
+  (async () => {
+    try {
+      if (typeof satToken === 'undefined' || !satToken) {
+        body.replaceChildren(n('p', 'Abre PacoSAT desde el servidor de tu casa para ver aquí los pasos del cierre con su estado.'));
+        return;
+      }
+      const data = await satApi('reports/checklist?month=' + monthKey).catch(() => null);
+      if (!wrap.isConnected) return;
+      if (!data?.items?.length) {
+        body.replaceChildren(n('p', 'El servidor no devolvió los pasos del cierre. Revisa el estado del sistema en Ajustes.'));
+        return;
+      }
+      const list = n('div', undefined, 'steps');
+      let stepNumber = 0;
+      for (const item of data.items) {
+        stepNumber++;
+        const row = n('div', undefined, 'step');
+        const head = n('div', undefined, 'step-head');
+        head.append(n('span', String(stepNumber), 'step-num'),
+          n('strong', item.label),
+          statusPill(item.level === 'ok' ? 'ok' : item.level === 'bad' ? 'bad' : 'warn',
+            item.level === 'ok' ? 'Hecho' : 'Falta', item.detail || ''));
+        row.append(head);
+        if (item.detail) row.append(n('p', item.detail, 'step-body'));
+        if (item.level !== 'ok') row.append(action('Resolver ahora', goFor(item.label), undefined, 'arrow'));
+        list.append(row);
+      }
+      const pending = data.items.filter(item => item.level !== 'ok').length;
+      body.replaceChildren(
+        n('p', pending ? 'Te faltan ' + pending + ' de ' + data.items.length + ' pasos para cerrar ' + data.month + '.' :
+          'Los ' + data.items.length + ' pasos del cierre de ' + data.month + ' están en verde.'),
+        list);
+    } catch { /* el cierre guiado es un extra: nunca rompe la pantalla */ }
+  })();
+  return wrap;
+}
+function cierreView() {
+  const parts = [tabbar([['cierre', 'Cierre del mes'], ['calendario', 'Calendario'], ['diot', 'DIOT'], ['reportes', 'Reportes']],
+    cierreSection, key => { cierreSection = key; render(); })];
+  if (cierreSection === 'cierre') parts.push(cierreGuiadoPanel());
+  else if (cierreSection === 'calendario') parts.push(...cumplimientoScreen());
+  else if (cierreSection === 'diot') parts.push(...diotScreen());
+  else parts.push(...salidasScreen());
+  return parts;
+}
+/* Ajustes › Contribuyentes y e.firma: quién está dado de alta y si
+   su e.firma está autorizada, con el camino a autorizarla. */
+function contribuyentesSection() {
+  const wrap = panel('Tus contribuyentes y su e.firma');
+  if (!people.length) {
+    wrap.append(empty('Sin contribuyentes todavía', 'Agrega tu primer RFC para abrir su expediente.',
+      action('Agregar RFC', addPerson, 'primary', 'plus')));
+    return [wrap];
+  }
+  const profiles = typeof satData !== 'undefined' && satData ? (satData.profiles || []) : [];
+  wrap.append(grid(['Contribuyente', 'RFC', 'e.firma', 'Acción'], people.map(person => {
+    const profile = profiles.find(row => row.rfc === person.id);
+    const acts = n('div', undefined, 'actions');
+    acts.append(action('Facturas', () => { scope = person.id; $('scope').value = scope; invoicePage = 0; navigate('invoices'); }),
+      action('Renombrar', () => renamePerson(person)));
+    return [person.name, person.id,
+      profile ? (profile.unlocked ? 'Autorizada' : 'Sin autorizar') : 'Sin perfil en el servidor',
+      acts];
+  })));
+  wrap.append(n('p', 'La e.firma se autoriza una vez por RFC y PacoSAT la guarda cifrada en tu servidor.'));
+  wrap.append(action('Autorizar o gestionar la e.firma', () => showSatDownload(), 'primary', 'lock'));
+  return [wrap];
+}
+function ajustesView() {
+  const parts = [tabbar([['general', 'General'], ['contribuyentes', 'Contribuyentes y e.firma'], ['correo', 'Correo'], ['respaldos', 'Respaldos'], ['sinconexion', 'Sin conexión'], ['sistema', 'Estado del sistema'], ['acerca', 'Acerca de']],
+    ajustesSection, key => { ajustesSection = key; render(); })];
+  if (ajustesSection === 'general') parts.push(...settingsScreen());
+  else if (ajustesSection === 'contribuyentes') parts.push(...contribuyentesSection());
+  else if (ajustesSection === 'correo') {
+    const asNodes = value => Array.isArray(value) ? value : [value];
+    if (typeof avisosMailSection === 'function') parts.push(...asNodes(avisosMailSection()));
+    if (typeof satMailSection === 'function') parts.push(...asNodes(satMailSection()));
+    if (parts.length === 1) {
+      const none = panel('Correo');
+      none.append(n('p', 'Abre PacoSAT desde el servidor de tu casa para configurar el correo de avisos.'));
+      parts.push(none);
+    }
+  }
+  else if (ajustesSection === 'respaldos') parts.push(...backupScreen());
+  else if (ajustesSection === 'sinconexion') parts.push(...offlineScreen());
+  else if (ajustesSection === 'sistema') parts.push(...operationsScreen());
+  else parts.push(...capacidadesScreen());
+  return parts;
 }
 

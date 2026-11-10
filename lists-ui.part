@@ -38,10 +38,13 @@ function listsScreen() {
     const head = n('div', undefined, 'sat-card-head');
     head.append(n('strong', source.label), listStatePill(source));
     const meta = n('div', undefined, 'sat-meta');
-    meta.append(n('span', source.count ? source.count.toLocaleString('es-MX') + ' registros' : 'Sin registros cargados'));
-    if (source.fetched) meta.append(n('span', 'Descargado: ' + localDateTime(source.fetched)));
-    if (source.declared) meta.append(n('span', 'La fuente declara: ' + source.declared));
-    if (source.manual) meta.append(n('span', 'Este listado no tiene descarga automática oficial: se carga su archivo a mano.'));
+    /* Los tramos se unen con « · » explícito (1.11.0): como nodos
+       sueltos salían pegados («14,830 registrosDescargado: …»). */
+    const bits = [source.count ? source.count.toLocaleString('es-MX') + ' registros' : 'Sin registros cargados'];
+    if (source.fetched) bits.push('Descargado: ' + localDateTime(source.fetched));
+    if (source.declared) bits.push('La fuente declara: ' + source.declared);
+    if (source.manual) bits.push('Este listado no tiene descarga automática oficial: se carga su archivo a mano.');
+    meta.append(n('span', bits.join(' · ')));
     card.append(head, meta);
     if (source.error && source.count > 0 && source.fetched)
       card.append(n('p', 'La actualización de hoy falló (' + source.error + ') El cruce sigue usando la última copia válida, del ' +

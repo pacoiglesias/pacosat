@@ -146,7 +146,7 @@ function viewPdfFile(file) {
 }
 if (cloudStorage) {
   $('mode').textContent = 'Servidor privado';
-  $('storage-mode').replaceChildren(n('span', 'Datos en servidor'), n('small', 'Acceso privado por HTTPS'));
+  $('storage-mode').replaceChildren(n('span', 'Tus datos están en tu NAS'));
 }
 $('pdf-import').onclick = () => $('invoice-pdf').click();
 $('invoice-pdf').onchange = () => {

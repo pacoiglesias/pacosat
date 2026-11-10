@@ -4,7 +4,15 @@
    esperadas que no han llegado, expediente 360 y la conciliación con
    movimientos (CSV hoy; los estados archivados de Bancos la alimentan
    en la 1.6.19 por esta misma vía). Nada se estima: un saldo sale de
-   los complementos de pago reales o del método PUE. */
+   los complementos de pago reales o del método PUE.
+   Ronda 1.11.0 (flujos §3.3): cada fila con saldo lleva su «Ya se pagó /
+   Ya me pagaron» de UN TOQUE — el mismo gesto que en Avisos —: llama a
+   POST money/mark-paid solo con el uuid, sin diálogo y sin fecha (el
+   servidor anota la fecha solo), y la fila se actualiza en el sitio con
+   confirmación breve. La conciliación y el resto de motores no cambian. */
+/* Pagos marcados en esta sesión (el saldo oficial vive en el servidor):
+   mismo patrón que visorMarcados en el Visor de comprobantes. */
+const dineroMarcados = new Set();
 function paidByMap() {
   const paidBy = new Map();
   for (const payment of invoices) {
@@ -27,7 +35,7 @@ function dineroScreen() {
   const paidBy = paidByMap();
   const own = new Set(people.map(person => person.id));
   const open = invoices.filter(row => row.kind === 'I').map(row => ({ row, ...balanceOf(row, paidBy),
-    state: invoiceStateOf(row) })).filter(item => item.balance > 0n);
+    state: invoiceStateOf(row) })).filter(item => item.balance > 0n && !dineroMarcados.has(item.row.id));
   const receivable = open.filter(item => own.has(item.row.from.rfc) && (!scope || item.row.from.rfc === scope));
   const payable = open.filter(item => own.has(item.row.to.rfc) && (!scope || item.row.to.rfc === scope));
   const cancelledPaid = invoices.filter(row => row.kind === 'I' && invoiceStateOf(row) === 'Cancelado' &&
@@ -48,14 +56,14 @@ function dineroScreen() {
     summary.append(alertBox);
   }
   wrap.append(summary);
-  wrap.append(balancePanel('Por cobrar', 'Lo que te deben: facturas emitidas a crédito (PPD) sin cobro completo.', receivable, 'to'));
-  wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. La antigüedad se cuenta desde la fecha de la factura.', payable, 'from'));
+  wrap.append(balancePanel('Por cobrar', 'Lo que te deben: facturas emitidas a crédito (PPD) sin cobro completo.', receivable, 'to', 'Ya me pagaron'));
+  wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. La antigüedad se cuenta desde la fecha de la factura.', payable, 'from', 'Ya se pagó'));
   wrap.append(expectedPanel());
   wrap.append(counterpart360Panel(paidBy));
   wrap.append(reconcilePanel(paidBy));
   return [wrap];
 }
-function balancePanel(title, description, items, partyField) {
+function balancePanel(title, description, items, partyField, paidLabel = 'Ya se pagó') {
   const panelEl = panel(title, description);
   if (!items.length) { panelEl.append(n('p', 'Sin saldos abiertos. Todo cobrado/pagado o sin facturas a crédito.', 'empty')); return panelEl; }
   /* Antigüedad resumida */
@@ -81,14 +89,45 @@ function balancePanel(title, description, items, partyField) {
     for (const item of group.items.sort((a, b) => a.row.date.localeCompare(b.row.date))) {
       const row = n('div', undefined, 'cp-row clickable');
       const main = n('div', undefined, 'cp-main');
+      /* Total, pagado y saldo en líneas separadas (sistema-visual §4:
+         nada de «Total · pagado · saldo» en texto corrido). */
       main.append(n('span', item.row.date + ' · ' + item.row.id.slice(0, 13) + '… · ' + ageDaysOf(item.row) + ' días'),
-        n('span', 'Total $' + centsLabel(item.total) + ' · pagado $' + centsLabel(item.paid) + ' · saldo $' + centsLabel(item.balance), 'muted'));
+        n('span', 'Total $' + centsLabel(item.total), 'muted'),
+        n('span', 'Pagado $' + centsLabel(item.paid), 'muted'),
+        n('strong', 'Saldo $' + centsLabel(item.balance)));
       row.append(main);
+      /* Un toque (1.11.0): sin diálogo, sin fecha; la fila se actualiza
+         en el sitio. Solo en la copia del servidor, como en el Visor:
+         el pago manual vive en el servidor (el NAS). */
+      const payBtn = n('button', paidLabel, 'primary small');
+      payBtn.disabled = !(typeof satToken !== 'undefined' && satToken);
+      payBtn.title = payBtn.disabled ? 'Disponible en la copia del servidor (el NAS)' : 'Registrar el pago por el saldo vivo, con un toque';
+      payBtn.onclick = event => { event.stopPropagation(); dineroMarkPaid(item, row, paidLabel); };
+      row.append(payBtn);
       row.onclick = () => invoiceDetail(item.row);
       panelEl.append(row);
     }
   }
   return panelEl;
+}
+/* «Ya se pagó / Ya me pagaron» de UN TOQUE (1.11.0, flujos §3.3): el
+   mismo cierre que en Avisos y que el Visor ya usa contra el mismo
+   endpoint — POST money/mark-paid solo con el uuid, SIN nota y SIN
+   fecha (el servidor compone la nota con la fecha de hoy). La fila se
+   confirma en el sitio y la pantalla se repinta sola con los saldos
+   actualizados; sin «Deshacer», como en Avisos: no hay endpoint de
+   reapertura de un pago manual. */
+async function dineroMarkPaid(item, rowEl, paidLabel) {
+  try {
+    await satApi('money/mark-paid', { uuid: item.row.id });
+    dineroMarcados.add(item.row.id);
+    const cobrado = paidLabel === 'Ya me pagaron';
+    const texto = cobrado ? 'Cobrado. Quedó en el historial.' : 'Pagado. Quedó en el historial.';
+    if (rowEl) { rowEl.onclick = null; rowEl.classList.remove('clickable'); rowEl.replaceChildren(statusPill('ok', cobrado ? 'Cobrado' : 'Pagado'), n('span', texto)); }
+    toast(texto, 'ok');
+    soundCue('success');
+    setTimeout(() => { if (page === 'dinero') render(); }, 1600);
+  } catch (error) { toast(error.message, 'error'); }
 }
 function expectedPanel() {
   const panelEl = panel('Facturas esperadas', 'Proveedores que te facturan casi cada mes y este mes aún no han llegado. Si era un gasto fijo, algo pasa.');

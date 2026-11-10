@@ -1,41 +1,71 @@
-/* Qué incluye PacoSAT (1.6.9): pantalla generada en build desde la
-   FUENTE docs/CAPACIDADES.md (constante PACOSAT_CAPACIDADES que inyecta
-   build.mjs). Nada de texto duplicado a mano aquí: si el documento vivo
-   cambia, la pantalla cambia con él en el siguiente build. Muestra la
-   fecha de última actualización del documento y el sello de versión
-   vigente (versión y creación desde PACOSAT_META). */
+/* Qué incluye PacoSAT (1.6.9, servido bajo demanda desde la
+   1.11.0): pantalla generada desde la FUENTE docs/CAPACIDADES.md.
+   Hasta la 1.10.x el documento viajaba como constante dentro del
+   HTML (37,9 KB en cada carga); ahora build.mjs lo genera en
+   capacidades.json y el servidor lo sirve en GET /api/capacidades
+   solo cuando se abre esta pantalla (Ajustes › Acerca de). En modo
+   local sin servidor se intenta el artefacto vecino y, si tampoco
+   está, se dice con claridad en vez de inventar el documento. */
 const CAPACIDAD_STATE_LABELS = { '✅': 'Incluido y verificado', '🔄': 'En construcción', '📋': 'Planificado' };
-function capacidadesScreen() {
-  const panels = [];
-  const head = panel('Todo lo que tendrá PacoSAT');
-  const body = n('div', undefined, 'portal');
-  const facts = n('div', undefined, 'facts');
-  const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
-  facts.append(fact('Versión instalada', 'PacoSAT ' + PACOSAT_META.version),
-    fact('Creación del software', stampText(PACOSAT_META.created)),
-    fact('Documento actualizado', PACOSAT_CAPACIDADES.updated || 'Sin fecha registrada'));
-  body.append(facts, n('p', 'Este listado es el documento vivo de capacidades de PacoSAT: su fuente es docs/CAPACIDADES.md del repositorio y esta pantalla se genera desde esa fuente en cada versión. Los estados se actualizan al cerrar cada ronda de mejora.'));
-  const counts = { '✅': 0, '🔄': 0, '📋': 0 };
-  for (const section of PACOSAT_CAPACIDADES.sections)
-    for (const block of section.blocks) if (block.type === 'item' && counts[block.state] !== undefined) counts[block.state]++;
-  body.append(n('p', counts['✅'] + ' capacidades incluidas y verificadas · ' + counts['🔄'] +
-    ' en construcción · ' + counts['📋'] + ' planificadas.'));
-  head.append(body);
-  panels.push(head);
-  for (const section of PACOSAT_CAPACIDADES.sections) {
-    const panelNode = panel(section.title);
-    const list = n('div', undefined, 'portal');
-    for (const block of section.blocks) {
-      if (block.type === 'p') { list.append(n('p', block.text)); continue; }
-      const row = n('div', undefined, 'cap-row');
-      const chip = n('span', (block.state || '•') + ' ' + (CAPACIDAD_STATE_LABELS[block.state] || 'Nota'), 'tag');
-      row.append(chip, n('span', block.text));
-      list.append(row);
-    }
-    panelNode.append(list);
-    panels.push(panelNode);
+let capacidadesDoc = null;
+async function loadCapacidades() {
+  if (capacidadesDoc) return capacidadesDoc;
+  try {
+    const response = await fetch('/api/capacidades');
+    if (response.ok) capacidadesDoc = await response.json();
+  } catch { /* sin servidor: se intenta el artefacto vecino */ }
+  if (!capacidadesDoc) {
+    try {
+      const response = await fetch('capacidades.json');
+      if (response.ok) capacidadesDoc = await response.json();
+    } catch { /* modo local puro: no hay documento disponible */ }
   }
-  return panels;
+  return capacidadesDoc;
+}
+function capacidadesScreen() {
+  const wrap = n('div');
+  const loading = panel('Todo lo que tendrá PacoSAT');
+  loading.append(n('p', 'Cargando el documento de capacidades…'));
+  wrap.append(loading);
+  loadCapacidades().then(doc => {
+    if (!wrap.isConnected) return;
+    if (!doc?.sections?.length) {
+      loading.replaceChildren(n('h2', 'Todo lo que tendrá PacoSAT'),
+        n('p', 'El documento de capacidades se consulta desde el servidor de tu casa. Ábrelo allí para verlo completo.'));
+      return;
+    }
+    const panels = [];
+    const head = panel('Todo lo que tendrá PacoSAT');
+    const body = n('div', undefined, 'portal');
+    const facts = n('div', undefined, 'facts');
+    const fact = (label, value) => { const row = n('div'); row.append(n('small', label), n('strong', value)); return row; };
+    facts.append(fact('Versión instalada', 'PacoSAT ' + PACOSAT_META.version),
+      fact('Creación del software', stampText(PACOSAT_META.created)),
+      fact('Documento actualizado', doc.updated || 'Sin fecha registrada'));
+    body.append(facts, n('p', 'Este listado es el documento vivo de capacidades de PacoSAT: su fuente es docs/CAPACIDADES.md del repositorio y esta pantalla se genera desde esa fuente en cada versión. Los estados se actualizan al cerrar cada ronda de mejora.'));
+    const counts = { '✅': 0, '🔄': 0, '📋': 0 };
+    for (const section of doc.sections)
+      for (const block of section.blocks) if (block.type === 'item' && counts[block.state] !== undefined) counts[block.state]++;
+    body.append(n('p', counts['✅'] + ' capacidades incluidas y verificadas · ' + counts['🔄'] +
+      ' en construcción · ' + counts['📋'] + ' planificadas.'));
+    head.append(body);
+    panels.push(head);
+    for (const section of doc.sections) {
+      const panelNode = panel(section.title);
+      const list = n('div', undefined, 'portal');
+      for (const block of section.blocks) {
+        if (block.type === 'p') { list.append(n('p', block.text)); continue; }
+        const row = n('div', undefined, 'cap-row');
+        const chip = n('span', (block.state || '•') + ' ' + (CAPACIDAD_STATE_LABELS[block.state] || 'Nota'), 'tag');
+        row.append(chip, n('span', block.text));
+        list.append(row);
+      }
+      panelNode.append(list);
+      panels.push(panelNode);
+    }
+    wrap.replaceChildren(...panels);
+  });
+  return [wrap];
 }
 /* ===== Arranque: el render inicial (1.7.2) =====
    Este es el último fragmento del bloque <script> generado: al llegar

@@ -49,9 +49,102 @@ function parseCapacidades(markdown) {
 }
 const capacidades = existsSync(new URL('docs/CAPACIDADES.md', import.meta.url)) ?
   parseCapacidades(read('docs/CAPACIDADES.md')) : { updated: '', sections: [] };
-const capacidadesConst = 'const PACOSAT_CAPACIDADES = ' + JSON.stringify(capacidades) + ';\n';
-const css = ['style.part','design.part','polish.part'].map(read).join('\n');
-const script = meta + capacidadesConst + ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','declaraciones-ui.part','monitor-ui.part','coverage-ui.part','settings-ui.part','lists-ui.part','outputs-ui.part','money-ui.part','visor-ui.part','pagos-ui.part','compliance-ui.part','banks-ui.part','final-ui.part','avisos-ui.part','capacidades-ui.part'].map(read).join('\n');
+/* Hasta la 1.10.x el JSON de capacidades viajaba DENTRO del script
+   (37,9 KB en cada carga) para una pantalla que se visita rara vez.
+   Desde la 1.11.0 se genera como artefacto propio capacidades.json y
+   el servidor lo sirve bajo demanda en GET /api/capacidades: la
+   fuente sigue siendo docs/CAPACIDADES.md y la pantalla funciona
+   igual, pero la carga inicial ya no lo paga. */
+/* Los comentarios fuera del ARTEFACTO (1.11.0): las fuentes .part
+   conservan toda su documentación — es la cultura del proyecto y
+   ahí se lee — pero el archivo que viaja al navegador cargaba con
+   ~51 KB de comentarios que no ejecutan nada. Este paso los retira
+   SOLO del artefacto generado, con una máquina de estados que
+   respeta cadenas, plantillas (con sus ${ }) y expresiones
+   regulares: no toca código, ni identificadores, ni espacios del
+   código, y conserva los saltos de línea de cada comentario de
+   bloque para que los números de línea del artefacto sigan cerca
+   de los de la fuente. Es determinista (misma entrada → mismo
+   artefacto, byte a byte): la regla de reproducibilidad y el
+   modelo de un solo archivo con CSP por huella quedan intactos;
+   no es minificado (nada se acorta ni se ofusca), es quitar el
+   lastre que el plan §4.4 manda quitar. */
+function stripJsComments(source) {
+  let out = '', i = 0; const n = source.length;
+  let mode = 'code';
+  const saved = [], exprBase = [];
+  let braces = 0, prevSig = '', prevWord = '', word = '';
+  const KEYWORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'case', 'yield', 'await', 'do', 'else', 'throw']);
+  const flush = () => { if (word) { prevWord = word; word = ''; } };
+  const regexAhead = () => {
+    if (!prevSig) return true;
+    if (prevSig === '§') return false;
+    if (/[\w$]/.test(prevSig)) return KEYWORDS.has(prevWord);
+    if (prevSig === ')' || prevSig === ']' || prevSig === '}') return false;
+    return true;
+  };
+  while (i < n) {
+    const c = source[i], d = source[i + 1] || '';
+    if (mode === 'code') {
+      if (c === '/' && d === '/') { flush(); i += 2; while (i < n && source[i] !== '\n') i++; continue; }
+      if (c === '/' && d === '*') { flush(); i += 2; while (i < n && !(source[i] === '*' && source[i + 1] === '/')) { if (source[i] === '\n') out += '\n'; i++; } i += 2; continue; }
+      if (c === "'") { flush(); mode = 'sq'; out += c; i++; continue; }
+      if (c === '"') { flush(); mode = 'dq'; out += c; i++; continue; }
+      if (c === '`') { flush(); saved.push('code'); mode = 'tpl'; out += c; i++; continue; }
+      if (c === '/') { flush(); if (regexAhead()) mode = 'regex'; out += c; prevSig = '/'; i++; continue; }
+      if (c === '{') braces++;
+      if (c === '}') {
+        if (exprBase.length && braces === exprBase[exprBase.length - 1]) {
+          exprBase.pop(); mode = saved.pop(); out += c; i++; prevSig = '}'; flush(); continue;
+        }
+        braces--;
+      }
+      out += c;
+      if (/[\w$]/.test(c)) { word += c; prevSig = c; }
+      else { flush(); if (!/\s/.test(c)) prevSig = c; }
+      i++; continue;
+    }
+    if (mode === 'sq' || mode === 'dq') {
+      const q = mode === 'sq' ? "'" : '"';
+      if (c === '\\') { out += c + d; i += 2; continue; }
+      out += c; i++;
+      if (c === q || c === '\n') { mode = 'code'; prevSig = '§'; prevWord = ''; }
+      continue;
+    }
+    if (mode === 'tpl') {
+      if (c === '\\') { out += c + d; i += 2; continue; }
+      if (c === '`') { out += c; i++; saved.pop(); mode = 'code'; prevSig = '§'; prevWord = ''; continue; }
+      if (c === '$' && d === '{') { out += '${'; i += 2; saved.push('tpl'); exprBase.push(braces); mode = 'code'; prevSig = ''; prevWord = ''; word = ''; continue; }
+      out += c; i++; continue;
+    }
+    if (mode === 'regex') {
+      if (c === '\\') { out += c + d; i += 2; continue; }
+      if (c === '[') { mode = 'clase'; out += c; i++; continue; }
+      out += c; i++;
+      if (c === '/') { mode = 'code'; prevSig = '§'; prevWord = ''; }
+      continue;
+    }
+    if (mode === 'clase') {
+      if (c === '\\') { out += c + d; i += 2; continue; }
+      out += c; i++;
+      if (c === ']') mode = 'regex';
+      continue;
+    }
+  }
+  return out;
+}
+function stripCssComments(source) {
+  let out = '', i = 0; const n = source.length;
+  while (i < n) {
+    const c = source[i], d = source[i + 1] || '';
+    if (c === '/' && d === '*') { i += 2; while (i < n && !(source[i] === '*' && source[i + 1] === '/')) { if (source[i] === '\n') out += '\n'; i++; } i += 2; continue; }
+    if (c === "'" || c === '"') { out += c; i++; while (i < n && source[i] !== c) { if (source[i] === '\\') { out += source[i] + (source[i + 1] || ''); i += 2; } else { out += source[i]; i++; } } if (i < n) { out += source[i]; i++; } continue; }
+    out += c; i++;
+  }
+  return out;
+}
+const css = stripCssComments(['style.part','design.part','polish.part'].map(read).join('\n'));
+const script = stripJsComments(meta + ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','declaraciones-ui.part','monitor-ui.part','coverage-ui.part','settings-ui.part','lists-ui.part','outputs-ui.part','money-ui.part','pagos-ui.part','compliance-ui.part','banks-ui.part','final-ui.part','avisos-ui.part','capacidades-ui.part'].map(read).join('\n'));
 /* CSP estricta sin unsafe-inline (1.6.9): la app es un único bloque
    <style> y un único bloque <script>, ambos funciones puras del árbol,
    así que la política los autoriza por su huella SHA-256 exacta. Sin
@@ -71,4 +164,5 @@ const layout = read('layout.part')
   .replace('<title>PacoSAT</title>', '<title>PacoSAT</title><!--PACOSAT_TOKEN-->');
 if (layout.includes('unsafe-inline')) throw new Error('La CSP generada no debe contener unsafe-inline.');
 write('Faro-Fiscal.html', layout.replace('/*STYLES*/', () => css).replace('/*SCRIPT*/', () => script));
+write('capacidades.json', JSON.stringify(capacidades));
 write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc };\n');

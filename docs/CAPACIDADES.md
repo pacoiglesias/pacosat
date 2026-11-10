@@ -1,8 +1,8 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Versión del software que describe este documento: 1.10.3**
+**Versión del software que describe este documento: 1.11.0**
 
-**Última modificación: 9 nov 2026, 21:51 CST**
+**Última modificación: 9 nov 2026, 23:10 CST**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del repositorio (la FUENTE del listado: la app lo muestra dentro, en la pantalla «Qué incluye PacoSAT», generada desde él en cada build) y `~/workspace/pacosat-capacidades.md` (copia de trabajo). Al tocar una, se toca la otra en el mismo cambio. Se actualiza en cada ronda y cada despliegue, junto con el sello de versión.
@@ -134,6 +134,14 @@ Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del reposito
 ## 9 ter. Visor de comprobantes y pantalla Hoy (1.9.0)
 - ✅ Visor de comprobantes en tiempo real: tabla tipo buzón de recepción (emisor, receptor, fecha, tipo, monto y estado) con filtros por fecha, tipo, RFC, emitidos/recibidos y pagado/no pagado; por fila: Previsualizar, Descargar XML, Descargar PDF vinculado y Marcar como pagado (registra el pago manual por el saldo vivo). Se actualiza solo al importar o descargar del SAT.
 - ✅ Pantalla «Hoy» transparente: tres bloques que dicen qué hizo el sistema (avisos solventados hoy, conciliaciones vigentes, informes), qué falta (avisos abiertos por clase y pasos del cierre del mes en ámbar/rojo) y qué vence (avisos con fecha y constancias/opiniones por renovar), sin que haya que adivinarlo.
+
+## 9 quáter. Rediseño final (1.11.0)
+- ✅ MENÚ DE 9 DESTINOS por tarea (Hoy · Avisos · Facturas · Documentos · Dinero · Pagos al banco · SAT · Cierre y reportes · Ajustes): las 21 vistas de antes quedan todas alcanzables dentro de su destino (SAT con sus pestañas, Dinero con Bancos, Cierre con su calendario y la DIOT, Ajustes con Respaldos, Sin conexión, Estado del sistema y Acerca de); en el móvil, barra inferior con los 5 destinos del día a día. Ninguna función se pierde.
+- ✅ FACTURAS ES UNA SOLA PANTALLA: la tabla del Visor y el detalle de Facturas se fusionan, con la píldora de estado del SAT en cada fila y el botón «Revisar mis CFDI ahora» cuando hay comprobantes sin revisar.
+- ✅ «YA SE PAGÓ» DE UN TOQUE también en la tarjeta individual del aviso: sin diálogo, sin fecha, sin nota; el servidor anota la fecha de hoy solo y la nota o la fecha distinta se añaden después desde el historial, si se quiere.
+- ✅ PAGOS AL BANCO EN 3 PASOS con la rutina ya rellena: cargo el día 10 (o hoy si ya pasó), abono y aplicación al día siguiente, referencia MMAAAA, descripción «PROVEEDORES» y la cuenta de retiro recordada; los totales por grupo como cifra protagonista y la tarjeta ámbar de SPEI individual cuando un pago supera el tope del grupo.
+- ✅ LENGUAJE LLANO en toda la superficie: fuera «blindaje 5002», «N-601», «avanza por tandas» y demás mecanismo; el detalle técnico vive tras un clic, nunca en la cara.
+- ✅ OPTIMIZACIÓN MEDIDA: el documento de capacidades se sirve bajo demanda (ya no viaja dentro de cada carga), CSS fundido en un solo sistema con presupuesto de peso dentro del check (el HTML no puede volver a pasar de 430 KB ni el CSS de 28 KB), símbolos SVG sin uso fuera, y un solo pulso de cliente cada 30 s que se pausa con la pestaña oculta y solo repinta si algo cambió.
 
 ## 10. Seguridad y privacidad
 - ✅ Todo corre en el NAS de Paco, tras su túnel y su contraseña; los datos no salen salvo al SAT (descargas con e.firma) y al correo que él configure.

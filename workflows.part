@@ -753,21 +753,31 @@ $('inspectFile').onchange = handle(async () => {
   if (file) await viewXml(file, file.name);
 });
 $('primary').onclick = handle(async () => {
+  /* Despacho por DESTINO (1.11.0): la acción principal depende de la
+     pestaña o sección en curso, no de la vista absorbida. */
   if (page === 'avisos') { await refreshAvisos(true); render(); return; }
-  if (page === 'operations') { await pollSat(); await pollMonitor(); render(); return; }
-  if (page === 'coverage') { await pollSat(); render(); return; }
-  if (page === 'settings') { await saveAppSettings(); return; }
-  if (page === 'capacidades') { navigate('settings'); return; }
-  if (page === 'lists') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
-  if (page === 'salidas') { await exportFull(''); return; }
+  if (page === 'sat') {
+    if (satTab === 'estado') { await pollMonitor(); return; }
+    if (satTab === 'listas') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
+    if (satTab === 'descargado') { await pollSat(); render(); return; }
+    return chooseImport();
+  }
+  if (page === 'settings') {
+    if (ajustesSection === 'general') { await saveAppSettings(); return; }
+    if (ajustesSection === 'contribuyentes') { await addPerson(); return; }
+    if (ajustesSection === 'respaldos') { backupDialog(); return; }
+    if (ajustesSection === 'sistema') { await pollSat(); await pollMonitor(); render(); return; }
+    render(); return;
+  }
+  if (page === 'salidas') {
+    if (cierreSection === 'diot') { exportDiotCsv(); return; }
+    if (cierreSection === 'calendario') { render(); const monthInput = document.querySelector('main input[type="month"]'); if (monthInput) monthInput.focus(); return; }
+    await exportFull(''); return;
+  }
   if (page === 'dinero') { navigate('salidas'); return; }
-  if (page === 'cumplimiento') { navigate('cumplimiento'); const monthInput = document.querySelector('#main input[type="month"]'); if (monthInput) { monthInput.focus(); } return; }
-  if (page === 'bancos') { navigate('bancos'); return; }
   if (page === 'pagos') { render(); return; }
-  if (page === 'preguntas') { navigate('preguntas'); const q = document.querySelector('#main input[type="text"]'); if (q) q.focus(); return; }
-  if (page === 'offline') { navigate('offline'); return; }
-  return page === 'docs' ? addDocument() : page === 'backup' ? backupDialog() : page === 'monitor' ? pollMonitor() :
-    page === 'diot' ? exportDiotCsv() : chooseImport();
+  if (page === 'preguntas') { render(); const q = document.querySelector('main input[type="text"]'); if (q) q.focus(); return; }
+  return page === 'docs' ? addDocument() : chooseImport();
 });
 for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
 /* Buscador global (1.6.5): por UUID completo o parcial, folio fiscal

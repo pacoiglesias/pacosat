@@ -21,7 +21,7 @@ function operationsScreen() {
   const health = panel('Estado de operación');
   health.append(grid(['Componente', 'Estado'], [
     ['Almacenamiento', ready ? (cloudStorage ? 'Servidor privado' : 'Este navegador') : isStorageBlocked() ? 'Bloqueado por otra pestaña' : 'No disponible'],
-    ['Servicio SAT', !satToken ? (typeof cloudStorage !== 'undefined' && cloudStorage ? 'Servicio no alcanzado: revisa que el NAS y el túnel estén en marcha' : 'Abre Iniciar-PacoSAT.cmd para conectarlo') : satError || 'Servicio disponible; revisa cada RFC en Centro SAT'],
+    ['Servicio SAT', !satToken ? 'PacoSAT no se pudo conectar con su servidor. Revisa que el NAS esté encendido; si lo está, avísame y lo miramos.' : satError || 'Servicio disponible; revisa cada RFC en SAT'],
     ['RFC autorizados', String(satData.profiles.filter(p => p.unlocked && (!scope || p.rfc === scope)).length)],
     ['Correo', satData.mail.error || (satData.mail.enabled ? 'Configurado; entrega real pendiente de verificar' : 'Sin configurar')],
     ['Carpeta vigilada', !satToken ? 'Solo en modo servidor' : satData.watchFolder?.enabled ?
