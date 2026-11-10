@@ -54,6 +54,7 @@
     <button data-view="diot"><svg><use href="#i-chart"/></svg> Base DIOT</button>
     <button data-view="salidas"><svg><use href="#i-down"/></svg> Salidas</button>
     <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
+    <button data-view="pagos"><svg><use href="#i-chart"/></svg> Pagos al banco</button>
     <button data-view="cumplimiento"><svg><use href="#i-check"/></svg> Cumplimiento</button>
     <button data-view="bancos"><svg><use href="#i-shield"/></svg> Bancos</button>
     <button data-view="preguntas"><svg><use href="#i-search"/></svg> Preguntas</button>

@@ -1,0 +1,381 @@
+/* ===== Pagos al banco: catálogo y generador (1.10.0) =====
+   La pieza que Paco pidió el 9 nov 2026 tras capturar a mano los
+   grupos de BBVA: una BASE de beneficiarios (proveedores y
+   clientes) con su banco, cuenta o CLABE — validada al guardar,
+   dígito de control incluido — y el botón «Preparar pagos» que
+   cruza las facturas recibidas del mes, ya verificadas en el
+   visor, con esa base y entrega las TABLAS espejo de las rejillas
+   del banco, listas para copiar celda a celda (los campos del
+   banco son de una línea: al pegar bloques solo entra la primera
+   parte). Las líneas interbancarias que superan el tope de
+   $49,999.99 observado en la rejilla el 9 nov se apartan solas
+   para pagarse por SPEI individual. El banco firma Paco: aquí
+   solo se prepara, nada sale de esta pantalla hacia el banco. */
+let pagosMes = '', pagosCatalogo = null, pagosLineas = [], pagosSinCatalogo = [];
+let pagosPrep = null, pagosTxt = '', pagosEditando = '';
+const PAGOS_TOPE = 49999.99;
+function pagosDigitoClabe(clabe17) {
+  const pesos = [3, 7, 1];
+  let suma = 0;
+  for (let i = 0; i < 17; i++) suma += (Number(clabe17[i]) * pesos[i % 3]) % 10;
+  return String((10 - (suma % 10)) % 10);
+}
+function pagosClabeOk(clabe) {
+  const limpia = String(clabe || '').replace(/[\s-]/g, '');
+  return /^\d{18}$/.test(limpia) && pagosDigitoClabe(limpia) === limpia[17];
+}
+const pagosMoney = value => {
+  const num = Number(value) || 0;
+  return num.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const pagosCentsText = cents => pagosMoney((Number(cents) || 0) / 100);
+function pagosCell(value) {
+  const td = n('td', String(value ?? ''), 'pagos-cell');
+  td.title = 'Clic para copiar este dato tal cual';
+  td.onclick = () => {
+    const texto = td.textContent;
+    const done = () => toast('Copiado: ' + texto, 'ok');
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(texto).then(done).catch(() => pagosSelectCell(td, done));
+    else pagosSelectCell(td, done);
+  };
+  return td;
+}
+function pagosSelectCell(td, done) {
+  const range = document.createRange();
+  range.selectNodeContents(td);
+  const sel = window.getSelection();
+  sel.removeAllRanges(); sel.addRange(range);
+  try { document.execCommand('copy'); done(); } catch { toast('Seleccionado: cópialo con Ctrl+C', 'ok'); }
+}
+function pagosScreen() {
+  const wrap = n('div');
+  if (!pagosMes) {
+    const hoy = new Date();
+    pagosMes = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+  }
+  const intro = panel('Pagos al banco',
+    'Tu base de beneficiarios y el generador de la lista de pagos: PacoSAT cruza las facturas del mes con la base y te entrega las tablas tal como las pide el banco, para copiar y pegar. Firmar y autorizar sigue siendo tuyo, en la página del banco.');
+  wrap.append(intro);
+  if (!satToken) {
+    intro.append(n('p', 'El catálogo y el generador viven en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para usarlos.', 'empty'));
+    return [wrap];
+  }
+  if (!scope) {
+    intro.append(n('p', 'Elige arriba el contribuyente (RFC) del que quieres preparar pagos.', 'empty'));
+    return [wrap];
+  }
+  const catPanel = panel('A quién pagas: tu catálogo de ' + scope,
+    'Proveedores y clientes con su banco y su cuenta o CLABE. Al guardar, PacoSAT comprueba la CLABE dígito a dígito: un número mal copiado se caza aquí, no en el banco.');
+  const catBody = n('div');
+  catPanel.append(catBody);
+  wrap.append(catPanel);
+  const prepPanel = panel('Preparar los pagos del mes',
+    'La lista sale de las facturas recibidas del mes que ya están verificadas en el Visor, casadas con tu catálogo por el RFC del emisor, más tus pagos fijos. Revisas cada línea, ajustas lo que sea y generas las tablas.');
+  const prepBody = n('div');
+  prepPanel.append(prepBody);
+  wrap.append(prepPanel);
+  const outPanel = panel('Las tablas para el banco',
+    'Un clic en una celda copia ese dato solo, entero, listo para pegarlo en su campo del banco. Al final tienes también el archivo de texto y el JSON (ese último es el que leerá el navegador del NAS).');
+  const outBody = n('div');
+  outPanel.append(outBody);
+  wrap.append(outPanel);
+  pagosFillCatalog(catBody, prepBody, outBody);
+  pagosFillPrepare(prepBody, outBody);
+  pagosFillOutput(outBody);
+  return [wrap];
+}
+async function pagosFillCatalog(catBody, prepBody, outBody) {
+  catBody.replaceChildren(n('p', 'Cargando tu catálogo…', 'muted'));
+  try {
+    const data = await satApi('pagos/catalog?rfc=' + encodeURIComponent(scope));
+    pagosCatalogo = data.beneficiaries || [];
+  } catch (error) {
+    catBody.replaceChildren(n('p', error.message, 'error-text'));
+    return;
+  }
+  catBody.replaceChildren();
+  if (scope === 'MFI6212158B4' && !pagosCatalogo.length) {
+    const seedBox = n('div', undefined, 'pagos-seed');
+    seedBox.append(n('p', 'Tu catálogo está vacío. Para Mano Fil ya tienes verificados a García Rivera, Brisbane, Aceros y BG (cuentas y CLABE comprobadas el 9 de noviembre de 2026): cárgalos de un clic y edítalos cuando quieras.', 'muted'));
+    const seed = n('button', 'Cargar los beneficiarios verificados de Mano Fil', 'primary small');
+    seed.onclick = async () => {
+      seed.disabled = true;
+      try {
+        const data = await satApi('pagos/catalog', { rfc: scope, action: 'seed' });
+        pagosCatalogo = data.beneficiaries || [];
+        toast('Catálogo cargado con ' + (data.inserted || 0) + ' beneficiarios verificados.', 'ok');
+        pagosFillCatalog(catBody, prepBody, outBody);
+      } catch (error) { toast(error.message, 'error'); seed.disabled = false; }
+    };
+    seedBox.append(seed);
+    catBody.append(seedBox);
+  }
+  if (pagosCatalogo.length) {
+    const tableWrap = n('div', undefined, 'table-wrap');
+    const table = n('table', undefined, 'visor-table');
+    const thead = n('thead');
+    const hrow = n('tr');
+    for (const label of ['Beneficiario', 'RFC', 'Banco', 'Cuenta / CLABE', 'Grupo', 'Concepto habitual', 'Importe', '']) hrow.append(n('th', label));
+    thead.append(hrow);
+    table.append(thead);
+    const tbody = n('tbody');
+    for (const b of pagosCatalogo) {
+      const tr = n('tr');
+      tr.append(n('td', b.nombre), n('td', b.contraparte), n('td', b.banco || '—'),
+        n('td', b.clabe || b.cuenta || '—'), n('td', b.grupo),
+        n('td', b.concepto || '—'),
+        n('td', b.montoTipo === 'fijo' ? 'Fijo: $' + pagosMoney(b.base) + ' + IVA, ' + b.periodicidad : 'Variable, sale de cada factura'));
+      const actions = n('td');
+      const edit = n('button', 'Editar', 'soft small');
+      edit.onclick = () => { pagosEditando = b.id; pagosFillCatalog(catBody, prepBody, outBody); };
+      const del = n('button', 'Borrar', 'soft small');
+      del.onclick = async () => {
+        if (!confirm('¿Borrar a «' + b.nombre + '» del catálogo? Sus facturas ya no se cruzarán solas.')) return;
+        try {
+          const data = await satApi('pagos/catalog', { rfc: scope, action: 'delete', id: b.id });
+          pagosCatalogo = data.beneficiaries || [];
+          toast('Beneficiario borrado del catálogo.', 'ok');
+          pagosFillCatalog(catBody, prepBody, outBody);
+        } catch (error) { toast(error.message, 'error'); }
+      };
+      actions.append(edit, del);
+      tr.append(actions);
+      tbody.append(tr);
+    }
+    table.append(tbody);
+    tableWrap.append(table);
+    catBody.append(tableWrap);
+  } else if (scope !== 'MFI6212158B4') {
+    catBody.append(empty('Tu catálogo está vacío',
+      'Da de alta tu primer beneficiario con el formulario de abajo: la CLABE se comprueba al guardar.'));
+  }
+  catBody.append(pagosForm(catBody, prepBody, outBody));
+}
+function pagosForm(catBody, prepBody, outBody) {
+  const editing = pagosCatalogo?.find(b => b.id === pagosEditando) || null;
+  const box = n('div', undefined, 'pagos-form');
+  box.append(n('h3', editing ? 'Editar beneficiario' : 'Dar de alta un beneficiario'));
+  const grid = n('div', undefined, 'pagos-grid');
+  const field = (label, control) => {
+    const cell = n('label', undefined, 'pagos-field');
+    cell.append(n('span', label), control);
+    grid.append(cell);
+    return control;
+  };
+  const tipo = field('Tipo', select([['proveedor', 'Proveedor (le pago)'], ['cliente', 'Cliente (me paga)']], editing?.tipo || 'proveedor', 'Tipo'));
+  const nombre = field('Razón social', input('text', { value: editing?.nombre || '', placeholder: 'Como viene en su factura' }));
+  const contraparte = field('Su RFC', input('text', { value: editing?.contraparte || '', placeholder: 'Ej. ABC010101XY2' }));
+  const banco = field('Banco', input('text', { value: editing?.banco || '', placeholder: 'Se deduce de la CLABE si lo dejas vacío' }));
+  const cuenta = field('Cuenta BBVA (10 dígitos)', input('text', { value: editing?.cuenta || '', inputmode: 'numeric', placeholder: 'Solo si cobra en BBVA' }));
+  const clabe = field('CLABE (18 dígitos)', input('text', { value: editing?.clabe || '', inputmode: 'numeric', placeholder: 'Para cualquier banco' }));
+  const grupo = field('Grupo del banco', select([['', 'Automático (cuenta → BBVA, CLABE → Interbancario)'], ['BBVA', 'Grupo BBVA'], ['Interbancario', 'Grupo Interbancario']], editing?.grupo || '', 'Grupo'));
+  const concepto = field('Concepto / motivo habitual', input('text', { value: editing?.concepto || '', placeholder: 'Ej. SERVICIO DE COBRANZA' }));
+  const montoTipo = field('El importe es', select([['variable', 'Variable: sale de cada factura'], ['fijo', 'Fijo: se repite cada periodo']], editing?.montoTipo || 'variable', 'Tipo de importe'));
+  const base = field('Importe base (sin IVA, si es fijo)', input('text', { value: editing?.base || '', inputmode: 'decimal', placeholder: '0.00' }));
+  const iva = field('IVA (si es fijo; vacío = 16% de la base)', input('text', { value: editing?.iva || '', inputmode: 'decimal', placeholder: 'Automático' }));
+  const periodicidad = field('Periodicidad del fijo', select([['mensual', 'Cada mes'], ['quincenal', 'Cada quincena'], ['unico', 'Una sola vez']], editing?.periodicidad || 'mensual', 'Periodicidad'));
+  box.append(grid);
+  const aviso = n('p', '', 'muted');
+  clabe.oninput = () => {
+    const value = clabe.value.replace(/[\s-]/g, '');
+    aviso.textContent = !value ? '' : value.length !== 18 ? 'La CLABE lleva 18 dígitos (van ' + value.length + ').'
+      : pagosClabeOk(value) ? '✓ CLABE válida: su dígito de control cuadra.' : '✗ El dígito de control no cuadra: revisa el número.';
+  };
+  box.append(aviso);
+  const row = n('div', undefined, 'pagos-actions');
+  const save = n('button', editing ? 'Guardar los cambios' : 'Guardar en el catálogo', 'primary small');
+  save.onclick = async () => {
+    const beneficiary = {
+      id: editing?.id || '', tipo: tipo.value, nombre: nombre.value.trim(),
+      contraparte: contraparte.value.trim().toUpperCase(), banco: banco.value.trim(),
+      cuenta: cuenta.value.trim(), clabe: clabe.value.trim(), grupo: grupo.value,
+      concepto: concepto.value.trim(), montoTipo: montoTipo.value,
+      base: base.value.trim(), iva: iva.value.trim(), periodicidad: periodicidad.value
+    };
+    if (beneficiary.clabe && !pagosClabeOk(beneficiary.clabe)) {
+      toast('Esa CLABE no pasa su dígito de control: no la guardo, podría mandar el dinero a otra cuenta.', 'error');
+      return;
+    }
+    save.disabled = true;
+    try {
+      const data = await satApi('pagos/catalog', { rfc: scope, action: 'save', beneficiary });
+      pagosCatalogo = data.beneficiaries || [];
+      pagosEditando = '';
+      toast('Beneficiario guardado y verificado en el catálogo.', 'ok');
+      pagosFillCatalog(catBody, prepBody, outBody);
+    } catch (error) { toast(error.message, 'error'); save.disabled = false; }
+  };
+  row.append(save);
+  if (editing) {
+    const cancel = n('button', 'Cancelar la edición', 'soft small');
+    cancel.onclick = () => { pagosEditando = ''; pagosFillCatalog(catBody, prepBody, outBody); };
+    row.append(cancel);
+  }
+  box.append(row);
+  return box;
+}
+function pagosFillPrepare(prepBody, outBody) {
+  prepBody.replaceChildren();
+  const controls = n('div', undefined, 'pagos-grid');
+  const field = (label, control) => {
+    const cell = n('label', undefined, 'pagos-field');
+    cell.append(n('span', label), control);
+    controls.append(cell);
+    return control;
+  };
+  const mes = field('Mes a pagar', input('month', { value: pagosMes }));
+  mes.onchange = () => { pagosMes = mes.value; };
+  const descripcion = field('Descripción del grupo', input('text', { value: 'PROVEEDORES' }));
+  const cuentaRetiro = field('Cuenta de retiro (la tuya, de donde sale)', input('text', { inputmode: 'numeric', placeholder: '10 dígitos' }));
+  const referencia = field('Referencia numérica (interbancario)', input('text', { inputmode: 'numeric', placeholder: 'Ej. 112026' }));
+  const fechaCargo = field('Fecha de cargo (interbancario)', input('date', {}));
+  const fechaAbono = field('Fecha de abono (interbancario)', input('date', {}));
+  const fechaAplicacion = field('Fecha de aplicación (grupo BBVA)', input('date', {}));
+  prepBody.append(controls);
+  const armar = n('button', 'Armar la lista desde las facturas del mes', 'primary small');
+  const linesBox = n('div');
+  armar.onclick = async () => {
+    armar.disabled = true;
+    try {
+      const data = await satApi('pagos/proposal?rfc=' + encodeURIComponent(scope) + '&month=' + encodeURIComponent(pagosMes));
+      pagosLineas = (data.lines || []).map(linea => ({ ...linea, incluir: true }));
+      pagosSinCatalogo = data.sinCatalogo || [];
+      toast(pagosLineas.length ? 'Lista armada con ' + pagosLineas.length + ' líneas: revísalas una a una antes de generar.'
+        : 'Sin líneas para ese mes: revisa que las facturas estén en el Visor y sus emisores en el catálogo.', pagosLineas.length ? 'ok' : 'error');
+      pagosFillLines(linesBox, { descripcion, cuentaRetiro, referencia, fechaCargo, fechaAbono, fechaAplicacion }, outBody);
+    } catch (error) { toast(error.message, 'error'); }
+    finally { armar.disabled = false; }
+  };
+  prepBody.append(armar, linesBox);
+  if (pagosLineas.length) pagosFillLines(linesBox, { descripcion, cuentaRetiro, referencia, fechaCargo, fechaAbono, fechaAplicacion }, outBody);
+}
+function pagosFillLines(linesBox, groupInputs, outBody) {
+  linesBox.replaceChildren();
+  if (pagosSinCatalogo.length) {
+    const warn = n('div', undefined, 'pagos-warn');
+    warn.append(n('strong', 'Facturas del mes sin beneficiario en el catálogo (no entran en la lista):'));
+    for (const item of pagosSinCatalogo)
+      warn.append(n('p', '· ' + (item.emisorNombre || item.emisorRfc) + ' (' + item.emisorRfc + ') — folio ' +
+        (item.folio || 's/f') + ' por $' + pagosMoney(item.total) + '. Da de alta al beneficiario arriba y vuelve a armar la lista.', 'muted'));
+    linesBox.append(warn);
+  }
+  if (!pagosLineas.length) {
+    linesBox.append(n('p', 'Aún no hay lista: pulsa «Armar la lista desde las facturas del mes».', 'muted'));
+    return;
+  }
+  const tableWrap = n('div', undefined, 'table-wrap');
+  const table = n('table', undefined, 'visor-table pagos-lines');
+  const thead = n('thead');
+  const hrow = n('tr');
+  for (const label of ['Pagar', 'Beneficiario', 'Cuenta / CLABE', 'Importe', 'Motivo de pago', 'RFC', 'IVA']) hrow.append(n('th', label));
+  thead.append(hrow);
+  table.append(thead);
+  const tbody = n('tbody');
+  pagosLineas.forEach((linea, idx) => {
+    const tr = n('tr');
+    const check = input('checkbox', { checked: linea.incluir !== false });
+    check.onchange = () => { linea.incluir = check.checked; };
+    const checkCell = n('td'); checkCell.append(check); tr.append(checkCell);
+    tr.append(n('td', linea.nombre + (linea.fijo ? ' · pago fijo' : linea.folio ? ' · factura ' + linea.folio : '')));
+    tr.append(n('td', linea.grupo === 'BBVA' ? linea.cuenta : linea.clabe));
+    const importe = input('text', { value: linea.total, inputmode: 'decimal', 'aria-label': 'Importe' });
+    importe.onchange = () => { linea.total = importe.value; };
+    const importeCell = n('td'); importeCell.append(importe); tr.append(importeCell);
+    const motivo = input('text', { value: linea.motivo || '', 'aria-label': 'Motivo de pago' });
+    motivo.onchange = () => { linea.motivo = motivo.value; };
+    const motivoCell = n('td'); motivoCell.append(motivo); tr.append(motivoCell);
+    tr.append(n('td', linea.rfc || ''));
+    const iva = input('text', { value: linea.iva, inputmode: 'decimal', 'aria-label': 'IVA' });
+    iva.onchange = () => { linea.iva = iva.value; };
+    const ivaCell = n('td'); ivaCell.append(iva); tr.append(ivaCell);
+    tbody.append(tr);
+  });
+  table.append(tbody);
+  tableWrap.append(table);
+  linesBox.append(tableWrap);
+  const generar = n('button', 'Generar las tablas para el banco', 'primary');
+  generar.onclick = async () => {
+    const lines = pagosLineas.filter(linea => linea.incluir !== false).map(linea => ({
+      beneficiaryId: linea.beneficiaryId || '', nombre: linea.nombre, rfc: linea.rfc, banco: linea.banco,
+      grupo: linea.grupo, cuenta: linea.cuenta, clabe: linea.clabe, motivo: linea.motivo,
+      folio: linea.folio, uuid: linea.uuid, fijo: linea.fijo, base: linea.base, iva: linea.iva, total: linea.total
+    }));
+    if (!lines.length) { toast('Marca al menos una línea para pagar.', 'error'); return; }
+    generar.disabled = true;
+    try {
+      const data = await satApi('pagos/prepare', { rfc: scope, month: pagosMes, lines,
+        group: { descripcion: groupInputs.descripcion.value, cuentaRetiro: groupInputs.cuentaRetiro.value,
+          referencia: groupInputs.referencia.value, fechaCargo: groupInputs.fechaCargo.value,
+          fechaAbono: groupInputs.fechaAbono.value, fechaAplicacion: groupInputs.fechaAplicacion.value } });
+      pagosPrep = data.preparation;
+      pagosTxt = data.txt || '';
+      toast('Tablas generadas: ' + pagosPrep.operaciones + ' operaciones por $' + pagosCentsText(pagosPrep.totalCents) + '.', 'ok');
+      pagosFillOutput(outBody);
+    } catch (error) { toast(error.message, 'error'); }
+    finally { generar.disabled = false; }
+  };
+  linesBox.append(generar);
+}
+function pagosOutputTable(headers, rows, overFlags) {
+  const tableWrap = n('div', undefined, 'table-wrap');
+  const table = n('table', undefined, 'visor-table pagos-table');
+  const thead = n('thead');
+  const hrow = n('tr');
+  for (const label of headers) hrow.append(n('th', label));
+  thead.append(hrow);
+  table.append(thead);
+  const tbody = n('tbody');
+  rows.forEach((cells, i) => {
+    const tr = n('tr');
+    if (overFlags?.[i]) tr.className = 'pagos-over';
+    for (const value of cells) tr.append(pagosCell(value));
+    tbody.append(tr);
+  });
+  table.append(tbody);
+  tableWrap.append(table);
+  return tableWrap;
+}
+function pagosFillOutput(outBody) {
+  outBody.replaceChildren();
+  if (!pagosPrep) {
+    outBody.append(n('p', 'Todavía no hay tablas: arma la lista en «Preparar los pagos del mes» y pulsa «Generar las tablas para el banco».', 'muted'));
+    return;
+  }
+  const prep = pagosPrep;
+  outBody.append(n('p', 'Total a pagar: $' + pagosCentsText(prep.totalCents) + ' en ' + prep.operaciones + ' operaciones.', 'pagos-total'));
+  if (prep.bbva.lines.length) {
+    outBody.append(n('h3', 'Grupo BBVA — «' + prep.group.descripcion + '» · aplicación ' + (prep.group.fechaAplicacion || '—')));
+    outBody.append(pagosOutputTable(['Cuenta', 'Importe'],
+      prep.bbva.lines.map(linea => [linea.cuenta, pagosCentsText(linea.totalCents).replace(/,/g, '')])));
+    outBody.append(n('p', 'Control del banco: ' + prep.bbva.operaciones + ' operaciones · importe de cargo $' +
+      pagosCentsText(prep.bbva.totalCents) + '. El titular que debe salir al validar es el de cada beneficiario.', 'muted'));
+  }
+  if (prep.interbancario.lines.length) {
+    outBody.append(n('h3', 'Grupo Interbancario — «' + prep.group.descripcion + '» · cargo ' + (prep.group.fechaCargo || '—') +
+      ' · abono ' + (prep.group.fechaAbono || '—') + (prep.group.referencia ? ' · referencia ' + prep.group.referencia : '')));
+    outBody.append(pagosOutputTable(['Nombre', 'Cuenta CLABE', 'Importe', 'Motivo de Pago', 'RFC', 'IVA'],
+      prep.interbancario.lines.map(linea => [linea.nombre, linea.clabe, pagosCentsText(linea.totalCents).replace(/,/g, ''),
+        linea.motivo || linea.folio || '', linea.rfc, pagosCentsText(linea.ivaCents).replace(/,/g, '')])));
+    outBody.append(n('p', 'Control del banco: ' + prep.interbancario.operaciones + ' operaciones · importe de cargo $' +
+      pagosCentsText(prep.interbancario.totalCents) + '.', 'muted'));
+  }
+  if (prep.speiIndividual.lines.length) {
+    outBody.append(n('h3', 'Por SPEI individual — fuera de los grupos'));
+    outBody.append(n('p', 'Estas líneas superan el tope de $' + pagosMoney(PAGOS_TOPE) +
+      ' por operación que la rejilla de grupos interbancarios marcó el 9 nov 2026. Se pagan una a una desde Operaciones frecuentes; el grupo no las lleva para que no te lo eche para atrás.', 'error-text'));
+    outBody.append(pagosOutputTable(['Nombre', 'Cuenta CLABE', 'Importe', 'Motivo de Pago', 'RFC', 'IVA'],
+      prep.speiIndividual.lines.map(linea => [linea.nombre, linea.clabe, pagosCentsText(linea.totalCents).replace(/,/g, ''),
+        linea.motivo || linea.folio || '', linea.rfc, pagosCentsText(linea.ivaCents).replace(/,/g, '')]),
+      prep.speiIndividual.lines.map(() => true)));
+    outBody.append(n('p', 'Total por SPEI individual: $' + pagosCentsText(prep.speiIndividual.totalCents) + '.', 'muted'));
+  }
+  const downloads = n('div', undefined, 'pagos-actions');
+  const txtBtn = n('button', 'Descargar el texto (.txt)', 'soft small');
+  txtBtn.onclick = () => download(new Blob([pagosTxt], { type: 'text/plain;charset=utf-8' }),
+    'pagos-' + scope + '-' + (prep.month || pagosMes) + '.txt');
+  const jsonBtn = n('button', 'Descargar el JSON (para el navegador del NAS)', 'soft small');
+  jsonBtn.onclick = () => download(new Blob([JSON.stringify(prep, null, 2)], { type: 'application/json;charset=utf-8' }),
+    'pagos-' + scope + '-' + (prep.month || pagosMes) + '.json');
+  downloads.append(txtBtn, jsonBtn);
+  outBody.append(downloads);
+}

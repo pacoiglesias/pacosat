@@ -16,6 +16,7 @@ import { encryptBackupBuffer, decryptBackupBuffer } from './backup-core.mjs';
 import { createSatDocFetch, createFileEfirmaStorage, createSatDocCredentialResolver } from './sat-doc-fetch.mjs';
 import { createSatDocBrowserFetch, createSatDocPipelineFetch, createPlaywrightDriverFactory } from './sat-doc-browser.mjs';
 import { createSatDeclFetch } from './sat-declaraciones.mjs';
+import { normalizarBeneficiario, construirPreparacion, preparacionTxt, MANOFIL_SEED, MANOFIL_SEED_RFC } from './pagos.mjs';
 
 /* El RFC se valida con validateRfc (xml-core): un solo criterio en todo el sistema. */
 const DAY = 86400000;
@@ -206,6 +207,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       fechaPresentacion TEXT NOT NULL DEFAULT '', operacion TEXT NOT NULL DEFAULT '',
       fileId TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'auto',
       created INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '');
+    /* Pagos al banco (1.10.0): catálogo de beneficiarios por RFC
+       dueño (payload = la ficha completa validada) y preparaciones
+       de pago generadas, con sus cifras de control. */
+    CREATE TABLE IF NOT EXISTS pay_beneficiaries (id TEXT PRIMARY KEY, rfc TEXT NOT NULL,
+      nombre TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL DEFAULT '{}',
+      created INTEGER NOT NULL DEFAULT 0, updated INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS pay_preparations (id TEXT PRIMARY KEY, rfc TEXT NOT NULL,
+      month TEXT NOT NULL DEFAULT '', total TEXT NOT NULL DEFAULT '0', operaciones INTEGER NOT NULL DEFAULT 0,
+      payload TEXT NOT NULL DEFAULT '{}', created INTEGER NOT NULL DEFAULT 0);
     /* Conciliación asistida (1.9.0, punto 5 del plan): la decisión
        de vincular un movimiento con uno o varios CFDI queda
        REGISTRADA y se puede deshacer; deshacer no borra la fila,
@@ -940,7 +950,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     ['avisos', ['id', 'ref', 'kind', 'clase', 'estado', 'severidad', 'titulo', 'detalle', 'contraparte', 'nombre', 'importe', 'enlace', 'datos', 'baseline', 'creado', 'actualizado', 'resuelto', 'resolucion', 'correo', 'rfc', 'responsable', 'vence', 'accion']],
     ['avisos_acciones', ['id', 'aviso', 'at', 'accion', 'nota']],
     ['manual_payments', ['uuid', 'at', 'nota', 'importe']],
-    ['declaraciones', ['id', 'rfc', 'tipo', 'clase', 'ejercicio', 'periodo', 'fechaPresentacion', 'operacion', 'fileId', 'source', 'created', 'error']]
+    ['declaraciones', ['id', 'rfc', 'tipo', 'clase', 'ejercicio', 'periodo', 'fechaPresentacion', 'operacion', 'fileId', 'source', 'created', 'error']],
+    ['pay_beneficiaries', ['id', 'rfc', 'nombre', 'payload', 'created', 'updated']],
+    ['pay_preparations', ['id', 'rfc', 'month', 'total', 'operaciones', 'payload', 'created']]
   ];
   const tableExists = name => Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
   function dumpOperations() {
@@ -4469,6 +4481,122 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             .run(x.rfc, x.direction, kind, x.start, endAt.slice(0, 10), startAt, endAt, requestId, 'pending', now() + 5 * MIN, now());
         } finally { busy = false; }
         return json(res, overview());
+      }
+      /* ===== PAGOS AL BANCO (1.10.0) =====
+         Catálogo de beneficiarios por RFC y generador de pagos.
+         La propuesta cruza los CFDI recibidos del mes con el
+         catálogo por RFC del emisor. NO filtra por el saldo de
+         Dinero: ese saldo da las PUE por pagadas por definición y
+         las facturas de proveedor de Paco son PUE que él paga por
+         el banco; se excluye solo lo que él ya marcó pagado a mano
+         o lo conciliado contra un movimiento del banco. */
+      const payProfile = owner => {
+        need(/^[A-ZÑ&0-9]{12,13}$/.test(owner), 'Falta un RFC válido.');
+        need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(owner), 'Ese RFC no es un perfil de PacoSAT.', 404);
+      };
+      const payCatalogList = owner => db.prepare('SELECT payload FROM pay_beneficiaries WHERE rfc=? ORDER BY nombre').all(owner)
+        .map(row => { try { return JSON.parse(row.payload); } catch { return null; } }).filter(Boolean);
+      if (req.method === 'GET' && url.pathname === '/api/pagos/catalog') {
+        const owner = String(url.searchParams.get('rfc') || '').toUpperCase();
+        payProfile(owner);
+        return json(res, { beneficiaries: payCatalogList(owner) });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/pagos/catalog') {
+        const x = await body(req);
+        const owner = String(x.rfc || '').toUpperCase();
+        payProfile(owner);
+        if (x.action === 'seed') {
+          let inserted = 0;
+          if (owner === MANOFIL_SEED_RFC) {
+            const existing = new Set(payCatalogList(owner).map(ben => ben.contraparte));
+            for (const seedBen of MANOFIL_SEED) {
+              if (existing.has(seedBen.contraparte)) continue;
+              const ben = { ...normalizarBeneficiario(seedBen), id: randomUUID() };
+              db.prepare('INSERT INTO pay_beneficiaries(id,rfc,nombre,payload,created,updated) VALUES (?,?,?,?,?,?)')
+                .run(ben.id, owner, ben.nombre, JSON.stringify(ben), now(), now());
+              inserted++;
+            }
+          }
+          return json(res, { beneficiaries: payCatalogList(owner), inserted });
+        }
+        if (x.action === 'delete') {
+          need(x.id, 'Falta el beneficiario a borrar.');
+          db.prepare('DELETE FROM pay_beneficiaries WHERE rfc=? AND id=?').run(owner, String(x.id));
+          return json(res, { beneficiaries: payCatalogList(owner) });
+        }
+        let ben;
+        try { ben = normalizarBeneficiario(x.beneficiary || {}); }
+        catch (error) { need(false, error.message, 422); }
+        const id = String((x.beneficiary && x.beneficiary.id) || randomUUID());
+        ben = { ...ben, id };
+        if (db.prepare('SELECT id FROM pay_beneficiaries WHERE rfc=? AND id=?').get(owner, id))
+          db.prepare('UPDATE pay_beneficiaries SET nombre=?, payload=?, updated=? WHERE rfc=? AND id=?')
+            .run(ben.nombre, JSON.stringify(ben), now(), owner, id);
+        else db.prepare('INSERT INTO pay_beneficiaries(id,rfc,nombre,payload,created,updated) VALUES (?,?,?,?,?,?)')
+          .run(id, owner, ben.nombre, JSON.stringify(ben), now(), now());
+        return json(res, { beneficiaries: payCatalogList(owner) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/pagos/proposal') {
+        const owner = String(url.searchParams.get('rfc') || '').toUpperCase();
+        const month = String(url.searchParams.get('month') || '');
+        payProfile(owner);
+        need(/^\d{4}-\d{2}$/.test(month), 'Elige el mes con formato AAAA-MM.');
+        const catalog = payCatalogList(owner).filter(ben => ben.activo !== 0 && ben.activo !== false);
+        const byRfc = new Map();
+        for (const ben of catalog) if (!byRfc.has(ben.contraparte)) byRfc.set(ben.contraparte, ben);
+        const paidManual = new Set(db.prepare('SELECT uuid FROM manual_payments').all().map(row => row.uuid));
+        const matched = new Set();
+        for (const row of db.prepare("SELECT invoices FROM bank_matches WHERE estado='activo'").all())
+          try { for (const uuid of JSON.parse(row.invoices || '[]')) matched.add(uuid); } catch {}
+        const lines = [], sinCatalogo = [];
+        for (const invoice of recordInvoices()) {
+          if (invoice.kind !== 'I' || invoice.state === 'Cancelado') continue;
+          if ((invoice.to?.rfc || '') !== owner) continue;
+          if (String(invoice.date || '').slice(0, 7) !== month) continue;
+          if (invoice.currency && invoice.currency !== 'MXN') continue;
+          if (paidManual.has(invoice.id) || matched.has(invoice.id)) continue;
+          const ben = byRfc.get(invoice.from?.rfc || '');
+          const ivaRow = (invoice.fiscal?.transferred || []).find(t => t.tax === '002');
+          if (!ben) {
+            sinCatalogo.push({ uuid: invoice.id, folio: String(invoice.fiscal?.folio || ''),
+              emisorRfc: invoice.from?.rfc || '', emisorNombre: invoice.from?.name || '',
+              total: moneyText(centsOf(invoice.total)), fecha: invoice.date || '' });
+            continue;
+          }
+          lines.push({ beneficiaryId: ben.id, nombre: ben.nombre, rfc: ben.contraparte, banco: ben.banco,
+            grupo: ben.grupo, cuenta: ben.cuenta || '', clabe: ben.clabe || '', motivo: ben.concepto || '',
+            folio: String(invoice.fiscal?.folio || ''), uuid: invoice.id, fijo: false,
+            base: ivaRow ? moneyText(centsOf(ivaRow.base)) : '', iva: ivaRow ? moneyText(centsOf(ivaRow.amount)) : '',
+            total: moneyText(centsOf(invoice.total)) });
+        }
+        for (const ben of catalog) if (ben.montoTipo === 'fijo')
+          lines.push({ beneficiaryId: ben.id, nombre: ben.nombre, rfc: ben.contraparte, banco: ben.banco,
+            grupo: ben.grupo, cuenta: ben.cuenta || '', clabe: ben.clabe || '', motivo: ben.concepto || '',
+            folio: '', uuid: '', fijo: true, base: ben.base, iva: ben.iva,
+            total: moneyText(centsOf(ben.base) + centsOf(ben.iva || '0')) });
+        return json(res, { lines, sinCatalogo });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/pagos/prepare') {
+        const x = await body(req);
+        const owner = String(x.rfc || '').toUpperCase();
+        payProfile(owner);
+        let preparation;
+        try {
+          preparation = construirPreparacion({ rfc: owner, month: String(x.month || ''),
+            group: x.group || {}, lines: Array.isArray(x.lines) ? x.lines : [] });
+        } catch (error) { need(false, error.message, 422); }
+        const id = randomUUID();
+        db.prepare('INSERT INTO pay_preparations(id,rfc,month,total,operaciones,payload,created) VALUES (?,?,?,?,?,?,?)')
+          .run(id, owner, preparation.month, String(preparation.totalCents), preparation.operaciones,
+            JSON.stringify(preparation), now());
+        return json(res, { id, preparation, txt: preparacionTxt(preparation) });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/pagos/preparations') {
+        const owner = String(url.searchParams.get('rfc') || '').toUpperCase();
+        payProfile(owner);
+        const preparations = db.prepare('SELECT id, month, total, operaciones, created FROM pay_preparations WHERE rfc=? ORDER BY created DESC LIMIT 24').all(owner)
+          .map(row => ({ id: row.id, month: row.month, totalCents: Number(row.total), operaciones: row.operaciones, created: row.created }));
+        return json(res, { preparations });
       }
       if (req.method === 'POST' && url.pathname === '/api/mail') {
         const x = await body(req);
