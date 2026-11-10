@@ -5,7 +5,18 @@
    DISTINTOS (quedan así en Expedientes). La rejilla por ejercicio
    dice de un vistazo qué periodos ya están recuperados, cuáles
    faltan y cuáles aún no tocan. Dos conectores separados en el
-   servidor: mensuales (búsqueda + acuses) y anual (su PDF). */
+   servidor: mensuales (búsqueda + acuses) y anual (su PDF).
+   1.10.3: la pantalla consume el contrato REAL del servidor
+   (declaracionesOverview): la rejilla sale de view.mensuales
+   (periodo + estado), los documentos de view.documentos (label,
+   fechaPresentacion, operacion, fileId) y la recuperación publica
+   el campo tipo ('mensual' | 'anual'), que es el que el servidor
+   espera. Antes leía claves que el servidor nunca emitió (la
+   rejilla como «months», la fecha como «presentada») y publicaba
+   el tipo como «kind»: con la respuesta real, la lista no se
+   pintaba y la recuperación la rechazaba el servidor. */
+const DECL_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 let declEjercicio = new Date().getFullYear();
 let declCache = null;
 function declaracionesSection() {
@@ -38,33 +49,39 @@ function declaracionesSection() {
     runAnual.onclick = () => declRun('anual', fill, runAnual);
     head.append(runMensuales, runAnual);
     body.append(head);
-    if (view.lastError) body.append(n('p', 'Último intento: ' + view.lastError, 'error-text'));
-    /* Rejilla de periodos: recuperada / sin recuperar / aún no toca. */
+    if (view.lastError) body.append(n('p', 'Último intento: ' + view.lastError.error, 'error-text'));
+    /* Rejilla de periodos: recuperada / sin recuperar / aún no toca.
+       El servidor la emite como view.mensuales: 12 entradas con
+       periodo «AAAA-MM» y estado ya calculado. */
     const grid = n('div', undefined, 'decl-grid');
-    for (const month of view.months) {
-      const cell = n('div', undefined, 'decl-cell decl-' + month.status);
-      cell.append(n('strong', month.label),
-        n('span', month.status === 'recuperada' ? '✓ recuperada' :
-          month.status === 'sin-recuperar' ? 'sin recuperar' : 'aún no toca'));
+    for (const mes of view.mensuales) {
+      const cell = n('div', undefined, 'decl-cell decl-' + mes.estado);
+      cell.append(n('strong', DECL_MESES[Number(mes.periodo.slice(5, 7)) - 1] || mes.periodo),
+        n('span', mes.estado === 'recuperada' ? '✓ recuperada' :
+          mes.estado === 'sin-recuperar' ? 'sin recuperar' : 'aún no toca'));
       grid.append(cell);
     }
     body.append(grid);
-    const anual = n('p', view.annual
-      ? 'Declaración anual ' + view.exercise + ': ✓ recuperada' + (view.annual.operacion ? ' (operación ' + view.annual.operacion + ')' : '') + '.'
-      : 'Declaración anual ' + view.exercise + ': sin recuperar.', 'muted');
+    /* La anual del servidor es {declaracion, acuse, estado}; el
+       número de operación vive en sus documentos, no en el resumen. */
+    const anualOp = (view.documentos || []).find(doc => doc.tipo === 'anual' && doc.operacion);
+    const anual = n('p', view.anual.estado === 'recuperada'
+      ? 'Declaración anual ' + view.ejercicio + ': ✓ recuperada' + (anualOp ? ' (operación ' + anualOp.operacion + ')' : '') + '.'
+      : 'Declaración anual ' + view.ejercicio + ': sin recuperar.', 'muted');
     body.append(anual);
     /* Documentos recuperados: declaración y acuse, distinguidos. */
-    if (!view.documents.length) {
+    if (!view.documentos.length) {
       body.append(empty('Nada recuperado todavía para este ejercicio',
         'Pulsa «Recuperar mensuales del ejercicio» o «Recuperar la anual»: PacoSAT entra al portal con tu e.firma y archiva aquí lo que encuentre presentado.'));
       return;
     }
     const list = n('div');
-    for (const doc of view.documents) {
+    for (const doc of view.documentos) {
       const row = n('div', undefined, 'cp-row');
       row.append(statusPill(doc.clase === 'acuse' ? 'warn' : 'ok', doc.clase === 'acuse' ? 'Acuse' : 'Declaración'),
-        n('span', doc.kind + ' · ' + (doc.periodo ? 'periodo ' + doc.periodo : 'ejercicio ' + doc.exercise) +
-          (doc.presentada ? ' · presentada el ' + doc.presentada : '') +
+        n('span', doc.label + ' · ' + (doc.tipo === 'mensual' ? 'periodo ' + doc.periodo : 'ejercicio ' + doc.ejercicio) +
+          (doc.fechaPresentacion ? ' · presentada el ' + (/^\d{4}-\d{2}-\d{2}/.test(doc.fechaPresentacion)
+            ? doc.fechaPresentacion.slice(0, 10) : doc.fechaPresentacion) : '') +
           (doc.operacion ? ' · operación ' + doc.operacion : '')));
       /* Un clic en «Ver» abre el documento dentro de la app
          (1.10.2); sin fileId en la fila, queda el camino de siempre
@@ -87,15 +104,25 @@ async function declRun(kind, fill, button) {
   const original = button.textContent;
   button.textContent = 'Entrando al portal con tu e.firma…';
   try {
-    const data = await satApi('declaraciones/run', { rfc: scope, ejercicio: declEjercicio, kind });
-    const found = (data.found || []).length;
-    const warnings = (data.warnings || []).length;
-    toast(found
-      ? 'Recuperados ' + found + ' documento(s) del portal y archivados en Expedientes.'
+    /* El servidor espera {tipo}: 'mensual' | 'anual' (1.10.3). Su
+       respuesta es {result, view}: result.ok / result.saved /
+       result.warnings, y view es el mismo overview que pinta fill. */
+    const data = await satApi('declaraciones/run',
+      { rfc: scope, ejercicio: declEjercicio, tipo: kind === 'anual' ? 'anual' : 'mensual' });
+    const result = data.result || {};
+    if (!result.ok) {
+      toast(result.error || 'La recuperación no pudo completarse.', 'error');
+      fill(data.view);
+      return;
+    }
+    const saved = result.saved || 0;
+    const warnings = (result.warnings || []).length;
+    toast(saved
+      ? 'Recuperados ' + saved + ' documento(s) del portal y archivados en Expedientes.'
       : 'El portal no devolvió documentos nuevos para este ejercicio' + (warnings ? ' (' + warnings + ' aviso(s) en el detalle).' : '.'),
-      found ? 'ok' : 'error');
+      saved ? 'ok' : 'error');
     await refresh();
-    fill(data.overview);
+    fill(data.view);
   } catch (error) { toast(error.message, 'error'); fill(); }
   finally { button.disabled = false; button.textContent = original; }
 }
