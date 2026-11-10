@@ -1138,7 +1138,7 @@ function documentScreen() {
     result.replaceChildren();
     if (sliced.length) result.append(grid(['Documento', 'RFC', 'Fecha', 'Periodo', 'Acción'], sliced.map(doc => {
       const acts = n('div', undefined, 'actions');
-      acts.append(action('Ver PDF', () => viewPdf(doc)));
+      acts.append(action('Ver', () => viewDocOnline(doc)));
       if (doc.uuid) acts.append(action('Desvincular', () => unlinkDocument(doc)));
       acts.append(action('Eliminar', () => deleteDocument(doc)));
       return [cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', acts];

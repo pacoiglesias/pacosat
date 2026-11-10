@@ -2697,7 +2697,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return guestLoginFails.length >= 8;
   }
   const GUEST_GET = ['/api/status', '/api/storage', '/api/storage/rev', '/api/lists', '/api/money', '/api/notices',
-    '/api/fiscal/calendar', '/api/fiscal/issues', '/api/banks', '/api/banks/movements', '/api/offline-bundle', '/api/reports/config'];
+    '/api/fiscal/calendar', '/api/fiscal/issues', '/api/banks', '/api/banks/movements', '/api/offline-bundle', '/api/reports/config',
+    '/api/files/view'];
   function selfTest() {
     const checks = [];
     try { db.prepare('SELECT 1').get(); checks.push({ id: 'db', label: 'Base de datos local', state: 'ok', detail: 'Responde y guarda los datos.' }); }
@@ -3287,7 +3288,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       for (const kind of ['constancia', 'opinion']) {
         const latest = latestSatDoc(profile.rfc, kind);
         view[kind] = latest ? { issuedAt: latest.issuedAt, ageDays: Math.floor((time - latest.issuedAt) / DAY),
-          level: docLevel(latest.issuedAt, time), source: latest.source } : null;
+          level: docLevel(latest.issuedAt, time), source: latest.source, fileId: latest.fileId } : null;
         const failure = db.prepare("SELECT error,created FROM sat_documents WHERE rfc=? AND kind=? AND error<>'' ORDER BY created DESC LIMIT 1")
           .get(profile.rfc, kind);
         if (failure && (!latest || failure.created >= latest.created)) view.lastError = failure.error;
@@ -3759,6 +3760,31 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         const stamp = new Date(run.started).toISOString().slice(0, 10);
         const name = 'diario-' + run.rfc + '-' + run.kind + '-' + stamp + (part === 'shot' ? '-captura.png' : '-pagina.html');
         res.writeHead(200, { 'content-type': file.mime, 'content-disposition': 'attachment; filename="' + name + '"' });
+        return res.end(file.buffer);
+      }
+      if (req.method === 'GET' && url.pathname === '/api/files/view') {
+        /* Visor en línea de Expedientes (1.10.2): un clic y el PDF
+           delante, DENTRO de la app. El fichero se sirve INLINE (su
+           content-type y «content-disposition: inline»), no como
+           descarga: descargar sigue siendo la opción secundaria del
+           propio visor. Solo se sirven documentos archivados —los
+           que tienen fila en la tienda 'documents'—: esa fila manda
+           el RFC dueño y el nombre que se enseña. Para el invitado
+           vale el mismo criterio que el filtro de /api/storage:
+           fuera de su alcance por RFC, el documento no existe (404),
+           no se filtra ni que exista. */
+        const id = String(url.searchParams.get('id') || '');
+        const row = db.prepare("SELECT value FROM records WHERE store='documents' AND id=?").get(id);
+        let doc = null;
+        try { doc = row ? JSON.parse(row.value) : null; } catch { doc = null; }
+        need(doc, 'Ese documento no está en Expedientes.', 404);
+        if (gScope && !gScope.has(String(doc.rfc || '').toUpperCase()))
+          need(false, 'Ese documento no está en Expedientes.', 404);
+        const file = readFileRecord(id);
+        need(file, 'El archivo de ese documento ya no existe.', 404);
+        const name = (String(doc.name || 'documento.pdf').replace(/["\r\n]/g, '').slice(0, 180)) || 'documento.pdf';
+        res.writeHead(200, { 'content-type': file.mime, 'content-length': file.buffer.length,
+          'content-disposition': 'inline; filename="' + name + '"' });
         return res.end(file.buffer);
       }
       if (req.method === 'POST' && url.pathname === '/api/mail/send') {

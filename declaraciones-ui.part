@@ -66,8 +66,14 @@ function declaracionesSection() {
         n('span', doc.kind + ' · ' + (doc.periodo ? 'periodo ' + doc.periodo : 'ejercicio ' + doc.exercise) +
           (doc.presentada ? ' · presentada el ' + doc.presentada : '') +
           (doc.operacion ? ' · operación ' + doc.operacion : '')));
-      const open = n('button', 'Ver en Expedientes', 'soft small');
-      open.onclick = () => navigate('docs');
+      /* Un clic en «Ver» abre el documento dentro de la app
+         (1.10.2); sin fileId en la fila, queda el camino de siempre
+         a Expedientes. */
+      const open = n('button', doc.fileId ? 'Ver' : 'Ver en Expedientes', 'soft small');
+      open.onclick = () => doc.fileId
+        ? viewDocOnline({ id: doc.fileId, rfc: scope, kind: doc.label || 'Declaración',
+            name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' })
+        : navigate('docs');
       row.append(open);
       list.append(row);
     }

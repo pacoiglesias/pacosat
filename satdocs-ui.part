@@ -27,8 +27,24 @@ function satDocsSection() {
       head.append(n('strong', profile.rfc), satDocPill(profile.constancia, 'Constancia'), satDocPill(profile.opinion, 'Opinión'));
       card.append(head);
       const meta = n('div', undefined, 'sat-meta');
-      if (profile.constancia) meta.append(n('span', 'Constancia emitida: ' + localDate(profile.constancia.issuedAt) + (profile.constancia.source === 'manual' ? ' (subida a mano)' : '')));
-      if (profile.opinion) meta.append(n('span', 'Opinión emitida: ' + localDate(profile.opinion.issuedAt) + (profile.opinion.source === 'manual' ? ' (subida a mano)' : '')));
+      /* Un clic en «Ver» y el documento se abre dentro de la app
+         (1.10.2): nada de ir a buscarlo a una carpeta. */
+      const verButton = (doc, label, kind) => {
+        if (!doc?.fileId) return;
+        const ver = n('button', 'Ver', 'soft small');
+        ver.title = 'Ver la ' + label.toLowerCase() + ' dentro de PacoSAT';
+        ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: profile.rfc, kind,
+          name: label + ' · ' + profile.rfc + '.pdf' });
+        meta.append(ver);
+      };
+      if (profile.constancia) {
+        meta.append(n('span', 'Constancia emitida: ' + localDate(profile.constancia.issuedAt) + (profile.constancia.source === 'manual' ? ' (subida a mano)' : '')));
+        verButton(profile.constancia, 'Constancia', 'Constancia / CIF');
+      }
+      if (profile.opinion) {
+        meta.append(n('span', 'Opinión emitida: ' + localDate(profile.opinion.issuedAt) + (profile.opinion.source === 'manual' ? ' (subida a mano)' : '')));
+        verButton(profile.opinion, 'Opinión', 'Opinión de cumplimiento');
+      }
       if (profile.lastAttempt) meta.append(n('span', 'Último intento de descarga: ' + localDateTime(profile.lastAttempt)));
       card.append(meta);
       if (profile.lastError) card.append(n('p', 'Último intento: ' + profile.lastError, 'error-text'));

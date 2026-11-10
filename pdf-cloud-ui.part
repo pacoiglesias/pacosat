@@ -48,16 +48,36 @@ function pdfLinks(doc, blob) {
   buttons.append(link, action('Descargar original', () => download(blob, doc.name), undefined, 'down'));
   return buttons;
 }
-async function viewPdf(doc) {
-  const item = await readStore('files', doc.id);
-  check(item, 'Archivo no encontrado.');
-  const controls = [cell(doc.name, doc.kind + ' · ' + doc.rfc), pdfLinks(doc, item.blob)];
+/* El diálogo del visor: el PDF embebido delante y, como opción
+   secundaria, abrirlo en otra pestaña o descargar el original. */
+function showPdfDialog(doc, blob) {
+  const controls = [cell(doc.name, doc.kind + ' · ' + doc.rfc), pdfLinks(doc, blob)];
   const view = n('iframe', undefined, 'pdf-preview');
   view.title = 'Vista previa de ' + doc.name;
   view.src = previewUrl;
   controls.push(view);
   dialog('Visor de documentos', controls);
   $('dialog').classList.add('wide-dialog');
+}
+async function viewPdf(doc) {
+  const item = await readStore('files', doc.id);
+  check(item, 'Archivo no encontrado.');
+  showPdfDialog(doc, item.blob);
+}
+/* Visor en línea (1.10.2): un clic en «Ver» y el documento se abre
+   dentro de la app, servido por la ruta inline del servidor (que
+   revisa el alcance por RFC del invitado en cada petición). Sin
+   servidor —la copia local— se cae al visor de siempre, que lee la
+   tienda de este equipo. */
+async function viewDocOnline(doc) {
+  if (cloudStorage) {
+    try {
+      const blob = await satApiBlob('files/view?id=' + encodeURIComponent(doc.id));
+      showPdfDialog(doc, blob);
+      return;
+    } catch { /* la ruta en línea no lo sirvió: se intenta la copia local */ }
+  }
+  await viewPdf(doc);
 }
 $('dialog').addEventListener('close', () => {
   $('dialog').classList.remove('wide-dialog', 'invoice-dialog');
