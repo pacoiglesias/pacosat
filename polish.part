@@ -192,3 +192,17 @@ td button{padding:7px 10px}
 .pagos-lines th:nth-child(2), .pagos-lines td:nth-child(2) { min-width: 210px; }
 .pagos-lines th:nth-child(3), .pagos-lines td:nth-child(3) { white-space: nowrap; }
 .pagos-lines th:nth-child(6), .pagos-lines td:nth-child(6) { min-width: 108px; }
+
+/* ===== 1.10.1 · Progreso visible y diario del descargador SAT ===== */
+.sat-progress { margin-top: 10px; border-top: 1px dashed var(--line, #d8d8d8); padding-top: 8px; }
+.sat-progress-head { margin: 0 0 6px; font-size: 14px; }
+.sat-progress-note { font-size: 13px; opacity: .75; margin: 6px 0 0; }
+.sat-steps { list-style: none; margin: 0; padding: 0; font-size: 13.5px; }
+.sat-steps li { display: flex; gap: 8px; padding: 2.5px 0; align-items: baseline; }
+.sat-step-time { font-variant-numeric: tabular-nums; opacity: .65; white-space: nowrap; }
+.sat-runs { margin-top: 12px; }
+.sat-runs-title { margin: 0 0 6px; font-size: 14.5px; }
+.sat-run { border: 1px solid var(--line, #e3e3e3); border-radius: 8px; padding: 6px 10px; margin: 6px 0; }
+.sat-run summary { cursor: pointer; font-size: 13.5px; font-weight: 600; }
+.sat-run .sat-steps { margin-top: 6px; }
+.sat-run-files { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }

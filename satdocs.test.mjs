@@ -15,6 +15,7 @@ const KEY = 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDJv/UPUgh/H1XwYFW
 let time = Date.parse('2026-11-10T15:00:00Z');
 const sent = [];
 let portalDown = false;
+let portalShot = false;
 const service = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TOKEN-->', origin, now: () => time,
   efirmaDir: mkdtempSync(join(tmpdir(), 'pacosat-docs-')),
   makeConnector: async ({ password }) => {
@@ -24,7 +25,13 @@ const service = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TO
   makeMailer: () => ({ verify: async () => true, sendMail: async payload => { sent.push(payload); } }),
   satDocFetch: async (profile, kind) => {
     assert.equal(profile.rfc, RFC);
-    if (portalDown) throw new Error('portal de juguete caído');
+    if (portalDown) {
+      const error = new Error('portal de juguete caído');
+      if (portalShot) error.diag = { url: 'https://login.example.test/fiel',
+        screenshot: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]),
+        html: '<html><body>Acceso con e.firma</body></html>' };
+      throw error;
+    }
     return { content: Buffer.from('%PDF-1.4 ' + kind), issuedAt: new Date(time).toISOString(), fileName: kind + '.pdf' };
   } });
 let token;
@@ -84,6 +91,40 @@ try {
   assert.equal(failed.results.opinion.ok, false);
   assert.ok(failed.profiles[0].lastError.includes('juguete'));
   portalDown = false;
+
+  /* Diario y progreso (1.10.1): cada corrida queda en el diario
+     con sus pasos en lenguaje llano; el progreso persistido dice
+     el resultado final; sin foto del fallo, sus artefactos dan 404. */
+  view = (await (await call('/api/satdocs')).json()).profiles[0];
+  assert.equal(view.progress.running, false);
+  assert.ok(view.progress.step.includes('juguete'));
+  assert.ok(Array.isArray(view.runs) && view.runs.length >= 3, 'el diario guarda las corridas');
+  const okRun = view.runs.find(run => run.ok);
+  assert.ok(okRun, 'hay corridas buenas en el diario');
+  assert.equal(okRun.steps[0].text, 'Conectando con el SAT…');
+  assert.ok(okRun.steps.some(step => step.text === 'Guardando en Expedientes…'));
+  const failedRun = view.runs.find(run => !run.ok);
+  assert.ok(failedRun.error.includes('juguete'));
+  assert.equal(failedRun.hasShot, false);
+  res = await call('/api/satdocs/artifact?run=' + failedRun.id + '&part=shot');
+  assert.equal(res.status, 404);
+  res = await call('/api/satdocs/artifact?run=no-existe&part=shot');
+  assert.equal(res.status, 404);
+  /* Con la foto del fallo (error.diag del navegador): el diario la
+     archiva y se puede bajar tal cual desde la app. */
+  portalDown = true; portalShot = true;
+  res = await call('/api/satdocs/run', { rfc: RFC, kind: 'constancia' });
+  assert.equal((await res.json()).results.constancia.ok, false);
+  portalDown = false; portalShot = false;
+  view = (await (await call('/api/satdocs')).json()).profiles[0];
+  const shotRun = view.runs.find(run => run.hasShot);
+  assert.ok(shotRun && shotRun.hasHtml, 'la corrida con diagnóstico guarda captura y HTML');
+  res = await call('/api/satdocs/artifact?run=' + shotRun.id + '&part=shot');
+  assert.equal(res.status, 200);
+  assert.deepEqual([...Buffer.from(await res.arrayBuffer())], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+  res = await call('/api/satdocs/artifact?run=' + shotRun.id + '&part=html');
+  assert.equal(res.status, 200);
+  assert.ok((await res.text()).includes('Acceso con e.firma'));
 
   /* Antigüedad: 75 días tras la renovación, el semáforo pasa a ámbar
      (y un documento viejo subido a mano NO desplaza al vigente). */

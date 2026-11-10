@@ -1,6 +1,6 @@
 {
   "name": "pacosat",
-  "version": "1.10.0",
+  "version": "1.10.1",
   "description": "Expediente fiscal privado con importación CFDI y seguimiento SAT",
   "scripts": {
     "build": "node build.mjs",
