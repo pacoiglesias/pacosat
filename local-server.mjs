@@ -109,7 +109,7 @@ async function productionConnector(credentials) {
 }
 
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
-  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null, satDeclFetch = null, extractText = extractPdfTextLines }) {
+  analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null, satDeclFetch = null, extractText = extractPdfTextLines, capacidades = null }) {
   const cspHeader = cspForHtml(html);
   const db = new DatabaseSync(dbFile);
   /* synchronous=FULL (1.6.15, mejora nº 4): en WAL el defecto es NORMAL
@@ -2698,7 +2698,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
   const GUEST_GET = ['/api/status', '/api/storage', '/api/storage/rev', '/api/lists', '/api/money', '/api/notices',
     '/api/fiscal/calendar', '/api/fiscal/issues', '/api/banks', '/api/banks/movements', '/api/offline-bundle', '/api/reports/config',
-    '/api/files/view'];
+    '/api/files/view', '/api/capacidades'];
   function selfTest() {
     const checks = [];
     try { db.prepare('SELECT 1').get(); checks.push({ id: 'db', label: 'Base de datos local', state: 'ok', detail: 'Responde y guarda los datos.' }); }
@@ -3474,6 +3474,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (url.pathname !== '/api/status') logAccess('guest', req.method + ' ' + url.pathname);
       }
       if (req.method === 'POST') need(req.headers.origin === origin, 'Origen inválido.', 403);
+      /* Documento de capacidades bajo demanda (1.11.0): los 37,9 KB
+         del documento «Qué incluye PacoSAT» ya no viajan dentro del
+         HTML en cada carga; se piden solo al abrir Acerca de. El
+         documento lo genera build.mjs en capacidades.json desde la
+         misma fuente docs/CAPACIDADES.md. */
+      if (req.method === 'GET' && url.pathname === '/api/capacidades') {
+        return json(res, capacidades || { updated: '', sections: [] });
+      }
       if (req.method === 'GET' && url.pathname === '/api/status') {
         const data = overview();
         if (gScope) {
@@ -4752,6 +4760,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     (proxyKey || origin === 'http://127.0.0.1:43729'), 'Configuración de origen o proxy inválida.');
   const service = createPacoSATService({ dbFile: join(path, 'pacosat.sqlite'), html: readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8'), origin, proxyKey, watchDir: process.env.PACOSAT_WATCH_DIR || '',
     efirmaDir: process.env.PACOSAT_EFIRMA_DIR || '', officialLists: true,
+    capacidades: existsSync(new URL('./capacidades.json', import.meta.url)) ?
+      JSON.parse(readFileSync(new URL('./capacidades.json', import.meta.url), 'utf8')) : null,
     /* Descargador de constancia y opinión (1.7.4): lee la e.firma de
        la misma carpeta protegida que resuelve el servicio (la de
        PACOSAT_EFIRMA_DIR o <datos>/efirma). Sin credenciales válidas

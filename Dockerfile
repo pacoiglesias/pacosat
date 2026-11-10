@@ -9,7 +9,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund && mkdir -p /var/lib
 RUN apt-get update && apt-get install -y --no-install-recommends chromium fonts-liberation \
   && rm -rf /var/lib/apt/lists/*
 ENV PACOSAT_CHROMIUM_PATH=/usr/bin/chromium
-COPY local-server.mjs sat-direct.mjs sat-monitor.mjs sat-lists.mjs sat-doc-fetch.mjs sat-doc-browser.mjs sat-declaraciones.mjs pagos.mjs xml-core.mjs pdf-invoice.mjs backup-core.mjs bank-statement.mjs Faro-Fiscal.html ./
+COPY local-server.mjs sat-direct.mjs sat-monitor.mjs sat-lists.mjs sat-doc-fetch.mjs sat-doc-browser.mjs sat-declaraciones.mjs pagos.mjs xml-core.mjs pdf-invoice.mjs backup-core.mjs bank-statement.mjs Faro-Fiscal.html capacidades.json ./
 USER node
 EXPOSE 43729
 CMD ["node", "local-server.mjs"]

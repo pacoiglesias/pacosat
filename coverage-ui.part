@@ -10,7 +10,7 @@ function coverageScreen() {
     const guide = n('section', undefined, 'guide');
     const info = n('div');
     info.append(n('h2', 'La cobertura se calcula en el servidor'),
-      n('p', 'El mapa de periodos descargados sale de las solicitudes y del libro de criterios 5002 que guarda el servidor de PacoSAT. Abre la app desde el servidor (el NAS o Iniciar-PacoSAT.cmd) para verlo; en el modo de navegador no hay solicitudes que analizar.'));
+      n('p', 'El mapa de periodos descargados sale de las solicitudes que guarda el servidor de PacoSAT. Abre la app desde el servidor (el NAS o Iniciar-PacoSAT.cmd) para verlo; en el modo de navegador no hay solicitudes que analizar.'));
     guide.append(info);
     return [guide];
   }
@@ -27,9 +27,42 @@ function coverageScreen() {
   const coverage = satData.coverage || { groups: [], gaps: [], days: {} };
   const visible = coverage.groups.filter(group => !scope || group.rfc === scope);
   const screens = [];
-  const table = panel('Verificado por RFC y sentido');
-  if (!visible.length) table.append(empty('Sin solicitudes todavía', 'Cuando el Centro SAT descargue periodos, aquí verás hasta dónde está verificado cada RFC y qué sigue en curso o falló.'));
-  else table.append(grid(['RFC', 'Sentido', 'Verificado hasta', 'Tramos cubiertos', 'En curso', 'Fallidos', 'Criterios agotados'],
+  /* Resumen visible (1.11.0): la cobertura se cuenta como la pregunta
+     de Paco — qué meses me faltan — desde los huecos que el servidor
+     ya calcula, sin pedir nada nuevo al SAT. */
+  const missingPanel = panel('Qué meses te faltan');
+  const gapList = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
+  if (!visible.length && !gapList.length) missingPanel.append(empty('Aún no hay descargas', 'Cuando PacoSAT descargue periodos, aquí verás qué meses tienes y qué meses te faltan.'));
+  else {
+    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const monthLabel = key => MESES[Number(key.slice(5, 7)) - 1] + ' de ' + key.slice(0, 4);
+    const missingByKey = new Map();
+    for (const gap of gapList) {
+      if (gap.micro) continue;
+      const key = gap.rfc + '|' + gap.direction;
+      if (!missingByKey.has(key)) missingByKey.set(key, new Set());
+      const months = missingByKey.get(key);
+      let cursor = gap.from.slice(0, 7), last = gap.to.slice(0, 7), guard = 0;
+      while (cursor <= last && guard++ < 120) {
+        months.add(cursor);
+        const [y, m] = cursor.split('-').map(Number);
+        cursor = m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
+      }
+    }
+    const keys = new Set([...visible.map(group => group.rfc + '|' + group.direction), ...missingByKey.keys()]);
+    if (!keys.size) missingPanel.append(n('p', 'No te falta ningún mes: en cada RFC y sentido, lo descargado forma una cadena continua.'));
+    for (const key of [...keys].sort()) {
+      const [rfc, dir] = key.split('|');
+      const months = [...(missingByKey.get(key) || [])].sort();
+      missingPanel.append(n('p', rfc + ' · ' + (dir === 'received' ? 'Recibidos' : 'Emitidos') + ': ' +
+        (months.length ? 'te faltan ' + months.slice(0, 12).map(monthLabel).join(', ') + (months.length > 12 ? '…' : '') + '.' :
+          'no te falta ningún mes.')));
+    }
+  }
+  screens.push(missingPanel);
+  const table = panel('Qué tengo descargado · por RFC y sentido');
+  if (!visible.length) table.append(empty('Sin solicitudes todavía', 'Cuando PacoSAT descargue periodos desde SAT, aquí verás hasta dónde está verificado cada RFC y qué sigue en curso o falló.'));
+  else table.append(grid(['RFC', 'Sentido', 'Verificado hasta', 'Tramos cubiertos', 'En curso', 'Fallidos', 'Peticiones agotadas'],
     visible.map(group => [group.rfc, group.direction === 'received' ? 'Recibidos' : 'Emitidos',
       group.verifiedUntil ? group.verifiedUntil.slice(0, 16) : '—', String(group.covered.length),
       String(group.pending), String(group.failed), String(group.exhausted)])));
@@ -38,14 +71,14 @@ function coverageScreen() {
   const gaps = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
   if (!gaps.length) gapsPanel.append(n('p', 'Sin huecos: en cada RFC y sentido, los tramos descargados forman una cadena continua.'));
   else {
-    gapsPanel.append(n('p', 'PacoSAT no solicita estos tramos por su cuenta: quedan anotados en la bitácora cuando aparecen. Con «Solicitar este hueco» el diálogo se abre ya rellenado con el RFC, el sentido y los extremos exactos; si el criterio exacto ya se envió, PacoSAT ofrece cerrar el periodo un segundo más tarde en vez de repetirlo.'));
+    gapsPanel.append(n('p', 'PacoSAT no pide estos tramos por su cuenta: quedan anotados aquí. Con «Solicitar este hueco» el diálogo se abre ya rellenado con el RFC, el sentido y las fechas exactas; si ese periodo ya se pidió antes, PacoSAT ofrece una variante en vez de repetir la misma petición.'));
     const duration = seconds => seconds < 90 ? seconds + ' s' : seconds < 5400 ? Math.round(seconds / 60) + ' min' :
       seconds < 172800 ? (seconds / 3600).toFixed(1).replace('.', ',') + ' h' : Math.round(seconds / 86400) + ' días';
     gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo', 'Acción'], gaps.map(gap => [gap.rfc,
       gap.direction === 'received' ? 'Recibidos' : 'Emitidos',
       gap.from.slice(0, 10) === gap.to.slice(0, 10) ? gap.from.slice(0, 16) + ' → ' + gap.to.slice(11, 16) :
         gap.from.slice(0, 16) + ' → ' + gap.to.slice(0, 16),
-      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura del blindaje ±1 s' : 'Hueco',
+      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura de 1 segundo' : 'Hueco',
       /* El hueco se pide desde la propia pantalla (UX-05): el diálogo
          nace rellenado; los micro-huecos son costuras de ±1 s y no se
          piden (se cosen solos al mover un extremo). */
@@ -63,7 +96,7 @@ function coverageScreen() {
   metaPanel.append(n('p', meta.records ?
     number.format(meta.records) + ' registros de metadatos guardados' + (meta.lastSeen ? ' · última lectura ' + localDateTime(meta.lastSeen) : '') +
     '. De ellos, ' + missing.length + ' CFDI constan en el SAT y aún no están en el expediente como XML.' :
-    'Todavía no hay metadatos: PacoSAT pide una solicitud Metadata al día por RFC, y también puedes pedir un periodo como Metadatos desde el Centro SAT.'));
+    'Todavía no hay metadatos: PacoSAT pide una solicitud Metadata al día por RFC, y también puedes pedir un periodo como Metadatos desde la pestaña de descarga de SAT.'));
   if (missing.length) metaPanel.append(grid(['UUID', 'Emisor', 'Receptor', 'Fecha', 'Total', 'Estado en el SAT'],
     missing.slice(0, 100).map(row => [row.uuid, row.emitter, row.receiver, (row.issuedAt || '').slice(0, 10),
       row.total ? '$' + row.total : '—', row.status === '0' ? 'Cancelado' : 'Vigente'])));

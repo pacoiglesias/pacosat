@@ -16,7 +16,10 @@ const FRIENDLY_ERRORS = [
   [/^host inválido/i, 'El servicio rechazó la dirección de acceso: entra por la dirección oficial de PacoSAT en tu NAS.'],
   [/^solicitud inválida/i, 'La solicitud no es válida tal como se envió: revisa el RFC y el periodo e inténtalo de nuevo.'],
   [/^cfdi de otro rfc/i, 'Ese CFDI es de otro RFC: cambia el contribuyente seleccionado o registra ese RFC en tu cartera.'],
-  [/almacenamiento todavía no está disponible/i, 'El almacenamiento aún se está preparando: espera unos segundos y reintenta; si persiste, cierra las demás pestañas de PacoSAT.']
+  [/almacenamiento todavía no está disponible/i, 'El almacenamiento aún se está preparando: espera unos segundos y reintenta; si persiste, cierra las demás pestañas de PacoSAT.'],
+  /* §6 (1.11.0): «perfil de PacoSAT» es lenguaje del sistema; en la
+     superficie se dice qué falta y cómo se resuelve. */
+  [/no es un perfil de PacoSAT|no tiene perfil en PacoSAT/i, 'Primero autoriza la e.firma de este RFC para que PacoSAT pueda trabajar con el SAT.']
 ];
 function friendlyError(message) {
   for (const [pattern, text] of FRIENDLY_ERRORS) if (pattern.test(message)) return text;
@@ -96,14 +99,22 @@ function restSwitch() {
   if (!active) wrap.append(action('Descansar hasta…', restDialog, undefined, 'bell'));
   return wrap;
 }
-function connectedSatScreen() {
+/* Pantalla de descarga de la pestaña SAT (1.11.0): SOLO la descarga.
+   Devuelve [guía «Sincronización directa», contenedor #sat-live] y
+   fillSat() pinta dentro perfiles/solicitudes y la cola de trabajos
+   (más el historial de peticiones, plegado como detalle técnico).
+   Las constancias/opinión (satDocsSection) y las declaraciones
+   (declaracionesSection) ya NO se pintan aquí: viven en Documentos y
+   la cáscara las compone allí. El correo y el silencio tampoco: son
+   satMailSection(), en Ajustes › Correo. */
+function satDownloadScreen() {
   const guide = n('section', undefined, 'guide');
   const info = n('div');
   info.append(n('h2', 'Sincronización directa con el SAT'),
     n('p', 'Autoriza la e.firma por RFC. PacoSAT solicita CFDI, descarga los paquetes y los incorpora al expediente. El servicio puede seguir abierto aunque cierres la pestaña.'));
   const controls = n('div', undefined, 'actions');
   controls.append(action('Configurar RFC', () => unlockDialog(), 'primary', 'lock'),
-    action('Subir e.firma', () => efirmaDialog(), undefined, 'key'),
+    action('Autorizar e.firma', () => efirmaDialog(), undefined, 'key'),
     action('Solicitar un periodo', requestDialog, undefined, 'sync'));
   guide.append(info, controls);
   const restBar = n('div', undefined, 'panel-head');
@@ -111,17 +122,18 @@ function connectedSatScreen() {
   guide.append(restBar);
   const container = n('div'); container.id = 'sat-live';
   fillSat(container);
-  /* 1.6.14: las constancias y la opinión dejan de ser un hueco «otros
-     trámites»: tienen su propia sección con semáforos y automatización. */
-  return [guide, container, satDocsSection(), declaracionesSection()];
+  return [guide, container];
 }
+/* Nombre anterior de la misma pantalla: se conserva como alias de
+   transición hasta que la cáscara (ui.part) termine de apuntar a
+   satDownloadScreen(); no añade comportamiento. */
 function fillSat(target = $('sat-live')) {
   if (!target) return;
   const schedules = panel('Revisión automática por RFC');
   if (satError) schedules.append(empty('No se pudo leer el estado', satError, action('Actualizar', pollSat)));
   else {
     const profiles = satData.profiles.filter(row => !scope || row.rfc === scope);
-    if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Agrega o selecciona un RFC y autoriza su e.firma para activar la revisión.', action('Configurar mi primer RFC', () => unlockDialog(), 'primary', 'lock')));
+    if (!profiles.length) schedules.append(empty('Sin RFC configurados', 'Primero autoriza la e.firma de este RFC para que PacoSAT pueda trabajar con el SAT.', action('Autorizar e.firma', () => efirmaDialog(), 'primary', 'key')));
     else schedules.append(grid(['RFC', 'Frecuencia', 'Próxima revisión', 'Estado', 'Acción'], profiles.map(row => {
       const restingProfile = Boolean(row.paused) || (row.pauseUntil || 0) > Date.now();
       const buttons = n('div', undefined, 'actions');
@@ -147,7 +159,7 @@ function fillSat(target = $('sat-live')) {
         }
       }, undefined, 'sync'));
       return [
-        cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Necesita e.firma') +
+        cell(row.rfc, row.error || (row.unlocked ? 'Activo · ' + directions[row.direction] : 'Primero autoriza la e.firma de este RFC para que PacoSAT pueda trabajar con el SAT.') +
           (row.efirmaStored ? ' · Guardada en el servidor' : '')),
         (row.minutes / 60) + ' h · últimos ' + row.days + ' días',
         row.unlocked ? localDateTime(row.nextRun) : 'En pausa',
@@ -165,39 +177,24 @@ function fillSat(target = $('sat-live')) {
     row.status === 'pending' ? action('Reintentar consulta', async () => { satData = await satApi('retry', { id: row.id }); fillSat(); announce('Consulta programada para el siguiente ciclo del servicio.'); }) : n('span', 'Creada ' + localDateTime(row.created))
   ])));
   else queue.append(empty('Todavía no hay solicitudes', 'Al activar un RFC, PacoSAT iniciará la revisión en segundo plano.'));
-  const alerts = panel('Avisos por correo');
-  const bar = n('div', undefined, 'panel-head');
-  const notice = cell(satData.mail.enabled ? 'Activados · ' + satData.mail.recipient : 'Correo desactivado',
-    satData.mail.error || 'Avisos de CFDI recibidos nuevos. El correo lleva el conteo, sin adjuntar los XML.');
-  const buttons = n('div', undefined, 'actions');
-  buttons.append(action('Configurar SMTP', mailDialog, undefined, 'lock'));
-  if (satData.mail.enabled) {
-    buttons.append(action('Enviar correo de prueba', async () => {
-      /* UX-09: la primera prueba del SMTP no debe ser un aviso real. */
-      await satApi('mail/test', {});
-      announce('Correo de prueba enviado a ' + satData.mail.recipient + '. Revisa tu bandeja: si llegó, los avisos funcionarán.');
-      soundCue('success');
-    }, undefined, 'bell'));
-    buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSat(); }));
-  }
-  bar.append(notice, buttons); alerts.append(bar);
-  const silence = panel('Aviso de silencio');
-  const silenceBar = n('div', undefined, 'panel-head');
-  silenceBar.append(cell(satData.silenceDays ? 'Avisar si un RFC lleva ' + satData.silenceDays + ' días sin CFDI recibidos nuevos' : 'Desactivado',
-    'El silencio también avisa: una factura esperada que no llega (renta, igualas, servicios) se detecta a tiempo. Tú defines el umbral.'));
-  const silenceButtons = n('div', undefined, 'actions');
-  silenceButtons.append(action('Cambiar umbral', silenceDialog, undefined, 'bell'));
-  silenceBar.append(silenceButtons); silence.append(silenceBar);
-  /* Libro de criterios (ronda anti-5002): el registro persistente de
-     cada criterio enviado, por RFC, con su resultado. Es la fuente de
-     verdad de la guardia, del planificador y del rescate. */
-  const book = panel('Libro de criterios · blindaje 5002');
-  book.append(n('p', 'Cada criterio exacto (RFC, sentido, tipo y fechas con segundos) enviado al SAT y su resultado. ' +
-    'Un criterio usado no se repite nunca; uno quemado (5002) solo se recupera con la variante de cierre +1 segundo ' +
-    'o con el rescate por el portal web.'));
+  /* Detalle técnico plegado (1.11.0): el historial de peticiones sale
+     de la vista diaria; vive cerrado dentro de la descarga y solo se
+     abre si se quiere ver la maquinaria. El correo y el silencio ya
+     no se pintan aquí: son satMailSection(), en Ajustes › Correo. */
+  target.replaceChildren(schedules, queue, satCriteriaBookDetails());
+}
+/* Historial de peticiones al SAT: el registro persistente de cada
+   petición enviada, por RFC, con su resultado. Es la fuente de verdad
+   de la guardia, del planificador y del rescate — y por eso es
+   detalle técnico: un <details> cerrado al entrar (patrón
+   seal-details de la app), no un panel más de la pila diaria. */
+function satCriteriaBookDetails() {
+  const details = n('details', undefined, 'seal-details sat-criteria-book');
+  details.append(n('summary', 'Historial de peticiones al SAT'));
+  details.append(n('p', 'Cada petición que PacoSAT hace al SAT queda registrada para no repetirla nunca: el SAT castiga las peticiones repetidas. Si una petición se agota, PacoSAT busca otra vía solo.'));
   const entries = (satData.criteriaBook || []).filter(row => !scope || row.rfc === scope);
-  if (!entries.length) book.append(empty('Libro vacío', 'Cuando se envíe la primera solicitud al SAT, su criterio quedará registrado aquí.'));
-  else book.append(grid(['RFC', 'Criterio', 'Envíos', 'Estado', 'Acción'], entries.slice(0, 60).map(entry => {
+  if (!entries.length) details.append(empty('Sin peticiones todavía', 'Cuando se envíe la primera solicitud al SAT, quedará registrada aquí.'));
+  else details.append(grid(['RFC', 'Criterio', 'Envíos', 'Estado', 'Acción'], entries.slice(0, 60).map(entry => {
     const acts = n('div', undefined, 'actions');
     if (entry.state === 'agotado' || entry.state === 'rescatado')
       acts.append(action(entry.state === 'agotado' ? 'Preparar rescate' : 'Ver rescate', () => rescueDialog(entry)));
@@ -211,7 +208,60 @@ function fillSat(target = $('sat-live')) {
         entry.state === 'agotado' ? 'Solo se quemó esta combinación exacta' : ''),
       acts];
   })));
-  target.replaceChildren(schedules, queue, book, alerts, silence);
+  return details;
+}
+/* ===== Correo y aviso de silencio (1.11.0) =====
+   Salen de la pantalla de descarga: son configuración, no trabajo
+   diario. satMailSection() devuelve UN nodo —un div#sat-mail-live
+   con los dos paneles ya rellenos desde satData— para que Ajustes ›
+   Correo lo incruste tal cual en su lista de paneles.
+   fillSatMail() repinta ese nodo tras cada cambio (los diálogos de
+   SMTP y de umbral la llaman al guardar, y pollSat la refresca si el
+   nodo está en pantalla). Estado y explicación van separados
+   (píldora + texto), nunca fundidos en una sola etiqueta. */
+function satMailSection() {
+  const container = n('div'); container.id = 'sat-mail-live';
+  fillSatMail(container);
+  return container;
+}
+function fillSatMail(target = $('sat-mail-live')) {
+  if (!target) return;
+  target.replaceChildren(satMailPanel(), satSilencePanel());
+}
+function satMailPanel() {
+  const alerts = panel('Avisos por correo');
+  const bar = n('div', undefined, 'panel-head');
+  const notice = n('div');
+  notice.append(satData.mail.enabled ? statusPill('ok', 'Activado') : statusPill('dim', 'Desactivado'),
+    n('p', 'Te avisa por correo cuando llega un CFDI recibido nuevo. El correo lleva el conteo, sin adjuntar los XML.' +
+      (satData.mail.enabled && satData.mail.recipient ? ' Correo de avisos: ' + satData.mail.recipient + '.' : '')));
+  if (satData.mail.error) notice.append(n('p', satData.mail.error, 'error-text'));
+  const buttons = n('div', undefined, 'actions');
+  buttons.append(action('Configurar SMTP', mailDialog, undefined, 'lock'));
+  if (satData.mail.enabled) {
+    buttons.append(action('Enviar correo de prueba', async () => {
+      /* UX-09: la primera prueba del SMTP no debe ser un aviso real. */
+      await satApi('mail/test', {});
+      announce('Correo de prueba enviado a ' + satData.mail.recipient + '. Revisa tu bandeja: si llegó, los avisos funcionarán.');
+      soundCue('success');
+    }, undefined, 'bell'));
+    buttons.append(action('Desactivar', async () => { satData = await satApi('mail', { enabled: false }); fillSatMail(); }));
+  }
+  bar.append(notice, buttons); alerts.append(bar);
+  return alerts;
+}
+function satSilencePanel() {
+  const silence = panel('Aviso de silencio');
+  const bar = n('div', undefined, 'panel-head');
+  const notice = n('div');
+  notice.append(satData.silenceDays ? statusPill('ok', 'Activado') : statusPill('dim', 'Desactivado'),
+    n('p', satData.silenceDays ?
+      'Te avisa por correo cuando llega una factura esperada y no llega: si un RFC lleva ' + satData.silenceDays + ' días sin CFDI recibidos nuevos, PacoSAT avisa una vez por episodio. Tú defines el umbral.' :
+      'Te avisa por correo cuando llega una factura esperada y no llega. Define el umbral de días para activarlo.'));
+  const buttons = n('div', undefined, 'actions');
+  buttons.append(action('Cambiar umbral', silenceDialog, undefined, 'bell'));
+  bar.append(notice, buttons); silence.append(bar);
+  return silence;
 }
 function silenceDialog() {
   const days = input('number', { min: 0, max: 365, value: satData.silenceDays || 0, required: true });
@@ -219,7 +269,7 @@ function silenceDialog() {
     n('p', 'Si un RFC pasa más días que el umbral sin recibir CFDI nuevos, PacoSAT avisa por correo una vez por episodio. Con 0 queda desactivado.'),
     field('Días sin CFDI nuevos para avisar', days)], async () => {
     satData = await satApi('silence', { days: Number(days.value) });
-    fillSat(); announce(Number(days.value) ? 'Aviso de silencio activo: ' + days.value + ' días.' : 'Aviso de silencio desactivado.');
+    fillSatMail(); announce(Number(days.value) ? 'Aviso de silencio activo: ' + days.value + ' días.' : 'Aviso de silencio desactivado.');
   });
 }
 function restDialog() {
@@ -450,7 +500,7 @@ function mailDialog() {
     satData = await satApi('mail', { enabled: true, recipient: recipient.value.trim(), from: from.value.trim(),
       host: host.value.trim(), port: Number(port.value), user: user.value, password: password.value });
     password.value = '';
-    fillSat(); announce('Avisos activados. Se enviarán al detectar nuevos CFDI recibidos.');
+    fillSatMail(); announce('Avisos activados. Se enviarán al detectar nuevos CFDI recibidos.');
   }, 'Activar avisos');
 }
 
@@ -499,9 +549,11 @@ async function pollSat() {
        del servidor (1.7.4): sin peticiones extra fuera de este ciclo. */
     refreshAvisos().catch(() => {});
     if (page === 'sat' && !$('dialog').open && !document.activeElement?.closest('#sat-live')) fillSat();
+    /* Ajustes › Correo (1.11.0): si la sección de correo está en
+       pantalla, el mismo pulso la mantiene al día, sin ritmo nuevo. */
+    const mailLive = $('sat-mail-live');
+    if (mailLive && !$('dialog').open && !document.activeElement?.closest('#sat-mail-live')) fillSatMail(mailLive);
   }
 }
-if (satToken) {
-  startup.then(pollSat);
-  setInterval(pollSat, 15000);
-}
+/* El registro del pulso vive en monitor-ui.part (1.11.0): un solo
+   temporizador de 30 s para todo el cliente. */

@@ -111,7 +111,7 @@ async function collect(stream) {
     "fiscalResults.set('d', { sat: { state: 'Vigente' }, efos: [] });\n" +
     "fiscalResults.set('e', { sat: { state: 'No encontrado' }, efos: [] });\n" +
     uiSource.slice(uiSource.indexOf('const invoiceStateOf'), uiSource.indexOf('function invoiceRows')) +
-    monitorSource.slice(monitorSource.indexOf('function fiscalStateCounts'), monitorSource.indexOf('function fiscalDonut')) +
+    monitorSource.slice(monitorSource.indexOf('function fiscalStateCounts'), monitorSource.indexOf('async function loadMonitorSummary')) +
     "var __rows = ['a', 'b', 'c', 'd', 'e', 'f'].map(id => ({ id }));\n" +
     'globalThis.__donut = { counts: fiscalStateCounts(__rows), segments: donutSegments(fiscalStateCounts(__rows)) };', context);
   /* Los objetos creados dentro del contexto VM tienen otro prototipo:
@@ -296,15 +296,20 @@ async function collect(stream) {
   const headerPolicy = cspForHtml(html);
   assert.ok(!headerPolicy.includes('unsafe-inline') && headerPolicy.includes(hashOf(styleBlockOf(html))) &&
     headerPolicy.includes(hashOf(scriptBlockOf(html))), 'La cabecera CSP del servidor no coincide con las huellas del artefacto.');
-  /* Pantalla «Qué incluye PacoSAT» (1.6.9): nace de docs/CAPACIDADES.md
-     en build; el artefacto lleva las secciones del documento y la
-     fecha de actualización declarada en su cabecera. */
-  const capacidadesInHtml = JSON.parse(html.match(/PACOSAT_CAPACIDADES = (\{.*?\});\n/)[1]);
+  /* Pantalla «Qué incluye PacoSAT» (1.6.9; bajo demanda desde la
+     1.11.0): nace de docs/CAPACIDADES.md en build, pero ya NO viaja
+     dentro del HTML: el artefacto capacidades.json lleva las
+     secciones y la fecha, el servidor lo sirve en /api/capacidades
+     y el HTML no debe contener ni rastro de la constante antigua. */
+  assert.ok(!html.includes('PACOSAT_CAPACIDADES'), 'El documento de capacidades no debe viajar dentro del HTML (1.11.0).');
+  const capacidadesArtefacto = JSON.parse(fs.readFileSync('capacidades.json', 'utf8'));
   const capacidadesSource = fs.readFileSync('docs/CAPACIDADES.md', 'utf8');
-  assert.equal(capacidadesInHtml.updated,
+  assert.equal(capacidadesArtefacto.updated,
     (capacidadesSource.match(/\*\*Última modificación:\s*([^*]+)\*\*/) || [])[1].trim());
-  assert.ok(capacidadesInHtml.sections.length >= 8, 'Faltan secciones de capacidades en el artefacto.');
-  assert.ok(capacidadesInHtml.sections.some(section => section.blocks.some(block => block.type === 'item')),
+  assert.ok(capacidadesArtefacto.sections.length >= 8, 'Faltan secciones de capacidades en el artefacto.');
+  assert.ok(capacidadesArtefacto.sections.some(section => section.blocks.some(block => block.type === 'item')),
     'El documento de capacidades debe llevar capacidades con estado.');
+  assert.ok(fs.readFileSync('local-server.mjs', 'utf8').includes("'/api/capacidades'"),
+    'El servidor debe ofrecer el documento en GET /api/capacidades.');
   console.log('OK: ZIP almacenado y comprimido, CRC, ZIP inválido, XML UTF-8/16, cifrado, contraseña errónea, manipulación, compatibilidad de respaldo navegador/servidor, CSV, referencias de interfaz, completitud de la imagen Docker, anillo de estados, paquete mensual, paleta AA, sellos de la copia, visor CFDI completo, CSP estricta por huellas y documento de capacidades generado.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

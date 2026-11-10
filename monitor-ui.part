@@ -1,27 +1,30 @@
-/* ===== Vigilancia SAT (rediseño 1.7.4, a petición de Paco) =====
-   Antes: un muro de UUID con «Sin consulta · Consulta pendiente de
-   reintento» en cada fila — no se entendía nada. Ahora la pantalla
-   abre con lo que Paco quiere hacer y con el resumen en tarjetas:
-   botones grandes con nombre de acción («Descargar CFDI del SAT» con
-   fechas, «Revisar mis CFDI ahora», «Actualizar listados 69-B y 69»),
-   seis tarjetas con semáforo y números grandes, la verdad de la
-   revisión automática («X de N revisados · última tanda…») y, debajo,
-   la lista ya secundaria: buscable por empresa, RFC o mes, con el
-   estado en palabras llanas y qué hacer (o «no tienes que hacer
-   nada»). El UUID solo se ve al abrir el detalle del comprobante. */
+/* ===== Estado de mis CFDI (Vigilancia SAT; rediseño 1.7.4, contrato
+   de pestaña en 1.11.0) =====
+   La pantalla abre con lo que Paco quiere hacer y con el resumen en
+   tarjetas: acciones grandes con verbo y objeto («Revisar mis CFDI
+   ahora», «Actualizar listados 69-B y 69» y un enlace «Descargar
+   CFDI» a la pestaña de descarga — la descarga vive SOLO allí, aquí
+   no hay un segundo formulario), seis tarjetas con semáforo y
+   números grandes, la verdad de la revisión automática («X de N
+   revisados · última revisión…») y, debajo, la lista ya secundaria:
+   buscable por empresa, RFC o mes, con el estado en palabras llanas
+   y qué hacer (o «no tienes que hacer nada»). La lista abre en
+   «Todos» para no esconder comprobantes sanos tras un filtro. El
+   UUID solo se ve al abrir el detalle del comprobante. */
 const watched = new Set();
 const fiscalResults = new Map();
 let monitorData = { fetched: null, error: '' }, monitorError = '', monitoring = false;
-let monitorFilter = 'attention', monitorCursor = 0;
+let monitorFilter = 'all', monitorCursor = 0;
 let monitorSummary = null, monitorSummaryKey = '';
-let monitorSearch = '', monitorDlStart = '', monitorDlEnd = '', monitorDlDirection = 'received';
+let monitorSearch = '';
 const monitorRow = row => ({
   id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
   seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal || '') ? row.seal : ''
 });
 /* El estado de un CFDI en lenguaje de Paco: insignia corta, frase que
    lo explica y si hay que hacer algo. Nada de códigos del SAT en
-   crudo ni de «pendiente de reintento». */
+   crudo en la superficie: el código solo vive en el detalle técnico
+   del comprobante. */
 function monitorErrorText(error) {
   if (/timeout|aborted|AbortError/i.test(error)) return 'El servicio del SAT tardó demasiado en responder. Se volverá a intentar solo; no tienes que hacer nada.';
   if (/HTTP \d{3}/.test(error)) return 'El servicio del SAT respondió con un error. Se volverá a intentar solo; no tienes que hacer nada.';
@@ -42,11 +45,11 @@ function monitorStateInfo(row) {
   if (item?.sat?.state === 'No encontrado') return { badge: 'No localizado', state: 'No encontrado',
     text: 'El SAT no lo localiza con los datos del comprobante. Pasa con comprobantes muy antiguos o cuando el servicio del SAT no lo tiene a mano: no es un error tuyo y no hay nada que hacer.' };
   if (item?.sat?.state === 'Formato rechazado') return { badge: 'Formato rechazado', state: 'Formato rechazado',
-    text: 'El SAT rechazó el formato de la consulta (respuesta N-601), no el comprobante: desde la 1.9.0 la expresión impresa se normaliza antes de consultar (total sin ceros sobrantes, folio en mayúsculas) y se volverá a revisar al mes. No significa que el CFDI no exista ni que esté cancelado.' };
+    text: 'El SAT no aceptó cómo se le preguntó por este comprobante. No es un problema del comprobante: PacoSAT lo volverá a revisar el mes que viene.' };
   if (item?.sat) return { badge: item.sat.state, state: item.sat.state, text: 'El SAT respondió: ' + item.sat.state + '.' };
   if (item?.error) return { badge: 'No se pudo consultar', state: 'Error', text: monitorErrorText(item.error) };
   return { badge: 'Sin revisar todavía', state: 'Sin consulta',
-    text: 'Está en la cola de la revisión automática, que avanza por tandas. No tienes que hacer nada.' };
+    text: 'Está en la cola de revisión. PacoSAT lo revisará solo; no tienes que hacer nada.' };
 }
 function statusCell(id) {
   const row = invoices.find(candidate => candidate.id === id);
@@ -87,54 +90,6 @@ function donutSegments(counts) {
     return segment;
   });
 }
-function fiscalDonut(rows) {
-  const wrap = panel('Estados según la vigilancia SAT');
-  const segments = donutSegments(fiscalStateCounts(rows));
-  const total = segments.reduce((sum, segment) => sum + segment.value, 0);
-  if (!total) {
-    wrap.append(empty('Sin comprobantes en la selección', 'El anillo resume los estados de la vigilancia para los CFDI del contribuyente elegido.'));
-    return wrap;
-  }
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  const el = (tag, attrs, text) => {
-    const node = document.createElementNS(NS, tag);
-    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
-    if (text) node.textContent = text;
-    return node;
-  };
-  svg.setAttribute('viewBox', '0 0 120 120'); svg.setAttribute('class', 'donut'); svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', 'Anillo de estados de los CFDI según la vigilancia SAT: ' +
-    segments.filter(segment => segment.value).map(segment => segment.label + ' ' + segment.value).join(', '));
-  svg.append(el('title', {}, 'Estados de ' + total + ' CFDI según la vigilancia SAT'));
-  const ring = el('g', { transform: 'rotate(-90 60 60)' });
-  ring.append(el('circle', { cx: 60, cy: 60, r: 52, class: 'donut-track', pathLength: 100 }));
-  for (const segment of segments) {
-    if (!segment.value) continue;
-    ring.append(el('circle', { cx: 60, cy: 60, r: 52, class: 'donut-seg donut-' + segment.key, pathLength: 100,
-      'stroke-dasharray': (segment.frac * 100).toFixed(2) + ' 100', 'stroke-dashoffset': (-segment.start * 100).toFixed(2) }));
-  }
-  svg.append(ring);
-  svg.append(el('text', { x: 60, y: 62, class: 'donut-total' }, number.format(total)));
-  svg.append(el('text', { x: 60, y: 76, class: 'donut-caption' }, 'CFDI'));
-  const chartWrap = n('div', undefined, 'chart-wrap'); chartWrap.append(svg);
-  const legend = n('div', undefined, 'chart-legend');
-  for (const segment of segments) {
-    /* La leyenda también abre (1.6.11): cada estado filtra el archivo. */
-    const span = n('button', undefined, 'legend-item');
-    span.type = 'button';
-    span.append(n('i', undefined, 'sw-donut-' + segment.key), document.createTextNode(segment.label + ' ' + number.format(segment.value)));
-    span.onclick = () => {
-      invoiceState = segment.key === 'vigente' ? 'Vigente' : segment.key === 'cancelado' ? 'Cancelado' :
-        segment.key === 'efos' ? 'efos' : 'none';
-      invoicePage = 0;
-      navigate('invoices');
-    };
-    legend.append(span);
-  }
-  wrap.append(chartWrap, legend);
-  return wrap;
-}
 /* El resumen se cuenta en el servidor sobre TODA la selección (las
    tarjetas no dependen de qué página de la lista se haya cargado). */
 async function loadMonitorSummary(force = false) {
@@ -148,7 +103,7 @@ async function loadMonitorSummary(force = false) {
   return monitorSummary;
 }
 /* «Revisar mis CFDI ahora»: registra en el vigilante los pendientes
-   que aún no conoce, los pone al frente de la cola y encadena tandas
+   que aún no conoce, los pone al frente de la cola y encadena rondas
    con el indicador de actividad global hasta agotarlos. */
 async function monitorCheckNow() {
   const selection = invoices.filter(matches);
@@ -167,7 +122,7 @@ async function monitorCheckNow() {
       const result = await satApi('monitor/check-now', { ids: pending.map(row => row.id) });
       done += result.processed || 0;
       activityProgress(Math.min(done, pending.length),
-        result.remaining ? 'Quedan ' + number.format(result.remaining) + ' en la cola del vigilante.' : '');
+        result.remaining ? 'Quedan ' + number.format(result.remaining) + ' en la cola de revisión.' : '');
       if (!result.remaining || !result.processed) break;
       if (++guard > 400) break;
       if (result.busy) await new Promise(resolve => setTimeout(resolve, 1500));
@@ -218,27 +173,15 @@ function monitorKpi(label, glyph, value, note, cls) {
 function monitorActionsPanel(counts) {
   const wrap = panel('Qué quieres hacer');
   const grid3 = n('div', undefined, 'monitor-actions');
-  /* Descargar CFDI del SAT: fechas aquí mismo; al pulsar se abre el
-     diálogo de solicitud de siempre (mismo motor y mismo
-     planificador anti-5002 del Centro SAT), ya rellenado. */
+  /* Descargar CFDI: la descarga vive SOLO en la pestaña de descarga
+     de SAT (1.11.0); aquí queda un enlace que navega allí
+     (showSatDownload de la cáscara abre SAT en esa pestaña).
+     Sin segundo formulario: dos caminos para la misma tarea
+     daban criterios distintos ante el SAT. */
   const dl = n('div', undefined, 'monitor-action');
-  dl.append(n('h3', 'Descargar CFDI del SAT'),
-    n('p', 'Baja los comprobantes de un periodo: elige las fechas y pulsa el botón.'));
-  const dates = n('div', undefined, 'monitor-dates');
-  const from = input('date', { value: monitorDlStart, 'aria-label': 'Desde' });
-  const to = input('date', { value: monitorDlEnd, 'aria-label': 'Hasta' });
-  from.onchange = () => { monitorDlStart = from.value; };
-  to.onchange = () => { monitorDlEnd = to.value; };
-  dates.append(field('Desde', from), field('Hasta', to));
-  const direction = select([['received', 'Recibidos'], ['issued', 'Emitidos']], monitorDlDirection, 'Sentido');
-  direction.onchange = () => { monitorDlDirection = direction.value; };
-  dates.append(field('Comprobantes', direction));
-  dl.append(dates);
-  const dlButton = action('Descargar CFDI del SAT', () => {
-    if (!monitorDlStart || !monitorDlEnd) throw new Error('Elige primero la fecha «Desde» y la fecha «Hasta».');
-    if (monitorDlEnd < monitorDlStart) throw new Error('La fecha «Hasta» no puede ser anterior a la «Desde».');
-    requestDialog({ rfc: scope || undefined, direction: monitorDlDirection, start: monitorDlStart, end: monitorDlEnd });
-  }, 'primary', 'down');
+  dl.append(n('h3', 'Descargar CFDI'),
+    n('p', 'Baja los comprobantes de un periodo desde el SAT: se hace en la pestaña de descarga, paso a paso.'));
+  const dlButton = action('Descargar CFDI', () => showSatDownload(), 'primary', 'down');
   dlButton.classList.add('monitor-big');
   dl.append(dlButton);
   /* Revisar ahora. */
@@ -287,7 +230,7 @@ function monitorScreen() {
     const formatoRechazado = counts.formatoRechazado || 0;
     const problemNote = [
       counts.noEncontrados ? number.format(counts.noEncontrados) + ' no localizados por el SAT' : '',
-      formatoRechazado ? number.format(formatoRechazado) + ' con el formato de la consulta rechazado (N-601)' : '',
+      formatoRechazado ? number.format(formatoRechazado) + ' con el formato de la consulta rechazado' : '',
       counts.conProblema ? number.format(counts.conProblema) + ' con problema de conexión al consultar' : ''
     ].filter(Boolean).join(' · ') || 'Sin problemas de consulta.';
     kpis.append(
@@ -301,7 +244,7 @@ function monitorScreen() {
         counts.enListado69B ? 'Ojo: ' + affectedName + ' aparece en el listado. Esos CFDI pueden no ser deducibles.' :
           'Ningún emisor tuyo está en el listado.', counts.enListado69B ? 'bad' : ''),
       monitorKpi('Aún sin revisar', 'clock', number.format(counts.sinRevisar),
-        counts.sinRevisar ? 'El sistema los revisa solo, por tandas. No tienes que hacer nada.' : 'No queda ninguno en la cola.', counts.sinRevisar ? 'warn' : ''),
+        counts.sinRevisar ? 'PacoSAT los revisará solo; no tienes que hacer nada.' : 'No queda ninguno en la cola.', counts.sinRevisar ? 'warn' : ''),
       monitorKpi('Con problema al consultar', 'alert', number.format(counts.noEncontrados + formatoRechazado + counts.conProblema),
         problemNote, (counts.noEncontrados + formatoRechazado + counts.conProblema) ? 'warn' : '')
     );
@@ -331,14 +274,30 @@ function monitorScreen() {
     return ['Cancelado', '69-B', 'No encontrado', 'Formato rechazado', 'Error'].includes(info.state);
   });
   const filters = n('div', undefined, 'filters');
-  const picker = select([['attention','Requieren atención'],['cancelled','Cancelados'],['efos','En el listado 69-B'],['all','Todos los CFDI']], monitorFilter, 'Filtrar vigilancia');
+  const picker = select([['all','Todos los CFDI'],['attention','Requieren atención'],['cancelled','Cancelados'],['efos','En el listado 69-B']], monitorFilter, 'Filtrar vigilancia');
   picker.onchange = () => { monitorFilter = picker.value; render(); };
   const search = input('search', { placeholder: 'Buscar por empresa, RFC o mes (2026-11)…', value: monitorSearch, 'aria-label': 'Buscar comprobantes' });
   search.oninput = () => { monitorSearch = search.value; clearTimeout(search._t); search._t = setTimeout(render, 250); };
   filters.append(picker, search, n('span', selected.length + ' de ' + selection.length + ' comprobantes', 'period-chip'));
   listPanel.append(filters);
-  if (!selected.length) listPanel.append(empty('Sin resultados en este filtro',
-    'Prueba con «Todos los CFDI» o limpia la búsqueda. La revisión automática sigue trabajando por tandas.'));
+  if (!selected.length) {
+    if (!selection.length) listPanel.append(empty('Aún no hay comprobantes',
+      'Cuando importes o descargues CFDI verás aquí su estado según el SAT.'));
+    else {
+      /* Vacío con filtro (§6): dice qué filtro es, cuántos
+         comprobantes hay en realidad y ofrece quitarlo en un toque —
+         nunca un vacío falso que esconda comprobantes sanos. */
+      const filterLabels = { attention: 'Requieren atención', cancelled: 'Cancelados', efos: 'En el listado 69-B', all: 'Todos los CFDI' };
+      const sinRevisar = counts?.sinRevisar || 0;
+      listPanel.append(empty(
+        monitorFilter === 'all' ? 'Sin resultados con esta búsqueda' : 'Con este filtro no hay nada que atender',
+        (monitorFilter === 'all' ? 'Ningún comprobante coincide con tu búsqueda. ' :
+          'El filtro «' + (filterLabels[monitorFilter] || monitorFilter) + '» no deja nada a la vista. ') +
+        'Tienes ' + number.format(selection.length) + ' comprobantes en tu expediente' +
+        (sinRevisar ? ', ' + number.format(sinRevisar) + ' sin revisar todavía' : '') + '.',
+        action('Ver todos', () => { monitorFilter = 'all'; monitorSearch = ''; render(); }, 'primary')));
+    }
+  }
   else listPanel.append(grid(['Empresa', 'Fecha e importe', 'Estado según el SAT', 'Detalle'], selected.slice(0, 100).map(row => [
     cell(row.from.name || row.from.rfc, row.from.rfc + ' → ' + (row.to.name || row.to.rfc)),
     cell(dateLabel(row.date), '$' + centsLabel(totalCents(row)) + ' · ' + (row.kind === 'P' ? 'Pago' : row.kind === 'N' ? 'Nómina' : 'Factura')),
@@ -370,15 +329,27 @@ async function pollMonitor() {
     if (page !== 'invoices') monitorCursor += 500;
     monitorData = result;
     monitorError = '';
+    /* Repintado solo si algo cambió (1.11.0): la firma de estados
+       del lote decide si la pantalla de Facturas se vuelve a pintar. */
+    const sig = result.results.map(entry => entry.id + ':' + (entry.sat?.state || '') + ':' + (entry.efos?.length ? '69' : '')).join('|');
+    monitorChanged = sig !== monitorSig;
+    monitorSig = sig;
     if (page === 'monitor') await loadMonitorSummary();
   } catch (error) { monitorError = error.message; }
   finally {
     monitoring = false;
     if (page === 'monitor' && !$('dialog').open && !document.activeElement?.matches('input,select,textarea')) render();
-    if (page === 'invoices' && !$('dialog').open && !document.activeElement?.closest('button,input,select,textarea')) render();
+    if (page === 'invoices' && monitorChanged && !$('dialog').open && !document.activeElement?.closest('button,input,select,textarea')) render();
   }
 }
+let monitorSig = '', monitorChanged = false;
 if (satToken) {
-  startup.then(pollMonitor);
-  setInterval(pollMonitor, 30000);
+  /* Pulso único del cliente (1.11.0): UN solo temporizador de 30 s
+     mueve el estado del SAT (pollSat) y el monitor de CFDI
+     (pollMonitor); se pausa con la pestaña oculta y al volver a
+     verla corre una vez al momento. */
+  const pulse = () => { pollSat(); pollMonitor(); };
+  startup.then(pulse);
+  setInterval(() => { if (!document.hidden) pulse(); }, 30000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) pulse(); });
 }

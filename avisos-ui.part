@@ -7,12 +7,19 @@
    Pieza 2 (punto 17): el Centro de Avisos vive en el servidor (NAS): tres
    clases siempre visibles — LO QUE ESTÁ MAL, LO QUE FALTA y LO QUE EL
    SISTEMA NECESITA DE TI — con solventar real («Ya lo corregí» re-comprueba;
-   «Ya se pagó · Cerrar» sin formulario obligatorio) y un solo correo-resumen
-   configurable.
+   «Ya se pagó» de UN TOQUE) y un solo correo-resumen configurable.
    Ronda de correcciones (9 nov 2026): la nota del pago manual pasa a
    OPCIONAL (cierre con un toque; la bitácora registra sola el cierre)
    y llega la selección múltiple con barra por lote: «Marcar pagadas»,
-   «Cerrar» y «Borrar» (descartar), con confirmación y conteo. */
+   «Cerrar» y «Borrar» (descartar), con confirmación y conteo.
+   Ronda 1.11.0 (rediseño, flujos §3.3 y sistema-visual §5–§6): el cierre
+   de saldo individual YA NO abre diálogo: «Ya se pagó» llama directamente
+   a notices/answer con respuesta 'si', sin fecha y sin nota (la fecha la
+   anota la bitácora sola); el responsable se ve como texto («Lo lleva: …»)
+   y se cambia desde un diálogo discreto, no con un selector en la cara;
+   el panel del correo-resumen SALE de esta pantalla y se expone como
+   avisosMailSection() para que lo incruste Ajustes; y sin avisos la
+   pantalla dice en grande «Todo en orden. No tienes avisos.». */
 
 let activityState = null;
 function activityStart(label, total = 0) {
@@ -92,7 +99,6 @@ async function refreshAvisos(force = false) {
       avisosCache = await satApi('notices');
       avisosFetchedAt = Date.now();
       paintAvisosBadge(avisosCache.counts.total);
-      paintAvisosHoy();
       if (page === 'avisos') render();
     } catch { /* sin servidor alcanzable: no se inventa ningún conteo */ }
     avisosInflight = null;
@@ -114,58 +120,27 @@ function avisoMeta(aviso) {
   if (aviso.nombre) bits.push(aviso.nombre + (aviso.contraparte ? ' · ' + aviso.contraparte : ''));
   else if (aviso.contraparte) bits.push(aviso.contraparte);
   if (aviso.importe) bits.push('$' + money(aviso.importe));
-  /* 1.9.0: de qué RFC propio es, quién lo resuelve y cuándo vence —
-     como datos en la tarjeta, no escondidos en el texto. */
+  /* 1.9.0: de qué RFC propio es y cuándo vence — como datos en la
+     tarjeta, no escondidos en el texto. Quién lo lleva va en su propia
+     línea como texto (1.11.0, sistema-visual §6), no en esta meta. */
   if (aviso.rfc) bits.push('RFC ' + aviso.rfc);
-  if (aviso.responsable) bits.push('lo resuelve ' + aviso.responsable);
   if (aviso.vence) bits.push('vence el ' + avisoFecha(aviso.vence));
   if (aviso.baseline) bits.push('línea base (histórico)');
   bits.push('desde el ' + avisoFecha(aviso.creado));
   return bits.join(' · ');
+}
+/* Nombre visible de quién lleva el aviso (sistema-visual §6): el
+   responsable se VE como texto («Lo lleva: la contadora»), nunca como
+   selector en la cara de la tarjeta. El valor guardado sigue siendo
+   'Paco' o 'Contadora' (el servidor solo acepta esos dos). */
+function avisoResponsableLabel(aviso) {
+  return aviso.responsable === 'Contadora' ? 'la contadora' : (aviso.responsable || 'Paco');
 }
 function avisoPill(aviso) {
   if (aviso.estado === 'por-confirmar') return statusPill('warn', 'Por confirmar');
   if (aviso.severidad === 'alta') return statusPill('bad', 'Importante');
   if (aviso.severidad === 'baja') return statusPill('dim', 'Menor');
   return statusPill('warn', 'Atención');
-}
-/* Panel en «Hoy»: el resumen del Centro, siempre a la vista. */
-function avisosHoyPanel() {
-  const wrap = panel('Centro de Avisos', 'Lo que está mal, lo que falta y lo que el sistema necesita de ti. Todo se solventa aquí dentro; el correo es solo un resumen.');
-  const box = n('div');
-  box.id = 'avisos-hoy-body';
-  wrap.append(box);
-  if (!avisosDisponibles()) {
-    box.append(n('p', 'El Centro de Avisos vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para verlo y solventarlo. En esta copia local tus facturas siguen en Dinero.', 'muted'));
-  } else {
-    box.append(n('p', 'Consultando tus avisos…', 'muted'));
-    refreshAvisos();
-    if (avisosCache) paintAvisosHoy();
-  }
-  return wrap;
-}
-function paintAvisosHoy() {
-  const box = $('avisos-hoy-body');
-  if (!box || !avisosCache) return;
-  const { counts } = avisosCache;
-  box.replaceChildren();
-  if (!counts.total) {
-    box.append(n('p', '✓ Nada pendiente: no hay avisos abiertos. Cuando algo necesite tu atención aparecerá aquí y en la pantalla Avisos.', 'ok-text'));
-    return;
-  }
-  const strip = n('div', undefined, 'traffic-strip');
-  for (const [clase, etiqueta] of AVISOS_CLASES)
-    if (counts[clase]) strip.append(statusPill(clase === 'mal' ? 'bad' : 'warn', etiqueta + ': ' + number.format(counts[clase])));
-  if (counts.porConfirmar) strip.append(statusPill('warn', number.format(counts.porConfirmar) + ' por confirmar'));
-  box.append(strip);
-  const primeros = avisosCache.avisos.slice(0, 3);
-  for (const aviso of primeros) {
-    const row = n('div', undefined, 'cp-row');
-    row.append(avisoPill(aviso), n('span', aviso.titulo));
-    box.append(row);
-  }
-  const go = action('Ver y solventar avisos', () => navigate('avisos'), 'soft', 'arrow');
-  box.append(go);
 }
 /* Pantalla propia del Centro. */
 function avisosScreen() {
@@ -186,38 +161,64 @@ function avisosScreen() {
   const rfcsConAvisos = Object.keys(data.porRfc || {});
   if (avisosRfcFiltro && !rfcsConAvisos.includes(avisosRfcFiltro)) avisosRfcFiltro = '';
   const visiblesPorRfc = aviso => !avisosRfcFiltro || aviso.rfc === avisosRfcFiltro;
-  /* Resumen por clases: las tres, siempre visibles. */
-  const resumen = panel('Tus avisos', data.counts.total
-    ? number.format(data.counts.total) + ' abiertos. Los de «línea base» son la foto inicial de tu histórico: están en el panel, sin correos ni atrasos retroactivos.'
-    : 'Sin avisos abiertos. Todo en orden.');
-  if (rfcsConAvisos.length > 1) {
-    const filtro = n('div', undefined, 'filters');
-    const picker = select([['', 'Todos los RFC'], ...rfcsConAvisos.map(rfc => [rfc, 'RFC ' + rfc + ' (' + data.porRfc[rfc] + ')'])],
-      avisosRfcFiltro, 'Filtrar avisos por RFC');
-    picker.onchange = () => { avisosRfcFiltro = picker.value; render(); };
-    filtro.append(picker);
-    resumen.append(filtro);
-  }
-  const strip = n('div', undefined, 'traffic-strip');
-  for (const [clase, etiqueta] of AVISOS_CLASES)
-    strip.append(statusPill(data.counts[clase] ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
-      etiqueta + ': ' + number.format(data.counts[clase] || 0)));
-  const update = n('button', 'Actualizar ahora', 'soft small');
-  update.onclick = () => refreshAvisos(true);
-  strip.append(update);
-  resumen.append(strip);
-  /* Barra por lote: selección múltiple sobre los avisos visibles. */
   avisosVisibles = data.avisos.filter(visiblesPorRfc).map(aviso => aviso.id);
   for (const id of [...avisosSeleccion]) if (!avisosVisibles.includes(id)) avisosSeleccion.delete(id);
-  if (data.counts.total) resumen.append(avisosBatchBar());
-  wrap.append(resumen);
-  wrap.append(avisosConfigPanel(data.config));
-  for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
-    const deClase = data.avisos.filter(aviso => aviso.clase === clase && visiblesPorRfc(aviso));
-    if (!deClase.length) continue;
-    const section = panel(etiqueta + ' (' + number.format(deClase.length) + ')');
-    for (const aviso of deClase) section.append(avisoCard(aviso));
-    wrap.append(section);
+  if (!data.counts.total) {
+    /* Estado vacío bueno en grande (sistema-visual §5): frase grande +
+       píldora ok. Nada de tres contadores a cero que parecen botones.
+       El panel del correo-resumen ya no vive aquí (va en Ajustes vía
+       avisosMailSection()). */
+    const resumen = panel('Tus avisos');
+    const bueno = n('div', undefined, 'empty');
+    const buenoTitulo = n('h3', 'Todo en orden. No tienes avisos.');
+    buenoTitulo.style.fontSize = '26px';
+    bueno.append(statusPill('ok', 'Todo en orden'),
+      buenoTitulo,
+      n('p', 'Cuando algo necesite tu atención aparecerá aquí.'));
+    const update = n('button', 'Actualizar ahora', 'soft small');
+    update.onclick = () => refreshAvisos(true);
+    bueno.append(update);
+    resumen.append(bueno);
+    wrap.append(resumen);
+  } else {
+    /* Resumen por clases: las tres categorías se conservan como
+       agrupación cuando SÍ hay avisos. */
+    const resumen = panel('Tus avisos', data.counts.total
+      ? number.format(data.counts.total) + ' abiertos. Los de «línea base» son la foto inicial de tu histórico: están en el panel, sin correos ni atrasos retroactivos.'
+      : 'Sin avisos abiertos. Todo en orden.');
+    if (rfcsConAvisos.length > 1) {
+      const filtro = n('div', undefined, 'filters');
+      const picker = select([['', 'Todos los RFC'], ...rfcsConAvisos.map(rfc => [rfc, 'RFC ' + rfc + ' (' + data.porRfc[rfc] + ')'])],
+        avisosRfcFiltro, 'Filtrar avisos por RFC');
+      picker.onchange = () => { avisosRfcFiltro = picker.value; render(); };
+      filtro.append(picker);
+      resumen.append(filtro);
+    }
+    const strip = n('div', undefined, 'traffic-strip');
+    for (const [clase, etiqueta] of AVISOS_CLASES)
+      strip.append(statusPill(data.counts[clase] ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
+        etiqueta + ': ' + number.format(data.counts[clase] || 0)));
+    const update = n('button', 'Actualizar ahora', 'soft small');
+    update.onclick = () => refreshAvisos(true);
+    strip.append(update);
+    resumen.append(strip);
+    /* Barra por lote: selección múltiple sobre los avisos visibles. */
+    resumen.append(avisosBatchBar());
+    wrap.append(resumen);
+    let algunaSeccion = false;
+    for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
+      const deClase = data.avisos.filter(aviso => aviso.clase === clase && visiblesPorRfc(aviso));
+      if (!deClase.length) continue;
+      algunaSeccion = true;
+      const section = panel(etiqueta + ' (' + number.format(deClase.length) + ')');
+      for (const aviso of deClase) section.append(avisoCard(aviso));
+      wrap.append(section);
+    }
+    if (!algunaSeccion && avisosRfcFiltro) {
+      const sinFiltro = panel('Tus avisos');
+      sinFiltro.append(n('p', 'Con este filtro no hay avisos de ese RFC. Quita el filtro para verlos todos.', 'muted'));
+      wrap.append(sinFiltro);
+    }
   }
   if (data.historial.length) {
     const history = panel('Historial · ya solventado', 'Lo que se corrigió queda registrado aquí, con su nota.');
@@ -231,27 +232,47 @@ function avisosScreen() {
   }
   return [wrap];
 }
-function avisosConfigPanel(config) {
-  const el = panel('Correo-resumen', 'Los avisos ya NO llegan de uno en uno: como mucho, un solo correo con el resumen. El detalle completo vive aquí, en el Centro.');
+/* Panel de configuración del correo-resumen (1.11.0): SALE de la
+   pantalla Avisos y pasa a Ajustes. Contrato: avisosMailSection(config?)
+   devuelve UN nodo (el panel <section> listo para incrustar); si no se
+   pasa config, usa la última conocida (avisosCache.config) o el valor
+   por defecto del servidor (diario, 9 h). Guardar sigue llamando a
+   POST notices/config, igual que antes. La etiqueta del campo ya no
+   repite el título del panel (la auditoría vio «Correo-resumen»
+   duplicado y pegado): título, estado y explicación van separados. */
+function avisosMailSection(config) {
+  const cfg = config || avisosCache?.config || { correo: 'diario', hora: 9 };
+  const el = panel('Correo-resumen');
+  const intro = n('div', undefined, 'portal');
+  const estadoRow = n('div', undefined, 'traffic-strip');
+  estadoRow.append(statusPill(cfg.correo === 'no' ? 'dim' : 'ok', cfg.correo === 'no' ? 'Desactivado' : 'Activado'));
+  intro.append(estadoRow,
+    n('p', 'Los avisos no llegan de uno en uno: como mucho, un solo correo con el resumen. El detalle completo vive en Avisos.'));
+  el.append(intro);
   const form = n('div', undefined, 'sat-form');
   const correo = n('select');
+  correo.setAttribute('aria-label', 'Cada cuánto quieres el resumen por correo');
   for (const [value, label] of [['diario', 'Un resumen cada día'], ['semanal', 'Un resumen cada lunes'], ['graves', 'Solo cuando haya algo importante'], ['no', 'Sin correo (solo el panel)']]) {
     const option = n('option', label); option.value = value;
-    if (config.correo === value) option.selected = true;
+    if (cfg.correo === value) option.selected = true;
     correo.append(option);
   }
-  const hora = input('number', { min: '0', max: '23', value: String(config.hora ?? 9) });
+  const hora = input('number', { min: '0', max: '23', value: String(cfg.hora ?? 9) });
   const save = n('button', 'Guardar', 'soft');
   save.onclick = async () => {
     try {
-      avisosCache.config = await satApi('notices/config', { correo: correo.value, hora: Number(hora.value) });
+      const saved = await satApi('notices/config', { correo: correo.value, hora: Number(hora.value) });
+      if (avisosCache) avisosCache.config = saved;
       toast('Preferencia del correo-resumen guardada.', 'ok');
     } catch (error) { toast(error.message, 'error'); }
   };
-  form.append(fieldWrap('Correo-resumen', correo), fieldWrap('Hora de envío', hora), save);
+  form.append(fieldWrap('¿Cada cuánto quieres el resumen?', correo), fieldWrap('Hora de envío', hora), save);
   el.append(form);
   return el;
 }
+/* Nombre anterior del mismo panel: se conserva como alias para no
+   romper ningún llamador que aún lo use. */
+function avisosConfigPanel(config) { return avisosMailSection(config); }
 /* Barra de acciones por lote: casilla «seleccionar visibles», conteo
    y las tres acciones. Antes de aplicar, confirmación con el conteo;
    al terminar, el servidor reporta aplicados y saltados. */
@@ -332,49 +353,68 @@ function avisoCard(aviso) {
   card.append(head);
   if (aviso.detalle) card.append(n('p', aviso.detalle));
   card.append(n('p', avisoMeta(aviso), 'muted'));
-  /* Siguiente paso y responsable (1.9.0): la tarjeta dice qué toca
-     hacer y quién lo hace; el responsable se puede reasignar aquí. */
+  /* Siguiente paso (1.9.0): la tarjeta dice qué toca hacer. Quién lo
+     lleva se VE como texto en la línea de gestiones (1.11.0). */
   if (aviso.accion) card.append(n('p', 'Siguiente paso: ' + aviso.accion, 'aviso-next'));
-  const respRow = n('div', undefined, 'traffic-strip');
-  respRow.append(n('span', 'Lo resuelve:', 'muted'));
-  const respPicker = select([['Paco', 'Paco'], ['Contadora', 'La contadora']], aviso.responsable || 'Paco', 'Responsable del aviso');
-  respPicker.onchange = async () => {
-    try {
-      avisosCache = await satApi('notices/responsable', { id: aviso.id, responsable: respPicker.value });
-      avisosFetchedAt = Date.now();
-      toast('Responsable actualizado: lo resuelve ' + respPicker.value + '.', 'ok');
-      render();
-    } catch (error) { toast(error.message, 'error'); }
-  };
-  respRow.append(respPicker);
-  card.append(respRow);
-  const actions = n('div', undefined, 'traffic-strip');
-  if (aviso.kind === 'saldo' && aviso.estado === 'por-confirmar') {
-    const si = n('button', aviso.direccion === 'cobrar' ? 'Sí, ya pagó' : 'Sí, ya se pagó', 'primary small');
-    si.onclick = () => avisoMarkPaidDialog(aviso);
-    const no = n('button', 'No, aún no', 'soft small');
-    no.onclick = () => avisoConfirmNo(aviso);
-    actions.append(si, no);
-  } else if (aviso.kind === 'saldo') {
-    const paid = n('button', 'Ya se pagó · Cerrar', 'primary small');
-    paid.onclick = () => avisoMarkPaidDialog(aviso);
+  /* UNA acción principal, a la derecha (sistema-visual §4): en un aviso
+     de saldo es «Ya se pagó» de un toque; en una solicitud de estado,
+     subir el estado; en el resto, «Ya lo corregí». */
+  const mainRow = n('div', undefined, 'traffic-strip');
+  mainRow.style.justifyContent = 'flex-end';
+  /* Gestiones en segunda línea discreta: nunca compiten con la acción
+     principal ni llevan selectores en la cara de la tarjeta. */
+  const gestiones = n('div', undefined, 'traffic-strip');
+  gestiones.append(n('span', 'Lo lleva: ' + avisoResponsableLabel(aviso), 'muted'));
+  const cambiarResp = n('button', 'Cambiar', 'soft small');
+  cambiarResp.onclick = () => avisoCambiarResponsable(aviso);
+  gestiones.append(cambiarResp);
+  if (aviso.kind === 'saldo') {
+    const paid = n('button', 'Ya se pagó', 'primary');
+    paid.onclick = () => avisoMarkPaid(aviso);
+    mainRow.append(paid);
+    if (aviso.estado === 'por-confirmar') {
+      const no = n('button', 'Aún no', 'soft small');
+      no.onclick = () => avisoConfirmNo(aviso);
+      gestiones.append(no);
+    } else {
+      const fixed = n('button', 'Ya lo corregí', 'soft small');
+      fixed.onclick = () => avisoResolve(aviso);
+      gestiones.append(fixed);
+    }
+  } else if (aviso.kind === 'solicitud-estado') {
+    mainRow.append(avisoUploadButton(aviso));
     const fixed = n('button', 'Ya lo corregí', 'soft small');
     fixed.onclick = () => avisoResolve(aviso);
-    actions.append(paid, fixed);
+    gestiones.append(fixed);
   } else {
-    if (aviso.kind === 'solicitud-estado') actions.append(avisoUploadButton(aviso));
-    const fixed = n('button', 'Ya lo corregí', 'soft small');
+    const fixed = n('button', 'Ya lo corregí', 'primary');
     fixed.onclick = () => avisoResolve(aviso);
-    actions.append(fixed);
+    mainRow.append(fixed);
   }
   const enlace = AVISOS_ENLACES[aviso.enlace];
   if (enlace) {
     const go = n('button', enlace[1], 'soft small');
     go.onclick = () => navigate(enlace[0]);
-    actions.append(go);
+    gestiones.append(go);
   }
-  card.append(actions);
+  if (mainRow.childNodes.length) card.append(mainRow);
+  card.append(gestiones);
   return card;
+}
+/* Cambiar quién lleva el aviso (1.11.0): el selector vive en este
+   diálogo discreto — el «detalle» del aviso —, no en la cara de la
+   tarjeta. Reutiliza POST notices/responsable, como antes. */
+function avisoCambiarResponsable(aviso) {
+  const picker = select([['Paco', 'Paco'], ['Contadora', 'La contadora']], aviso.responsable || 'Paco', 'Quién lleva el aviso');
+  dialog('¿Quién lo lleva?',
+    [n('p', 'Ahora lo lleva: ' + avisoResponsableLabel(aviso) + '. Cámbialo si lo va a resolver la otra persona.'),
+     field('Lo lleva', picker)],
+    async () => {
+      avisosCache = await satApi('notices/responsable', { id: aviso.id, responsable: picker.value });
+      avisosFetchedAt = Date.now();
+      toast('Ahora lo lleva: ' + (picker.value === 'Contadora' ? 'la contadora' : picker.value) + '.', 'ok');
+      render();
+    }, 'Guardar');
 }
 async function avisoAfterChange(message) {
   toast(message, 'ok');
@@ -382,22 +422,43 @@ async function avisoAfterChange(message) {
   await refreshAvisos(true);
   render();
 }
-function avisoMarkPaidDialog(aviso) {
-  /* Cierre rápido (ronda de correcciones): sin formulario obligatorio.
-     La nota va en un desplegable OPCIONAL; la bitácora registra sola
-     el cierre (fecha, manual, origen). */
+/* «Ya se pagó» de UN TOQUE (flujos §3.3, regla de Paco 9 nov 21:02):
+   sin diálogo, sin campo «Fecha del pago», sin nota. Se llama al mismo
+   cierre que ya acepta el servidor — POST notices/answer con
+   respuesta 'si' y NADA más — y la fecha de hoy la anota la bitácora
+   sola. La confirmación es breve («Pagado. Quedó en el historial.»).
+   No hay «Deshacer»: en la app solo existe deshacer para los vínculos
+   de la conciliación bancaria (reconcile/undo) y el servidor no tiene
+   reapertura de un aviso solventado, así que no se finge el botón. */
+async function avisoMarkPaid(aviso) {
+  try {
+    await satApi('notices/answer', { id: aviso.id, respuesta: 'si' });
+    await avisoAfterChange('Pagado. Quedó en el historial.');
+  } catch (error) { toast(error.message, 'error'); }
+}
+/* Nombre anterior de esta acción: se conserva como alias de un toque
+   (ya no abre ningún diálogo) por si algún llamador lo conserva. */
+function avisoMarkPaidDialog(aviso) { return avisoMarkPaid(aviso); }
+/* PREPARADA, NO CONECTADA (1.11.0): edición posterior y opcional de un
+   cierre ya hecho — «Añadir una nota» / «Cambiar la fecha del pago»
+   desde el historial del aviso (flujos §3.3, paso 3). El historial que
+   pinta avisosScreen es hoy una lista de solo lectura, sin superficie
+   de detalle, y el servidor no ofrece enmienda de un aviso ya
+   solventado (notices/answer solo acepta avisos abiertos y no hay
+   endpoint de nota/fecha sobre el historial). La función deja armado
+   el diálogo con los dos campos para conectarla a las filas del
+   historial en cuanto exista ese endpoint; no se engancha a ningún
+   botón para no ofrecer un camino que el servidor rechazaría. */
+function avisoHistorialEditar(aviso) {
   const nota = input('text', { placeholder: 'Ej. Pagado con Konfío el 8 de noviembre' });
-  const hoy = new Date();
-  const fecha = input('date', { value: hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0') + '-' + String(hoy.getDate()).padStart(2, '0') });
-  const notaOpcional = n('details');
-  notaOpcional.append(n('summary', 'Añadir una nota (opcional)'), field('Nota', nota));
-  dialog('Ya se pagó · Cerrar',
-    [n('p', 'Vas a dar por pagado «' + aviso.titulo + '» y el aviso se cierra con un toque. Queda registrado en la bitácora con la fecha y que el cierre fue manual; si mañana llega el complemento de pago, PacoSAT lo enlaza igual.'),
-     field('Fecha del pago', fecha), notaOpcional],
+  const fecha = input('date', {});
+  dialog('Editar el cierre',
+    [n('p', 'Añade una nota o cambia la fecha del pago de «' + aviso.titulo + '». Es opcional y posterior: el aviso ya quedó cerrado con un toque.'),
+     field('Fecha del pago', fecha), field('Nota', nota)],
     async () => {
       await satApi('notices/answer', { id: aviso.id, respuesta: 'si', nota: nota.value.trim(), fecha: fecha.value });
-      await avisoAfterChange('Pago registrado. El aviso quedó en el historial.');
-    }, 'Ya se pagó · Cerrar');
+      await avisoAfterChange('Cierre actualizado en el historial.');
+    }, 'Guardar');
 }
 function avisoConfirmNo(aviso) {
   dialog('Confirmar',
