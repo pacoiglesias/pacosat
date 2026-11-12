@@ -33,7 +33,7 @@
    - P10 · Bancos: la posición trae el mes de cada saldo. */
 import assert from 'node:assert/strict';
 import { Readable } from 'node:stream';
-import { mkdtempSync, rmSync, readFileSync, statSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, statSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -489,8 +489,16 @@ const falloNavegacion = marcador => async () => {
 /* ===== P8 · CAPACIDADES veraz y copias gemelas ===== */
 {
   const caps = read('docs/CAPACIDADES.md');
-  const espejo = readFileSync(join(ROOT, '..', '..', 'pacosat-capacidades.md'), 'utf8');
-  assert.equal(caps, espejo, 'P8: las dos copias de CAPACIDADES son idénticas');
+  /* Corrección de test (cadena GitHub 1.28+1.29): el espejo vive
+     FUERA del repo (raíz del workspace local); en CI no existe y
+     la lectura reventaba la suite entera con ENOENT. La
+     comparación de copias corre solo donde el espejo existe; el
+     resto de P8 juzga el documento del repo, que es la fuente. */
+  const espejoPath = join(ROOT, '..', '..', 'pacosat-capacidades.md');
+  if (existsSync(espejoPath)) {
+    assert.equal(caps, readFileSync(espejoPath, 'utf8'),
+      'P8: las dos copias de CAPACIDADES son idénticas');
+  }
   assert.ok(caps.includes('1.28.0'), 'P8: el documento describe la 1.28.0');
   assert.ok(!caps.includes('Su e.firma caducó el 30-oct-2024: el perfil existe'),
     'P8/D1: fuera el texto que daba por muerta la e.firma de la app');
