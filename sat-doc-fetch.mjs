@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { join } from 'node:path';
+import { decryptIndexSecrets } from './secret-box.mjs';
 
 /* Descargador de la constancia de situación fiscal y de la opinión de
    cumplimiento (1.7.4): la pieza que faltaba detrás del puerto
@@ -67,7 +68,10 @@ const fechaLarga = ms => new Intl.DateTimeFormat('es-MX',
 export function createFileEfirmaStorage(dir) {
   return {
     readIndex() {
-      try { return JSON.parse(readFileSync(join(dir, 'perfiles.json'), 'utf8')); }
+      /* S1 (1.22.0): el índice puede traer los secretos cifrados
+         en reposo; la lectura los entrega en claro a los flujos,
+         igual que siempre. */
+      try { return decryptIndexSecrets(dir, JSON.parse(readFileSync(join(dir, 'perfiles.json'), 'utf8'))); }
       catch { return {}; }
     },
     readFile(rfc, ext) {

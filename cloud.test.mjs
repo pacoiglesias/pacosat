@@ -316,6 +316,10 @@ try {
     recipient: 'to@example.com', user: '', password: '' } });
   assert.equal((await bakApi.call('/api/unlock', { rfc: 'XAXX010101000', minutes: 1440, days: 7, direction: 'received',
     password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  /* 1.15.0: la descarga automática mensual tiene su propia suite
+     (ronda1150); aquí se apaga para que el respaldo viaje con los
+     trabajos de este escenario y nada más. */
+  assert.equal((await bakApi.call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
   assert.equal((await bakApi.call('/api/request', { rfc: 'XAXX010101000', direction: 'received', start: '2026-10-01', end: '2026-10-07' })).status, 200);
   assert.equal((await bakApi.call('/api/request', { rfc: 'XAXX010101000', direction: 'received', start: '2026-10-08', end: '2026-10-14' })).status, 200);
   bakTime += 5 * 60000;
@@ -514,6 +518,10 @@ try {
     recipient: 'to@example.com', user: '', password: '' } });
   assert.equal((await certApi.call('/api/unlock', { rfc: 'XAXX010101000', minutes: 1440, days: 7, direction: 'received',
     password: 'simulated', certificate: CERT_B64, key: 'YQ==' })).status, 200);
+  /* 1.15.0: la descarga automática mensual tiene su propia suite
+     (ronda1150); aquí se apaga para que el correo contado sea solo
+     el de caducidad de la e.firma. */
+  assert.equal((await certApi.call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
   const certStatus = await (await certApi.call('/api/status')).json();
   assert.equal(certStatus.profiles[0].certExpires, certExpected);
   /* 1.7.4: los avisos de caducidad viven en el Centro y viajan en el
@@ -656,6 +664,10 @@ const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_
       recipient: 'to@example.com', user: '', password: '' } });
     await fromApi.call('/api/unlock', { rfc: 'XAXX010101000', minutes: 1440, days: 7, direction: 'received',
       password: 'simulated', certificate: CERT_B64, key: 'YQ==' });
+    /* 1.15.0: la descarga automática mensual tiene su propia
+       suite (ronda1150); aquí se apaga para que el correo que
+       nombra la e.firma sea solo el de caducidad. */
+    assert.equal((await fromApi.call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
     fromTime = certExpected - 89 * 86400000;
     await fromService.tick();
     /* 1.7.4: el correo que nombra la e.firma es el resumen diario. */

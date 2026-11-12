@@ -14,7 +14,7 @@
 const watched = new Set();
 const fiscalResults = new Map();
 let monitorData = { fetched: null, error: '' }, monitorError = '', monitoring = false;
-let monitorFilter = 'all', monitorCursor = 0;
+let monitorFilter = 'all', monitorCursor = 0, monitorLimit = 100;
 let monitorSummary = null, monitorSummaryKey = '';
 let monitorSearch = '';
 const monitorRow = row => ({
@@ -31,42 +31,87 @@ function monitorErrorText(error) {
   if (/fetch|network|conexi|red\b/i.test(error)) return 'No hubo conexión con el servicio del SAT. Se volverá a intentar solo; no tienes que hacer nada.';
   return 'Hubo un problema al consultar el SAT. Se volverá a intentar solo; no tienes que hacer nada.';
 }
+/* El estado de un CFDI con el modelo único de problema (1.13.0):
+   la insignia corta se queda, y la frase sale de problemSpec —
+   qué significa y qué pasa ahora— para que Vigilancia, el Centro
+   de mando y los correos cuenten lo mismo. */
 function monitorStateInfo(row) {
   const item = fiscalResults.get(row.id);
-  if (item?.efos?.length) return { badge: 'En el listado 69-B', state: '69-B',
-    text: item.efos.includes('Definitivo') ?
-      'El SAT confirmó operaciones inexistentes de este RFC: esos CFDI no deben deducirse. Avisa a tu contadora.' :
-      'El SAT presume operaciones inexistentes de este RFC: pide aclaración al emisor y avisa a tu contadora antes de deducir.' };
-  if (item?.sat?.state === 'Vigente') return { badge: 'Vigente', state: 'Vigente',
-    text: 'El SAT lo confirma vigente.' + (item.checked ? ' Revisado el ' + localDateTime(item.checked) + '.' : '') };
-  if (item?.sat?.state === 'Cancelado') return { badge: 'Cancelado', state: 'Cancelado',
-    text: 'El SAT lo marca cancelado' + (item.sat.cancellation ? ' (' + item.sat.cancellation + ')' : '') +
-      '. Si ya lo pagaste o lo dedujiste, avisa a tu contadora.' };
-  if (item?.sat?.state === 'No encontrado') return { badge: 'No localizado', state: 'No encontrado',
-    text: 'El SAT no lo localiza con los datos del comprobante. Pasa con comprobantes muy antiguos o cuando el servicio del SAT no lo tiene a mano: no es un error tuyo y no hay nada que hacer.' };
-  if (item?.sat?.state === 'Formato rechazado') return { badge: 'Formato rechazado', state: 'Formato rechazado',
-    text: 'El SAT no aceptó cómo se le preguntó por este comprobante. No es un problema del comprobante: PacoSAT lo volverá a revisar el mes que viene.' };
-  if (item?.sat) return { badge: item.sat.state, state: item.sat.state, text: 'El SAT respondió: ' + item.sat.state + '.' };
-  if (item?.error) return { badge: 'No se pudo consultar', state: 'Error', text: monitorErrorText(item.error) };
-  return { badge: 'Sin revisar todavía', state: 'Sin consulta',
-    text: 'Está en la cola de revisión. PacoSAT lo revisará solo; no tienes que hacer nada.' };
+  const spec = problemSpec('vigilancia', {
+    efos: item?.efos || [], state: item?.sat?.state || '', error: item?.error || '' });
+  const badge = item?.efos?.length ? 'En el listado 69-B' :
+    item?.sat?.state === 'Vigente' ? 'Vigente' :
+    item?.sat?.state === 'Cancelado' ? 'Cancelado' :
+    item?.sat?.state === 'No encontrado' ? 'No localizado' :
+    /* Lenguaje llano (1.18.0): el estado crudo del SAT («Formato
+       rechazado») ya no se enseña como pastilla; queda solo en el
+       detalle técnico del comprobante. */
+    item?.sat?.state === 'Formato rechazado' ? 'El SAT no aceptó el formato' :
+    item?.sat ? item.sat.state :
+    item?.error ? 'No se pudo consultar' : 'Sin revisar todavía';
+  const state = item?.efos?.length ? '69-B' : item?.sat?.state || (item?.error ? 'Error' : 'Sin consulta');
+  let text = spec.significa;
+  if (state === 'Cancelado' && item.sat.cancellation) text += ' (' + item.sat.cancellation + ')';
+  if (state === 'Vigente' && item.checked) text += ' Revisado el ' + localDateTime(item.checked) + '.';
+  else if (item?.sat && !item?.efos?.length &&
+    !['Vigente', 'Cancelado', 'No encontrado', 'Formato rechazado'].includes(state))
+    text = 'El SAT respondió: ' + state + '.';
+  else if (state !== 'Vigente' && spec.ahora) text += ' ' + spec.ahora;
+  return { badge, state, text, level: spec.level, titulo: spec.titulo };
 }
 function statusCell(id) {
   const row = invoices.find(candidate => candidate.id === id);
   const info = monitorStateInfo(row || { id });
   const item = fiscalResults.get(id);
   const wrap = n('div', undefined, 'fiscal-state');
+  /* Marca por UUID (1.13.1): «Revisar ahora» repinta SOLO esta
+     celda cuando vuelve la respuesta, sin recargar la lista. */
+  wrap.dataset.monitorState = id;
   const badge = n('span', info.badge, 'fiscal-badge');
   badge.dataset.state = info.state;
   wrap.append(badge, n('small', info.text));
   if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS en este comprobante.'));
   return wrap;
 }
+/* «Revisar ahora» de UNA factura (1.13.1): fuerza la consulta de
+   ese UUID al momento en el servidor (la misma función de la
+   tanda) y repinta solo su celda de estado al volver. Si la fila
+   aún no estaba registrada en la vigilancia, se registra primero,
+   como hace la revisión general. Si el SAT no responde, el toast
+   lo dice en lenguaje claro y la celda queda con «No se pudo
+   consultar» y su reintento automático, sin pisar el estado bueno
+   anterior (regla del servidor, la misma de la tanda). */
+async function monitorCheckOne(row, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = 'Revisando…';
+  try {
+    if (!watched.has(row.id)) {
+      await satApi('monitor', { records: [monitorRow(row)], ids: [] });
+      watched.add(row.id);
+    }
+    const result = await satApi('monitor/check-one', { uuid: row.id });
+    const item = { id: row.id, checked: result.checked, error: result.error, sat: result.sat, efos: result.efos };
+    fiscalResults.set(row.id, item);
+    monitorSummaryKey = '';
+    const cellNode = document.querySelector('[data-monitor-state="' + row.id + '"]');
+    if (cellNode) cellNode.replaceWith(statusCell(row.id));
+    if (result.ok) toast('Revisado ahora: ' + monitorStateInfo(row).badge + '.', 'ok');
+    else toast('No se pudo preguntar al SAT esta vez. ' + monitorErrorText(item.error || ''), 'error');
+  } catch (error) {
+    toast(error.message, 'error');
+  } finally {
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
 /* Anillo de estados (1.6.5): resume los mismos datos de la vigilancia
    que alimentan el filtro por estado del archivo (invoiceStateOf): la
    coincidencia 69-B manda sobre el estado, y cualquier estado distinto
    de Vigente/Cancelado cuenta como «sin consulta» en el anillo (el
-   detalle fino queda en Vigilancia y en el listado). */
+   detalle fino queda en Vigilancia y en el listado). OJO: verify.cjs
+   evalúa estas dos funciones por corte de fuente — no son código
+   muerto aunque la superficie ya no pinte el anillo. */
 function fiscalStateCounts(rows) {
   const counts = { vigente: 0, cancelado: 0, efos: 0, sin: 0 };
   for (const row of rows) {
@@ -102,13 +147,85 @@ async function loadMonitorSummary(force = false) {
   } catch { /* Sin conexión con el servicio: se conserva el resumen anterior. */ }
   return monitorSummary;
 }
-/* «Revisar mis CFDI ahora»: registra en el vigilante los pendientes
-   que aún no conoce, los pone al frente de la cola y encadena rondas
-   con el indicador de actividad global hasta agotarlos. */
+/* ===== Patrón de acciones largas (1.13.1, piezas E y F) =====
+   Toda acción larga se cuenta DONDE está el usuario: el botón
+   cambia al instante, junto a él vive una tarjeta de progreso con
+   fase en lenguaje claro, conteo y tiempo transcurrido, un botón
+   «Cancelar» de parada cooperativa, y al terminar queda un resumen
+   persistente (éxito, cancelación o fallo con el modelo de
+   problema) que sobrevive a los re-render porque el estado vive
+   en el módulo, no en el DOM. Nada de depender solo de la franja
+   de actividad de arriba, lejos de la acción. */
+let checkRun = null, listsRun = null;
+const runHora = () => new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+function runElapsedText(run) {
+  const seconds = Math.max(0, Math.round((Date.now() - run.startedAt) / 1000));
+  return 'lleva ' + (seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min ' + String(seconds % 60).padStart(2, '0') + ' s');
+}
+function fillRunStatus(node, kind) {
+  const run = kind === 'check' ? checkRun : listsRun;
+  node.replaceChildren();
+  if (!run) return;
+  if (run.running) {
+    node.append(n('p', run.phase || 'Trabajando…', 'run-phase'));
+    if (run.total) {
+      const bar = n('div', undefined, 'run-bar');
+      const fill = n('i'); fill.style.width = Math.min(100, Math.round(run.done / run.total * 100)) + '%';
+      bar.append(fill); node.append(bar);
+      node.append(n('p', number.format(run.done) + ' de ' + number.format(run.total) +
+        ' · quedan ' + number.format(Math.max(0, run.total - run.done)) + ' · ' + runElapsedText(run), 'muted'));
+    } else node.append(n('p', runElapsedText(run) + '…', 'muted'));
+    const cancel = action(run.cancelling ? 'Terminando el paso actual…' : 'Cancelar',
+      () => (kind === 'check' ? cancelCheckRun() : cancelListsRun()), 'soft', 'x');
+    cancel.disabled = Boolean(run.cancelling);
+    node.append(cancel);
+  } else if (run.error) {
+    node.append(problemCard(run.error, action(kind === 'check' ? 'Revisar mis CFDI ahora' : 'Actualizar listados 69-B y 69',
+      () => (kind === 'check' ? monitorCheckNow() : monitorRefreshLists()), 'primary', 'sync')));
+  } else if (run.final) {
+    node.append(n('p', run.final, 'run-final'));
+  }
+}
+function runStatusNode(kind) {
+  const node = n('div', undefined, 'run-status');
+  node.dataset.runStatus = kind;
+  fillRunStatus(node, kind);
+  return node;
+}
+function paintRunStatus(kind) {
+  const node = document.querySelector('[data-run-status="' + kind + '"]');
+  if (node) fillRunStatus(node, kind);
+}
+/* El repintado del tiempo transcurrido cuelga del ÚNICO pulso de
+   30 s de este archivo (regla de la casa): durante una corrida, el
+   progreso se repinta además en cada ronda y en cada sondeo. */
+/* Cancelar la revisión (1.18.0): la parada se pide al SERVIDOR,
+   que detiene el barrido entre tandas; lo ya revisado queda
+   guardado. La tarjeta local solo refleja el gesto. */
+async function cancelCheckRun() {
+  if (!checkRun?.running) return;
+  checkRun.cancel = true; checkRun.cancelling = true; paintRunStatus('check');
+  try { await satApi('activity/control', { kind: 'barrido', action: 'detener' }); }
+  catch { /* El barrido puede haber terminado ya. */ }
+}
+async function cancelListsRun() {
+  if (!listsRun?.running) return;
+  listsRun.cancelling = true; paintRunStatus('lists');
+  try { await satApi('lists/cancel', {}); } catch { /* El ciclo puede haber terminado ya. */ }
+}
+/* «Revisar mis CFDI ahora» (1.18.0): registra en el vigilante los
+   pendientes que aún no conoce y arranca el BARRIDO DEL SERVIDOR,
+   que sigue aunque se cierre la pestaña; esta pantalla solo sigue
+   su estado desde el registro de actividad y cuenta el resultado
+   junto al botón (patrón E/F). */
 async function monitorCheckNow() {
   const selection = invoices.filter(matches);
   const pending = selection.filter(row => !fiscalResults.get(row.id)?.sat);
   if (!pending.length) { announce('No hay comprobantes pendientes de revisar: todos tienen ya su estado del SAT.'); return; }
+  if (checkRun?.running) return;
+  checkRun = { running: true, phase: 'Preparando la revisión…', done: 0, total: pending.length,
+    startedAt: Date.now(), cancel: false, cancelling: false, error: null, final: '' };
+  if (page === 'monitor') render(); else paintRunStatus('check');
   activityStart('Revisando el estado de tus CFDI en el SAT', pending.length);
   try {
     const fresh = pending.filter(row => !watched.has(row.id)).map(monitorRow);
@@ -117,52 +234,132 @@ async function monitorCheckNow() {
       await satApi('monitor', { records: chunk, ids: [] });
       for (const row of chunk) watched.add(row.id);
     }
-    let done = 0, guard = 0;
-    for (;;) {
-      const result = await satApi('monitor/check-now', { ids: pending.map(row => row.id) });
-      done += result.processed || 0;
-      activityProgress(Math.min(done, pending.length),
-        result.remaining ? 'Quedan ' + number.format(result.remaining) + ' en la cola de revisión.' : '');
-      if (!result.remaining || !result.processed) break;
-      if (++guard > 400) break;
-      if (result.busy) await new Promise(resolve => setTimeout(resolve, 1500));
+    checkRun.phase = 'Consultando el estado en el SAT…';
+    paintRunStatus('check');
+    await satApi('monitor/check-now', { ids: pending.map(row => row.id) });
+    /* Seguir el barrido por el registro: termina cuando ya no
+       aparece en curso; la cuenta sale de su propio estado. */
+    for (let guard = 0; guard < 900; guard++) {
+      const view = await satApi('activity').catch(() => null);
+      const sweep = (view?.running || []).find(item => item.kind === 'barrido');
+      if (sweep) {
+        checkRun.done = sweep.processed || 0;
+        checkRun.total = (sweep.processed || 0) + (sweep.remaining || 0);
+        activityProgress(checkRun.done,
+          sweep.remaining ? 'Quedan ' + number.format(sweep.remaining) + ' en la cola de revisión.' : '');
+        paintRunStatus('check');
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        continue;
+      }
+      if (view?.sweep?.processed) checkRun.done = Math.max(checkRun.done, view.sweep.processed);
+      break;
     }
     await pollMonitor();
     await loadMonitorSummary(true);
     const counts = monitorSummary?.counts;
-    activityDone('✓ Revisión terminada', [
-      'Ya tienen estado del SAT ' + number.format(counts?.revisados || 0) + ' de ' + number.format(counts?.total || selection.length) + ' comprobantes.',
-      (counts?.sinRevisar || counts?.conProblema) ?
-        'Quedan ' + number.format((counts?.sinRevisar || 0) + (counts?.conProblema || 0)) +
-        ' sin respuesta: la revisión automática seguirá intentándolo y también puedes repetir este botón más tarde.' :
-        'No queda ningún comprobante sin revisar.'
-    ]);
+    const quedan = Math.max(0, pending.length - checkRun.done);
+    if (checkRun.cancel) {
+      checkRun.final = 'Cancelado por ti a las ' + runHora() + ' · ' + number.format(checkRun.done) +
+        ' revisados en esta pasada · quedan ' + number.format(quedan) + '. Lo revisado quedó guardado.';
+      activityDone('Revisión cancelada por ti', [checkRun.final]);
+    } else {
+      checkRun.final = '✓ ' + number.format(counts?.revisados || 0) + ' revisados · quedan ' +
+        number.format((counts?.sinRevisar || 0) + (counts?.conProblema || 0)) + ' sin respuesta · a las ' + runHora();
+      activityDone('✓ Revisión terminada', [
+        'Ya tienen estado del SAT ' + number.format(counts?.revisados || 0) + ' de ' + number.format(counts?.total || selection.length) + ' comprobantes.',
+        (counts?.sinRevisar || counts?.conProblema) ?
+          'Quedan ' + number.format((counts?.sinRevisar || 0) + (counts?.conProblema || 0)) +
+          ' sin respuesta: la revisión automática seguirá intentándolo y también puedes repetir este botón más tarde.' :
+          'No queda ningún comprobante sin revisar.'
+      ]);
+    }
   } catch (error) {
-    activityFail('La revisión se detuvo', 'Pasó esto: ' + error.message + ' Lo ya revisado quedó guardado; puedes repetir el botón cuando quieras.');
+    /* El error se cuenta EN EL SITIO de la acción, con el modelo
+       único y el reintento ahí mismo (patrón E). */
+    checkRun.error = problemSpec('revision', { error: error.message });
+    activityDone('⚠ La revisión se detuvo a mitad', ['Lo ya revisado quedó guardado: no se pierde nada de lo hecho.']);
   }
-  if (page === 'monitor') render();
+  checkRun.running = false; checkRun.cancelling = false;
+  if (page === 'monitor') render(); else paintRunStatus('check');
 }
 /* «Actualizar listados 69-B y 69»: el 69-B del vigilante por su
-   endpoint y los listados del artículo 69 por el de Listas negras. */
+   endpoint y los listados del artículo 69 por el de Listas, con el
+   progreso REAL del servidor (fase y conteo por listados) sondeado
+   mientras corre, y Cancelar cooperativo (pieza F). */
 async function monitorRefreshLists() {
+  if (listsRun?.running) return;
+  listsRun = { running: true, phase: 'Descargando el listado 69-B…', done: 0, total: 0,
+    startedAt: Date.now(), cancelling: false, error: null, final: '' };
+  if (page === 'monitor') render(); else paintRunStatus('lists');
   activityStart('Actualizando los listados oficiales del SAT');
+  const copiaPrevia = monitorSummary?.lists?.fetched || monitorData.fetched;
   try {
-    const result = await satApi('monitor/refresh-lists', {});
+    /* Trabajos con estado (pieza H): ambas actualizaciones arrancan
+       en el servidor y responden al instante; aquí solo se sondea
+       su estado hasta que terminan. Ninguna espera larga cuelga
+       de una petición. */
+    const started = await satApi('monitor/refresh-lists', {});
+    let result = { lists: started.lists || {} };
+    for (let i = 0; i < 200; i++) {
+      await loadMonitorSummary(true);
+      result = { lists: monitorSummary?.lists || result.lists };
+      if (!result.lists.refreshing) break;
+      listsRun.phase = 'Descargando el listado 69-B…';
+      paintRunStatus('lists');
+      await new Promise(resolve => setTimeout(resolve, 1200));
+    }
     if (result.lists?.error) throw new Error(result.lists.error);
-    try { await satApi('lists/refresh', {}); } catch { /* El 69-B ya quedó: el aviso lo dirá. */ }
     monitorData = { fetched: result.lists?.fetched || monitorData.fetched, error: '' };
+    if (listsRun.cancelling) {
+      listsRun.final = 'Cancelado por ti a las ' + runHora() + ': el listado 69-B terminó su paso y los del artículo 69 no se actualizaron.';
+      activityDone('Actualización cancelada por ti', [listsRun.final]);
+      listsRun.running = false; listsRun.cancelling = false;
+      if (page === 'monitor') render(); else paintRunStatus('lists');
+      return;
+    }
+    listsRun.phase = 'Actualizando los listados del artículo 69…';
+    paintRunStatus('lists');
+    await satApi('lists/refresh', {});
+    let overview = null, finalProgress = null;
+    for (let i = 0; i < 400; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      try {
+        const progress = await satApi('lists/progress');
+        finalProgress = progress;
+        if (progress?.running) {
+          listsRun.phase = progress.phase || listsRun.phase;
+          listsRun.done = progress.done || 0; listsRun.total = progress.total || 0;
+          paintRunStatus('lists');
+          continue;
+        }
+        break;
+      } catch { /* Sin sondeo esta vuelta: el progreso se reintenta solo. */ }
+    }
+    overview = await satApi('lists');
     monitorSummaryKey = '';
     await loadMonitorSummary(true);
-    activityDone('✓ Listados actualizados', [
-      'Listado 69-B: copia del ' + (result.lists?.fetched ? localDateTime(result.lists.fetched) : '—') +
-      ' con ' + number.format(result.lists?.count || 0) + ' RFC publicados.',
-      'Los listados del artículo 69 también se pidieron de nuevo en Listas negras.'
-    ]);
+    const fueCancelado = Boolean(finalProgress?.cancelled);
+    if (fueCancelado) {
+      listsRun.final = 'Cancelado por ti a las ' + runHora() + ': se sigue usando la copia anterior' +
+        (copiaPrevia ? ' (69-B del ' + localDateTime(copiaPrevia) + ')' : '') + '. Lo parcial se descartó.';
+      activityDone('Actualización cancelada por ti', [listsRun.final]);
+    } else {
+      listsRun.final = '✓ Listados actualizados a las ' + runHora() + ' · 69-B: ' +
+        number.format(result.lists?.count || 0) + ' RFC · copia del ' +
+        (result.lists?.fetched ? localDateTime(result.lists.fetched) : '—');
+      activityDone('✓ Listados actualizados', [
+        'Listado 69-B: copia del ' + (result.lists?.fetched ? localDateTime(result.lists.fetched) : '—') +
+        ' con ' + number.format(result.lists?.count || 0) + ' RFC publicados.',
+        'Los listados del artículo 69 también se pidieron de nuevo en Listas negras.'
+      ]);
+    }
   } catch (error) {
+    listsRun.error = problemSpec('descarga', { error: error.message });
     activityFail('No se pudieron actualizar los listados', 'Pasó esto: ' + error.message +
-      ' Se sigue usando la última copia buena' + (monitorData.fetched ? ' (del ' + localDateTime(monitorData.fetched) + ')' : '') + '.');
+      ' Se sigue usando la última copia buena' + (copiaPrevia ? ' (del ' + localDateTime(copiaPrevia) + ')' : '') + '.');
   }
-  if (page === 'monitor') render();
+  listsRun.running = false; listsRun.cancelling = false;
+  if (page === 'monitor') render(); else paintRunStatus('lists');
 }
 function monitorKpi(label, glyph, value, note, cls) {
   const el = n('article', undefined, 'kpi' + (cls ? ' ' + cls : ''));
@@ -192,18 +389,20 @@ function monitorActionsPanel(counts) {
       number.format(waiting) + ' comprobantes aún no tienen su estado confirmado por el SAT.' :
       'Todos tus comprobantes tienen ya su estado del SAT.') :
       'Consulta al SAT el estado (vigente o cancelado) de los comprobantes que falten.'));
-  const checkButton = action('Revisar mis CFDI ahora', monitorCheckNow, 'primary', 'search');
+  const checkButton = action(checkRun?.running ? 'Revisando…' : 'Revisar mis CFDI ahora', monitorCheckNow, 'primary', 'search');
   checkButton.classList.add('monitor-big');
-  check.append(checkButton);
+  if (checkRun?.running) checkButton.disabled = true;
+  check.append(checkButton, runStatusNode('check'));
   /* Actualizar listados. */
   const lists = n('div', undefined, 'monitor-action');
   const fetched = monitorSummary?.lists?.fetched || monitorData.fetched;
   lists.append(n('h3', 'Listados 69-B y 69'),
     n('p', fetched ? 'Última copia del listado 69-B: ' + localDateTime(fetched) + '.' :
       'Todavía no se ha descargado el listado 69-B.'));
-  const listsButton = action('Actualizar listados 69-B y 69', monitorRefreshLists, 'primary', 'sync');
+  const listsButton = action(listsRun?.running ? 'Actualizando…' : 'Actualizar listados 69-B y 69', monitorRefreshLists, 'primary', 'sync');
   listsButton.classList.add('monitor-big');
-  lists.append(listsButton,
+  if (listsRun?.running) listsButton.disabled = true;
+  lists.append(listsButton, runStatusNode('lists'),
     n('a', 'Ver el listado oficial 69-B ↗', 'monitor-link'));
   const link = lists.lastChild;
   link.href = 'https://www.sat.gob.mx/minisitio/DatosAbiertos/contribuyentes_publicados.html';
@@ -251,8 +450,10 @@ function monitorScreen() {
     summaryPanel.append(kpis);
     const truth = n('div', undefined, 'monitor-truth');
     truth.append(
-      n('p', 'Revisión automática: ' + number.format(counts.revisados) + ' de ' + number.format(counts.total) +
-        ' revisados' + (counts.ultimaRevision ? ' · última revisión: ' + localDateTime(counts.ultimaRevision) : ' · aún sin revisiones') + '.'),
+      n('p', 'Última revisión: ' + (counts.ultimaRevision ? localDateTime(counts.ultimaRevision) : 'todavía ninguna') +
+        ' · ' + number.format(counts.revisados) + ' revisados de ' + number.format(counts.total) +
+        ' · ' + number.format(counts.cancelados + counts.noEncontrados + formatoRechazado + counts.conProblema) + ' con problema' +
+        ' · ' + number.format(counts.sinRevisar) + ' sin respuesta.'),
       n('p', monitorSummary.lists?.fetched ?
         'Listado 69-B: copia del ' + localDateTime(monitorSummary.lists.fetched) + ' (' + number.format(monitorSummary.lists.count || 0) + ' RFC publicados).' :
         'Listado 69-B: pendiente de descarga.')
@@ -260,6 +461,23 @@ function monitorScreen() {
     if (monitorSummary.lists?.error) truth.append(n('p', 'El listado 69-B no se pudo descargar la última vez: se usa la última copia buena.'));
     if (monitorError) truth.append(n('p', monitorError));
     summaryPanel.append(truth);
+    /* Problemas agrupados por clase (1.13.0): una fila por clase
+       presente, con el modelo único —semáforo, titular de quién
+       es el problema y qué pasa ahora— y su contador. */
+    const grupos = [];
+    let definitivos = 0;
+    for (const row of selection) if ((fiscalResults.get(row.id)?.efos || []).includes('Definitivo')) definitivos++;
+    if (counts.enListado69B) grupos.push(problemRow(problemSpec('vigilancia',
+      { efos: [definitivos ? 'Definitivo' : 'Presunto'] }), counts.enListado69B));
+    if (counts.cancelados) grupos.push(problemRow(problemSpec('vigilancia', { state: 'Cancelado' }), counts.cancelados));
+    if (formatoRechazado) grupos.push(problemRow(problemSpec('vigilancia', { state: 'Formato rechazado' }), formatoRechazado));
+    if (counts.noEncontrados) grupos.push(problemRow(problemSpec('vigilancia', { state: 'No encontrado' }), counts.noEncontrados));
+    if (counts.conProblema) grupos.push(problemRow(problemSpec('vigilancia', { error: 'la consulta no respondió' }), counts.conProblema));
+    if (grupos.length) {
+      const box = n('div', undefined, 'problem-rows');
+      box.append(...grupos);
+      summaryPanel.append(box);
+    }
   }
   /* --- La lista, secundaria: buscable y en lenguaje claro. --- */
   const listPanel = panel('Tus comprobantes y su estado');
@@ -275,9 +493,9 @@ function monitorScreen() {
   });
   const filters = n('div', undefined, 'filters');
   const picker = select([['all','Todos los CFDI'],['attention','Requieren atención'],['cancelled','Cancelados'],['efos','En el listado 69-B']], monitorFilter, 'Filtrar vigilancia');
-  picker.onchange = () => { monitorFilter = picker.value; render(); };
+  picker.onchange = () => { monitorFilter = picker.value; monitorLimit = 100; render(); };
   const search = input('search', { placeholder: 'Buscar por empresa, RFC o mes (2026-11)…', value: monitorSearch, 'aria-label': 'Buscar comprobantes' });
-  search.oninput = () => { monitorSearch = search.value; clearTimeout(search._t); search._t = setTimeout(render, 250); };
+  search.oninput = () => { monitorSearch = search.value; monitorLimit = 100; clearTimeout(search._t); search._t = setTimeout(render, 250); };
   filters.append(picker, search, n('span', selected.length + ' de ' + selection.length + ' comprobantes', 'period-chip'));
   listPanel.append(filters);
   if (!selected.length) {
@@ -298,12 +516,19 @@ function monitorScreen() {
         action('Ver todos', () => { monitorFilter = 'all'; monitorSearch = ''; render(); }, 'primary')));
     }
   }
-  else listPanel.append(grid(['Empresa', 'Fecha e importe', 'Estado según el SAT', 'Detalle'], selected.slice(0, 100).map(row => [
+  else listPanel.append(grid(['Empresa', 'Fecha e importe', 'Estado según el SAT', 'Detalle'], selected.slice(0, monitorLimit).map(row => [
     cell(row.from.name || row.from.rfc, row.from.rfc + ' → ' + (row.to.name || row.to.rfc)),
     cell(dateLabel(row.date), '$' + centsLabel(totalCents(row)) + ' · ' + (row.kind === 'P' ? 'Pago' : row.kind === 'N' ? 'Nómina' : 'Factura')),
     statusCell(row.id), action('Abrir', () => invoiceDetail(row))
   ])));
-  if (selected.length > 100) listPanel.append(n('div', 'Se muestran los primeros 100 del filtro actual. Busca por empresa o por mes para acotar la lista.', 'table-foot'));
+  /* Sin corte en 100 (1.18.0): la lista pagina con «Ver más» hasta
+     agotar el filtro; nada queda inalcanzable. */
+  if (selected.length > monitorLimit) {
+    const foot = n('div', undefined, 'table-foot');
+    foot.append(n('span', 'Ves ' + number.format(monitorLimit) + ' de ' + number.format(selected.length)),
+      action('Ver más', () => { monitorLimit += 100; render(); }, 'soft'));
+    listPanel.append(foot);
+  }
   return [actionsPanel, summaryPanel, listPanel];
 }
 async function pollMonitor() {
@@ -343,12 +568,113 @@ async function pollMonitor() {
   }
 }
 let monitorSig = '', monitorChanged = false;
+/* ===== Actividad del sistema (1.18.0) =====
+   El registro único de trabajos del servidor, pintado en todas
+   las pantallas: punto y línea en el menú lateral, franja de
+   trabajos junto al dock con sus gestos reales (Pausar, Reanudar
+   y Detener donde el motor lo permite; donde no, la nota honesta
+   en vez de un botón falso) y los recientes en la «Actividad» de
+   Hoy. Sin trabajos, el menú dice cuándo es la próxima revisión
+   automática. Lo alimenta el mismo pulso de 30 s. */
+let activityView = null, activityMoneyAt = 0;
+async function pollActivity() {
+  if (!satToken) return;
+  try { activityView = await satApi('activity'); } catch { return; }
+  paintActivity();
+  /* El distintivo de Dinero cuenta los saldos ya vencidos según el
+     calendario de cada contraparte; se lee a lo sumo 1 vez/min. */
+  if (Date.now() - activityMoneyAt > 60000) {
+    activityMoneyAt = Date.now();
+    satApi('money').then(money => {
+      const hoyLocal = new Date();
+      const hoyKey = hoyLocal.getFullYear() + '-' + String(hoyLocal.getMonth() + 1).padStart(2, '0') + '-' + String(hoyLocal.getDate()).padStart(2, '0');
+      const vencidos = (money.balances || []).filter(b => Number(b.balance) > 0 && b.due && b.due < hoyKey).length;
+      const badge = $('dinero-badge');
+      if (badge) { badge.hidden = !vencidos; badge.textContent = vencidos ? number.format(vencidos) : ''; }
+    }).catch(() => {});
+  }
+}
+function activityControlButton(entry, label, accion) {
+  const button = n('button', label, 'soft small');
+  button.type = 'button';
+  button.onclick = async () => {
+    button.disabled = true;
+    try {
+      const data = await satApi('activity/control', { kind: entry.kind, action: accion, jobId: entry.jobId || undefined });
+      toast(data.message || 'Hecho.', 'ok');
+    } catch (error) { toast(error.message, 'error'); }
+    pollActivity();
+  };
+  return button;
+}
+function paintActivity() {
+  const view = activityView; if (!view) return;
+  const running = view.running || [], paused = view.paused || [];
+  const side = $('side-activity'), sideText = $('side-activity-text'), sideDot = $('side-activity-dot');
+  if (side && sideText) {
+    side.hidden = false;
+    if (running.length) {
+      sideText.textContent = running.length === 1 ? 'Trabajando: ' + running[0].label : number.format(running.length) + ' trabajos en curso';
+      if (sideDot) sideDot.style.background = 'var(--warn-ink)';
+    } else if (paused.length) {
+      sideText.textContent = number.format(paused.length) + (paused.length === 1 ? ' trabajo en pausa' : ' trabajos en pausa');
+      if (sideDot) sideDot.style.background = 'var(--danger)';
+    } else {
+      sideText.textContent = 'Sin trabajos en curso' + (view.nextAuto ? ' · próxima revisión: ' + localDateTime(view.nextAuto) : '');
+      if (sideDot) sideDot.style.background = '';
+    }
+  }
+  let jobsBox = $('activity-jobs');
+  if (!jobsBox) {
+    const dock = $('activity-dock');
+    if (dock) { jobsBox = n('section', undefined, 'activity-dock'); jobsBox.id = 'activity-jobs'; dock.after(jobsBox); }
+  }
+  if (jobsBox) {
+    const entries = [...running.map(e => ({ ...e, enPausa: false })), ...paused.map(e => ({ ...e, enPausa: true }))];
+    jobsBox.hidden = !entries.length;
+    if (entries.length) {
+      jobsBox.replaceChildren();
+      const head = n('div', undefined, 'activity-dock-head');
+      head.append(n('strong', 'Actividad del sistema'),
+        n('span', entries.length === 1 ? '1 trabajo' : entries.length + ' trabajos', 'activity-count'));
+      jobsBox.append(head);
+      for (const entry of entries) {
+        const rowEl = n('div');
+        rowEl.style.display = 'flex'; rowEl.style.justifyContent = 'space-between';
+        rowEl.style.gap = '10px'; rowEl.style.alignItems = 'center'; rowEl.style.padding = '6px 0';
+        const body = n('div');
+        body.append(n('strong', entry.label),
+          n('small', (entry.enPausa ? 'En pausa · ' : '') + (entry.phase || '') + (entry.note ? ' · ' + entry.note : ''), 'activity-detail'));
+        rowEl.append(body);
+        const acts = n('div', undefined, 'actions');
+        if (entry.canPause) acts.append(activityControlButton(entry, entry.enPausa ? 'Reanudar' : 'Pausar', entry.enPausa ? 'reanudar' : 'pausar'));
+        if (entry.canStop) acts.append(activityControlButton(entry, 'Detener', 'detener'));
+        if (acts.childNodes.length) rowEl.append(acts);
+        jobsBox.append(rowEl);
+      }
+    }
+  }
+  const slotEl = document.querySelector('[data-sys-activity]');
+  if (slotEl) {
+    slotEl.replaceChildren();
+    for (const item of (view.recent || []).slice(0, 5)) {
+      const line = n('div');
+      line.style.padding = '4px 16px';
+      line.append(n('strong', item.text), n('span', ' · ' + haceText(item.at), 'muted'));
+      slotEl.append(line);
+    }
+    if (!(view.recent || []).length && !running.length && !paused.length)
+      slotEl.append(n('p', 'Sin trabajos recientes: el sistema está al día.', 'muted'));
+  }
+}
 if (satToken) {
   /* Pulso único del cliente (1.11.0): UN solo temporizador de 30 s
      mueve el estado del SAT (pollSat) y el monitor de CFDI
      (pollMonitor); se pausa con la pestaña oculta y al volver a
      verla corre una vez al momento. */
-  const pulse = () => { pollSat(); pollMonitor(); };
+  const pulse = () => { pollSat(); pollMonitor(); pollActivity();
+    if (checkRun?.running) paintRunStatus('check');
+    if (listsRun?.running) paintRunStatus('lists'); };
   startup.then(pulse);
   setInterval(() => { if (!document.hidden) pulse(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pulse(); });

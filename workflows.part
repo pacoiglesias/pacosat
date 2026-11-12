@@ -214,7 +214,7 @@ async function importBatch(source, requiredRfc = scope, { quiet = false, fromFol
          Resumen («Última importación») además del aviso superior. */
       lastImport = { at: Date.now(), added, duplicates, review, dupIds };
       announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
-        (scopeRejected ? '\n' + scopeRejected + ' archivo(s) no corresponden al RFC seleccionado (' + requiredRfc + ') y quedaron por revisar: cambia el selector a «Todos los RFC» para importarlos.' : '') +
+        (scopeRejected ? '\n' + scopeRejected + ' archivo(s) no corresponden al RFC seleccionado (' + requiredRfc + ') y quedaron por revisar: cambia el contribuyente a ese RFC para importarlos.' : '') +
         (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
       if (!review) soundCue('success'); else if (added) soundCue('notice');
       /* Resumen FIJO (1.7.4, pieza 1): en importaciones grandes, con
@@ -235,7 +235,7 @@ async function importBatch(source, requiredRfc = scope, { quiet = false, fromFol
         if (review) {
           lines.push('⚠ ' + number.format(review) + ' por revisar — no entraron. Motivo de los primeros:');
           for (const item of issues.slice(0, 6)) lines.push('· ' + item.name + ' — ' + item.reason);
-          if (scopeRejected) lines.push(number.format(scopeRejected) + ' no corresponden al RFC seleccionado (' + requiredRfc + '): cambia el selector a «Todos los RFC» y vuelve a importarlos.');
+          if (scopeRejected) lines.push(number.format(scopeRejected) + ' no corresponden al RFC seleccionado (' + requiredRfc + '): cambia el contribuyente a ese RFC y vuelve a importarlos.');
           lines.push('Qué hacer: corrige el archivo o el RFC indicado y vuelve a importar solo esos; los demás ya están dentro.');
         }
         if (skipped.length) {
@@ -295,6 +295,14 @@ function cfdiPrint(row, full, opts = {}) {
   /* Impresión por lote (1.6.16): opts.append añade el comprobante al
      documento en curso y opts.print=false difiere la impresión. */
   if (!opts.append) section.replaceChildren();
+  /* Defecto corregido (1.13.1, visto por Paco el 10 nov): «Imprimir
+     comprobante» desde el detalle entregaba una captura del propio
+     diálogo — botones, la X y la barra de desplazamiento — porque
+     el diálogo modal vive en la capa superior y Chrome imprime ESA
+     capa, no el #print-report. Se cierra el diálogo antes de
+     imprimir (y el CSS de impresión lo oculta además), para que el
+     papel sea solo la representación del comprobante. */
+  if (opts.print !== false) { const dlg = $('dialog'); if (dlg?.open) dlg.close(); }
   const head = n('div', undefined, 'report-head');
   if (appSettings.logoData) {
     const logo = n('img', undefined, 'report-logo');
@@ -307,14 +315,24 @@ function cfdiPrint(row, full, opts = {}) {
     n('p', full.emisor.nombre + ' (' + full.emisor.rfc + ') → ' + full.receptor.nombre + ' (' + full.receptor.rfc + ')' +
       ' · ' + full.fecha + (full.timbre ? ' · Folio fiscal ' + full.timbre.uuid : ' · Sin timbre fiscal'), 'report-meta'));
   section.append(head);
+  /* Emisor y receptor como bloques propios (1.13.1): nombre, RFC,
+     régimen y CP de cada parte, como en una representación impresa
+     de verdad — no fundidos en una fila de «Receptor». */
+  const parties = n('div', undefined, 'print-parties');
+  for (const [label, party, cp] of [['EMISOR', full.emisor, full.lugarExpedicion], ['RECEPTOR', full.receptor, full.receptor.domicilioFiscal]]) {
+    const box = n('div', undefined, 'print-party');
+    box.append(n('small', label), n('strong', party.nombre || party.rfc),
+      n('span', 'RFC ' + party.rfc),
+      n('span', 'Régimen fiscal ' + (party.regimen || '—')),
+      n('span', 'CP ' + (cp || '—') + (party === full.receptor && full.receptor.usoCfdi ? ' · Uso de CFDI ' + full.receptor.usoCfdi : '')));
+    parties.append(box);
+  }
+  section.append(parties);
   const fields = n('div');
   fields.append(grid(['Dato', 'Valor'], [
     ['Fecha de emisión', full.fecha], ['Lugar de expedición', full.lugarExpedicion || '—'],
     ['Forma / método de pago', [full.formaPago, full.metodoPago].filter(Boolean).join(' / ') || '—'],
     ['Moneda', full.moneda + (full.tipoCambio ? ' · TC ' + full.tipoCambio : '')],
-    ['Régimen emisor', full.emisor.regimen || '—'],
-    ['Receptor', full.receptor.nombre + ' · ' + full.receptor.rfc + ' · Régimen ' + (full.receptor.regimen || '—') +
-      ' · CP ' + (full.receptor.domicilioFiscal || '—') + ' · Uso ' + (full.receptor.usoCfdi || '—')],
     ['Nº de certificado del emisor', full.noCertificado || '—']
   ]));
   section.append(fields);
@@ -339,7 +357,21 @@ function cfdiPrint(row, full, opts = {}) {
       n('p', 'Cadena original: ' + full.timbre.cadenaOriginal));
     section.append(timbre);
   }
-  if (opts.print !== false) setTimeout(() => window.print(), 80);
+  /* Línea final de estado en PacoSAT (1.13.1), claramente separada
+     del cuerpo fiscal: qué dice el SAT de este comprobante y cómo
+     está su pago según Dinero. Es información de gestión, no parte
+     del documento fiscal, y va rotulada como tal. */
+  if (row) {
+    const estado = n('div', undefined, 'print-estado');
+    let textoSat = 'Sin revisar todavía';
+    try { textoSat = monitorStateInfo(row).badge; } catch { /* sin vigilancia a mano */ }
+    let textoPago = '';
+    try { if (row.kind === 'I') textoPago = visorEstadoPago(row, paidByMap()).label; } catch { /* sin Dinero a mano */ }
+    estado.append(n('p', 'Estado en PacoSAT (no forma parte del documento fiscal) — Estado en el SAT: ' + textoSat +
+      (textoPago ? ' · Estado de pago: ' + textoPago : '')));
+    section.append(estado);
+  }
+  if (opts.print !== false) setTimeout(() => window.print(), 120);
 }
 function invoiceDetail(row) {
   const summary = n('div', undefined, 'invoice-summary');
@@ -353,6 +385,81 @@ function invoiceDetail(row) {
   }
   summary.append(headline, parties, cell(row.id, 'Folio fiscal'));
   summary.append(statusCell(row.id));
+  /* Saldo y «Marcar pagada» en el propio detalle (1.18.0): la
+     factura dice si está pagada, parcial o pendiente y cuánto
+     falta; el gesto vive aquí y no solo en Dinero, y se deshace. */
+  if (row.kind === 'I') {
+    const paidByDetail = paidByMap();
+    const pagoDetalle = visorEstadoPago(row, paidByDetail);
+    const saldoDetalle = balanceOf(row, paidByDetail).balance;
+    summary.append(n('p', 'Estado de pago: ' + pagoDetalle.label +
+      (saldoDetalle > 0n ? ' · Saldo $' + centsLabel(saldoDetalle) : ''), 'report-note'));
+    /* «Revertir pago» persistente (1.23.0, D1): si el pago consta
+       marcado A MANO, la ficha enseña el botón siempre — no solo
+       unos segundos en la barra de «Deshacer». Fuente de verdad:
+       /api/money (la misma que Dinero ya consume en
+       dineroServerInfo): su «paid» suma complementos + marca
+       manual, mientras el cálculo local (paidByMap) solo conoce
+       complementos y PUE; un pagado del servidor mayor que el
+       local, sin ser PUE, es la marca manual. Lo marcado en esta
+       sesión (visorMarcados/dineroMarcados) también cuenta. */
+    if (satToken) {
+      const revertSlot = n('div', undefined, 'actions');
+      summary.append(revertSlot);
+      const pintarRevertir = () => {
+        revertSlot.replaceChildren();
+        const boton = n('button', 'Revertir pago', 'soft small');
+        boton.type = 'button';
+        boton.onclick = async () => {
+          boton.disabled = true; boton.textContent = 'Revirtiendo…';
+          try {
+            /* Respuesta perdida = resultado desconocido: se
+               re-lee /api/money y solo se declara error si el
+               saldo sigue en cero (la marca seguiría puesta). */
+            await satApiGuardar('money/unmark-paid', { uuid: row.id }, async () => {
+              const data = await satApi('money');
+              const entry = (data.balances || []).find(item => item.id === row.id);
+              return Boolean(entry && Number(entry.balance) > 0);
+            });
+            visorMarcados.delete(row.id);
+            dineroMarcados.delete(row.id);
+            dineroServerCargado = false;
+            document.querySelector('dialog')?.close();
+            render();
+            invoiceDetail(row);
+            announce('Pago revertido: vuelve a estar por pagar');
+          } catch (error) { toast(error.message, 'error'); boton.disabled = false; boton.textContent = 'Revertir pago'; }
+        };
+        revertSlot.append(boton,
+          n('span', 'Este pago consta marcado a mano: revertirlo lo vuelve a dejar por pagar.', 'muted'));
+      };
+      if (visorMarcados.has(row.id) || dineroMarcados.has(row.id)) pintarRevertir();
+      else satApi('money').then(data => {
+        const entry = (data.balances || []).find(item => item.id === row.id);
+        if (!entry || !revertSlot.isConnected) return;
+        const localPaid = Number(centsPlain(balanceOf(row, paidByDetail).paid));
+        if (entry.method !== 'PUE' && Number(entry.paid) > localPaid + 0.001) pintarRevertir();
+      }).catch(() => {});
+    }
+    if (satToken && saldoDetalle > 0n) {
+      const payActs = n('div', undefined, 'actions');
+      /* F1 (1.22.0): el mismo «Ya se pagó» de Dinero, también en la
+         ficha — un toque, sin pedir cómo se pagó, con Deshacer. */
+      payActs.append(action('Ya se pagó', async () => {
+        await satApi('money/mark-paid', { uuid: row.id });
+        visorMarcados.add(row.id);
+        document.querySelector('dialog')?.close();
+        render();
+        toastUndo('Marcada como pagada.', async () => {
+          await satApi('money/unmark-paid', { uuid: row.id });
+          visorMarcados.delete(row.id);
+          announce('Pago deshecho: la factura vuelve a pendiente.');
+          render();
+        });
+      }, 'primary', 'check'));
+      summary.append(payActs);
+    }
+  }
   if (row.initialState) summary.append(n('p', 'Estado al importarse (según los metadatos del SAT): ' + row.initialState + '.', 'report-note'));
   const contents = [summary];
   const linked = documents.filter(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id && (!scope || doc.rfc === scope));
@@ -364,11 +471,55 @@ function invoiceDetail(row) {
       check(file, 'Archivo no encontrado.');
       download(file.blob, row.id + '.xml');
     }, undefined, 'down'));
+  /* Descarga a la carta (Ronda Salidas, 1.14.0): el PDF diseñado
+     del comprobante lo construye el servidor desde el XML guardado
+     (folio, conceptos, totales y total en letra). Sin servidor solo
+     existe el XML local de siempre. */
+  if (satToken) {
+    const pedir = format => async event => {
+      const boton = event?.currentTarget;
+      if (boton) { boton.disabled = true; boton.textContent = 'Preparando…'; }
+      try {
+        const data = await satApi('salidas/cfdi', { id: row.id, format, rfc: scope });
+        download(new Blob([decode64(data.content)], { type: data.type || 'application/octet-stream' }), data.name);
+        toast('Descarga lista: ' + data.name, 'ok');
+      } catch (error) { toast(error.message, 'error'); }
+      finally { if (boton) { boton.disabled = false; boton.textContent = format === 'pdf' ? 'Descargar PDF' : 'XML + PDF'; } }
+    };
+    actionsRow.append(
+      /* F2 (1.22.0): «Ver comprobante» — el PDF diseñado (con su
+         QR verdadero) se abre en el visor sin descargar nada:
+         ficha → un toque. */
+      action('Ver comprobante', async event => {
+        const boton = event?.currentTarget;
+        if (boton) { boton.disabled = true; boton.textContent = 'Preparando…'; }
+        try {
+          const data = await satApi('salidas/cfdi', { id: row.id, format: 'pdf', rfc: scope });
+          const blob = new Blob([decode64(data.content)], { type: 'application/pdf' });
+          const doc = { name: data.name || ('Comprobante ' + row.id + '.pdf'), kind: 'Comprobante con QR', rfc: scope || row.to.rfc || '' };
+          const dlg = document.querySelector('dialog');
+          if (dlg?.open) { dlg.addEventListener('close', () => showPdfDialog(doc, blob), { once: true }); dlg.close(); }
+          else showPdfDialog(doc, blob);
+        } catch (error) { toast(error.message, 'error'); if (boton) { boton.disabled = false; boton.textContent = 'Ver comprobante'; } }
+      }, undefined, 'eye'),
+      action('Descargar PDF', pedir('pdf'), undefined, 'file'),
+      action('XML + PDF', pedir('ambos'), undefined, 'down'));
+  }
   for (const doc of linked) actionsRow.append(action('Ver PDF · ' + doc.rfc, () => {
     $('dialog').addEventListener('close', () => viewPdf(doc).catch(error => announce(error.message, true)), { once: true });
     $('dialog').close();
   }, undefined, 'file'));
   if (!linked.length) actionsRow.append(n('span', 'Sin PDF vinculado a este CFDI.', 'timeline-empty'));
+  /* Reenviar por correo (1.24.0, punto 11): el mismo diálogo del
+     Buzón, con el dueño del comprobante (el perfil que es emisor
+     o receptor) como RFC del reenvío — nunca otro. */
+  if (satToken) {
+    const perfilesFicha = (typeof satData !== 'undefined' && satData && satData.profiles) || [];
+    const duenoFicha = [row.to?.rfc, row.from?.rfc].find(r => r && perfilesFicha.some(p => p.rfc === r)) ||
+      scope || row.to?.rfc || row.from?.rfc || '';
+    if (duenoFicha) actionsRow.append(action('Reenviar por correo',
+      () => forwardDialog(duenoFicha, [row.id]), undefined, 'arrow'));
+  }
   contents.push(actionsRow);
   /* Representación completa: se rellena al leer el XML guardado. */
   const fullSection = n('section', undefined, 'invoice-concepts');
@@ -498,6 +649,22 @@ function invoiceDetail(row) {
 }
 function invoiceActions(row) {
   const wrap = n('div', undefined, 'actions');
+  /* «Revisar ahora» (1.13.1): fuerza la revisión de ESTA factura en
+     el SAT al momento, sin esperar a que la tanda automática de 5
+     en 5 llegue hasta ella entre los miles pendientes. Mandando
+     (botón principal) mientras está sin revisar o con problema;
+     acción normal en las ya revisadas, para refrescar su estado.
+     El invitado no lo ve: su acceso es de solo lectura y el
+     servidor lo rechazaría igualmente. */
+  if (typeof guestMode === 'undefined' || !guestMode) {
+    const item = fiscalResults.get(row.id);
+    const pendiente = !item?.sat;
+    const revisar = n('button', 'Revisar ahora', pendiente ? 'primary' : 'soft');
+    revisar.type = 'button';
+    revisar.prepend(icon('search'));
+    revisar.onclick = () => monitorCheckOne(row, revisar);
+    wrap.append(revisar);
+  }
   /* Acciones directas por fila (UX-14): lo esencial sin abrir el
      detalle — ver, descargar el XML, imprimir y copiar el UUID. */
   wrap.append(action('Ver CFDI', () => invoiceDetail(row)),
@@ -582,10 +749,12 @@ function totalsCsv() {
     const safe = /^[\s\uFEFF]*[=+\-@]|^[\t\r\n]/u.test(text) ? "'" + text : text;
     return '"' + safe.replaceAll('"', '""') + '"';
   };
-  const rows = [['RFC', 'Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN', 'En otra moneda sin sumar']];
+  const rows = [['RFC', 'Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos MXN', 'Emitidos', 'Importe emitidos MXN', 'En divisa (por código, sin sumar)', 'Canceladas (fuera de los totales)', 'Complementos de pago']];
   for (const [rfc, group] of monthlyTotals()) {
     for (const [monthKey, g] of group.months) rows.push([rfc, group.name, monthKey, g.received, centsPlain(g.receivedCents),
-      g.issued, centsPlain(g.issuedCents), g.receivedForeign + g.issuedForeign]);
+      g.issued, centsPlain(g.issuedCents),
+      Object.entries(g.foreign).map(([code, slot]) => (slot.received + slot.issued) + ' en ' + code).join(' · '),
+      g.cancelled, g.rep]);
   }
   return rows.map(row => row.map(escape).join(',')).join('\r\n');
 }
@@ -772,7 +941,9 @@ $('primary').onclick = handle(async () => {
   if (page === 'salidas') {
     if (cierreSection === 'diot') { exportDiotCsv(); return; }
     if (cierreSection === 'calendario') { render(); const monthInput = document.querySelector('main input[type="month"]'); if (monthInput) monthInput.focus(); return; }
-    await exportFull(''); return;
+    await ensureLazyPart('salidas');
+    if (typeof exportFull === 'function') { await exportFull(''); return; }
+    toast('La parte de reportes no se pudo cargar: inténtalo otra vez.', 'error'); return;
   }
   if (page === 'dinero') { navigate('salidas'); return; }
   if (page === 'pagos') { render(); return; }
@@ -780,9 +951,12 @@ $('primary').onclick = handle(async () => {
   return page === 'docs' ? addDocument() : chooseImport();
 });
 for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
-/* Buscador global (1.6.5): por UUID completo o parcial, folio fiscal
-   (el propio UUID) o RFC de emisor/receptor. Aplica el término en el
-   archivo de facturas y, si hay un único resultado, abre su detalle.
+/* Buscador global (1.6.5): por UUID completo o parcial, por el
+   FOLIO del CFDI (serie-folio: teclear «963» encuentra la factura
+   963, 1.18.0) o por RFC y nombre de emisor/receptor — buscar una
+   contraparte lleva a sus facturas y de ahí a su expediente.
+   Aplica el término en el archivo de facturas y, si hay un único
+   resultado, abre su detalle.
    Atajo Ctrl/Cmd+K para enfocar el buscador (no pisa la escritura en
    campos: solo actúa fuera de ellos o sobre el propio buscador). */
 const globalSearchInput = $('global-search');
@@ -796,7 +970,14 @@ function runGlobalSearch() {
   const screensByWord = [['resumen', 'home'], ['inicio', 'home'], ['hoy', 'home'], ['avisos', 'avisos'], ['centro de avisos', 'avisos'], ['facturas', 'invoices'], ['cfdi', 'invoices'],
     ['expedientes', 'docs'], ['documentos', 'docs'], ['centro sat', 'sat'], ['descargas', 'sat'], ['vigilancia', 'monitor'],
     ['69-b', 'monitor'], ['operaciones', 'operations'], ['alertas', 'operations'], ['cobertura', 'coverage'], ['huecos', 'coverage'],
-    ['respaldos', 'backup'], ['respaldo', 'backup'], ['diot', 'diot'], ['ajustes', 'settings'], ['qué incluye', 'capacidades'], ['capacidades', 'capacidades']];
+    ['respaldos', 'backup'], ['respaldo', 'backup'], ['diot', 'diot'], ['ajustes', 'settings'], ['qué incluye', 'capacidades'], ['capacidades', 'capacidades'],
+    /* Diccionario nuevo (1.18.0): las palabras de Paco llegan a su
+       pantalla — pagos, dinero, cierre, documentos del SAT, bancos,
+       listas y salidas ya no caen en «sin resultados». */
+    ['pagos', 'pagos'], ['pagos al banco', 'pagos'], ['banco', 'pagos'], ['dinero', 'dinero'], ['saldos', 'dinero'],
+    ['cierre', 'salidas'], ['reportes', 'salidas'], ['salidas', 'salidas'], ['informe', 'salidas'],
+    ['constancia', 'docs'], ['constancia de situación fiscal', 'docs'], ['opinión', 'docs'], ['opinión de cumplimiento', 'docs'],
+    ['declaraciones', 'docs'], ['bancos', 'bancos'], ['listas', 'lists'], ['listas 69-b', 'lists']];
   const downloadMatch = lower.match(/^descargar(?: ahora)?\s+([a-z0-9]{12,13})$/i);
   if (downloadMatch && typeof satData !== 'undefined' && satData) {
     const rfc = downloadMatch[1].toUpperCase();
@@ -830,6 +1011,8 @@ document.addEventListener('keydown', event => {
   globalSearchInput.select();
 });
 $('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
+/* F5: el selector de la barra superior manda igual que el lateral. */
+if ($('scope-top')) $('scope-top').onchange = () => { scope = $('scope-top').value; invoicePage = 0; render(); };
 $('incoming').onchange = () => { const files = [...$('incoming').files]; $('incoming').value = ''; importBatch(files).catch(error => announce(error.message, true)); };
 $('folder').onchange = () => { const files = [...$('folder').files]; $('folder').value = ''; importBatch(files, scope, { fromFolder: true }).catch(error => announce(error.message, true)); };
 $('restore').onchange = handle(() => {

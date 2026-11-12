@@ -157,7 +157,12 @@ async function collect(stream) {
      Los valores se leen de la propia hoja (polish.part) y los ratios se
      recomputan aquí: texto del acento sobre la superficie, texto sobre
      el acento y su hover, tinta sobre tinte y sobre el activo de la
-     barra lateral, en claro (#ffffff) y en oscuro (#14243a). */
+     barra lateral, en claro (#ffffff) y en oscuro (#14243a). Anexo
+     1.26.0: la pareja «tinte» pasa de --ok-ink a --accent-ink — la
+     Ronda Visual separa marca y semáforo: el acento ya no redefine
+     el verde de «todo bien» (--ok-ink), solo su tinta de marca
+     (--accent-ink); la pareja comprobada es la misma tinta sobre el
+     mismo tinte, con los mismos valores. */
   const polish = fs.readFileSync('polish.part', 'utf8');
   const luminance = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
     .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4))
@@ -175,10 +180,10 @@ async function collect(stream) {
     const dark = block(':root[data-theme="dark"][data-accent="' + name + '"]');
     for (const [label, a, b] of [
       ['claro texto', light['--green'], '#ffffff'], ['claro sobre acento', light['--on-accent'], light['--green']],
-      ['claro hover', light['--on-accent'], light['--green-hover']], ['claro tinte', light['--ok-ink'], light['--tint']],
+      ['claro hover', light['--on-accent'], light['--green-hover']], ['claro tinte', light['--accent-ink'], light['--tint']],
       ['claro nav', light['--nav-active-ink'], light['--nav-active-bg']],
       ['oscuro texto', dark['--green'], '#14243a'], ['oscuro sobre acento', dark['--on-accent'], dark['--green']],
-      ['oscuro hover', dark['--on-accent'], dark['--green-hover']], ['oscuro tinte', dark['--ok-ink'], dark['--tint']],
+      ['oscuro hover', dark['--on-accent'], dark['--green-hover']], ['oscuro tinte', dark['--accent-ink'], dark['--tint']],
       ['oscuro nav', dark['--nav-active-ink'], dark['--nav-active-bg']]])
       assert.ok(contrast(a, b) >= 4.5, 'Contraste AA insuficiente en ' + name + ' (' + label + '): ' + contrast(a, b).toFixed(2));
   }

@@ -53,10 +53,51 @@ function listsScreen() {
     const actions = n('div', undefined, 'sat-actions');
     if (source.url) {
       const update = n('button', 'Actualizar ahora', 'soft');
-      update.onclick = async () => { update.disabled = true; update.textContent = 'Actualizando…';
-        try { await satApi('lists/refresh', { listId: source.id }); await loadLists(); toast('Listado actualizado.', 'ok'); }
-        catch (error) { toast(error.message, 'error'); render(); } };
-      actions.append(update);
+      const runBox = n('div', '', 'run-status');
+      update.onclick = async () => {
+        /* Patrón de acciones largas (1.13.1, piezas E/F): progreso
+           medible del servidor junto al botón y Cancelar cooperativo;
+           cancelar conserva la copia anterior y lo dice aquí mismo. */
+        update.disabled = true; update.textContent = 'Actualizando…';
+        const startedAt = Date.now();
+        let overview = null, failure = null, stopped = false;
+        const cancelBtn = n('button', 'Cancelar', 'soft');
+        cancelBtn.onclick = async () => { cancelBtn.disabled = true; cancelBtn.textContent = 'Terminando el paso actual…';
+          try { await satApi('lists/cancel', {}); } catch { /* puede haber terminado ya */ } };
+        runBox.replaceChildren(n('p', 'Descargando el listado…', 'run-phase'), cancelBtn);
+        /* Trabajo con estado (pieza H): el POST solo ARRANCA la
+           actualización y responde al instante; el fin se conoce
+           sondeando el progreso, no esperando dentro de la petición. */
+        let finalProgress = null;
+        try { await satApi('lists/refresh', { listId: source.id }); }
+        catch (error) { failure = error; }
+        while (!failure) {
+          await new Promise(resolve => setTimeout(resolve, 1200));
+          try {
+            const progress = await satApi('lists/progress');
+            finalProgress = progress;
+            if (progress?.running && !stopped) {
+              const secs = Math.round((Date.now() - startedAt) / 1000);
+              runBox.replaceChildren(n('p', (progress.phase || 'Actualizando…') +
+                (progress.total ? ' · ' + progress.done + ' de ' + progress.total : '') + ' · lleva ' + secs + ' s', 'run-phase'), cancelBtn);
+              continue;
+            }
+            break;
+          } catch { /* sin sondeo esta vuelta */ }
+        }
+        stopped = true;
+        if (failure) { toast(failure.message, 'error'); render(); return; }
+        overview = await satApi('lists');
+        if (finalProgress?.cancelled) {
+          runBox.replaceChildren(n('p', 'Cancelado por ti a las ' +
+            new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) +
+            ': se sigue usando la copia del ' + (source.fetched ? localDateTime(source.fetched) : '—') + '.', 'run-final'));
+          update.disabled = false; update.textContent = 'Actualizar ahora';
+          return;
+        }
+        await loadLists(); toast('Listado actualizado.', 'ok');
+      };
+      actions.append(update, runBox);
     } else {
       const file = input('file', { accept: '.csv,text/csv' }); file.hidden = true;
       file.onchange = async () => {
@@ -75,6 +116,8 @@ function listsScreen() {
     grid.append(card);
   }
   sourcesPanel.append(grid);
+  if (data.lastCancelled) sourcesPanel.append(n('p', 'Última cancelación pedida por ti: ' + localDateTime(data.lastCancelled) +
+    ' — la actualización se detuvo y se conservó la copia anterior de cada listado.', 'muted'));
   wrap.append(sourcesPanel);
   /* Validador */
   const validator = panel('Validar una empresa', 'Escribe un RFC o parte del nombre: se busca en TODOS los listados cargados, aunque no sea tu contraparte.');
@@ -144,15 +187,72 @@ function listsScreen() {
     if (cp.note) main.append(n('span', cp.note, 'muted'));
     for (const hit of cp.hits) main.append(n('span', hit.label + ': ' + hit.detail, 'cp-hit sev-' + hit.severity));
     if (cp.exposure && cp.exposure.receivedCount)
-      main.append(n('span', 'Te ha facturado ' + money(cp.exposure.received) + ' en ' + cp.exposure.receivedCount + ' CFDI', 'muted'));
+      main.append(n('span', 'Te ha facturado ' + money(cp.exposure.received) + ' en ' + cp.exposure.receivedCount + ' CFDI' +
+        (cp.detalle?.recibidos?.primera ? ' · primero el ' + listaFecha(cp.detalle.recibidos.primera) +
+          ' · último el ' + listaFecha(cp.detalle.recibidos.ultima) : ''), 'muted'));
+    /* Cifras por dirección y saldo (1.13.1): lo emitido a un cliente
+       y lo que aún te debe, del mismo payload que calcula el
+       servidor desde los CFDI guardados y los saldos de Dinero. */
+    const det = cp.detalle;
+    if (det?.emitidos)
+      main.append(n('span', 'Le has facturado ' + money(det.emitidos.total) + ' en ' + det.emitidos.count + ' CFDI' +
+        (det.emitidos.primera ? ' · primero el ' + listaFecha(det.emitidos.primera) +
+          ' · último el ' + listaFecha(det.emitidos.ultima) : ''), 'muted'));
+    if (det?.saldoPorCobrar)
+      main.append(n('span', det.saldoPorCobrar.facturas ?
+        'Saldo por cobrar: ' + money(det.saldoPorCobrar.total) + ' · ' + det.saldoPorCobrar.facturas + ' factura(s) pendiente(s)' :
+        'Sin saldo pendiente de cobro', det.saldoPorCobrar.facturas ? 'cp-hit sev-warn' : 'muted'));
+    /* «Qué significa para ti» (1.13.1): la explicación en lenguaje
+       claro según (lista, situación, rol), con las cifras de esta
+       misma tarjeta — la respuesta vive en la pantalla, no en un
+       correo ni en la memoria de nadie. */
+    if (cp.hits.length) {
+      const hit = cp.hits.find(candidate => candidate.severity === cp.severity) || cp.hits[0];
+      const rol = cp.kind === 'Cliente' ? 'cliente' : cp.kind === 'Propio' ? 'propio' : 'proveedor';
+      const significado = n('details', undefined, 'seal-details cp-significado');
+      significado.append(n('summary', 'Qué significa para ti'));
+      significado.append(problemCard(problemSpec('lista', {
+        generico: cp.generico, listId: hit.listId, label: hit.label, detail: hit.detail, rol,
+        dinero: det?.recibidos ? money(det.recibidos.total) : '', cfdiCount: det?.recibidos?.count || 0,
+        saldo: det?.saldoPorCobrar?.facturas ? money(det.saldoPorCobrar.total) : '' })));
+      main.append(significado);
+    }
     row.append(main,
       statusPill(cp.severity === 'bad' ? 'bad' : cp.severity === 'warn' ? 'warn' : cp.severity === 'dim' ? 'dim' : 'ok',
         cp.severity === 'bad' ? 'En lista · grave' : cp.severity === 'warn' ? 'En lista' :
         cp.severity === 'dim' ? 'En lista · menor' : cp.severity === 'ok' ? 'Regularizada' : 'Limpia'));
     const actions = n('div', undefined, 'row-actions');
+    /* «Ver sus CFDI» (1.13.1): un clic a la evidencia — Facturas
+       queda filtrado por el RFC de esta contraparte (y por su
+       dirección si solo tiene una), con el chip de búsqueda
+       visible y quitable como cualquier filtro. */
+    if (cp.detalle && (cp.detalle.recibidos || cp.detalle.emitidos)) {
+      const ver = n('button', 'Ver sus CFDI', 'soft');
+      ver.onclick = event => { event.stopPropagation(); verCfdiDeContraparte(cp); };
+      actions.append(ver);
+    }
     const cert = n('button', 'Constancia', 'soft');
     cert.onclick = event => { event.stopPropagation(); printListsCertificate(cp, data.sources); };
     actions.append(cert);
+    /* Expediente legal en un clic (1.25.0, AGREGAR 6): el ZIP con
+       los XML de la contraparte, sus validaciones de listas, el
+       resumen de saldos y tus constancias vigentes — lo que
+       pediría una defensa, armado por el servidor. Hace falta el
+       contribuyente seleccionado (scope): el expediente es de UN
+       RFC tuyo con esa contraparte. */
+    const expediente = n('button', 'Expediente legal', 'soft');
+    expediente.onclick = async event => {
+      event.stopPropagation();
+      try {
+        check(scope, 'Elige arriba el contribuyente: el expediente es de un RFC tuyo con esta contraparte.');
+        expediente.disabled = true; expediente.textContent = 'Armando el expediente…';
+        const data = await satApi('salidas/expediente', { rfc: scope, contraparte: cp.rfc });
+        download(new Blob([Uint8Array.from(atob(data.content), c => c.charCodeAt(0))], { type: data.type }), data.name);
+        toast('Expediente de ' + (cp.name || cp.rfc) + ' descargado.', 'ok');
+      } catch (error) { toast(error.message, 'error'); }
+      finally { expediente.disabled = false; expediente.textContent = 'Expediente legal'; }
+    };
+    actions.append(expediente);
     if (cp.source === 'manual') {
       const edit = n('button', 'Editar', 'soft');
       edit.onclick = event => { event.stopPropagation(); counterpartDialog(cp); };
@@ -179,6 +279,23 @@ function listsScreen() {
   }
   wrap.append(eventsPanel);
   return [wrap];
+}
+/* Fecha corta de un día ISO («2026-11-03» → «3 nov 2026») sin pasar
+   por Date: un día suelto no debe moverse por la zona horaria. */
+const LISTA_MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function listaFecha(iso) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  return match ? Number(match[3]) + ' ' + LISTA_MESES[Number(match[2]) - 1] + ' ' + match[1] : String(iso || '');
+}
+/* Salto a la evidencia (1.13.1): Facturas filtrado por el RFC de la
+   contraparte usando el buscador de siempre (el término casa contra
+   nombre, RFC y UUID de cada fila) y la dirección si solo tiene una. */
+function verCfdiDeContraparte(cp) {
+  term = cp.rfc; month = ''; invoiceKind = ''; invoiceState = ''; invoicePayState = '';
+  direction = cp.detalle?.emitidos && !cp.detalle?.recibidos ? 'Emitidos' :
+    cp.detalle?.recibidos && !cp.detalle?.emitidos ? 'Recibidos' : 'Todos';
+  invoicePage = 0;
+  navigate('invoices');
 }
 function counterpartDialog(existing = null) {
   const nameInput = input('text', { value: existing?.name || '', placeholder: 'Nombre o razón social' });
@@ -296,6 +413,6 @@ function printListsCertificate(cp, sources) {
     'RESULTADO: la empresa CONSTA en al menos un listado oficial (ver detalle en la tabla). Esta constancia refleja los listados en la fecha de su última descarga indicada.' :
     'RESULTADO: la empresa NO consta en ninguno de los listados oficiales consultados en la fecha de su última descarga indicada.'));
   body.append(n('p', 'Generada por PacoSAT desde los listados oficiales publicados por el SAT (datos abiertos). No sustituye la consulta directa en el portal del SAT.'));
-  section.append(head, body);
+  section.append(head, body, reportFoot(cp.rfc));
   setTimeout(() => window.print(), 80);
 }

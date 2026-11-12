@@ -35,6 +35,9 @@ const service = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TO
     if (query.tipo === 'anual') return { found: 1, warnings: [], documents: [
       { clase: 'declaracion', ejercicio: query.ejercicio, periodo: String(query.ejercicio),
         fechaPresentacion: '2026-03-28', operacion: 'OP-ANUAL', content: DECL_PDF }] };
+    if (query.tipo === 'transacciones') return { found: 1, warnings: [], documents: [], transactions: [
+      { operacion: '123456789012', tipo: 'mensual', ejercicio: query.ejercicio, periodo: '2026-09',
+        fechaPresentacion: '17/10/2026' }] };
     return { found: 2, warnings: ['aviso de juguete'], documents: [
       { clase: 'declaracion', ejercicio: query.ejercicio, periodo: '2026-09',
         fechaPresentacion: '2026-10-17', operacion: 'OP-100', content: DECL_PDF },
@@ -77,8 +80,8 @@ try {
   /* --- La forma REAL del overview (la que la pantalla pinta) --- */
   const view = runBody.view;
   assert.deepEqual(Object.keys(view).sort(),
-    ['anual', 'configured', 'documentos', 'ejercicio', 'lastError', 'mensuales', 'rfc'],
-    'claves del overview');
+    ['anios', 'anual', 'configured', 'documentos', 'ejercicio', 'folios', 'lastError', 'mapa', 'mensuales', 'progreso', 'rfc'],
+    'claves del overview (la 1.17.0 suma «mapa»: el mapa anual de la propuesta P13; la 1.22.0 suma «progreso»: la corrida viva de declaraciones, con su Cancelar; la 1.25.0 suma «folios» y «anios»: el registro de folios de la ficha 77792 y el resumen por años de la recuperación histórica)');
   assert.equal(view.rfc, OWN);
   assert.equal(view.ejercicio, 2026);
   assert.equal(view.lastError, null);
@@ -154,11 +157,34 @@ try {
   assert.equal(typeof afterFail.lastError.at, 'number');
   portalFails = false;
 
+  /* --- El descubrimiento de folios (1.27.0): también contrato --- */
+  const descubrimiento = await call('/api/declaraciones/descubrir-folios', { rfc: OWN, ejercicio: 2026 });
+  assert.equal(descubrimiento.status, 200);
+  assert.equal(descubrimiento.json().result.ok, true);
+  assert.equal(descubrimiento.json().result.descubiertos, 1,
+    'el descubrimiento aprende el folio que la tabla de transacciones enseñó');
+
   /* --- El fragmento consume SOLO claves que el servidor emite --- */
   const part = readFileSync(new URL('./declaraciones-ui.part', import.meta.url), 'utf8');
-  const emitted = { view: new Set(Object.keys(view)), mes: new Set(Object.keys(view.mensuales[0])),
-    doc: new Set(Object.keys(view.documentos[0])), data: new Set(Object.keys(runBody)),
-    result: new Set([...Object.keys(runBody.result), ...Object.keys(failed.json().result)]) };
+  const emitted = { view: new Set(Object.keys(view)),
+    /* Desde la 1.17.0, «mes» en el fragmento es un mes del MAPA
+       (view.mapa.meses): la rejilla vieja ya no se itera en la
+       pantalla, y sus claves son las que el mapa emite. */
+    mes: new Set(Object.keys(view.mapa.meses[0])),
+    doc: new Set(Object.keys(view.documentos[0])),
+    /* «data» es la respuesta del endpoint que el fragmento esté
+       llamando: desde la 1.25.0 la pantalla habla con TRES —
+       declaraciones/run ({result, view}), declaraciones/
+       folio-run ({result, folio, view}) y declaraciones/
+       recover-year ({mensual, anual, view}) — y el contrato es
+       la unión de sus claves: cada data.X que la pantalla lee
+       lo emite alguno de los tres. */
+    data: new Set(['result', 'view', 'folio', 'mensual', 'anual']),
+    /* El resultado también es unión (1.27.0): la pantalla lee
+       result.descubiertos del descubrimiento (ficha 22513), que
+       emite descubrir-folios, no la corrida de recuperación. */
+    result: new Set([...Object.keys(runBody.result), ...Object.keys(failed.json().result),
+      ...Object.keys(descubrimiento.json().result)]) };
   const accesses = new Map();
   for (const match of part.matchAll(/\b(view|mes|doc|data|result)\.([A-Za-z]+)/g)) {
     if (!accesses.has(match[1])) accesses.set(match[1], new Set());
@@ -177,8 +203,8 @@ try {
   const bodyLiteral = part.match(/satApi\('declaraciones\/run',\s*\{([^}]*)\}/);
   assert.ok(bodyLiteral, 'la llamada a declaraciones/run está en el fragmento');
   const bodyKeys = bodyLiteral[1].split(',').map(piece => piece.match(/^\s*([A-Za-z]+)\s*:/)?.[1]).filter(Boolean);
-  assert.deepEqual(bodyKeys.sort(), ['ejercicio', 'rfc', 'tipo'],
-    'el cuerpo publicado es {rfc, ejercicio, tipo}');
+  assert.deepEqual(bodyKeys.sort(), ['ejercicio', 'periodo', 'rfc', 'tipo'],
+    'el cuerpo publicado es {rfc, ejercicio, tipo, periodo} (la 1.17.0 suma el periodo: el gesto del detalle del mapa acota la recuperación a un mes; el servidor lo acepta desde el motor de la 1.9.0)');
 
   console.log('ronda1103: contrato de Declaraciones alineado — el overview real pinta la lista, el «Ver» abre el PDF inline y la recuperación publica {tipo}.');
 } catch (error) {

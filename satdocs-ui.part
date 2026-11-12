@@ -9,16 +9,84 @@ function satDocPill(doc, label) {
   const level = doc.level === 'ok' ? 'ok' : doc.level === 'warn' ? 'warn' : 'bad';
   return statusPill(level, label + ': ' + doc.ageDays + ' días');
 }
+async function satQuickRunDoc(kind, rfc, button, line) {
+  const nombre = kind === 'constancia' ? 'Constancia' : 'Opinión';
+  button.disabled = true;
+  line.textContent = 'Descargando del portal…';
+  /* Progreso en vivo en la propia línea, como en las tarjetas de
+     Documentos: se sondea el estado de la corrida del servidor. */
+  const poller = setInterval(async () => {
+    try {
+      const fresh = await satApi('satdocs');
+      const profile = fresh.profiles.find(item => item.rfc === rfc);
+      if (profile?.progress?.running && profile.progress.step) line.textContent = '⏳ ' + profile.progress.step;
+    } catch { /* un fallo de sondeo no tumba la descarga */ }
+  }, 2500);
+  try {
+    const data = await satApi('satdocs/run', { rfc, kind });
+    satQuickDocs = { profiles: data.profiles };
+    const profile = (data.profiles || []).find(item => item.rfc === rfc);
+    if (profile?.[kind]) line.textContent = nombre + ' · descargada ' + satQuickCuando(profile[kind]);
+    toast(data.results?.[kind]?.ok ? nombre + ' de ' + rfc + ' descargada y archivada en Documentos.' :
+      'El portal no entregó el documento: el intento quedó registrado en Documentos.',
+      data.results?.[kind]?.ok ? 'ok' : 'error');
+  } catch (error) { toast(error.message, 'error'); }
+  finally { clearInterval(poller); button.disabled = false; }
+}
+/* Las cuatro tarjetas de Documentos (1.18.0): Constancia ·
+   Opinión · CFDI · Declaraciones clavadas encima de los
+   Expedientes, con la misma pieza de Hoy — nada de cazar cada
+   documento por su pantalla. */
+function docsTopCards() {
+  const wrap = panel('Documentos del SAT',
+    'Del RFC elegido arriba: cada documento con su fecha, su semáforo y su gesto — Ver y Renovar sin entrar pantalla por pantalla.');
+  const gridBox = n('div', undefined, 'cmd-grid');
+  wrap.append(gridBox);
+  const cSlot = n('div'), oSlot = n('div');
+  const irAlMapa = () => document.getElementById('declaraciones-section')?.scrollIntoView({ behavior: 'smooth' });
+  /* A0 (1.23.0): la tarjeta de Declaraciones lleva «Descargar»
+     junto a «Ver el mapa», como las demás: lanza la recuperación
+     mensual del ejercicio en curso para el RFC de la tarjeta con
+     el lanzador de siempre (declRun, global en
+     declaraciones-ui.part), sin obligar a entrar al mapa. */
+  const declActs = n('div');
+  const declDescargar = n('button', 'Descargar', 'soft small');
+  declDescargar.type = 'button';
+  declDescargar.onclick = event => {
+    event.stopPropagation();
+    if (!scope) { toast('Elige arriba el contribuyente de estas declaraciones.', 'error'); return; }
+    declEjercicio = new Date().getFullYear();
+    declRun('mensuales', () => render(), declDescargar);
+  };
+  declActs.append(action('Ver el mapa', irAlMapa, 'soft', 'eye'), declDescargar);
+  gridBox.append(cSlot, oSlot,
+    cmdCard('cfdi', 'ok', 'CFDI del SAT', 'Descarga masiva y vigilancia',
+      'Baja los comprobantes del mes o de un periodo',
+      action('Ir a la descarga', () => showSatDownload(), 'soft', 'down'), () => showSatDownload()),
+    cmdCard('decl', 'ok', 'Declaraciones', 'El mapa de tu año fiscal',
+      'Qué consta presentado, qué toca y qué venció',
+      declActs, irAlMapa));
+  (async () => {
+    await Promise.resolve();
+    if (!cSlot.isConnected) return;
+    const data = await satApi('satdocs').catch(() => null);
+    const profiles = data?.profiles || [];
+    const objetivo = profiles.find(row => row.rfc === scope) || (profiles.length === 1 ? profiles[0] : null);
+    if (cSlot.isConnected) cSlot.replaceChildren(docCmdCard('constancia', objetivo));
+    if (oSlot.isConnected) oSlot.replaceChildren(docCmdCard('opinion', objetivo));
+  })();
+  return wrap;
+}
 function satDocsSection() {
   const section = panel('Constancias y opinión del SAT',
-    'La constancia de situación fiscal y la opinión de cumplimiento caducan a la vista de tus clientes: aquí se vigila su edad (verde menos de 60 días, ámbar hasta 90, rojo después) y, si activas la descarga automática, PacoSAT las renueva cada mes y las envía por correo.');
+    'La constancia de situación fiscal y la opinión de cumplimiento se vigilan por RECENCIA con la política propia de PacoSAT (verde menos de 60 días, ámbar hasta 90, rojo después): no es una caducidad oficial — la constancia no caduca —, es el margen para que ningún cliente te pida un documento más fresco. Si activas la descarga automática, PacoSAT las renueva cada mes y las envía por correo.');
   const body = n('div');
   section.append(body);
   const fill = async data => {
     const view = data || await satApi('satdocs');
     body.replaceChildren();
     if (!view.profiles.length) {
-      body.append(n('p', 'Configura primero un RFC arriba: sus constancias se vigilarán aquí.', 'empty'));
+      body.append(n('p', 'Aún no hay RFC dados de alta: agrega el primero en Ajustes › Contribuyentes y sus documentos se vigilarán aquí.', 'empty'));
       return;
     }
     for (const profile of view.profiles) {
@@ -47,7 +115,28 @@ function satDocsSection() {
       }
       if (profile.lastAttempt) meta.append(n('span', 'Último intento de descarga: ' + localDateTime(profile.lastAttempt)));
       card.append(meta);
-      if (profile.lastError) card.append(n('p', 'Último intento: ' + profile.lastError, 'error-text'));
+      /* Puesta en marcha (M4): lo que falta para que este
+         contribuyente quede trabajando, paso a paso. */
+      if (profile.arranque && profile.arranque.hechas < profile.arranque.total) {
+        const boxArranque = n('div', undefined, 'sat-arranque');
+        boxArranque.append(n('strong', 'Puesta en marcha · ' + profile.arranque.hechas + ' de ' + profile.arranque.total));
+        const list = n('ul');
+        for (const step of profile.arranque.steps)
+          list.append(n('li', (step.done ? '✓ ' : '○ ') + step.label + (step.done ? '' : (step.gesto ? ' — ' + step.gesto : ''))));
+        boxArranque.append(list);
+        card.append(boxArranque);
+      }
+      if (profile.lastError) {
+        /* El último fallo se cuenta con el modelo único (1.13.0):
+           semáforo, de quién es, qué significa y qué hacer; el
+           mensaje crudo del motor queda en el detalle técnico. */
+        if (profile.lastFailure) {
+          const spec = problemSpec('satdoc', { kind: profile.lastFailure.kind, error: profile.lastFailure.error });
+          card.append(problemCard(spec, spec.accion === 'subir-doc' ?
+            action('Subir PDF a mano', () => satDocUploadDialog(profile.rfc, fill,
+              !profile.constancia ? 'constancia' : !profile.opinion ? 'opinion' : profile.progress?.kind), 'soft') : null));
+        } else card.append(n('p', 'Último intento: ' + profile.lastError, 'error-text'));
+      }
       /* Configuración del envío automático, en lenguaje llano. */
       const form = n('div', undefined, 'satdoc-form');
       const enabled = input('checkbox', { checked: Boolean(profile.config.enabled) });
@@ -101,7 +190,8 @@ function satDocsSection() {
         finally { clearInterval(poller); }
       };
       const upload = n('button', 'Subir PDF a mano', 'soft');
-      upload.onclick = () => satDocUploadDialog(profile.rfc, fill);
+      upload.onclick = () => satDocUploadDialog(profile.rfc, fill,
+        !profile.constancia ? 'constancia' : !profile.opinion ? 'opinion' : undefined);
       actions.append(run, upload);
       card.append(actions);
       /* Progreso persistido de la última corrida (o de la que sigue
@@ -143,9 +233,47 @@ function renderSatDocProgress(box, profile) {
   const head = n('p', undefined, 'sat-progress-head');
   head.append(n('strong', progress.running ? 'Descargando ahora · ' : 'Última descarga · '),
     n('span', (progress.kind === 'opinion' ? 'Opinión de cumplimiento' : 'Constancia') + ' — ' + progress.step));
-  box.append(head, satDocStepList(progress.steps, false));
+  box.append(head);
+  /* Corridas visuales (1.13.0): las fases de la tubería con su
+     estado (hecho / en curso / falló aquí) mandan sobre el diario;
+     el diario de líneas queda debajo como rastro. */
+  const outcome = progress.running ? 'running' : progress.ok === false ? 'failed' : 'ok';
+  box.append(runPhasesEl(SATDOC_PHASES, progress.steps, outcome));
+  if (!progress.running && progress.ok === false) {
+    const run = (profile.runs || []).find(candidate => !candidate.ok);
+    const spec = problemSpec('satdoc', { kind: run?.errorKind || '', error: run?.error || progress.step });
+    box.append(problemCard(spec, null));
+    const evidencia = run ? evidenceButtons('satdoc', run) : null;
+    if (evidencia) box.append(evidencia);
+  }
+  box.append(satDocStepList(progress.steps, false));
   if (progress.running) {
     box.append(n('p', 'La descarga sigue en el servidor: puedes refrescar o salir y volver; al regresar verás el estado real.', 'sat-progress-note'));
+    /* Cancelar (pieza 9, 1.22.0): detiene la corrida EN EL
+       SERVIDOR, descarta lo parcial y deja el último documento
+       bueno intacto. Tras pedirlo, la pantalla RE-LEE el estado
+       antes de afirmar que se canceló. */
+    const cancel = n('button', 'Cancelar descarga', 'soft small danger');
+    cancel.type = 'button';
+    cancel.onclick = async () => {
+      cancel.disabled = true; cancel.textContent = 'Cancelando…';
+      try {
+        await satApi('satdocs/cancel', { rfc: profile.rfc, kind: progress.kind });
+        for (let i = 0; i < 20; i++) {
+          const fresh = await satApi('satdocs').catch(() => null);
+          const item = (fresh?.profiles || []).find(row => row.rfc === profile.rfc);
+          if (!item) break;
+          renderSatDocProgress(box, item);
+          if (!item.progress?.running) {
+            toast(item.progress?.step?.includes('cancelada') ? 'Descarga cancelada: lo parcial se descartó y tu último documento sigue intacto.' :
+              'La corrida terminó antes de que el cancelar llegara.', 'ok');
+            break;
+          }
+          await new Promise(resolve => setTimeout(resolve, 1500));
+        }
+      } catch (error) { toast(error.message, 'error'); cancel.disabled = false; cancel.textContent = 'Cancelar descarga'; }
+    };
+    box.append(cancel);
   }
 }
 /* El diario: cada corrida con su resultado y sus pasos; si falló
@@ -162,36 +290,83 @@ function renderSatDocRuns(box, profile) {
       (run.kind === 'opinion' ? 'Opinión' : 'Constancia') +
       (run.ok ? ' · Guardada en Expedientes' : ' · Falló'));
     details.append(summary);
-    if (!run.ok && run.error) details.append(n('p', run.error, 'error-text'));
-    details.append(satDocStepList(run.steps, true));
-    if (run.hasShot || run.hasHtml) {
-      const files = n('div', undefined, 'sat-run-files');
-      if (run.hasShot) {
-        const shot = n('button', 'Bajar la captura de la página', 'soft');
-        shot.onclick = async () => {
-          try { download(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=shot'), 'captura-del-fallo.png'); }
-          catch (error) { toast(error.message, 'error'); }
-        };
-        files.append(shot);
-      }
-      if (run.hasHtml) {
-        const html = n('button', 'Bajar el HTML de la página', 'soft');
-        html.onclick = async () => {
-          try { download(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'); }
-          catch (error) { toast(error.message, 'error'); }
-        };
-        files.append(html);
-      }
-      details.append(files);
+    /* La corrida caída enseña sus fases con el falló-aquí, el
+       problema con el modelo único y su evidencia a un clic
+       (1.13.0); el diario de líneas queda como rastro completo. */
+    details.append(runPhasesEl(SATDOC_PHASES, run.steps, run.ok ? 'ok' : 'failed'));
+    if (!run.ok) {
+      const spec = problemSpec('satdoc', { kind: run.errorKind || '', error: run.error || '' });
+      details.append(problemCard(spec, null));
+      const evidencia = evidenceButtons('satdoc', run);
+      if (evidencia) details.append(evidencia);
     }
+    details.append(satDocStepList(run.steps, true));
     box.append(details);
   }
 }
-function satDocUploadDialog(rfc, fill) {
+/* ===== Trabajos del SAT (1.22.0, pieza 14): cola de lectura
+   sobre los registros reales de todas las corridas, con su
+   estado, su causa probada y su Cancelar. Lee /api/sat/trabajos. */
+function trabajosSatSection() {
+  const section = panel('Trabajos del SAT',
+    'Todas las corridas contra el SAT en una sola cola: qué corre ahora (con su Cancelar), qué falló y por qué causa probada, y qué terminó y cuándo. Sale de los registros reales de cada motor, no de otra lista.');
+  const body = n('div');
+  section.append(body);
+  const CLASE = { documento: 'Documento', declaraciones: 'Declaraciones', masiva: 'Paquetes',
+    recuperacion: 'Recuperación', mensual: 'Mensual', ciec: 'CIEC' };
+  const ESTADO = { 'en-curso': ['warn', 'En curso'], pausada: ['warn', 'Pausada'],
+    terminada: ['ok', 'Terminada'], fallida: ['bad', 'Fallida'], cancelada: ['dim', 'Cancelada'],
+    interrumpida: ['bad', 'Interrumpida por reinicio'] };
+  const fill = async () => {
+    const data = await satApi('sat/trabajos').catch(() => null);
+    body.replaceChildren();
+    const rows = data?.trabajos || [];
+    if (!rows.length) {
+      body.append(n('p', 'Sin corridas registradas todavía.', 'empty'));
+      return;
+    }
+    for (const row of rows) {
+      const line = n('div', undefined, 'cp-row');
+      const pill = ESTADO[row.estado] || ['dim', row.estado];
+      line.append(statusPill(pill[0], (CLASE[row.clase] || row.clase) + ' · ' + pill[1]),
+        n('span', row.titulo + ' · ' + localDateTime(row.at) +
+          (row.causa ? ' — ' + row.causa : '')));
+      if (row.cancelar) {
+        const cancel = n('button', 'Cancelar', 'soft small danger');
+        cancel.type = 'button';
+        cancel.onclick = async () => {
+          cancel.disabled = true; cancel.textContent = 'Cancelando…';
+          try {
+            if (row.cancelar.tipo === 'satdoc')
+              await satApi('satdocs/cancel', { rfc: row.cancelar.rfc, kind: row.cancelar.kind || undefined });
+            else if (row.cancelar.tipo === 'decl')
+              await satApi('declaraciones/cancel', { rfc: row.cancelar.rfc });
+            else if (row.cancelar.tipo === 'job')
+              await satApi('sat/cancel-job', { id: row.cancelar.id });
+            toast('Cancelación pedida: la corrida se detiene en el servidor.', 'ok');
+            setTimeout(fill, 1200);
+          } catch (error) { toast(error.message, 'error'); cancel.disabled = false; cancel.textContent = 'Cancelar'; }
+        };
+        line.append(cancel);
+      }
+      const go = n('button', 'Ver detalle', 'soft small');
+      go.type = 'button';
+      go.onclick = () => navigate(row.enlace === 'satdocs' || row.enlace === 'declaraciones' ? 'docs' : 'sat');
+      line.append(go);
+      body.append(line);
+    }
+  };
+  fill();
+  return section;
+}
+function satDocUploadDialog(rfc, fill, presetKind) {
   const kind = n('select');
   for (const [value, label] of [['constancia', 'Constancia de situación fiscal'], ['opinion', 'Opinión de cumplimiento']]) {
     const option = n('option', label); option.value = value; kind.append(option);
   }
+  /* F3 (1.22.0): desde la tarjeta de un documento, el tipo ya
+     viene puesto — un gesto menos y ningún error de clase. */
+  if (presetKind) kind.value = presetKind;
   const date = input('date', { required: true, value: new Date().toISOString().slice(0, 10) });
   const picker = input('file', { accept: '.pdf,application/pdf', required: true });
   dialog('Subir documento del SAT · ' + rfc,

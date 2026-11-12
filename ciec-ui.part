@@ -1,0 +1,175 @@
+/* ===== Descarga por CIEC (1.12.0) =====
+   La tarjeta de los RFC que entran al SAT con contraseña (CIEC)
+   en vez de e.firma: rango de fechas, botón de descarga, progreso
+   en vivo y la PAUSA del captcha — la imagen que enseña el portal
+   y el campo donde Paco escribe lo que ve; su texto va al
+   servidor, que lo teclea en la página, y no se guarda en ningún
+   sitio. Todo el estado vive en el servidor: recargar la página
+   no pierde ni la corrida ni el captcha que espera. Los pasos se
+   pintan con satDocStepList, el mismo ayudante del descargador
+   de documentos. */
+let ciecData = { profiles: [] };
+let ciecPoller = null;
+const ciecMxDay = (date = new Date()) => new Intl.DateTimeFormat('en-CA',
+  { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+async function loadCiec() {
+  try { ciecData = await satApi('ciec'); } catch { ciecData = { profiles: [] }; }
+  return ciecData;
+}
+function ciecDialog(prefillRfc) {
+  const person = selectPerson();
+  if (prefillRfc && people.some(row => row.id === prefillRfc)) person.value = prefillRfc;
+  const defaults = (satData.profiles || []).find(row => row.rfc === person.value) || {};
+  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['360','Cada 6 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults.minutes || 360));
+  const days = input('number', { min: 1, max: 31, value: defaults.days || 7, required: true });
+  const direction = select(Object.entries(directions), defaults.direction || 'received');
+  const password = input('password', { required: true, maxLength: 256, autocomplete: 'off' });
+  dialog('Acceso con contraseña (CIEC)', [
+    n('p', 'Para un RFC que NO tiene e.firma: PacoSAT entra al portal del SAT con el RFC y esta contraseña y descarga las facturas desde ahí. La contraseña se guarda solo en la carpeta protegida del servidor, con la misma custodia que la de la e.firma: no se muestra nunca y no entra en respaldos. Al descargar, el portal pedirá un captcha: lo escribes tú en esta misma pantalla, es tu gesto.'),
+    field('Contribuyente', person), field('Qué revisar', direction), field('Frecuencia', interval), field('Días de búsqueda', days),
+    field('Contraseña CIEC del SAT', password)
+  ], async () => {
+    satData = await satApi('ciec', { rfc: person.value, minutes: Number(interval.value), days: Number(days.value),
+      direction: direction.value, ciec: password.value });
+    password.value = '';
+    fillSat();
+    announce('Acceso CIEC guardado para ' + person.value + '. Ya puedes descargar sus facturas desde la tarjeta CIEC de esta pantalla.');
+    soundCue('success');
+  }, 'Guardar acceso CIEC');
+}
+function ciecPanel() {
+  const wrap = n('div'); wrap.id = 'ciec-live';
+  fillCiec(wrap);
+  loadCiec().then(() => fillCiec(wrap));
+  return wrap;
+}
+function fillCiec(target = $('ciec-live')) {
+  if (!target) return;
+  const box = panel('Descarga con contraseña CIEC · sin e.firma');
+  if (!ciecData.profiles.length) box.append(empty('Ningún RFC usa CIEC todavía',
+    'Si un RFC no tiene e.firma, guarda su acceso con contraseña desde «Acceso con contraseña (CIEC)» y su tarjeta de descarga aparecerá aquí.'));
+  for (const profile of ciecData.profiles) box.append(ciecCard(profile));
+  target.replaceChildren(box);
+  ciecEnsurePoller();
+}
+function ciecCard(profile) {
+  const card = n('article', undefined, 'sat-card');
+  const head = n('div', undefined, 'panel-head');
+  head.append(cell(profile.rfc, profile.ciecStored ? 'Contraseña guardada en el servidor' : 'Falta guardar la contraseña'),
+    n('span', profile.ciecStored ? 'Listo para descargar' : 'Sin contraseña', 'pill ' + (profile.ciecStored ? 'ok' : 'warn')));
+  const end = input('date', { value: ciecMxDay(), max: ciecMxDay() });
+  const start = input('date', { value: ciecMxDay(new Date(Date.now() - 6 * 86400000)), max: ciecMxDay() });
+  const direction = select([['both', 'Recibidos y emitidos'], ['received', 'Solo recibidos'], ['issued', 'Solo emitidos']], 'both');
+  const form = n('div', undefined, 'sat-doc-config');
+  form.append(field('Desde', start), field('Hasta', end), field('Qué bajar', direction));
+  const actions = n('div', undefined, 'actions');
+  actions.append(action('Descargar con CIEC', async () => {
+    check(start.value && end.value && start.value <= end.value, 'Elige el rango: primero el día inicial y después el final.');
+    check((Date.parse(end.value) - Date.parse(start.value)) / 86400000 <= 365, 'El rango máximo de una descarga es de un año.');
+    ciecData = await satApi('ciec/run', { rfc: profile.rfc, start: start.value, end: end.value, direction: direction.value });
+    fillCiec();
+    announce('Descarga CIEC de ' + profile.rfc + ' en marcha: cuando el portal pida el captcha, lo escribes en esta tarjeta.');
+  }, 'primary', 'sync'), action('Cambiar contraseña', () => ciecDialog(profile.rfc)));
+  const progress = n('div'); progress.dataset.ciecProgress = profile.rfc;
+  const captcha = n('div'); captcha.dataset.ciecCaptcha = profile.rfc;
+  const runs = n('div'); runs.dataset.ciecRuns = profile.rfc;
+  card.append(head, n('p', 'El portal del SAT deja bajar unas 2.000 facturas al día por RFC. La máquina hace todo el recorrido; tú solo escribes el captcha cuando el portal lo enseñe.', 'sat-doc-note'),
+    form, actions, progress, captcha, runs);
+  renderCiecDynamic(profile, card);
+  return card;
+}
+function renderCiecDynamic(profile, card) {
+  const progressBox = card.querySelector('[data-ciec-progress]');
+  const captchaBox = card.querySelector('[data-ciec-captcha]');
+  const runsBox = card.querySelector('[data-ciec-runs]');
+  if (progressBox) {
+    progressBox.replaceChildren();
+    const progress = profile.progress;
+    if (progress) {
+      const box = n('div', undefined, 'sat-progress');
+      box.append(n('p', (progress.running ? '⏳ ' : progress.ok === false ? '⚠ ' : '✓ ') + (progress.step || ''), 'sat-progress-head'));
+      /* Corridas visuales (1.13.0): fases con estado sobre el
+         diario de líneas; si la corrida cayó, el problema con el
+         modelo único y su gesto. */
+      const outcome = progress.running ? 'running' : progress.ok === false ? 'failed' : 'ok';
+      if (progress.steps?.length) box.append(runPhasesEl(CIEC_PHASES, progress.steps, outcome));
+      if (!progress.running && progress.ok === false) {
+        const run = (profile.runs || []).find(candidate => !candidate.ok);
+        const spec = problemSpec('ciec', { kind: run?.errorKind || '', error: run?.error || '' });
+        box.append(problemCard(spec,
+          spec.accion === 'cambiar-ciec' || spec.accion === 'guardar-ciec' ?
+            action('Guardar la contraseña CIEC', () => ciecDialog(profile.rfc), 'soft') : null));
+      }
+      if (progress.steps?.length) box.append(satDocStepList(progress.steps));
+      progressBox.append(box);
+    }
+  }
+  if (captchaBox) {
+    /* Si el captcha que espera es el mismo (mismo «since»), la
+       caja no se repinta: Paco puede estar escribiendo en ella. */
+    const waiting = profile.captcha;
+    if (!waiting && captchaBox.dataset.since) { captchaBox.replaceChildren(); captchaBox.dataset.since = ''; }
+    else if (waiting && captchaBox.dataset.since !== String(waiting.since)) {
+      captchaBox.dataset.since = String(waiting.since);
+      const box = n('div', undefined, 'ciec-captcha');
+      const text = input('text', { maxLength: 32, autocomplete: 'off', placeholder: 'Escribe lo que ves' });
+      const img = n('img', undefined, 'ciec-captcha-img'); img.src = waiting.image;
+      box.append(n('h4', 'El portal pide el captcha — intento ' + waiting.attempt + ' de ' + waiting.max),
+        n('p', 'Escribe los caracteres de la imagen tal como se ven. Es tu gesto de seguridad: PacoSAT lo teclea en el portal y no lo guarda en ningún sitio. La espera dura 10 minutos.'),
+        img, field('Lo que ves en la imagen', text));
+      const row = n('div', undefined, 'actions');
+      row.append(action('Seguir con la descarga', async () => {
+        check(text.value.trim(), 'Escribe lo que ves en la imagen.');
+        ciecData = await satApi('ciec/captcha', { rfc: profile.rfc, text: text.value });
+        text.value = '';
+        fillCiec();
+      }, 'primary'));
+      box.append(row);
+      captchaBox.replaceChildren(box);
+    }
+  }
+  if (runsBox) {
+    runsBox.replaceChildren();
+    if (profile.runs?.length) {
+      const details = n('details', undefined, 'seal-details');
+      details.append(n('summary', 'Diario de descargas'));
+      for (const run of profile.runs) {
+        const item = n('div', undefined, 'sat-run');
+        item.append(n('p', (run.ok ? '✓ ' : '⚠ ') + localDateTime(run.started) +
+          (run.ok ? ' · ' + run.added + ' nuevas · ' + run.duplicates + ' ya estaban · de ' + run.found + ' encontradas'
+            : ' · no terminó')));
+        /* Fases de la corrida y, si cayó o quedó incompleta, el
+           problema con el modelo único y su evidencia (1.13.0). */
+        if (run.steps?.length) item.append(runPhasesEl(CIEC_PHASES, run.steps, run.ok ? 'ok' : 'failed'));
+        if (!run.ok) {
+          item.append(problemCard(problemSpec('ciec', { kind: run.errorKind || '', error: run.error || '' }), null));
+          const evidencia = evidenceButtons('ciec', run);
+          if (evidencia) item.append(evidencia);
+        } else if (run.found > 0 && run.added + run.duplicates < run.found) {
+          item.append(problemCard(problemSpec('ciec',
+            { ok: true, found: run.found, downloaded: run.added + run.duplicates }), null));
+        }
+        if (run.steps?.length) {
+          const fold = n('details', undefined, 'sat-run-steps');
+          fold.append(n('summary', 'Ver los pasos'), satDocStepList(run.steps));
+          item.append(fold);
+        }
+        details.append(item);
+      }
+      runsBox.append(details);
+    }
+  }
+}
+function ciecEnsurePoller() {
+  const active = () => ciecData.profiles.some(profile => profile.progress?.running || profile.captcha);
+  if (!active() || ciecPoller) return;
+  ciecPoller = setInterval(async () => {
+    if (!$('ciec-live')) { clearInterval(ciecPoller); ciecPoller = null; return; }
+    await loadCiec();
+    for (const profile of ciecData.profiles) {
+      const box = document.querySelector('[data-ciec-progress="' + profile.rfc + '"]');
+      if (box) renderCiecDynamic(profile, box.closest('.sat-card'));
+    }
+    if (!active()) { clearInterval(ciecPoller); ciecPoller = null; fillCiec(); }
+  }, 2500);
+}

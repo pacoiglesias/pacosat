@@ -36,20 +36,43 @@ function bancosScreen() {
       empty.append(chips);
       body.append(empty);
     }
-    for (const account of data.accounts) body.append(bankAccountPanel(account, draw));
+    /* M1 (1.22.0): con un contribuyente elegido, se enseñan sus
+       cuentas y las que aún no tienen dueño (marcadas); con
+       «Todos», todas con su dueño a la vista. */
+    for (const account of data.accounts) {
+      if (scope && account.rfc && account.rfc !== scope) continue;
+      body.append(bankAccountPanel(account, draw));
+    }
     body.append(bankAccountForm(draw));
   };
   satApi('banks').then(draw).catch(error => { body.append(panel('Bancos', 'No se pudo cargar: ' + error.message)); });
   return [wrap];
 }
 function bankAccountPanel(account, draw) {
-  const title = account.bank + ' · ' + account.name + (account.last4 ? ' ····' + account.last4 : '');
+  const title = account.bank + ' · ' + account.name + (account.last4 ? ' ····' + account.last4 : '') +
+    (account.rfc ? ' · de ' + account.rfc : ' · sin RFC dueño');
   const panelEl = panel(title, account.position ? 'Último saldo: $' + account.position.closing + ' (' + account.position.month + ').' : 'Aún sin estados archivados.');
   const strip = n('div', undefined, 'traffic-strip');
   strip.append(statusPill(account.missing.length ? 'warn' : 'ok',
     account.missing.length ? 'Faltan ' + account.missing.length + ' meses: ' + account.missing.slice(0, 4).join(', ') + (account.missing.length > 4 ? '…' : '') : 'Sin meses faltantes'));
   strip.append(statusPill(account.chainBroken ? 'bad' : 'ok', account.chainBroken ? 'Cadena de saldos ROTA (ver el mes marcado)' : 'Cadena de saldos continua'));
   panelEl.append(strip);
+  /* Asignar el RFC dueño a la cuenta EXISTENTE (el servidor lo
+     acepta desde la 1.22.0 — M1 —; el control llega en la
+     1.27.0): una cuenta sin dueño, o con el dueño equivocado,
+     se asigna aquí sin borrarla ni recrearla — es la pasada de
+     datos previa a dar de alta un segundo contribuyente. */
+  const ownerForm = n('div', undefined, 'sat-form');
+  const ownerSel = select([['', 'Sin RFC dueño (se ve en todos)'],
+    ...people.map(p => [p.id, (p.name || p.id) + ' · ' + p.id])], account.rfc || '', 'RFC dueño');
+  const assignBtn = n('button', 'Asignar dueño', 'soft small');
+  assignBtn.onclick = async () => {
+    try { const data = await satApi('banks/accounts', { id: account.id, rfc: ownerSel.value });
+      announce(ownerSel.value ? 'Cuenta asignada a ' + ownerSel.value + '.' : 'Cuenta sin RFC dueño: se ve en todos.'); draw(data); }
+    catch (error) { toast(error.message, 'error'); }
+  };
+  ownerForm.append(fieldWrap('RFC dueño de esta cuenta', ownerSel), assignBtn);
+  panelEl.append(ownerForm);
   for (const statement of account.statements) {
     const row = n('div', undefined, 'cp-row');
     row.append(statusPill(statement.chain === 'broken' ? 'bad' : statement.state === 'ok' ? 'ok' : statement.state === 'manual' ? 'ok' : 'warn', statement.month),
@@ -63,7 +86,11 @@ function bankAccountPanel(account, draw) {
       row.append(confirmBtn);
     }
     const del = n('button', 'Quitar', 'soft small');
-    del.onclick = async () => { await satApi('banks/statements/delete', { id: statement.id }); announce('Estado eliminado.'); refresh(); };
+    /* Confirmación con el diálogo propio (1.18.0): borrar un estado
+       ya no es un clic sin red. */
+    del.onclick = () => dialog('Quitar este estado de cuenta',
+      [n('p', 'Se elimina el estado de ' + statement.month + ' de esta cuenta, con su lectura de saldos y movimientos. La cuenta y los demás estados quedan como están.')],
+      async () => { await satApi('banks/statements/delete', { id: statement.id }); announce('Estado eliminado.'); refresh(); }, 'Quitar estado');
     row.append(del);
     panelEl.append(row);
     if (statement.chainDetail) panelEl.append(n('p', '⚠ ' + statement.chainDetail, 'error-text'));
@@ -86,7 +113,9 @@ function bankAccountPanel(account, draw) {
   };
   form.append(fieldWrap('Mes del estado', month), fieldWrap('PDF', file), upload);
   const delAccount = n('button', 'Eliminar esta cuenta y sus estados', 'soft');
-  delAccount.onclick = async () => { await satApi('banks/accounts', { delete: account.id }); announce('Cuenta eliminada.'); refresh(); };
+  delAccount.onclick = () => dialog('Eliminar esta cuenta y sus estados',
+    [n('p', 'Se elimina la cuenta completa con TODOS sus estados archivados y su conciliación. No hay deshacer: si solo sobra un estado, quítalo a él desde su fila.')],
+    async () => { await satApi('banks/accounts', { delete: account.id }); announce('Cuenta eliminada.'); refresh(); }, 'Eliminar cuenta');
   panelEl.append(form, delAccount);
   return panelEl;
 }
@@ -121,12 +150,16 @@ function bankAccountForm(draw) {
   const bank = input('text', { placeholder: 'BBVA, Santander, Konfio…' });
   const name = input('text', { placeholder: 'Cuenta principal, Fondo…' });
   const last4 = input('text', { placeholder: 'Últimos 4 (opcional)', maxlength: '4' });
+  /* M1: la cuenta nace con su RFC dueño (el elegido arriba o el
+     que se seleccione aquí). */
+  const owner = select([['', 'Sin RFC dueño (se ve en todos)'],
+    ...people.map(p => [p.id, (p.name || p.id) + ' · ' + p.id])], scope || '', 'RFC dueño');
   const add = n('button', 'Crear cuenta', 'soft');
   add.onclick = async () => {
-    try { const data = await satApi('banks/accounts', { bank: bank.value, name: name.value, last4: last4.value }); announce('Cuenta creada.'); draw(data); }
+    try { const data = await satApi('banks/accounts', { bank: bank.value, name: name.value, last4: last4.value, rfc: owner.value }); announce('Cuenta creada.'); draw(data); }
     catch (error) { toast(error.message, 'error'); }
   };
-  form.append(fieldWrap('Banco', bank), fieldWrap('Nombre', name), fieldWrap('Terminación', last4), add);
+  form.append(fieldWrap('Banco', bank), fieldWrap('Nombre', name), fieldWrap('Terminación', last4), fieldWrap('RFC dueño', owner), add);
   panelEl.append(form);
   return panelEl;
 }

@@ -24,61 +24,84 @@ function coverageScreen() {
     wrap.append(skel);
     return [wrap];
   }
-  const coverage = satData.coverage || { groups: [], gaps: [], days: {} };
+  const coverage = satData.coverage || { groups: [], gaps: [], days: {}, records: [] };
   const visible = coverage.groups.filter(group => !scope || group.rfc === scope);
   const screens = [];
-  /* Resumen visible (1.11.0): la cobertura se cuenta como la pregunta
-     de Paco — qué meses me faltan — desde los huecos que el servidor
-     ya calcula, sin pedir nada nuevo al SAT. */
-  const missingPanel = panel('Qué meses te faltan');
-  const gapList = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
-  if (!visible.length && !gapList.length) missingPanel.append(empty('Aún no hay descargas', 'Cuando PacoSAT descargue periodos, aquí verás qué meses tienes y qué meses te faltan.'));
+  /* Cobertura REAL (1.13.1, pieza C3): la tarjeta principal cuenta
+     los meses desde los REGISTROS que el sistema tiene —importados
+     o descargados—, no desde el libro de solicitudes. Un mes sin
+     ningún CFDI dentro del rango de actividad se enseña como
+     hueco, con su propio botón de descarga. */
+  const MESES_C3 = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const monthLabelC3 = key => MESES_C3[Number(key.slice(5, 7)) - 1] + ' de ' + key.slice(0, 4);
+  const tienesPanel = panel('Qué meses tienes');
+  const recordGroups = (coverage.records || []).filter(group => !scope || group.rfc === scope);
+  if (!recordGroups.length) tienesPanel.append(empty('Aún no hay datos',
+    'Todavía no hay CFDI guardados para este ámbito. Cuando importes o descargues comprobantes, aquí verás mes a mes lo que tienes, venga de donde venga.'));
   else {
-    const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-    const monthLabel = key => MESES[Number(key.slice(5, 7)) - 1] + ' de ' + key.slice(0, 4);
-    const missingByKey = new Map();
-    for (const gap of gapList) {
-      if (gap.micro) continue;
-      const key = gap.rfc + '|' + gap.direction;
-      if (!missingByKey.has(key)) missingByKey.set(key, new Set());
-      const months = missingByKey.get(key);
-      let cursor = gap.from.slice(0, 7), last = gap.to.slice(0, 7), guard = 0;
-      while (cursor <= last && guard++ < 120) {
-        months.add(cursor);
+    tienesPanel.append(n('p', 'Sale de tus registros guardados (importados y descargados), no de las solicitudes: si un mes no aparece con datos dentro de tu rango de actividad, es un hueco.', 'muted'));
+    for (const group of recordGroups) {
+      tienesPanel.append(n('h3', group.rfc + ' · ' + (group.direction === 'received' ? 'Recibidos' : 'Emitidos') +
+        ' — ' + number.format(group.total) + ' CFDI entre ' + monthLabelC3(group.first) + ' y ' + monthLabelC3(group.last)));
+      const byMonth = new Map(group.months.map(cell => [cell.month, cell]));
+      const rows = [];
+      let cursor = group.first, guard = 0;
+      while (cursor <= group.last && guard++ < 240) {
+        const cell = byMonth.get(cursor);
+        if (cell) {
+          const vias = [];
+          if (cell.descarga) vias.push(number.format(cell.descarga) + ' por descarga del SAT');
+          if (cell.importacion) vias.push(number.format(cell.importacion) + ' por importación');
+          if (cell.sinClasificar && (cell.descarga || cell.importacion)) vias.push(number.format(cell.sinClasificar) + ' sin clasificar');
+          rows.push([monthLabelC3(cursor), number.format(cell.count) + ' CFDI', vias.join(' · ') || '—', n('span', 'Con datos', 'tag ok')]);
+        } else {
+          const [yy, mm] = cursor.split('-').map(Number);
+          const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+          rows.push([monthLabelC3(cursor), 'sin datos', 'Hueco dentro de tu rango de actividad',
+            action('Descargar este mes', () => downloadSheet(group.rfc,
+              { direction: group.direction, start: cursor + '-01', end: cursor + '-' + String(lastDay).padStart(2, '0') }))]);
+        }
         const [y, m] = cursor.split('-').map(Number);
         cursor = m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
       }
-    }
-    const keys = new Set([...visible.map(group => group.rfc + '|' + group.direction), ...missingByKey.keys()]);
-    if (!keys.size) missingPanel.append(n('p', 'No te falta ningún mes: en cada RFC y sentido, lo descargado forma una cadena continua.'));
-    for (const key of [...keys].sort()) {
-      const [rfc, dir] = key.split('|');
-      const months = [...(missingByKey.get(key) || [])].sort();
-      missingPanel.append(n('p', rfc + ' · ' + (dir === 'received' ? 'Recibidos' : 'Emitidos') + ': ' +
-        (months.length ? 'te faltan ' + months.slice(0, 12).map(monthLabel).join(', ') + (months.length > 12 ? '…' : '') + '.' :
-          'no te falta ningún mes.')));
+      tienesPanel.append(grid(['Mes', 'CFDI guardados', 'Cómo llegaron', 'Estado'], rows));
     }
   }
-  screens.push(missingPanel);
-  const table = panel('Qué tengo descargado · por RFC y sentido');
-  if (!visible.length) table.append(empty('Sin solicitudes todavía', 'Cuando PacoSAT descargue periodos desde SAT, aquí verás hasta dónde está verificado cada RFC y qué sigue en curso o falló.'));
+  screens.push(monthlyPanel());
+  screens.push(tienesPanel);
+  /* El libro de solicitudes queda como detalle secundario (C3):
+     cuenta lo PEDIDO al SAT, no lo que tienes. */
+  const table = panel('Descargas pedidas al SAT · por RFC y sentido');
+  if (!visible.length) table.append(empty('Sin solicitudes todavía', 'Nadie ha pedido descargas al SAT desde aquí. Tus registros importados cuentan arriba, en «Qué meses tienes»; las descargas que pidas aparecerán en este libro.'));
   else table.append(grid(['RFC', 'Sentido', 'Verificado hasta', 'Tramos cubiertos', 'En curso', 'Fallidos', 'Peticiones agotadas'],
     visible.map(group => [group.rfc, group.direction === 'received' ? 'Recibidos' : 'Emitidos',
       group.verifiedUntil ? group.verifiedUntil.slice(0, 16) : '—', String(group.covered.length),
       String(group.pending), String(group.failed), String(group.exhausted)])));
   screens.push(table);
-  const gapsPanel = panel('Huecos sin descargar');
+  const gapsPanel = panel('Huecos entre descargas pedidas');
   const gaps = coverage.gaps.filter(gap => !scope || gap.rfc === scope);
   if (!gaps.length) gapsPanel.append(n('p', 'Sin huecos: en cada RFC y sentido, los tramos descargados forman una cadena continua.'));
   else {
     gapsPanel.append(n('p', 'PacoSAT no pide estos tramos por su cuenta: quedan anotados aquí. Con «Solicitar este hueco» el diálogo se abre ya rellenado con el RFC, el sentido y las fechas exactas; si ese periodo ya se pidió antes, PacoSAT ofrece una variante en vez de repetir la misma petición.'));
     const duration = seconds => seconds < 90 ? seconds + ' s' : seconds < 5400 ? Math.round(seconds / 60) + ' min' :
       seconds < 172800 ? (seconds / 3600).toFixed(1).replace('.', ',') + ' h' : Math.round(seconds / 86400) + ' días';
+    /* Los huecos se cuentan en lenguaje de calendario (1.18.0):
+       «te falta mayo entero», «del 3 al 9 de junio» — fuera las
+       marcas con precisión de segundo y el «micro-hueco» crudo. */
+    const COV_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+    const gapTexto = gap => {
+      const f = gap.from.slice(0, 10), t = gap.to.slice(0, 10);
+      const [fy, fm, fd] = f.split('-').map(Number);
+      const [ty, tm, td] = t.split('-').map(Number);
+      const ultimoDia = new Date(Date.UTC(fy, fm, 0)).getUTCDate();
+      if (fd === 1 && td === ultimoDia && fm === tm && fy === ty) return 'Te falta ' + COV_MESES[fm - 1] + ' de ' + fy + ' entero';
+      if (fy === ty && fm === tm) return 'Del ' + fd + ' al ' + td + ' de ' + COV_MESES[fm - 1] + ' de ' + fy;
+      return 'Del ' + fd + ' de ' + COV_MESES[fm - 1] + ' de ' + fy + ' al ' + td + ' de ' + COV_MESES[tm - 1] + ' de ' + ty;
+    };
     gapsPanel.append(grid(['RFC', 'Sentido', 'Hueco', 'Duración', 'Tipo', 'Acción'], gaps.map(gap => [gap.rfc,
       gap.direction === 'received' ? 'Recibidos' : 'Emitidos',
-      gap.from.slice(0, 10) === gap.to.slice(0, 10) ? gap.from.slice(0, 16) + ' → ' + gap.to.slice(11, 16) :
-        gap.from.slice(0, 16) + ' → ' + gap.to.slice(0, 16),
-      duration(gap.seconds), gap.micro ? 'Micro-hueco · costura de 1 segundo' : 'Hueco',
+      gapTexto(gap),
+      gap.micro ? 'un instante' : duration(gap.seconds), gap.micro ? 'Costura de la descarga · se cose sola' : 'Hueco',
       /* El hueco se pide desde la propia pantalla (UX-05): el diálogo
          nace rellenado; los micro-huecos son costuras de ±1 s y no se
          piden (se cosen solos al mover un extremo). */
@@ -104,6 +127,105 @@ function coverageScreen() {
   const rfcs = [...new Set([...visible.map(group => group.rfc), ...Object.keys(coverage.days)])].filter(rfc => !scope || rfc === scope).sort();
   for (const rfc of rfcs) screens.push(coverageHeatmap(rfc, coverage.days[rfc] || { received: [], issued: [] }));
   return screens;
+}
+/* Descarga automática mensual (1.15.0): su configuración, la
+   cuenta de la última corrida y la oferta de recuperación de los
+   huecos históricos — aparte de la corrida, un mes y un sentido
+   cada vez, sin duplicar jamás lo que ya se tiene. Se rellena
+   desde GET /api/monthly al abrir la pantalla, como el cierre
+   guiado se rellena desde el servidor. */
+function monthlyPanel() {
+  const wrap = panel('Descarga automática mensual',
+    'El día fijado, PacoSAT baja solo el mes anterior completo de cada RFC con e.firma y deja la cuenta aquí. Los RFC con CIEC no bajan solos: su mes queda «esperando tu gesto» y se baja desde su tarjeta, con tu captcha.');
+  const body = n('div');
+  body.append(n('p', 'Cargando…', 'muted'));
+  wrap.append(body);
+  const mesNombre = key => new Date(key + '-15T12:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+  const pintar = men => {
+    body.replaceChildren();
+    const form = n('div', undefined, 'satdoc-form');
+    const enabled = input('checkbox', { checked: Boolean(men.config.enabled) });
+    const switchLabel = n('label', undefined, 'switch-line');
+    switchLabel.append(enabled, n('span', 'Descargar sola el mes anterior'));
+    const dayInput = input('number', { value: men.config.day, min: 1, max: 28, 'aria-label': 'Día del mes' });
+    const hourInput = input('number', { value: men.config.hour, min: 0, max: 23, 'aria-label': 'Hora' });
+    const save = n('button', 'Guardar', 'soft');
+    save.onclick = async () => {
+      save.disabled = true;
+      try {
+        pintar(await satApi('monthly/config', { enabled: enabled.checked, day: Number(dayInput.value), hour: Number(hourInput.value) }));
+        toast('Descarga automática guardada.', 'ok');
+      } catch (error) { toast(error.message, 'error'); save.disabled = false; }
+    };
+    form.append(switchLabel, n('span', 'Día '), dayInput, n('span', ' a las '), hourInput, n('span', ':00'), save);
+    body.append(form);
+    const abierta = men.runs.find(run => run.status === 'en-curso');
+    const ultima = abierta || men.runs[0];
+    if (abierta) body.append(n('p', 'Bajando ' + mesNombre(abierta.month) + '… (empezó ' + haceText(abierta.startedAt) + '). La cuenta aparecerá al terminar, sin que hagas nada.'));
+    else if (ultima) {
+      const head = n('p');
+      head.append(statusPill(ultima.status === 'hecha' ? 'ok' : 'warn',
+          ultima.status === 'hecha' ? 'Completa' : ultima.status === 'parcial' ? 'Parcial' : 'Falló'),
+        n('strong', ' ' + mesNombre(ultima.month) + ': '),
+        document.createTextNode(ultima.totals ?
+          number.format(ultima.totals.found) + ' CFDI · ' + number.format(ultima.totals.added) + ' nuevos · ' +
+          number.format(ultima.totals.duplicates) + ' ya estaban · ' + (ultima.totals.gaps ? ultima.totals.gaps + ' hueco(s)' : '0 huecos') : 'sin cuenta'));
+      body.append(head);
+      for (const [rfc, entry] of Object.entries(ultima.perRfc || {})) {
+        const line = n('p', undefined, 'muted');
+        line.textContent = rfc + ' · ' + (entry.method === 'ciec' ? 'CIEC' : 'e.firma') + ' · ' +
+          (entry.status === 'hecha' ? 'completa: ' + number.format(entry.found) + ' CFDI, ' + number.format(entry.added) + ' nuevos' :
+           entry.status === 'esperando-gesto' ? 'esperando tu gesto (el portal pide tu captcha)' :
+           entry.status === 'parcial' ? 'parcial: quedó algún tramo sin cubrir' :
+           entry.status === 'fallida' ? 'no terminó' + (entry.error ? ': ' + entry.error : '') : entry.status);
+        body.append(line);
+      }
+    } else body.append(n('p', 'Aún no hay corridas: la primera bajará ' + mesNombre(men.targetMonth) + ' el día ' + men.config.day + '.', 'muted'));
+    if (!abierta) {
+      const nowBtn = n('button', 'Descargar ahora el mes pasado', 'soft');
+      nowBtn.onclick = async () => {
+        nowBtn.disabled = true; nowBtn.textContent = 'Lanzando…';
+        try {
+          pintar(await satApi('monthly/run-now', {}));
+          toast('Corrida lanzada: baja sola y deja su cuenta aquí.', 'ok');
+        } catch (error) { toast(error.message, 'error'); nowBtn.disabled = false; nowBtn.textContent = 'Descargar ahora el mes pasado'; }
+      };
+      body.append(nowBtn);
+    }
+    const gaps = (men.gaps || []).filter(gap => gap.month < men.currentMonth);
+    if (gaps.length) {
+      body.append(n('h3', 'Huecos de meses viejos · recuperación aparte'));
+      body.append(n('p', 'Meses sin ningún CFDI dentro de tu rango de actividad. Recuperarlos NO forma parte de la corrida mensual: cada botón pide solo ese mes y ese sentido, y lo que ya tengas no se duplica.', 'muted'));
+      body.append(grid(['RFC', 'Sentido', 'Mes', 'Acción'], gaps.slice(0, 60).map(gap => {
+        const btn = action('Recuperar este mes', async () => {
+          btn.disabled = true; btn.textContent = 'Pidiendo…';
+          try {
+            const profile = (satData?.profiles || []).find(row => row.rfc === gap.rfc);
+            if (profile?.accessMethod === 'ciec') {
+              const [gy, gm] = gap.month.split('-').map(Number);
+              const ultimoDia = new Date(Date.UTC(gy, gm, 0)).getUTCDate();
+              await satApi('ciec/run', { rfc: gap.rfc, start: gap.month + '-01',
+                end: gap.month + '-' + String(ultimoDia).padStart(2, '0'), direction: gap.direction });
+              toast('Descarga CIEC de ' + mesNombre(gap.month) + ' en marcha: el portal pedirá tu captcha en su tarjeta.', 'ok');
+            } else {
+              const data = await satApi('monthly/recover', { rfc: gap.rfc, direction: gap.direction, month: gap.month });
+              toast(data.recovery?.covered ?
+                'Ese mes ya estaba cubierto por descargas anteriores: no se gastó ninguna solicitud.' :
+                'Recuperación pedida: el SAT la prepara y entra sola, sin duplicar lo que ya tienes.', 'ok');
+            }
+            btn.textContent = 'Pedido ✓';
+          } catch (error) { toast(error.message, 'error'); btn.disabled = false; btn.textContent = 'Recuperar este mes'; }
+        }, 'soft');
+        return [gap.rfc, gap.direction === 'received' ? 'Recibidos' : 'Emitidos', mesNombre(gap.month), btn];
+      })));
+      if (gaps.length > 60) body.append(n('p', '…y ' + (gaps.length - 60) + ' huecos más: también están en la tarjeta «Qué meses tienes» de abajo.', 'muted'));
+    }
+  };
+  (async () => {
+    try { pintar(await satApi('monthly')); }
+    catch { body.replaceChildren(n('p', 'La descarga automática vive en el servidor: abre PacoSAT desde el servidor de tu casa para verla.', 'muted')); }
+  })();
+  return wrap;
 }
 function coverageHeatmap(rfc, daysForRfc) {
   const wrap = panel('Mapa anual de días cubiertos · ' + rfc);

@@ -81,6 +81,10 @@ try {
     recipient: 'to@example.com', user: '', password: '' })).status, 200);
   assert.equal((await call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received', password: 'simulated',
     certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  /* 1.15.0: la descarga automática mensual tiene su propia suite
+     (ronda1150); aquí se apaga para no mezclar sus paquetes ni su
+     correo-resumen con las cuentas de este escenario. */
+  assert.equal((await call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
   await service.tick();
   assert.deepEqual(calls[0], { start: '2026-11-02', end: '2026-11-08', startTime: '00:00:00', endTime: '10:00:00', direction: 'received' });
   assert.equal((await call('/api/retry', { id: -1 })).status, 400);
@@ -228,6 +232,10 @@ try {
     recipient: 'to@example.com', user: '', password: '' })).status, 200);
   assert.equal((await guardApi.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
     password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  /* 1.15.0: la descarga automática mensual tiene su propia suite
+     (ronda1150); aquí se apaga para que el libro de criterios
+     cuente solo las solicitudes de este escenario. */
+  assert.equal((await guardApi.call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
   const october = { rfc, direction: 'received', start: '2026-10-01', end: '2026-10-07' };
   let res = await guardApi.call('/api/request', october);
   assert.equal(res.status, 200);
@@ -307,6 +315,10 @@ try {
   await clashApiA.init();
   assert.equal((await clashApiA.call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received',
     password: 'simulated', certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  /* 1.15.0: la descarga automática mensual tiene su propia suite
+     (ronda1150); aquí se apaga (el ajuste vive en la misma base
+     que hereda el segundo servicio) para contar solo la colisión. */
+  assert.equal((await clashApiA.call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
   const manual = await clashApiA.call('/api/request', { rfc, direction: 'received', start: '2026-11-02', end: '2026-11-08' });
   assert.equal(manual.status, 200);
   assert.deepEqual(clashCalls[0], { start: '2026-11-02', end: '2026-11-08', startTime: '00:00:00',

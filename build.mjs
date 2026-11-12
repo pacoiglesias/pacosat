@@ -74,6 +74,18 @@ function stripJsComments(source) {
   let mode = 'code';
   const saved = [], exprBase = [];
   let braces = 0, prevSig = '', prevWord = '', word = '';
+  /* Des-sangrado del artefacto (1.18.0, Ronda Facilidad): la ronda
+     debía BAJAR el HTML por debajo de la 1.17.0 (552.914 B) sumando
+     a la vez las piezas nuevas, y la cuenta no cerraba recortando
+     funciones vivas. La sangría de las fuentes son ~35 KB que el
+     navegador no ejecuta: esta pasada la retira SOLO del artefacto
+     y SOLO en regiones de código (la máquina ya distingue cadenas,
+     plantillas y regex: el texto de una plantilla jamás se toca,
+     ni un identificador, ni un espacio dentro de una cadena). Las
+     fuentes conservan su sangría; el artefacto conserva los saltos
+     de línea, así que sus números de línea siguen pegados a los de
+     la fuente. Determinista, como el resto del build. */
+  let bol = true;
   const KEYWORDS = new Set(['return', 'typeof', 'instanceof', 'in', 'of', 'new', 'delete', 'void', 'case', 'yield', 'await', 'do', 'else', 'throw']);
   const flush = () => { if (word) { prevWord = word; word = ''; } };
   const regexAhead = () => {
@@ -85,9 +97,17 @@ function stripJsComments(source) {
   };
   while (i < n) {
     const c = source[i], d = source[i + 1] || '';
+    if (bol) {
+      /* Principio de línea: la sangría se salta SOLO en región de
+         código. En texto de plantilla (mode 'tpl') o dentro de una
+         cadena no se come nada: bol se apaga y el contenido pasa
+         intacto. */
+      if (mode === 'code' && (c === ' ' || c === '\t')) { i++; continue; }
+      bol = false;
+    }
     if (mode === 'code') {
       if (c === '/' && d === '/') { flush(); i += 2; while (i < n && source[i] !== '\n') i++; continue; }
-      if (c === '/' && d === '*') { flush(); i += 2; while (i < n && !(source[i] === '*' && source[i + 1] === '/')) { if (source[i] === '\n') out += '\n'; i++; } i += 2; continue; }
+      if (c === '/' && d === '*') { flush(); i += 2; while (i < n && !(source[i] === '*' && source[i + 1] === '/')) { if (source[i] === '\n') { out += '\n'; bol = true; } else bol = false; i++; } i += 2; continue; }
       if (c === "'") { flush(); mode = 'sq'; out += c; i++; continue; }
       if (c === '"') { flush(); mode = 'dq'; out += c; i++; continue; }
       if (c === '`') { flush(); saved.push('code'); mode = 'tpl'; out += c; i++; continue; }
@@ -100,6 +120,7 @@ function stripJsComments(source) {
         braces--;
       }
       out += c;
+      if (c === '\n') bol = true;
       if (/[\w$]/.test(c)) { word += c; prevSig = c; }
       else { flush(); if (!/\s/.test(c)) prevSig = c; }
       i++; continue;
@@ -108,6 +129,7 @@ function stripJsComments(source) {
       const q = mode === 'sq' ? "'" : '"';
       if (c === '\\') { out += c + d; i += 2; continue; }
       out += c; i++;
+      if (c === '\n') bol = true;
       if (c === q || c === '\n') { mode = 'code'; prevSig = '§'; prevWord = ''; }
       continue;
     }
@@ -115,7 +137,7 @@ function stripJsComments(source) {
       if (c === '\\') { out += c + d; i += 2; continue; }
       if (c === '`') { out += c; i++; saved.pop(); mode = 'code'; prevSig = '§'; prevWord = ''; continue; }
       if (c === '$' && d === '{') { out += '${'; i += 2; saved.push('tpl'); exprBase.push(braces); mode = 'code'; prevSig = ''; prevWord = ''; word = ''; continue; }
-      out += c; i++; continue;
+      out += c; if (c === '\n') bol = true; i++; continue;
     }
     if (mode === 'regex') {
       if (c === '\\') { out += c + d; i += 2; continue; }
@@ -144,7 +166,29 @@ function stripCssComments(source) {
   return out;
 }
 const css = stripCssComments(['style.part','design.part','polish.part'].map(read).join('\n'));
-const script = stripJsComments(meta + ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','declaraciones-ui.part','monitor-ui.part','coverage-ui.part','settings-ui.part','lists-ui.part','outputs-ui.part','money-ui.part','pagos-ui.part','compliance-ui.part','banks-ui.part','final-ui.part','avisos-ui.part','capacidades-ui.part'].map(read).join('\n'));
+/* Carga diferida (1.24.0, punto 4b): las pantallas pesadas que NO
+   son del primer pintado —Pagos, Bancos (dentro de Dinero) y
+   Reportes (dentro de Cierre)— dejan de viajar en el bloque
+   principal: cada una se genera como parte propia, el servidor la
+   sirve en /parte/<nombre> y el cliente la inyecta la primera vez
+   que se entra (y la precarga en reposo). La CSP sigue siendo por
+   huella: la política autoriza el bloque principal Y cada parte
+   por su SHA-256 exacto, sin comodines. El manifiesto PACOSAT_LAZY
+   viaja dentro del bloque principal (nombres y rutas, sin código)
+   y lazy.json lleva al servidor las fuentes y sus huellas. Lo que
+   NO se difiere, y por qué: el visor de documentos (pdf-cloud) lo
+   usan todas las pantallas, también las del primer pintado;
+   monitor, cobertura y problemas llevan el Centro de mando de Hoy
+   y textos fijados en el artefacto por las suites; listas comparte
+   su diálogo de contraparte con Dinero; cumplimiento alimenta
+   chequeos del núcleo; ciec vive en el panel del Centro SAT; y
+   final-ui trae el arranque, el modo sin conexión y el invitado. */
+const MAIN_PARTS = ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','ciec-ui.part','declaraciones-ui.part','monitor-ui.part','coverage-ui.part','problemas-ui.part','settings-ui.part','lists-ui.part','money-ui.part','compliance-ui.part','final-ui.part','avisos-ui.part','buzon-ui.part','tributario-ui.part','capacidades-ui.part'];
+const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part' };
+const lazyScripts = {};
+for (const [name, file] of Object.entries(LAZY_PARTS)) lazyScripts[name] = stripJsComments(read(file));
+const lazyManifest = 'const PACOSAT_LAZY = ' + JSON.stringify(Object.fromEntries(Object.keys(LAZY_PARTS).map(name => [name, '/parte/' + name]))) + ';\n';
+const script = stripJsComments(meta + lazyManifest + MAIN_PARTS.map(read).join('\n'));
 /* CSP estricta sin unsafe-inline (1.6.9): la app es un único bloque
    <style> y un único bloque <script>, ambos funciones puras del árbol,
    así que la política los autoriza por su huella SHA-256 exacta. Sin
@@ -156,7 +200,8 @@ const script = stripJsComments(meta + ['data.part','ui.part','pdf-cloud-ui.part'
    atributo (style="…") no se usan en la app: el código pinta con
    clases y con propiedades del DOM, que la CSP no restringe. */
 const sha256 = text => "'sha256-" + createHash('sha256').update(text, 'utf8').digest('base64') + "'";
-const policy = "default-src 'none'; style-src " + sha256(css) + "; script-src " + sha256(script) +
+const policy = "default-src 'none'; style-src " + sha256(css) + "; script-src " +
+  [sha256(script), ...Object.values(lazyScripts).map(sha256)].join(' ') +
   "; img-src data: blob:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'";
 const layout = read('layout.part')
   .replace(/<meta http-equiv="Content-Security-Policy" content="[^"]*">/,
@@ -165,4 +210,8 @@ const layout = read('layout.part')
 if (layout.includes('unsafe-inline')) throw new Error('La CSP generada no debe contener unsafe-inline.');
 write('Faro-Fiscal.html', layout.replace('/*STYLES*/', () => css).replace('/*SCRIPT*/', () => script));
 write('capacidades.json', JSON.stringify(capacidades));
-write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc };\n');
+/* Las partes diferidas y sus huellas, para que el servidor las
+   sirva en /parte/<nombre> y las sume a su cabecera CSP. */
+write('lazy.json', JSON.stringify({ partes: Object.fromEntries(Object.entries(lazyScripts)
+  .map(([name, source]) => [name, { hash: sha256(source), source }])) }));
+write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc, problemSpec, runPhaseStates, downloadShortcutRange, downloadSummaryText };\n');

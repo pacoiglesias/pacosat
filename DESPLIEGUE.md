@@ -1,6 +1,6 @@
 # Despliegue de PacoSAT en el NAS
 
-**Última modificación: 8 nov 2026, 23:20 CST**
+**Última modificación: 12 nov 2026, 04:45 CST (ronda final 1.27.0)**
 
 **Nombre público (decisión de Paco, 8 nov 2026):** el acceso es **https://pacosat.iglesiasmurrieta.com** en todo: `PACOSAT_DOMAIN=pacosat.iglesiasmurrieta.com` en el compose del NAS, el túnel de Cloudflare y cualquier enlace que la app ponga en sus correos salen de ese nombre. El nombre anterior, `sat.iglesiasmurrieta.com`, queda como **alias con redirección** al nuevo durante la transición (se mantiene el registro DNS y una regla de redirección en el túnel/proxy hasta que Paco diga retirarlo). El cambio de túnel/DNS se hace en el despliegue final; el código no contiene el nombre (llega por `PACOSAT_ORIGIN`)— solo esta documentación y los ejemplos lo fijan.
 
@@ -11,7 +11,7 @@ La vía PRINCIPAL de despliegue es descargar la imagen ya construida: al fusiona
 ```yaml
 services:
   pacosat:
-    image: ghcr.io/pacoiglesias/pacosat:latest   # o la etiqueta de la versión, p. ej. :1.7.0
+    image: ghcr.io/pacoiglesias/pacosat:latest   # o la etiqueta de la versión, p. ej. :1.27.0
     restart: unless-stopped
     environment:
       PACOSAT_ORIGIN: https://${PACOSAT_DOMAIN:?Configura PACOSAT_DOMAIN}
@@ -37,6 +37,13 @@ Con «Subir e.firma» (Centro SAT), Paco guarda el .cer/.key y la contraseña de
 2. En el NAS, en la carpeta del proyecto: `docker compose pull pacosat && docker compose up -d pacosat`.
 3. Verificar la app: responde tras el túnel, el pie muestra «PacoSAT {versión} · Modificado el {fecha} a las {hora}» con la versión nueva y su hora, y el panel de salud lee los perfiles.
 4. Limpieza (convención del NAS): borrar las imágenes `ghcr.io/pacoiglesias/pacosat` de versiones anteriores que ya no use ningún contenedor (`docker image prune` acotado a esa imagen) y reportar lo borrado. Nunca se borra lo vivo: `.env`, `pacosat-secrets`, respaldos, el compose desplegado, los volúmenes ni los datos.
+
+## Notas de la ronda final 1.27.0 (leer antes de desplegarla)
+
+- **El destino del respaldo debe ser REAL en el host (pendiente arrastrado de la 1.23.0):** el respaldo programado escribe en `PACOSAT_BACKUP_DIR` si la variable existe; si no, en el `backup.dir` del `config.json`; si no, en la carpeta `respaldos` junto a la base (dentro del volumen de datos). En el despliegue vivo esa carpeta del host (`respaldos/` del proyecto) quedó VACÍA y el compose desplegado no traía el montaje que la nota de la 1.23.0 daba por puesto: antes de que Paco fije su contraseña de respaldo, el despliegue de la 1.27.0 debe dejar el destino montado desde el host (bind mount de `./respaldos` sobre el destino que la configuración use) y VERIFICAR en el host que el primer conjunto cae ahí — si cayera solo en la capa del contenedor o en el volumen equivocado, se perdería al recrearlo o no lo vería Cloud Sync.
+- **Diario WAL de la base:** la base corre en WAL con `synchronous=FULL`; el archivo `-wal` puede crecer entre reinicios (en producción se observaron ~35 MB: es mantenimiento, no corrupción). Desde la 1.27.0 cada instantánea de respaldo/exportación hace `wal_checkpoint(TRUNCATE)` antes de copiar, así que ningún respaldo pierde lo último escrito. No se borran a mano los archivos `-wal`/`-shm` con el contenedor en marcha; un reinicio normal lo recoge.
+- **Login propio:** al subir a la 1.27.0 las sesiones del login propio anteriores quedan invalidadas UNA vez (desde esta ronda cada sesión lleva la huella de la credencial con la que nació, y cambiar la contraseña las invalida todas): Paco entra de nuevo y ya. El freno de intentos fallidos ahora vive en el estado del servidor, no en memoria.
+- **Llave VAPID del push:** vive en `vapid.json` (0600) dentro de `PACOSAT_EFIRMA_DIR` (la carpeta de secretos), ya no en la base; al primer arranque de la 1.27.0 migra sola desde el ajuste heredado y lo deja limpio. Nada que hacer a mano; solo no borrar ese archivo al limpiar la carpeta de secretos.
 
 ## Respaldo: construir en el NAS (vía anterior)
 

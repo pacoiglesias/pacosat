@@ -62,6 +62,11 @@ try {
   /* Configuración: automática el día 5 a las 9, dos destinatarios. */
   res = await call('/api/satdocs/config', { rfc: RFC, enabled: true, day: 5, hour: 9, recipients: 'nora@example.com, paco@example.com' });
   assert.equal(res.status, 200);
+  /* 1.15.0: la descarga automática mensual de CFDI tiene su
+     propia suite (ronda1150); aquí se apaga para que el correo
+     contado en este escenario sea solo el de los documentos. */
+  res = await call('/api/monthly/config', { enabled: false, day: 5, hour: 9 });
+  assert.equal(res.status, 200);
 
   /* Descarga inmediata de ambas clases: archiva y envía con adjunto. */
   res = await call('/api/satdocs/run', { rfc: RFC });

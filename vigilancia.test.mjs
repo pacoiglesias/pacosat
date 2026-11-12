@@ -76,7 +76,12 @@ console.log('OK: N-601 se guarda como «Formato rechazado» (distinto de N-602 �
     checkSat: async item => { const b = behaviour.get(item.id); if (b instanceof Error) throw b; return b; } });
   try {
     for (const row of [A, B, C, D, F]) monitor.register(row);
-    const lists = await monitor.refreshLists();
+    /* refreshLists arranca el trabajo y vuelve al instante (1.13.1,
+       pieza H): el resultado se lee en el resumen al terminar. */
+    monitor.refreshLists();
+    for (let i = 0; i < 200 && monitor.summary([]).lists.refreshing; i++)
+      await new Promise(resolve => setTimeout(resolve, 10));
+    const lists = monitor.summary([]).lists;
     assert.equal(lists.count, 1);
     assert.ok(lists.fetched > 0);
     /* Revisar ahora: procesa solo los que no tienen respuesta. */
@@ -137,15 +142,31 @@ console.log('OK: N-601 se guarda como «Formato rechazado» (distinto de N-602 �
     let sum = await (await call('/api/monitor/summary', { ids: [cfdi.id] })).json();
     assert.equal(sum.counts.total, 1);
     assert.equal(sum.counts.sinRevisar, 1);
-    /* «Revisar ahora» procesa la tanda y el resumen cambia. */
+    /* «Revisar ahora» (1.18.0): ya no procesa la tanda dentro de
+       la petición — ARRANCA el barrido en el servidor (que no
+       muere al cerrar la pestaña) y el resumen cambia al acabar,
+       sondeándolo como con el refresco de listados. */
     const batch = await (await call('/api/monitor/check-now', { ids: [cfdi.id] })).json();
     assert.equal(batch.queued, 1);
-    assert.equal(batch.processed, 1);
-    assert.equal(batch.remaining, 0);
+    assert.equal(batch.started, true, 'check-now arranca el barrido del servidor');
+    for (let i = 0; i < 200; i++) {
+      const sumNow = await (await call('/api/monitor/summary', { ids: [cfdi.id] })).json();
+      if (sumNow.counts.vigentes === 1) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
     sum = await (await call('/api/monitor/summary', { ids: [cfdi.id] })).json();
     assert.equal(sum.counts.vigentes, 1, 'recién revisado y sin listados cargados: cuenta como vigente');
     assert.equal(sum.counts.enListado69B, 0, 'sin refrescar listados aún no hay coincidencia guardada');
-    const refreshed = await (await call('/api/monitor/refresh-lists', {})).json();
+    /* El refresco del 69-B es un trabajo con estado desde la 1.13.1
+       (pieza H): el POST lo arranca y el resumen lo cuenta al acabar. */
+    await call('/api/monitor/refresh-lists', {});
+    let refreshed = null;
+    for (let i = 0; i < 200; i++) {
+      const sumNow = await (await call('/api/monitor/summary', { ids: [cfdi.id] })).json();
+      refreshed = { lists: sumNow.lists };
+      if (!sumNow.lists.refreshing && sumNow.lists.count === 1) break;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
     assert.equal(refreshed.lists.count, 1);
     sum = await (await call('/api/monitor/summary', { ids: [cfdi.id] })).json();
     assert.equal(sum.counts.enListado69B, 1);

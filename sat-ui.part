@@ -40,6 +40,39 @@ async function satApi(route, data) {
   }
   return response.headers.get('Content-Type') === 'application/zip' ? response.blob() : response.json();
 }
+/* Lecturas compartidas por pintado (1.24.0, punto 4a): Hoy pedía
+   «reports/checklist» dos veces en el mismo pintado (el panel Hoy
+   y el cierre guiado) y cada pantalla re-lanzaba lecturas que el
+   pulso acababa de traer. satApiLectura comparte la promesa de
+   las GET idénticas durante 5 s: mismo dato, una sola llamada
+   por pintado. Solo lecturas — las mutaciones jamás se
+   comparten — y un fallo no se cachea. */
+const satLecturas = new Map();
+function satApiLectura(route) {
+  const hit = satLecturas.get(route);
+  if (hit && Date.now() - hit.at < 5000) return hit.promise;
+  const promise = satApi(route);
+  satLecturas.set(route, { at: Date.now(), promise });
+  promise.catch(() => { if (satLecturas.get(route)?.promise === promise) satLecturas.delete(route); });
+  return promise;
+}
+/* Mutación con recomprobación (1.13.1, pieza H): si la respuesta de
+   una acción de GUARDAR se pierde (red caída, 502 del proxy tras
+   aplicar el cambio), la pantalla NUNCA declara el fallo sin
+   recomprobar: re-lee el estado afectado y, si el cambio consta
+   aplicado, devuelve { aplicadoTrasError: true } para que la
+   pantalla enseñe el éxito real; solo si no consta, relanza el
+   error. Es el criterio global para «Ya se pagó», marcar pagado
+   y cualquier mutación equivalente. */
+async function satApiGuardar(route, data, comprobar) {
+  try { return await satApi(route, data); }
+  catch (error) {
+    let aplicado = false;
+    try { aplicado = Boolean(await comprobar()); } catch { aplicado = false; }
+    if (aplicado) return { aplicadoTrasError: true };
+    throw error;
+  }
+}
 /* satApiBlob(): como satApi(), pero la respuesta es siempre un Blob
    (el ZIP del paquete de defensa de Cumplimiento), sin pasar por el
    desvío JSON de satApi ni depender de su Content-Type exacto. Se
@@ -84,19 +117,193 @@ function restSwitch() {
   toggle.type = 'button';
   toggle.setAttribute('aria-pressed', String(active));
   toggle.onclick = async () => {
-    if (active) {
-      satData = await satApi('rest', { until: 0 });
-      announce('Descanso general terminado. PacoSAT se pone al día con la ventana pendiente.');
-    } else {
-      /* Un toque, sin formularios: descanso sin fecha (se reactiva con
-         el mismo interruptor). La fecha se elige con «Descansar hasta…». */
-      satData = await satApi('rest', { until: Date.UTC(2100, 0, 1) });
-      announce('PacoSAT entra en descanso general: sin descargas ni avisos hasta que lo reactives.');
+    /* El clic se CONFIRMA contra el estado que devuelve el servidor
+       (1.27.0): hasta la 1.26, si la petición caía (el servidor
+       rechazaba el centinela «sin fecha»), el error se lo tragaba
+       el await y el botón parecía muerto — el «Descansar no
+       desactiva nada» de Paco. Ahora un fallo se anuncia en voz
+       alta y el éxito solo se anuncia si el estado guardado dice
+       que el descanso quedó como se pidió. */
+    toggle.disabled = true;
+    try {
+      if (active) {
+        satData = await satApi('rest', { until: 0 });
+        if (satData.rest?.active) throw new Error('El servidor sigue mostrando el descanso activo.');
+        announce('Descanso general terminado. PacoSAT se pone al día con la ventana pendiente.');
+      } else {
+        /* Un toque, sin formularios: descanso sin fecha (se reactiva
+           con el mismo interruptor). La fecha se elige con «Descansar
+           hasta…». */
+        satData = await satApi('rest', { until: Date.UTC(2100, 0, 1) });
+        if (!satData.rest?.active) throw new Error('El servidor no guardó el descanso.');
+        announce('PacoSAT entra en descanso general: sin descargas ni avisos hasta que lo reactives.');
+      }
+    } catch (error) {
+      announce('El descanso no se pudo cambiar: ' + (error?.message || error));
     }
+    toggle.disabled = false;
     render();
   };
   wrap.append(label, toggle);
   if (!active) wrap.append(action('Descansar hasta…', restDialog, undefined, 'bell'));
+  return wrap;
+}
+/* ===== Acciones directas de SAT (1.13.1) =====
+   La pantalla SAT abre con el verbo, no con tarjetas que hay que
+   abrir para encontrarlo: un selector compacto de RFC (por defecto
+   el ámbito actual) y cuatro botones grandes que disparan su flujo
+   al momento — Descargar CFDI abre el diálogo de periodo (o baja a
+   la tarjeta CIEC si ese RFC entra con contraseña), Constancia y
+   Opinión lanzan su descarga por el endpoint de siempre con su
+   clase (kind) y enseñan el progreso en su propia línea, y
+   Declaraciones abre su panel en Documentos. Debajo de cada verbo,
+   su último resultado conocido, leído de los datos que la API ya
+   expone (satdocs, declaraciones y las solicitudes de satData);
+   sin dato, una línea corta de qué hace. Las tarjetas de «Qué
+   quieres hacer» quedan debajo como consulta y navegación, y la
+   configuración pesada sigue en la pestaña de descarga, sin
+   competir con estos cuatro botones. */
+let satQuickRfc = '', satQuickDocs = null;
+function satQuickCuando(doc) {
+  const fecha = new Date(doc.issuedAt);
+  return fecha.toDateString() === new Date().toDateString()
+    ? 'hoy ' + fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+    : 'el ' + localDate(doc.issuedAt);
+}
+function satQuickActions() {
+  const wrap = panel('¿Qué quieres del SAT?', 'Un toque y la acción corre: sin entrar en tarjetas a buscar el verbo.');
+  const rfc = satQuickRfc && people.some(person => person.id === satQuickRfc) ? satQuickRfc :
+    (scope || people[0]?.id || '');
+  const bar = n('div', undefined, 'sat-quick-bar');
+  bar.append(n('span', 'RFC', 'sat-quick-label'));
+  const selector = select(people.map(person => [person.id, person.name + ' · ' + person.id]), rfc, 'RFC de las acciones directas');
+  selector.onchange = () => {
+    satQuickRfc = selector.value; scope = selector.value;
+    const ambito = $('scope'); if (ambito) ambito.value = scope;
+    render();
+  };
+  bar.append(selector);
+  wrap.append(bar);
+  const grid = n('div', undefined, 'sat-quick-grid');
+  const mk = (glyph, verbo, linea) => {
+    const button = n('button', undefined, 'sat-quick-btn');
+    button.type = 'button';
+    const head = n('span', undefined, 'sat-quick-head');
+    head.append(icon(glyph), n('strong', verbo));
+    const line = n('small', linea, 'sat-quick-line');
+    button.append(head, line);
+    grid.append(button);
+    return { button, line };
+  };
+  const profile = (satData.profiles || []).find(item => item.rfc === rfc);
+  const lastJob = (satData.jobs || []).filter(job => job.rfc === rfc)
+    .sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+  const descargar = mk('down', 'Descargar CFDI',
+    profile?.accessMethod === 'ciec' ? 'Este RFC entra con contraseña (CIEC): se baja desde su tarjeta, con tu captcha.' :
+    lastJob ? 'Última solicitud: ' + (satStatus[lastJob.status] || lastJob.status) + ' · ' + localDateTime(lastJob.created) :
+    'Elige el periodo y PacoSAT lo pide al SAT y lo importa solo.');
+  descargar.button.onclick = () => {
+    if (profile?.accessMethod === 'ciec') {
+      satTab = 'descargar'; render();
+      setTimeout(() => document.querySelector('#ciec-live')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+      announce('Descarga con CIEC de ' + rfc + ': elige el rango en su tarjeta y escribe el captcha cuando el portal lo enseñe.');
+      return;
+    }
+    downloadSheet(rfc);
+  };
+  const docsProfile = satQuickDocs?.profiles?.find(item => item.rfc === rfc);
+  const constancia = mk('file', 'Constancia',
+    docsProfile ? (docsProfile.constancia ? 'Constancia · descargada ' + satQuickCuando(docsProfile.constancia) :
+      'Constancia · pendiente de tu primera descarga') : 'La constancia de situación fiscal de este RFC, del portal del SAT.');
+  constancia.button.onclick = () => satQuickRunDoc('constancia', rfc, constancia.button, constancia.line);
+  const opinion = mk('shield', 'Opinión',
+    docsProfile ? (docsProfile.opinion ? 'Opinión · descargada ' + satQuickCuando(docsProfile.opinion) :
+      'Opinión · pendiente de tu primera descarga') : 'La opinión de cumplimiento (32-D) de este RFC, del portal del SAT.');
+  opinion.button.onclick = () => satQuickRunDoc('opinion', rfc, opinion.button, opinion.line);
+  const buzonTrib = mk('bell', 'Buzón Tributario',
+    'Las notificaciones del SAT para este RFC: se listan sin abrir ninguna.');
+  buzonTrib.button.onclick = () => {
+    if (scope !== rfc) {
+      scope = rfc;
+      const ambito = $('scope'); if (ambito) ambito.value = scope;
+      const ambitoTop = $('scope-top'); if (ambitoTop) ambitoTop.value = scope;
+    }
+    navigate('tributario');
+  };
+  const declaraciones = mk('folder', 'Declaraciones', 'Las mensuales y la anual ya presentadas, con su rejilla por meses.');
+  declaraciones.button.onclick = () => {
+    if (scope !== rfc) { scope = rfc; const ambito = $('scope'); if (ambito) ambito.value = scope; }
+    navigate('docs');
+    /* Salto por ancla fija (1.18.0): antes se buscaba el encabezado
+       por su texto y el botón se quedaba sin llegar. */
+    setTimeout(() => {
+      document.getElementById('declaraciones-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 90);
+  };
+  wrap.append(grid);
+  /* D3 (1.23.0): el panel es autosuficiente — «Ver» de Constancia y
+     Opinión cuando el documento consta descargado (se rellena con
+     /api/satdocs en el bloque asíncrono de abajo, abriendo el mismo
+     visor que las tarjetas de Documentos) y «Recuperar» de
+     Declaraciones ahí mismo, con el lanzador de siempre (declRun). */
+  const quickActs = n('div', undefined, 'actions');
+  wrap.append(quickActs);
+  const recuperarDecl = n('button', 'Recuperar declaraciones', 'soft small');
+  recuperarDecl.type = 'button';
+  recuperarDecl.onclick = () => {
+    if (scope !== rfc) {
+      scope = rfc;
+      const ambito = $('scope'); if (ambito) ambito.value = scope;
+      const ambitoTop = $('scope-top'); if (ambitoTop) ambitoTop.value = scope;
+    }
+    declEjercicio = new Date().getFullYear();
+    declRun('mensuales', () => { if (page === 'docs') render(); }, recuperarDecl);
+  };
+  quickActs.append(recuperarDecl);
+  /* Las líneas de estado de documentos y declaraciones se rellenan
+     con lo que la API ya expone; si la lectura falla, queda la
+     línea corta de qué hace cada botón. */
+  (async () => {
+    try {
+      const view = await satApi('satdocs');
+      satQuickDocs = view;
+      if (!wrap.isConnected) return;
+      const fresh = view.profiles.find(item => item.rfc === rfc);
+      if (fresh) {
+        constancia.line.textContent = fresh.constancia ? 'Constancia · descargada ' + satQuickCuando(fresh.constancia) :
+          'Constancia · pendiente de tu primera descarga';
+        opinion.line.textContent = fresh.opinion ? 'Opinión · descargada ' + satQuickCuando(fresh.opinion) :
+          'Opinión · pendiente de tu primera descarga';
+        /* «Ver» en el propio panel (D3): el mismo visor que las
+           tarjetas de Documentos, sin cambiar de pantalla. */
+        const verDoc = (doc, kind, label) => {
+          if (!doc?.fileId) return;
+          const ver = n('button', 'Ver ' + label, 'soft small');
+          ver.type = 'button';
+          ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc, kind, name: label + ' · ' + rfc + '.pdf' });
+          quickActs.append(ver);
+        };
+        verDoc(fresh.constancia, 'Constancia / CIF', 'Constancia');
+        verDoc(fresh.opinion, 'Opinión de cumplimiento', 'Opinión');
+      }
+    } catch { /* sin servicio a mano: quedan las líneas cortas */ }
+    try {
+      const trib = await satApi('tributario?rfc=' + encodeURIComponent(rfc));
+      if (!wrap.isConnected) return;
+      buzonTrib.line.textContent = trib.ultimaConsulta
+        ? 'Buzón Tributario · ' + (trib.sinAbrir ? number.format(trib.sinAbrir) + ' sin abrir' : 'sin notificaciones pendientes') +
+          ' · última consulta ' + buzonCuando(trib.ultimaConsulta)
+        : 'Buzón Tributario · sin consultar todavía: la lista se trae sin abrir ninguna.';
+    } catch { /* sin servicio a mano: queda la línea corta */ }
+    try {
+      const ejercicio = new Date().getFullYear();
+      const view = await satApi('declaraciones?rfc=' + encodeURIComponent(rfc) + '&ejercicio=' + ejercicio);
+      if (!wrap.isConnected) return;
+      declaraciones.line.textContent = view.documentos?.length ?
+        view.documentos.length + ' documento(s) recuperados del ejercicio ' + ejercicio + '.' :
+        'Sin recuperar todavía: mensuales y anual del ejercicio ' + ejercicio + '.';
+    } catch { /* idem */ }
+  })();
   return wrap;
 }
 /* Pantalla de descarga de la pestaña SAT (1.11.0): SOLO la descarga.
@@ -113,8 +320,18 @@ function satDownloadScreen() {
   info.append(n('h2', 'Sincronización directa con el SAT'),
     n('p', 'Autoriza la e.firma por RFC. PacoSAT solicita CFDI, descarga los paquetes y los incorpora al expediente. El servicio puede seguir abierto aunque cierres la pestaña.'));
   const controls = n('div', undefined, 'actions');
-  controls.append(action('Configurar RFC', () => unlockDialog(), 'primary', 'lock'),
-    action('Autorizar e.firma', () => efirmaDialog(), undefined, 'key'),
+  /* Una sola puerta de alta (1.18.0): «Dar de alta un RFC» abre el
+     selector de método — e.firma o CIEC según el caso — en vez de
+     dos botones que parecían dos altas distintas. «Configurar
+     RFC» sigue siendo lo suyo: desbloquear un RFC ya dado de alta
+     para esta sesión. */
+  controls.append(action('Dar de alta un RFC', () => {
+      dialog('Dar de alta un RFC', [
+        n('p', 'Elige cómo entra este RFC al SAT: con su e.firma (recomendado: la descarga va sola) o con su contraseña CIEC (la descarga pide tu captcha).'),
+        action('Con e.firma', () => { document.querySelector('dialog')?.close(); efirmaDialog(); }, 'primary', 'key'),
+        action('Con contraseña (CIEC)', () => { document.querySelector('dialog')?.close(); ciecDialog(); }, undefined, 'key')]);
+    }, 'primary', 'plus'),
+    action('Configurar RFC', () => unlockDialog(), undefined, 'lock'),
     action('Solicitar un periodo', requestDialog, undefined, 'sync'));
   guide.append(info, controls);
   const restBar = n('div', undefined, 'panel-head');
@@ -137,6 +354,19 @@ function fillSat(target = $('sat-live')) {
     else schedules.append(grid(['RFC', 'Frecuencia', 'Próxima revisión', 'Estado', 'Acción'], profiles.map(row => {
       const restingProfile = Boolean(row.paused) || (row.pauseUntil || 0) > Date.now();
       const buttons = n('div', undefined, 'actions');
+      if (row.accessMethod === 'ciec') {
+        /* Método CIEC (1.12.0): sin e.firma no hay desbloqueo ni
+           descarga automática; la fila lo dice claro y manda a la
+           tarjeta CIEC de esta misma pantalla. */
+        buttons.append(action('Contraseña CIEC', () => ciecDialog(row.rfc)));
+        return [
+          cell(row.rfc, 'Acceso con contraseña (CIEC)' + (row.ciecStored ? ' · Contraseña guardada en el servidor' : ' · Falta guardar la contraseña')),
+          'Descarga a mano',
+          'Cuando la pidas',
+          cell('Con contraseña', 'Sin e.firma: se descarga desde la tarjeta CIEC de esta pantalla, con tu captcha'),
+          buttons
+        ];
+      }
       if (row.unlocked) buttons.append(action('Bloquear', async () => { satData = await satApi('lock', { rfc: row.rfc }); fillSat(); }));
       else buttons.append(action('Desbloquear', () => unlockDialog(row.rfc)));
       if (restingProfile) buttons.append(action('Reanudar', async () => {
@@ -181,7 +411,12 @@ function fillSat(target = $('sat-live')) {
      de la vista diaria; vive cerrado dentro de la descarga y solo se
      abre si se quiere ver la maquinaria. El correo y el silencio ya
      no se pintan aquí: son satMailSection(), en Ajustes › Correo. */
-  target.replaceChildren(schedules, queue, satCriteriaBookDetails());
+  /* La tarjeta CIEC (1.12.0) cierra la pantalla cuando algún RFC
+     usa ese método: ahí se elige el rango y se descarga, con el
+     captcha escrito por Paco en la propia tarjeta. */
+  const satNodes = [schedules, queue, satCriteriaBookDetails()];
+  if ((satData.profiles || []).some(row => row.accessMethod === 'ciec')) satNodes.push(ciecPanel());
+  target.replaceChildren(...satNodes);
 }
 /* Historial de peticiones al SAT: el registro persistente de cada
    petición enviada, por RFC, con su resultado. Es la fuente de verdad
@@ -226,7 +461,37 @@ function satMailSection() {
 }
 function fillSatMail(target = $('sat-mail-live')) {
   if (!target) return;
-  target.replaceChildren(satMailPanel(), satSilencePanel());
+  target.replaceChildren(satMailPanel(), satEventMailPanel(), satSilencePanel());
+}
+/* Avisos importantes por correo (1.13.0): los tres sucesos que no
+   pueden quedarse dentro de la app —una factura vigilada que el
+   SAT cancela, un emisor que entra en el listado 69-B y una
+   descarga de documentos del SAT que termina mal— salen por
+   correo, uno por suceso, a la dirección de avisos. Interruptor
+   propio, activado por defecto; sin correo configurado, la
+   tarjeta lo dice y no sale nada. */
+function satEventMailPanel() {
+  const wrap = panel('Avisos importantes por correo');
+  const bar = n('div', undefined, 'panel-head');
+  const notice = n('div');
+  const activo = satData.mail.enabled && satData.mail.alerts !== false;
+  notice.append(!satData.mail.enabled ? statusPill('dim', 'Sin correo configurado') :
+      satData.mail.alerts === false ? statusPill('dim', 'Desactivado') : statusPill('ok', 'Activado'),
+    n('p', 'Un correo por suceso, solo para lo que no puede esperar: una factura vigilada que el SAT cancela, ' +
+      'un emisor tuyo que entra en el listado 69-B (presunto o definitivo) y una descarga de documentos del SAT ' +
+      '(constancia u opinión, manual o automática) que termina mal. El correo cuenta qué pasó, de quién es la ' +
+      'causa y qué hacer; nunca lleva credenciales ni importes que no estén ya en el aviso de la app.'));
+  if (!satData.mail.enabled) notice.append(n('p',
+    'Sin dirección de avisos configurada estos avisos no salen: configura el correo arriba y llegarán a esa dirección.', 'error-text'));
+  else if (satData.mail.recipient) notice.append(n('p', 'Dirección de avisos: ' + satData.mail.recipient + '.'));
+  const buttons = n('div', undefined, 'actions');
+  if (satData.mail.enabled) buttons.append(action(activo ? 'Desactivar' : 'Activar', async () => {
+    satData = await satApi('mail/alerts', { enabled: !activo });
+    fillSatMail();
+    announce(activo ? 'Avisos importantes por correo desactivados.' : 'Avisos importantes por correo activados.');
+  }));
+  bar.append(notice, buttons); wrap.append(bar);
+  return wrap;
 }
 function satMailPanel() {
   const alerts = panel('Avisos por correo');
@@ -405,6 +670,94 @@ async function rescueDialog(source) {
   box.append(steps);
   dialog('Rescate por el portal del SAT', [box]);
 }
+/* Hoja de descarga (1.13.1, pieza C2): el botón directo «Descargar
+   CFDI» abre ESTA hoja — atajos de un toque, rango con calendario,
+   sentido (incluido «ambos», que el diálogo viejo no ofrecía),
+   resumen previo en una línea y resultado contado en el sitio
+   (patrón E): solicitados, paquetes, CFDI nuevos y «ya estaban»
+   sin duplicar. Si el SAT deja la solicitud en preparación —lo
+   normal en su servicio—, la hoja lo dice y el paquete se importa
+   solo cuando el SAT lo libera. La guardia 5002 actúa igual que
+   en el diálogo clásico, con su elección en la propia hoja. */
+function downloadSheet(rfc, preset = {}) {
+  const person = people.find(row => row.id === rfc) || people.find(row => row.id === scope) || people[0];
+  const chosenRfc = person?.id || rfc;
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
+  const form = n('form', undefined, 'dialog-form');
+  form.append(n('h3', 'Descargar CFDI · ' + chosenRfc),
+    n('p', 'PacoSAT pide el periodo al SAT con la e.firma de ' + (person?.name || chosenRfc) + '. El SAT suele tardar en preparar el paquete: cuando lo libera, se importa solo.', 'muted'));
+  const start = input('date', { max: today, value: preset.start || today.slice(0, 8) + '01', required: true });
+  const end = input('date', { max: today, value: preset.end || today, required: true });
+  const direction = select([['both', 'Emitidos y recibidos'], ['received', 'Solo recibidos'], ['issued', 'Solo emitidos']], preset.direction || 'both');
+  const summary = n('p', '', 'dl-summary');
+  const status = n('div', '', 'dl-status');
+  const refreshSummary = () => { summary.textContent = downloadSummaryText(person?.name || '', chosenRfc, direction.value, start.value, end.value); };
+  const chips = n('div', undefined, 'actions');
+  for (const [kind, label] of [['mes', 'Este mes hasta hoy'], ['mes-pasado', 'Mes pasado completo'], ['7d', 'Últimos 7 días'], ['30d', 'Últimos 30 días']]) {
+    const chip = action(label, () => {
+      const range = downloadShortcutRange(kind, today);
+      start.value = range.start; end.value = range.end; refreshSummary();
+    });
+    chip.type = 'button';
+    chips.append(chip);
+  }
+  for (const control of [start, end, direction]) control.addEventListener('change', refreshSummary);
+  refreshSummary();
+  const send = n('button', 'Pedir y descargar', 'primary'); send.type = 'submit';
+  const cancel = n('button', 'Cerrar', 'soft'); cancel.type = 'button';
+  cancel.onclick = () => closeDialog();
+  const buttons = n('div', undefined, 'actions'); buttons.append(send, cancel);
+  form.append(fieldWrap('Atajos de un toque', chips), fieldWrap('Desde', start), fieldWrap('Hasta', end),
+    fieldWrap('Comprobantes', direction), summary, status, buttons);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    send.disabled = true; send.textContent = 'Pidiendo al SAT…';
+    status.replaceChildren(n('p', 'Enviando la solicitud al SAT…', 'muted'));
+    const payload = { rfc: chosenRfc, direction: direction.value, start: start.value, end: end.value, type: 'cfdi' };
+    try {
+      for (;;) {
+        try { satData = await satApi('request', payload); break; }
+        catch (error) {
+          if (!error.guard) throw error;
+          const choice = await guardChoice(error.guard);
+          if (choice === 'cancel') { status.replaceChildren(n('p', 'Solicitud no enviada: ' + error.guard.message)); send.disabled = false; send.textContent = 'Pedir y descargar'; return; }
+          if (choice === 'rescue') { closeDialog(); rescueDialog(error.guard); return; }
+          payload.shiftEnd = (payload.shiftEnd || 0) + 1;
+        }
+      }
+      /* Resultado contado con lo que el propio servidor expone: las
+         solicitudes creadas (jobs del periodo) y las importaciones
+         de actividad de esos trabajos (nuevos y «ya estaban»). */
+      const mine = (satData.jobs || []).filter(job => job.rfc === chosenRfc && job.periodStart === start.value && job.periodEnd === end.value);
+      const jobIds = new Set(mine.map(job => String(job.id)));
+      /* Las importaciones se cuentan en la tienda de actividad (la
+         misma que alimenta la franja de actividad), re-leída tras
+         la petición: cada paquete importado deja su entrada con
+         los nuevos y los «ya estaban» contados por UUID. */
+      const actsAll = await readStore('activity').catch(() => activity);
+      const acts = (actsAll || []).filter(entry => String(entry.id || '').startsWith('sat:') &&
+        jobIds.has(String(entry.id).split(':')[1]));
+      const nuevos = acts.reduce((sum, entry) => sum + (entry.added || 0), 0);
+      const yaEstaban = acts.reduce((sum, entry) => sum + (entry.duplicates || 0), 0);
+      const lines = ['✓ Solicitud enviada: ' + mine.length + ' petición(es) al SAT para este periodo.'];
+      if (acts.length) lines.push('Paquetes recibidos: ' + acts.length + ' · CFDI nuevos importados: ' + nuevos +
+        ' · ya estaban: ' + yaEstaban + ' (sin duplicar)');
+      const pendientes = mine.filter(job => job.status === 'pending').length;
+      if (pendientes) lines.push('El SAT dejó ' + pendientes + ' solicitud(es) en preparación — es su comportamiento normal. ' +
+        'Cuando libere el paquete, PacoSAT lo importa solo: lo verás en Actividad y en «Qué meses tienes».');
+      status.replaceChildren(...lines.map(line => n('p', line)));
+      send.textContent = 'Pedir otro periodo';
+      send.disabled = false;
+      fillSat();
+      soundCue('success');
+    } catch (error) {
+      const spec = problemSpec('descarga', { error });
+      status.replaceChildren(problemCard(spec));
+      send.disabled = false; send.textContent = 'Pedir y descargar';
+    }
+  };
+  showDialog(form);
+}
 function requestDialog(preset) {
   const person = selectPerson();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
@@ -545,9 +898,15 @@ async function pollSat() {
     satError = error.message;
   } finally {
     satPolling = false;
+    /* La pantalla de entrada del login propio se ofrece una vez
+       por carga, con el primer pulso ya resuelto (1.26.0). */
+    if (typeof maybeShowEntry === 'function') maybeShowEntry().catch(() => {});
     /* La insignia del Centro de Avisos se refresca con el mismo pulso
        del servidor (1.7.4): sin peticiones extra fuera de este ciclo. */
     refreshAvisos().catch(() => {});
+    /* El distintivo del Buzón se refresca con el mismo pulso:
+       status.buzonUnread llega en satData (1.23.0). */
+    if (typeof paintBuzonBadge === 'function') paintBuzonBadge();
     if (page === 'sat' && !$('dialog').open && !document.activeElement?.closest('#sat-live')) fillSat();
     /* Ajustes › Correo (1.11.0): si la sección de correo está en
        pantalla, el mismo pulso la mantiene al día, sin ritmo nuevo. */

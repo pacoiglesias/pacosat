@@ -13,6 +13,21 @@ assert.equal(normalizeTotalForQuery('0.00'), '0.0');
 assert.equal(normalizeTotalForQuery('115860.80'), '115860.8');
 assert.equal(normalizeTotalForQuery('204000'), '204000.0');
 assert.match(soapQuery({ ...cfdi, id: cfdi.id.toLowerCase() }), /id=12345678-1234-1234-1234-1234567890AB/);
+/* El elemento SOAP es «expresionImpresa» con I mayúscula (10 nov
+   2026): en minúsculas el SAT recibía la expresión vacía y
+   respondía N-601 a todo; probado en vivo con 3 CFDI reales, donde
+   con la capitalización correcta responde «S · Vigente». Se fija
+   el nombre exacto Y la forma completa del sobre para que nadie
+   «lo simplifique» otra vez. */
+{
+  const body = soapQuery(cfdi);
+  assert.ok(body.includes('<expresionImpresa>'), 'el elemento abre como expresionImpresa');
+  assert.ok(body.includes('</expresionImpresa>'), 'el elemento cierra como expresionImpresa');
+  assert.ok(!body.includes('expresionimpresa'), 'nunca en minúsculas');
+  assert.equal(body, '<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body><Consulta xmlns="http://tempuri.org/"><expresionImpresa>' +
+    '?id=12345678-1234-1234-1234-1234567890AB&amp;re=AAA010101AAA&amp;rr=XAXX010101000&amp;tt=80.5&amp;fe=%2B%2Fabcd%3D%3D' +
+    '</expresionImpresa></Consulta></s:Body></s:Envelope>');
+}
 /* N-601 y N-602 se distinguen: formato rechazado ≠ no encontrado. */
 {
   const acuseXml = (code) => '<?xml version="1.0"?><s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>' +
@@ -70,3 +85,42 @@ try {
   assert.equal(efosSends.length, 1);
   console.log('OK: expresión SAT, CSV 69-B, conservación del resultado, cancelación y aviso sin repetir, alta 69-B de un RFC del expediente sin repetir y sin avisar RFC ajenos.');
 } finally { db.close(); }
+/* Migración única reset-n601-2026-11: limpia SOLO los veredictos
+   «Formato rechazado» envenenados por el elemento en minúsculas,
+   una sola vez (marca persistente), sin tocar los demás estados. */
+{
+  const db2 = new DatabaseSync(':memory:');
+  const opts = { now: () => 1700000000000, checkSat: async () => ({ state: 'Vigente', code: 'S', efos: '', cancellation: '' }), refreshEfos: async () => new Map() };
+  createMonitor(db2, opts); // crea las tablas
+  /* Estado heredado de la 1.11.0: filas ya consultadas y NINGUNA
+     marca de migración (la tabla nace vacía en las bases viejas).
+     Se borra la marca que el arranque anterior acaba de escribir
+     para reproducir ese estado antes de sembrar las filas. */
+  db2.exec('DELETE FROM monitor_migrations');
+  const put = db2.prepare('INSERT INTO cfdi_watch(id,emitter,receiver,total,seal,next,checked,result) VALUES (?,?,?,?,?,?,?,?)');
+  const base = ['AAA010101AAA', 'XAXX010101000', '80.50', ''];
+  const row = (n, state) => ['12345678-1234-1234-1234-1234567890A' + n, ...base, 999, 555, JSON.stringify({ state, code: 'X' })];
+  put.run(...row('1', 'Formato rechazado'));
+  put.run(...row('2', 'Vigente'));
+  put.run(...row('3', 'Cancelado'));
+  put.run(...row('4', 'No encontrado'));
+  createMonitor(db2, opts); // segundo arranque: la migración corre aquí
+  const get = db2.prepare('SELECT result, checked, next FROM cfdi_watch WHERE id=?');
+  const id = n => '12345678-1234-1234-1234-1234567890A' + n;
+  const plain = n => ({ ...get.get(id(n)) }); // node:sqlite devuelve prototipo nulo
+  assert.deepEqual(plain('1'), { result: null, checked: null, next: 0 });
+  for (const n of ['2', '3', '4']) {
+    const kept = get.get(id(n));
+    assert.ok(kept.result !== null && kept.checked === 555 && kept.next === 999, 'no toca el estado ' + n);
+  }
+  assert.ok(db2.prepare("SELECT name FROM monitor_migrations WHERE name='reset-n601-2026-11'").get(), 'la marca quedó guardada');
+  /* Idempotencia y «una sola vez»: un «Formato rechazado» NUEVO,
+     posterior a la migración, ya no se limpia al rearrancar. */
+  put.run(...row('5', 'Formato rechazado'));
+  createMonitor(db2, opts);
+  createMonitor(db2, opts);
+  assert.ok(get.get(id('5')).result !== null, 'la migración no se repite');
+  assert.deepEqual(plain('1'), { result: null, checked: null, next: 0 });
+  db2.close();
+  console.log('OK: migración N-601 de una sola vez — limpia solo «Formato rechazado», idempotente y sin tocar Vigente/Cancelado/No encontrado.');
+}

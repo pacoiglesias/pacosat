@@ -52,6 +52,18 @@ async function call(path, data, options = {}) {
   await service.handle(req, res);
   return response;
 }
+/* La actualización de listados es un trabajo con estado desde la
+   1.13.1 (pieza H): el POST solo la arranca; esta ayuda espera a
+   que el progreso se detenga y devuelve la vista ya actualizada. */
+const waitListsDone = async (callFn) => {
+  for (let i = 0; i < 300; i++) {
+    const progress = await (await callFn('/api/lists/progress')).json();
+    if (!progress.running) break;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  return (await callFn('/api/lists')).json();
+};
+const refreshAndWait = async (callFn = call) => { await callFn('/api/lists/refresh', {}); return waitListsDone(callFn); };
 try {
   const page = await (await call('/')).text();
   token = page.split('content="')[1].split('"')[0];
@@ -66,7 +78,7 @@ try {
 
   res = await call('/api/lists/refresh', {});
   assert.equal(res.status, 200);
-  let data = await res.json();
+  let data = await waitListsDone(call);
   const list69b = data.sources.find(source => source.id === '69b');
   assert.equal(list69b.count, 2);
   assert.equal(list69b.declared, '09 de octubre de 2026');
@@ -94,7 +106,7 @@ try {
   /* Transición: Alfa sale del 69-B → evento de baja y semáforo limpio. */
   fixtures['69b'] = 'Información actualizada al 10 de octubre de 2026\r\nNo.,RFC,Nombre del Contribuyente,Situación del contribuyente\r\n' +
     '1,' + DUMMY + ',OTRA SA,Presunto\r\n';
-  data = await (await call('/api/lists/refresh', {})).json();
+  data = await refreshAndWait();
   assert.ok(data.events.some(event => event.rfc === 'AAA010101AAA' && event.change.startsWith('Baja')));
   assert.equal(data.counterparts.find(cp => cp.rfc === 'AAA010101AAA').severity, 'none');
 
@@ -118,7 +130,7 @@ try {
   /* Fuente caída: el error queda registrado para el semáforo. */
   failing = true;
   time += 25 * 3600 * 1000;
-  data = await (await call('/api/lists/refresh', {})).json();
+  data = await refreshAndWait();
   assert.ok(data.sources.find(source => source.id === '69b').error.includes('juguete'));
 
   /* Fallo digno (ronda de correcciones): con copia previa, la lista
@@ -149,7 +161,7 @@ try {
     try {
       const page2 = await (await call2('/')).text();
       token2 = page2.split('content="')[1].split('"')[0];
-      const data2 = await (await call2('/api/lists/refresh', {})).json();
+      const data2 = await refreshAndWait(call2);
       const firmes2 = data2.sources.find(source => source.id === '69-firmes');
       assert.equal(firmes2.count, 0);
       assert.ok(!firmes2.fetched, 'Sin copia previa no hay fecha que enseñar.');

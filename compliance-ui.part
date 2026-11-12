@@ -103,11 +103,37 @@ function cumplimientoScreen() {
         };
         row.append(del);
       }
+      /* A Google Calendar en un toque (1.25.0, AGREGAR 1): el
+         enlace oficial de plantilla con el vencimiento ya
+         rellenado; el día completo, sin importes. */
+      const compacta = iso => iso.replaceAll('-', '');
+      const siguiente = new Date(Date.parse(event.date + 'T12:00:00') + 86400000).toISOString().slice(0, 10);
+      const gcal = n('a', 'Añadir a Google Calendar');
+      gcal.href = 'https://calendar.google.com/calendar/render?action=TEMPLATE' +
+        '&text=' + encodeURIComponent('PacoSAT · ' + event.title + (event.rfc ? ' · ' + event.rfc : '')) +
+        '&dates=' + compacta(event.date) + '/' + compacta(siguiente) +
+        '&details=' + encodeURIComponent('Obligación del calendario fiscal de PacoSAT.');
+      gcal.target = '_blank'; gcal.rel = 'noopener';
+      row.append(gcal);
       calBody.append(row);
     }
   };
   if (satToken) satApi('fiscal/calendar').then(data => drawEvents(data.events)).catch(() => drawEvents(fiscalLocalEvents()));
   else drawEvents(fiscalLocalEvents());
+  /* El calendario entero, exportable (1.25.0, AGREGAR 1): el
+     .ics lo genera el servidor desde los mismos eventos; se
+     importa en Google Calendar o en cualquier agenda. */
+  if (satToken) {
+    const icsBtn = n('button', 'Descargar el calendario (.ics)', 'soft');
+    icsBtn.onclick = async () => {
+      try {
+        const blob = await satApiBlob('fiscal/calendar.ics');
+        download(blob, 'pacosat-obligaciones.ics');
+        toast('Calendario descargado: impórtalo en Google Calendar (Ajustes → Importar).', 'ok');
+      } catch (error) { toast(error.message, 'error'); }
+    };
+    calendar.append(icsBtn);
+  }
   const form = n('div', undefined, 'sat-form');
   const fRfc = input('text', { placeholder: 'RFC (opcional)' });
   const fTitle = input('text', { placeholder: 'Qué vence (p. ej. Renovación CSD)' });

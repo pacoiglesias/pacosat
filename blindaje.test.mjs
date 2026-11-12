@@ -97,8 +97,15 @@ try {
 } finally { await service.close(); }
 
 /* Arranque con una intención sin confirmar: aviso «presunto enviado». */
+/* Hora INYECTADA (1.23.0, frente F): el resumen de avisos solo sale a
+   partir de la hora configurada (defecto 9:00, hora de México) y el
+   arnés corría con el reloj real — la aserción de abajo fallaba en la
+   madrugada sin que nada estuviera roto. La hora queda fijada a las
+   11:00 de México del mismo día del escenario: la prueba ya no
+   depende de cuándo se corre. */
 const sent = [];
 const service2 = createPacoSATService({ dbFile, html: '<!--PACOSAT_TOKEN-->', origin, makeConnector,
+  now: () => Date.parse('2026-11-11T17:00:00Z'),
   makeMailer: () => ({ verify: async () => true, sendMail: async payload => { sent.push(payload); } }) });
 const api2 = harness(service2);
 try {

@@ -44,7 +44,13 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
      peticiones SIN timeout si el cliente web no lo fija, y una conexión
      colgada congelaba el ciclo automático entero en silencio. El tercer
      argumento de HttpsWebClient es ese timeout, en milisegundos. */
-  const service = new sdk.Service(new sdk.FielRequestBuilder(fiel), new sdk.HttpsWebClient(undefined, undefined, 60000), sdk.ServiceEndpoints.cfdi());
+  /* Firma REAL del SDK 2.0.0 (verificada contra su código y su
+     .d.ts, 1.19.0): Service(requestBuilder, webClient, token?,
+     endpoints?) — el token va TERCERO y los endpoints CUARTOS.
+     Pasar los endpoints en el hueco del token dejaba el servicio
+     con un «token» sin isValid() y la primera llamada moría en
+     obtainCurrentToken() con un TypeError. */
+  const service = new sdk.Service(new sdk.FielRequestBuilder(fiel), new sdk.HttpsWebClient(undefined, undefined, 60000), undefined, sdk.ServiceEndpoints.cfdi());
   return {
     async request({ start, end, startTime = '00:00:00', endTime = '23:59:59', direction = 'received', type = 'cfdi' }) {
       ensure(validDate(start) && validDate(end) && start <= end, 'Periodo inválido.');
@@ -52,15 +58,31 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
       ensure(/^(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(endTime), 'Hora de cierre inválida.');
       ensure(direction === 'received' || direction === 'issued', 'Dirección inválida.');
       ensure(type === 'cfdi' || type === 'metadata', 'Tipo de solicitud inválido.');
-      /* Sin filtro de estado (1.6.10, hallazgo #5 de la auditoría
-         profunda): antes los recibidos se pedían SOLO vigentes
-         (DocumentStatus.active) y un CFDI cancelado antes de la primera
-         descarga nunca aparecía. Ahora se pide todo y el estado inicial
-         de cada CFDI se registra al importarlo (desde los metadatos). */
+      /* Filtro de estado: la doctrina del hallazgo #5 (1.6.10) era
+         «pedir todo, sin filtro», pero el servicio del SAT NO lo
+         admite para recibidos en XML: su propio validador (SDK
+         2.0.0, QueryValidator) rechaza «XML Recibidos» sin estado
+         «active» — «No es posible hacer una consulta de XML
+         Recibidos que contenga Cancelados». Corrección 1.19.0:
+         recibidos+XML se piden SOLO vigentes (lo único que el SAT
+         entrega en XML de terceros) y los cancelados recibidos se
+         conocen por las solicitudes Metadata — sin restricción de
+         estado — que el sistema ya envía y concilia; emitidos y
+         Metadata siguen sin filtro, como mandaba el hallazgo.
+         El estado inicial de cada CFDI se registra al importarlo
+         (desde los metadatos).
+         Los enums del SDK 2.0.0 son clases BaseEnum SIN fábricas
+         estáticas (DownloadType.received() NO existe: la descarga
+         automática murió en producción el 10 nov 2026 con ese
+         TypeError, invisible para la suite porque el doble de
+         pruebas sí las definía). Se construyen con new y el id:
+         new DownloadType('received'), new RequestType('xml'). */
       const query = sdk.QueryParameters.create()
         .withPeriod(sdk.DateTimePeriod.createFromValues(start + ' ' + startTime, end + ' ' + endTime))
-        .withDownloadType(direction === 'received' ? sdk.DownloadType.received() : sdk.DownloadType.issued())
-        .withRequestType(type === 'metadata' ? sdk.RequestType.metadata() : sdk.RequestType.xml());
+        .withDownloadType(new sdk.DownloadType(direction))
+        .withRequestType(new sdk.RequestType(type === 'metadata' ? 'metadata' : 'xml'));
+      if (direction === 'received' && type === 'cfdi')
+        query.withDocumentStatus(new sdk.DocumentStatus('active'));
       const errors = query.validate();
       ensure(!errors.length, errors.join(' · '));
       const result = accepted(await service.query(query), 'El SAT rechazó la solicitud');

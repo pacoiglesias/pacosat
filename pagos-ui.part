@@ -28,7 +28,10 @@
    (Intl), nunca escrito a mano. El motor (pagos.mjs) y sus
    salidas (.txt y tablas) no cambian: los importes de las
    tarjetas salen de la preparación, sin recalcular aquí. */
-let pagosMes = '', pagosCatalogo = null, pagosLineas = [], pagosSinCatalogo = [];
+/* pagosMes se declara en el núcleo (ui.part) desde la 1.24.0:
+   el Centro de mando lo pone antes de navegar y esta parte se
+   carga bajo demanda. */
+let pagosCatalogo = null, pagosLineas = [], pagosSinCatalogo = [];
 let pagosPrep = null, pagosTxt = '', pagosEditando = '';
 let pagosSteps = {}, pagosCatBody = null, pagosPrepBodyRef = null, pagosOutBody = null, pagosGenBtn = null;
 let pagosGroupInputs = null, pagosAltaPrefill = null, pagosNombreInput = null;
@@ -121,12 +124,21 @@ function pagosDefaults(mes) {
 function pagosCuentaGuardada() {
   try { return localStorage.getItem(PAGOS_CUENTA_KEY + '-' + scope) || ''; } catch { return ''; }
 }
-function pagosGuardarCuenta(cuenta) {
+/* La cuenta de retiro vive en el SERVIDOR desde la 1.18.0 (por RFC,
+   junto a la preparación): el localStorage queda solo como caché
+   del navegador. Cambiar de equipo ya no la pierde. */
+function pagosGuardarCuentaLocal(cuenta) {
   const limpia = String(cuenta || '').replace(/[\s-]/g, '');
   try {
     if (limpia) localStorage.setItem(PAGOS_CUENTA_KEY + '-' + scope, limpia);
     else localStorage.removeItem(PAGOS_CUENTA_KEY + '-' + scope);
   } catch { /* Sin almacenamiento en el navegador, la cuenta dura lo que dure la sesión. */ }
+}
+function pagosGuardarCuenta(cuenta) {
+  const limpia = String(cuenta || '').replace(/[\s-]/g, '');
+  pagosGuardarCuentaLocal(limpia);
+  if (limpia && typeof satToken !== 'undefined' && satToken && scope)
+    satApi('pagos/config', { rfc: scope, cuentaRetiro: limpia }).catch(() => {});
 }
 function pagosCuentaTexto(cuenta) {
   const limpia = String(cuenta || '').replace(/[\s-]/g, '');
@@ -203,7 +215,68 @@ function pagosScreen() {
   pagosFillCatalog(catBody, prepBody, outBody);
   pagosFillPrepare(prepBody, outBody);
   pagosFillOutput(outBody);
+  /* Historial de preparaciones (1.18.0): la preparación ya no muere
+     al generarla — queda guardada, se reabre en pantalla con sus
+     tablas y se sella cuando se paga en el banco. */
+  const historyPanel = panel('Preparaciones anteriores',
+    'Las listas que ya armaste quedan guardadas: reabre una para volver a ver sus tablas tal como salieron, o marca que ya la pagaste en el banco y sus facturas quedarán saldadas en Dinero.');
+  const histBody = n('div');
+  historyPanel.append(histBody);
+  wrap.append(historyPanel);
+  pagosFillHistory(histBody, outBody);
   return [wrap];
+}
+async function pagosFillHistory(histBody, outBody) {
+  histBody.replaceChildren(n('p', 'Cargando tus preparaciones…', 'muted'));
+  try {
+    const data = await satApi('pagos/preparations?rfc=' + encodeURIComponent(scope));
+    const lista = data.preparations || [];
+    histBody.replaceChildren();
+    if (!lista.length) {
+      histBody.append(n('p', 'Todavía no hay preparaciones guardadas: la primera nacerá al generar unas tablas en el paso 3.', 'muted'));
+      return;
+    }
+    for (const item of lista) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(n('strong', pagosMesLargo(item.month)),
+        n('span', 'Armada el ' + localDateTime(item.created) + ' · ' + item.operaciones + ' operaciones · $' + pagosCentsText(item.totalCents), 'muted'));
+      if (item.pagadaEn) row.append(statusPill('ok', 'Pagada en el banco · ' + localDate(item.pagadaEn)));
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Reabrir', async () => {
+        const detalle = await satApi('pagos/preparation?rfc=' + encodeURIComponent(scope) + '&id=' + encodeURIComponent(item.id));
+        pagosPrep = detalle.preparation;
+        pagosTxt = detalle.txt || '';
+        pagosRevealStep(3, 'Preparación reabierta de ' + pagosMesLargo(item.month));
+        pagosFillOutput(outBody);
+        /* Cada línea enlaza a su CFDI (1.18.0). */
+        const lineas = [...(pagosPrep.bbva?.lines || []), ...(pagosPrep.interbancario?.lines || []), ...(pagosPrep.speiIndividual?.lines || [])];
+        const enlaces = lineas.filter(linea => linea.uuid);
+        if (enlaces.length) {
+          const linksBox = n('div');
+          linksBox.append(n('h3', 'Las facturas de esta preparación'));
+          for (const linea of enlaces) {
+            const factura = invoices.find(inv => inv.id === linea.uuid);
+            const lineaRow = n('div', undefined, 'cp-row');
+            lineaRow.append(n('span', (linea.folio ? 'Folio ' + linea.folio + ' · ' : '') + linea.nombre + ' · $' + pagosCentsText(linea.totalCents)));
+            if (factura) lineaRow.append(action('Ver la factura', () => invoiceDetail(factura), 'soft'));
+            linksBox.append(lineaRow);
+          }
+          outBody.append(linksBox);
+        }
+        pagosScroll(pagosSteps[3]?.section);
+      }, 'soft'));
+      if (!item.pagadaEn) acts.append(action('Ya pagué esto en el banco', async () => {
+        const resultado = await satApi('pagos/preparations/paid', { rfc: scope, id: item.id });
+        toast('Preparación sellada como pagada: ' + resultado.marcadas + ' factura(s) marcadas como pagadas en Dinero' +
+          (resultado.yaEstaban ? ' · ' + resultado.yaEstaban + ' ya constaban pagadas' : '') + '.', 'ok');
+        pagosFillHistory(histBody, outBody);
+      }, 'primary'));
+      row.append(acts);
+      histBody.append(row);
+    }
+  } catch (error) {
+    histBody.replaceChildren(n('p', error.message, 'error-text'));
+  }
 }
 async function pagosFillCatalog(catBody, prepBody, outBody) {
   catBody.replaceChildren(n('p', 'Cargando tu catálogo…', 'muted'));
@@ -246,23 +319,40 @@ async function pagosFillCatalog(catBody, prepBody, outBody) {
     const tbody = n('tbody');
     for (const b of pagosCatalogo) {
       const tr = n('tr');
+      /* Cuenta/CLABE enmascarada (1.18.0): en pantalla solo los
+         últimos dígitos; «Ver» la enseña entera bajo demanda. */
+      const cuentaCell = n('td');
+      const numeroReal = b.clabe || b.cuenta || '';
+      const mascara = numeroReal ? '····' + numeroReal.slice(b.clabe ? -6 : -4) : '—';
+      const cuentaTxt = n('span', mascara);
+      cuentaCell.append(cuentaTxt);
+      if (numeroReal) {
+        const ver = n('button', 'Ver', 'soft small');
+        ver.onclick = () => {
+          const viendo = cuentaTxt.textContent === numeroReal;
+          cuentaTxt.textContent = viendo ? mascara : numeroReal;
+          ver.textContent = viendo ? 'Ver' : 'Ocultar';
+        };
+        cuentaCell.append(' ', ver);
+      }
       tr.append(n('td', b.nombre), n('td', b.contraparte), n('td', b.banco || '—'),
-        n('td', b.clabe || b.cuenta || '—'), n('td', b.grupo),
+        cuentaCell, n('td', b.grupo),
         n('td', b.concepto || '—'),
         n('td', b.montoTipo === 'fijo' ? 'Fijo: $' + pagosMoney(b.base) + ' + IVA, ' + b.periodicidad : 'Variable, sale de cada factura'));
       const actions = n('td');
       const edit = n('button', 'Editar', 'soft small');
       edit.onclick = () => { pagosEditando = b.id; pagosAltaPrefill = null; pagosFillCatalog(catBody, prepBody, outBody); };
       const del = n('button', 'Borrar', 'soft small');
-      del.onclick = async () => {
-        if (!confirm('¿Borrar a «' + b.nombre + '» del catálogo? Sus facturas ya no se cruzarán solas.')) return;
-        try {
+      /* Confirmación con el diálogo propio (1.18.0): fuera el
+         confirm() nativo del navegador. */
+      del.onclick = () => dialog('Borrar del catálogo',
+        [n('p', '¿Borrar a «' + b.nombre + '» del catálogo? Sus facturas ya no se cruzarán solas al armar la lista.')],
+        async () => {
           const data = await satApi('pagos/catalog', { rfc: scope, action: 'delete', id: b.id });
           pagosCatalogo = data.beneficiaries || [];
           toast('Beneficiario borrado del catálogo.', 'ok');
           pagosFillCatalog(catBody, prepBody, outBody);
-        } catch (error) { toast(error.message, 'error'); }
-      };
+        }, 'Borrar');
       actions.append(edit, del);
       tr.append(actions);
       tbody.append(tr);
@@ -306,6 +396,13 @@ function pagosForm(catBody, prepBody, outBody) {
   const base = field('Importe base (sin IVA, si es fijo)', input('text', { value: editing?.base || '', inputmode: 'decimal', placeholder: '0.00' }));
   const iva = field('IVA (si es fijo; vacío = 16% de la base)', input('text', { value: editing?.iva || '', inputmode: 'decimal', placeholder: 'Automático' }));
   const periodicidad = field('Periodicidad del fijo', select([['mensual', 'Cada mes'], ['quincenal', 'Cada quincena'], ['unico', 'Una sola vez']], editing?.periodicidad || 'mensual', 'Periodicidad'));
+  /* Los campos de importe fijo se esconden cuando el importe es
+     variable (1.18.0): enseñarlos era prometer un cálculo que no
+     se hace. */
+  const celdasFijo = [base, iva, periodicidad].map(control => control.closest('label'));
+  const pintaFijo = () => { for (const celda of celdasFijo) if (celda) celda.hidden = montoTipo.value !== 'fijo'; };
+  montoTipo.onchange = pintaFijo;
+  pintaFijo();
   box.append(grid);
   const aviso = n('p', '', 'muted');
   clabe.oninput = () => {
@@ -354,7 +451,7 @@ function pagosForm(catBody, prepBody, outBody) {
 }
 function pagosFillPrepare(prepBody, outBody) {
   prepBody.replaceChildren();
-  prepBody.append(n('p', 'La lista sale de las facturas recibidas del mes que ya están verificadas en el Visor, casadas con tu catálogo por el RFC del emisor, más tus pagos fijos. Todo viene ya relleno con tu rutina: revisa, ajusta lo que sea y arma la lista.', 'muted'));
+  prepBody.append(n('p', 'La lista sale de las facturas recibidas del mes que ya están verificadas en Facturas, casadas con tu catálogo por el RFC del emisor, más tus pagos fijos. Todo viene ya relleno con tu rutina: revisa, ajusta lo que sea y arma la lista.', 'muted'));
   const defaults = pagosDefaults(pagosMes);
   const tocados = { referencia: false, fechaAbono: false, fechaAplicacion: false };
   const controls = n('div', undefined, 'pagos-grid');
@@ -405,6 +502,15 @@ function pagosFillPrepare(prepBody, outBody) {
   };
   prepBody.append(controls);
   pagosGroupInputs = { descripcion, cuentaRetiro, referencia, fechaCargo, fechaAbono, fechaAplicacion };
+  /* La cuenta de retiro manda la del servidor (1.18.0): si hay una
+     guardada allí, sustituye a la caché de este navegador. */
+  satApi('pagos/config?rfc=' + encodeURIComponent(scope)).then(data => {
+    if (data?.cuentaRetiro) {
+      cuentaRetiro.value = data.cuentaRetiro;
+      cuentaDato.textContent = pagosCuentaTexto(data.cuentaRetiro);
+      pagosGuardarCuentaLocal(data.cuentaRetiro);
+    }
+  }).catch(() => {});
   const armar = n('button', 'Armar la lista desde las facturas del mes', 'primary');
   const linesBox = n('div');
   armar.onclick = async () => {
@@ -417,7 +523,7 @@ function pagosFillPrepare(prepBody, outBody) {
       pagosTxt = '';
       pagosFillOutput(outBody);
       toast(pagosLineas.length ? 'Lista armada con ' + pagosLineas.length + ' líneas: revísalas una a una antes de generar.'
-        : 'Sin líneas para ese mes: revisa que las facturas estén en el Visor y sus emisores en el catálogo.', pagosLineas.length ? 'ok' : 'error');
+        : 'Sin líneas para ese mes: revisa que las facturas estén en Facturas y sus emisores en el catálogo.', pagosLineas.length ? 'ok' : 'error');
       pagosFillLines(linesBox, pagosGroupInputs, outBody);
     } catch (error) { toast(error.message, 'error'); }
     finally { armar.disabled = false; }
