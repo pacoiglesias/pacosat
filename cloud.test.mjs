@@ -506,7 +506,11 @@ const CERT_B64 = 'MIIDEzCCAfugAwIBAgIUfFs/rHFz67k3fvC0q/J/MXrXGY0wDQYJKoZIhvcNAQ
 const certExpected = Date.parse(new X509Certificate(Buffer.from(CERT_B64, 'base64')).validTo);
 let certTime = certExpected - 100 * 86400000;
 const certSent = [];
-const certService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->',
+/* 1.28.0: este escenario sube una e.firma real y cuenta correos
+   de caducidad; la cadencia semanal del Buzón Tributario corre
+   en el mismo tick, así que su motor va con un doble tranquilo
+   para que el conteo sea solo el de este escenario. */
+const certService = createPacoSATService({ dbFile: ':memory:', origin, proxyKey, html: '<!--PACOSAT_TOKEN-->', satTribFetch: async () => ({ notifications: [] }),
   now: () => certTime,
   makeConnector: async () => ({ parser: FixtureParser, connector: {
     request: async () => 'cert-req', check: async () => ({ status: 'pending', packages: [] }), download: async () => Buffer.alloc(0) } }),
@@ -541,7 +545,12 @@ try {
   assert.equal(certMails().length, 2);
   certTime = certExpected + 86400000;
   await certService.tick();
-  assert.equal(certMails().length, 3);
+  /* 1.28.0: el aviso espejo de la alerta de caducidad nace ya
+     con el RFC de su alerta (antes nacía sin RFC y viajaba en
+     el resumen de la instalación); ahora viaja en el resumen
+     del propio RFC y el conteo de este escenario es 4 — el
+     contenido y la ausencia de duplicados no cambian. */
+  assert.equal(certMails().length, 4);
   assert.match(certMails()[2].text, /vencida o vence hoy/);
   console.log('OK: caducidad de e.firma leída del certificado real, persistida y con avisos por umbral (90/60/30/0) sin duplicados, agrupados en el resumen diario.');
 } finally { certService.close(); }

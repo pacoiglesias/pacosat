@@ -1,11 +1,11 @@
 {
   "name": "pacosat",
-  "version": "1.27.0",
+  "version": "1.29.0",
   "description": "Expediente fiscal privado con importación CFDI y seguimiento SAT",
   "scripts": {
     "build": "node build.mjs",
     "start": "node local-server.mjs",
-    "test": "node --test sat-direct.test.mjs sdk-contract.test.mjs service.test.mjs cloud.test.mjs monitor.test.mjs rfc.test.mjs storage.test.mjs boot.test.mjs metadata.test.mjs efirma.test.mjs lists.test.mjs satdocs.test.mjs sat-doc-fetch.test.mjs blindaje.test.mjs anti5002.test.mjs outputs.test.mjs money.test.mjs fiscal.test.mjs banks.test.mjs avisos.test.mjs final.test.mjs vigilancia.test.mjs sat-doc-browser.test.mjs sat-declaraciones.test.mjs sat-ciec.test.mjs ronda190.test.mjs ronda1100.test.mjs ronda1102.test.mjs ronda1103.test.mjs ronda1110.test.mjs ronda1130.test.mjs ronda1131.test.mjs && node ronda1140.test.mjs && node ronda1150.test.mjs && node ronda1160.test.mjs && node ronda1170.test.mjs && node ronda1180.test.mjs && node ronda1200.test.mjs && node ronda1210.test.mjs && node ronda1220.test.mjs && node ronda1220b.test.mjs && node ronda1230.test.mjs && node ronda1240.test.mjs && node ronda1250.test.mjs && node ronda1260.test.mjs && node ronda1270.test.mjs && node verify.cjs",
+    "test": "node --test sat-direct.test.mjs sdk-contract.test.mjs service.test.mjs cloud.test.mjs monitor.test.mjs rfc.test.mjs storage.test.mjs boot.test.mjs metadata.test.mjs efirma.test.mjs lists.test.mjs satdocs.test.mjs sat-doc-fetch.test.mjs blindaje.test.mjs anti5002.test.mjs outputs.test.mjs money.test.mjs fiscal.test.mjs banks.test.mjs avisos.test.mjs final.test.mjs vigilancia.test.mjs sat-doc-browser.test.mjs sat-declaraciones.test.mjs sat-ciec.test.mjs ronda190.test.mjs ronda1100.test.mjs ronda1102.test.mjs ronda1103.test.mjs ronda1110.test.mjs ronda1130.test.mjs ronda1131.test.mjs && node ronda1140.test.mjs && node ronda1150.test.mjs && node ronda1160.test.mjs && node ronda1170.test.mjs && node ronda1180.test.mjs && node ronda1200.test.mjs && node ronda1210.test.mjs && node ronda1220.test.mjs && node ronda1220b.test.mjs && node ronda1230.test.mjs && node ronda1240.test.mjs && node ronda1250.test.mjs && node ronda1260.test.mjs && node ronda1270.test.mjs && node ronda1280.test.mjs && node ronda1290.test.mjs && node verify.cjs",
     "check": "npm run build && npm test"
   },
   "private": true,

@@ -23,6 +23,10 @@ const service = createPacoSATService({ dbFile: ':memory:', html: '<!--PACOSAT_TO
     return { parser: class {}, connector: {} };
   },
   makeMailer: () => ({ verify: async () => true, sendMail: async payload => { sent.push(payload); } }),
+  /* 1.28.0: la cadencia semanal del Buzón Tributario corre en el
+     mismo tick; este escenario es de documentos, así que su motor
+     va con un doble tranquilo que no avisa ni manda correo. */
+  satTribFetch: async () => ({ notifications: [] }),
   satDocFetch: async (profile, kind) => {
     assert.equal(profile.rfc, RFC);
     if (portalDown) {

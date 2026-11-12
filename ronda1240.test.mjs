@@ -410,7 +410,19 @@ const seedInvoices = async (h, specs) => {
      El techo de la casa es el de ronda1110/ronda1260: 572.000 B,
      y esta guardia queda alineada con él — un crecimiento
      futuro que lo cruce sigue siendo un fallo, no una sorpresa. */
-  assert.ok(pesoInicial < 572000, 'la primera pintura bajo el techo de la casa (572.000 B): ' + pesoInicial + ' B');
+  /* Re-basificado en la 1.28.0 («Paquete de mejoras»): la
+     página crece a 576.047 B por el cableado de Declaraciones
+     y Registro como destinos (la pantalla del Registro viaja
+     diferida, fuera de la primera pintura), el protagonista
+     veraz de Hoy y los folios en el detalle de cada mes. El
+     techo sube a 580.000 B con la contabilidad en el anexo de
+     ronda1110 — cruzarlo sigue siendo un fallo. */
+  /* Re-basificado en la 1.29.0 (ejecutor local, papelera,
+     peldaños 1 y 2 y Totales navegable): la página crece a
+     594.876 B; el techo de la casa sube a 598.000 B con la
+     contabilidad en el anexo de ronda1110 — cruzarlo sigue
+     siendo un fallo. */
+  assert.ok(pesoInicial < 598000, 'la primera pintura bajo el techo de la casa (598.000 B): ' + pesoInicial + ' B');
   /* El servicio sirve las partes tras la misma puerta del proxy. */
   const h = makeHarness({ lazyParts: lazy });
   const parte = await h.call('GET', '/parte/pagos');

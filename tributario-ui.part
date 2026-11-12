@@ -30,11 +30,102 @@ function tribTenidaFor(rfc) {
 function paintTribBadge() {
   const badge = $('tributario-badge');
   if (!badge) return;
+  /* Distintivo = la pantalla (1.28.0, P9): con un contribuyente
+     elegido, el contador es el SUYO, no la suma de todos. */
+  if (scope) {
+    const own = tribSinAbrirFor(scope);
+    badge.hidden = !own;
+    badge.textContent = own ? number.format(own) : '';
+    return;
+  }
   const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
   const total = map ? Object.values(map).reduce((sum, value) => sum + Number(value?.sinAbrir || 0), 0) :
     (tribCache ? Number(tribCache.sinAbrir || 0) : 0);
   badge.hidden = !total;
   badge.textContent = total ? number.format(total) : '';
+}
+/* ===== Ejecutor local del SAT (1.29.0) =====
+   La ejecución contra el portal corre en TU equipo (tu sesión,
+   tu IP): PacoSAT encola los trabajos y este panel enseña si el
+   ejecutor está en línea, qué espera y qué ya volvió. Emparejar
+   crea un token que se enseña UNA vez: vive en tu ejecutor;
+   aquí solo queda su huella. El acceso se REVOCA desde este
+   panel (H-1.2): el token revocado deja de funcionar al
+   instante y re-emparejar crea uno nuevo, nunca revive el
+   viejo. Sin ejecutor en línea, los trabajos quedan «esperando
+   tu equipo» — nunca un fallo en falso. */
+function executorPanel() {
+  const wrap = panel('Ejecutor local del SAT',
+    'Las consultas del Buzón y de Declaraciones se navegan desde tu equipo, con tu sesión de e.firma por RFC. PacoSAT ordena, registra y archiva lo que vuelve verificado.');
+  const body = n('div');
+  wrap.append(body);
+  const pintar = data => {
+    body.replaceChildren();
+    const bar = n('div', undefined, 'traffic-strip');
+    bar.append(statusPill(data.enLinea ? 'ok' : 'warn',
+      data.enLinea ? 'Ejecutor en línea en tu equipo' : 'Sin ejecutor en línea: los trabajos esperan tu equipo'));
+    if (data.enCola) bar.append(statusPill('warn', number.format(data.enCola) + ' en cola'));
+    if (data.enCurso) bar.append(statusPill('dim', number.format(data.enCurso) + ' en curso'));
+    body.append(bar);
+    for (const ex of data.ejecutores || []) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(n('span', (ex.nombre || 'Ejecutor') + ' · ' + (ex.revocado
+        ? 'acceso REVOCADO: su token ya no funciona'
+        : ex.enLinea
+          ? 'en línea (visto ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(ex.ultimoVisto) : '') + ')'
+          : 'sin conexión desde ' + (ex.ultimoVisto ? (typeof fmtFechaHora === 'function' ? fmtFechaHora(ex.ultimoVisto) : '') : 'nunca'))));
+      /* Revocar (1.29.0, H-1.2): si el equipo se pierde o el token
+         se filtra, este gesto lo apaga al instante; los trabajos
+         en curso vuelven a la cola y el gesto queda en el
+         Registro. Re-emparejar crea un token nuevo. */
+      if (!ex.revocado) {
+        const revocar = n('button', 'Revocar acceso', 'soft small');
+        revocar.type = 'button';
+        revocar.onclick = async () => {
+          if (!confirm('¿Revocar el acceso de «' + (ex.nombre || 'Ejecutor') + '»? Su token dejará de funcionar al instante y sus trabajos en curso volverán a la cola. Podrás emparejar el equipo de nuevo cuando quieras.')) return;
+          revocar.disabled = true;
+          try {
+            await satApi('executor/revoke', { id: ex.id });
+            toast('Acceso revocado: ese token ya no funciona.', 'ok');
+            pintar(await satApi('executor/overview'));
+          } catch (error) { toast(error.message, 'error'); revocar.disabled = false; }
+        };
+        row.append(revocar);
+      }
+      body.append(row);
+    }
+    for (const job of (data.trabajos || []).slice(0, 8)) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill(job.estado === 'hecho' ? 'ok' : job.estado === 'fallido' ? 'bad' : 'warn',
+        { 'en-cola': 'En cola', reclamado: 'Reclamado', 'en-curso': 'En curso', hecho: 'Hecho', fallido: 'Falló la verificación' }[job.estado] || job.estado));
+      row.append(n('span', job.kind + ' · ' + job.rfc +
+        (job.payload?.periodo ? ' · ' + job.payload.periodo : '') +
+        (job.payload?.folio ? ' · folio ' + job.payload.folio : '') +
+        ' · ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(job.creado) : '') +
+        (job.esperandoEquipo ? ' · esperando tu equipo' : '') +
+        (job.error ? ' · ' + job.error : '')));
+      body.append(row);
+    }
+    const emparejar = n('button', 'Emparejar un ejecutor en mi equipo', 'soft small');
+    emparejar.type = 'button';
+    emparejar.onclick = async () => {
+      emparejar.disabled = true;
+      try {
+        const creada = await satApi('executor/pair', { nombre: 'Equipo de Paco' });
+        const caja = n('div', undefined, 'executor-token');
+        caja.append(n('p', 'Token del ejecutor (se enseña una sola vez: cópialo ahora al ejecutor de tu equipo; aquí no queda guardado en claro):', 'today-line'),
+          n('code', creada.token));
+        body.append(caja);
+        toast('Ejecutor emparejado: copia su token ahora, no se vuelve a enseñar.', 'ok');
+      } catch (error) { toast(error.message, 'error'); emparejar.disabled = false; }
+    };
+    body.append(emparejar);
+  };
+  (async () => {
+    try { pintar(await satApi('executor/overview')); }
+    catch (error) { body.replaceChildren(n('p', error.message, 'error-text')); }
+  })();
+  return wrap;
 }
 function tributarioScreen() {
   const wrap = n('div');
@@ -51,8 +142,11 @@ function tributarioScreen() {
     body.append(empty('Elige un contribuyente', 'El Buzón Tributario es por RFC: elige arriba el contribuyente cuyas notificaciones quieres consultar.'));
     return [wrap];
   }
+  wrap.append(executorPanel());
   const rfc = scope;
   let running = false;
+  let verArchivadas = false;
+  let verPapelera = false;
   let poller = null;
   const stopPoller = () => { if (poller) { clearInterval(poller); poller = null; } };
   const paint = data => {
@@ -106,24 +200,155 @@ function tributarioScreen() {
     else if (data.ultimaConsulta)
       body.append(n('p', 'Última consulta: ' + buzonCuando(data.ultimaConsulta) + ' · ' +
         number.format(data.total || 0) + ' notificación(es) en la bandeja.', 'today-line'));
-    const items = data.notificaciones || [];
-    if (!items.length) {
+    /* Consulta automática semanal (1.28.0, P3): la pantalla dice
+       cuándo toca la siguiente sin que nadie pulse nada. Semanal
+       porque la no abierta se tiene por notificada al 4.º día:
+       una cadencia mayor podría descubrirla con los efectos ya
+       corriendo. */
+    body.append(n('p', data.proximaAuto
+      ? 'Consulta automática: PacoSAT revisa este buzón solo, cada semana — la siguiente toca el ' +
+        new Date(data.proximaAuto).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }) +
+        '. El botón «Consultar ahora» sigue valiendo en cualquier momento.'
+      : 'Consulta automática semanal activada: la primera revisión sola llega en el próximo ciclo del sistema; el botón «Consultar ahora» vale en cualquier momento.', 'today-line'));
+    /* Estado de vigilancia (1.29.0, peldaño 2): una línea que
+       dice cómo está vigilado este buzón y qué exige de ti. */
+    body.append(n('p', 'Vigilancia: ' + (data.sinAbrir
+      ? number.format(data.sinAbrir) + ' sin abrir que requieren tu gesto en el portal oficial; la consulta automática es semanal.'
+      : 'sin nada que requiera tu gesto; la consulta automática es semanal.') +
+      (data.archivadas ? ' En local hay ' + number.format(data.archivadas) + ' archivada(s) (opiniones e informativos): no vuelven a esta vista aunque el SAT las siga enseñando.' : ''),
+      'today-line'));
+    const items = (data.notificaciones || []).filter(item => !item.archivada);
+    const archivadasItems = (data.notificaciones || []).filter(item => item.archivada);
+    if (!items.length && !archivadasItems.length) {
       body.append(data.ultimaConsulta
         ? empty('Bandeja vacía en la última consulta', 'El SAT no enseñó notificaciones para este RFC. Cuando deje una, la verás aquí en la siguiente consulta.')
         : empty('Todavía no consultas este buzón', 'Toca «Consultar ahora»: PacoSAT entra con la e.firma de este RFC y te trae la lista, sin abrir ninguna notificación.'));
     }
-    for (const item of items) {
-      const row = n('div', undefined, 'cp-row');
+    const pintaItem = item => {
+      const row = n('div', undefined, 'cp-row trib-row');
       row.append(statusPill(item.abierta ? 'dim' : 'warn', item.abierta ? 'Abierta' : 'Sin abrir'));
+      if (item.categoria && item.categoria !== 'atencion')
+        row.append(statusPill('ok', item.categoria === 'opinion' ? 'Opinión' : 'Informativo'));
+      const main = n('div', undefined, 'cp-main');
       const texto = n('span',
         (item.asunto || 'Notificación del SAT') +
         (item.remitente ? ' · ' + item.remitente : '') +
         (item.fecha ? ' · ' + item.fecha : '') +
-        (item.estado ? ' · ' + item.estado : '') +
-        (!item.abierta && item.plazo ? ' · se tiene por notificada el ' + declFechaLarga(item.plazo.tenida) : ''));
-      if (!item.abierta) { const strong = n('strong'); strong.append(texto); row.append(strong); }
-      else row.append(texto);
-      body.append(row);
+        (item.estado ? ' · ' + item.estado : ''));
+      if (!item.abierta) { const strong = n('strong'); strong.append(texto); main.append(strong); }
+      else main.append(texto);
+      /* Barra de vencimiento por notificación sin abrir
+         (1.29.0, peldaño 2): cuánto del plazo para abrirla ya
+         corrió — el día en que se tiene por notificada manda. */
+      if (!item.abierta && item.plazo?.tenida) {
+        const inicio = Date.parse(String(item.fecha || '') + 'T12:00:00');
+        const fin = Date.parse(String(item.plazo.tenida) + 'T12:00:00');
+        const pct = Number.isFinite(inicio) && Number.isFinite(fin) && fin > inicio
+          ? Math.max(0, Math.min(100, Math.round((Date.now() - inicio) / (fin - inicio) * 100))) : 0;
+        const barra = n('div', undefined, 'trib-plazo');
+        const relleno = n('div', undefined, 'trib-plazo-fill' + (pct >= 75 ? ' trib-plazo-hot' : ''));
+        relleno.style.width = pct + '%';
+        barra.append(relleno);
+        main.append(barra, n('small', 'Se tiene por notificada el ' + declFechaLarga(item.plazo.tenida) +
+          ' aunque nadie la abra · último día para abrirla: ' + declFechaLarga(item.plazo.limite) + '.', 'muted'));
+      }
+      row.append(main);
+      /* Archivar es LOCAL (1.29.0): no toca el SAT ni abre nada;
+         solo saca la fila de la vista principal, y la
+         sincronización no la devuelve. La papelera también es
+         local: sale de TODAS las vistas en el acto, con deshacer;
+         la purga definitiva es otro gesto, desde la Papelera. */
+      const gestos = n('span', undefined, 'trib-gestos');
+      const gesto = n('button', item.archivada ? 'Devolver a la vista' : 'Archivar en local', 'soft small');
+      gesto.type = 'button';
+      gesto.onclick = async () => {
+        gesto.disabled = true;
+        try {
+          const result = await satApi('tributario/archive', { rfc, clave: item.clave, archivada: !item.archivada });
+          toast(item.archivada ? 'De vuelta en la vista principal.' : 'Archivada en local: el SAT no se ha tocado.', 'ok');
+          if (body.isConnected) paint({ ...data, ...result.view });
+        } catch (error) { toast(error.message, 'error'); gesto.disabled = false; }
+      };
+      const basura = n('button', 'A la papelera', 'soft small');
+      basura.type = 'button';
+      basura.onclick = async () => {
+        basura.disabled = true;
+        try {
+          const result = await satApi('tributario/trash', { rfc, clave: item.clave, papelera: true });
+          toast('A la papelera local: desaparece de todas las vistas. Deshacer, en la Papelera de esta pantalla.', 'ok');
+          if (body.isConnected) paint({ ...data, ...result.view });
+        } catch (error) { toast(error.message, 'error'); basura.disabled = false; }
+      };
+      gestos.append(gesto, basura);
+      row.append(gestos);
+      return row;
+    };
+    for (const item of items) body.append(pintaItem(item));
+    if (data.archivadas) {
+      const ver = n('button', verArchivadas ? 'Ocultar las archivadas en local' : 'Ver las archivadas en local (' + number.format(data.archivadas) + ')', 'soft small');
+      ver.type = 'button';
+      ver.onclick = async () => { verArchivadas = !verArchivadas; try { await refresh(); } catch { /* se queda la vista */ } };
+      body.append(ver);
+      if (verArchivadas) for (const item of archivadasItems) body.append(pintaItem(item));
+    }
+    /* ===== Papelera local (1.29.0, adenda de Paco) =====
+       Lo que cae aquí salió de todas las vistas. Deshacer lo
+       devuelve; la purga definitiva es TU toque y queda trazada
+       en el Registro, con su lápida para que la sincronización
+       no lo resucite jamás. Y el límite honesto, en la cara: */
+    const papHead = n('div', undefined, 'traffic-strip');
+    papHead.append(statusPill(data.papeleraTotal ? 'warn' : 'dim',
+      'Papelera: ' + number.format(data.papeleraTotal || 0) + ' en local'));
+    const verPap = n('button', verPapelera ? 'Cerrar la papelera' : 'Abrir la papelera', 'soft small');
+    verPap.type = 'button';
+    verPap.onclick = async () => { verPapelera = !verPapelera; try { await refresh(); } catch { /* se queda la vista */ } };
+    papHead.append(verPap);
+    body.append(papHead);
+    if (verPapelera) {
+      body.append(n('p', 'Lo que se borra aquí es la copia y la presencia en PacoSAT: el registro original en el SAT ' +
+        'no se puede borrar, es constancia oficial. El archivo fiscal con peso (tus CFDI y tus acuses) no se purga: ' +
+        'para eso está «Archivar en local», que lo saca de la vista sin borrarlo. Purgar deja una lápida con el ' +
+        'identificador, para que la sincronización no lo traiga de vuelta aunque el SAT lo siga listando.', 'today-line'));
+      const enPapelera = data.papelera || [];
+      if (!enPapelera.length) body.append(empty('Papelera vacía', 'Lo que mandes a la papelera desde la lista aparecerá aquí, con su deshacer.'));
+      for (const item of enPapelera) {
+        const row = n('div', undefined, 'cp-row trib-row trib-papelera-row');
+        row.append(statusPill('dim', 'En papelera'));
+        const main = n('div', undefined, 'cp-main');
+        main.append(n('span', (item.asunto || 'Notificación del SAT') +
+          (item.fecha ? ' · ' + item.fecha : '') +
+          (item.papeleraEn ? ' · a la papelera el ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(item.papeleraEn) : '') : '')));
+        row.append(main);
+        const gestos = n('span', undefined, 'trib-gestos');
+        const devolver = n('button', 'Deshacer', 'soft small');
+        devolver.type = 'button';
+        devolver.onclick = async () => {
+          devolver.disabled = true;
+          try {
+            const result = await satApi('tributario/trash', { rfc, clave: item.clave, papelera: false });
+            toast('De vuelta en el buzón local, como estaba.', 'ok');
+            if (body.isConnected) paint({ ...data, ...result.view });
+          } catch (error) { toast(error.message, 'error'); devolver.disabled = false; }
+        };
+        const purgar = n('button', 'Borrar definitivamente', 'soft small danger');
+        purgar.type = 'button';
+        purgar.onclick = async () => {
+          if (purgar.dataset.confirmar !== '1') {
+            purgar.dataset.confirmar = '1';
+            purgar.textContent = 'Toca otra vez para purgar';
+            return;
+          }
+          purgar.disabled = true;
+          try {
+            const result = await satApi('tributario/purge', { rfc, clave: item.clave });
+            toast('Purgada de PacoSAT y trazado en el Registro: no volverá aunque el SAT la siga listando.', 'ok');
+            if (body.isConnected) paint({ ...data, ...result.view });
+          } catch (error) { toast(error.message, 'error'); purgar.disabled = false; }
+        };
+        gestos.append(devolver, purgar);
+        row.append(gestos);
+        body.append(row);
+      }
     }
     /* Diario por pasos de las últimas consultas: la evidencia de
        qué hizo la máquina, plegada como detalle. */
@@ -152,7 +377,8 @@ function tributarioScreen() {
     }
   };
   const refresh = async () => {
-    const data = await satApi('tributario?rfc=' + encodeURIComponent(rfc));
+    const data = await satApi('tributario?rfc=' + encodeURIComponent(rfc) +
+      (verArchivadas ? '&archivadas=1' : '') + (verPapelera ? '&papelera=1' : ''));
     if (body.isConnected) paint(data);
     return data;
   };
@@ -169,6 +395,9 @@ function tributarioScreen() {
       if (body.isConnected) paint(view);
       if (outcome.result?.ok) toast('Buzón Tributario consultado: ' + (outcome.result.encontradas || 0) +
         ' en la bandeja, ' + (outcome.result.sinAbrir || 0) + ' sin abrir.', 'ok');
+      /* Esperando tu equipo (1.29.0): la consulta quedó en cola
+         para el ejecutor de tu equipo — no es un fallo. */
+      else if (outcome.result?.waitingExecutor) toast(outcome.result.error, 'ok');
       else if (outcome.result?.yaEnCurso) toast(outcome.result.error, 'error');
       else if (!outcome.result?.cancelled) toast(outcome.result?.error || 'La consulta no terminó.', 'error');
     } catch (error) {

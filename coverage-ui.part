@@ -53,7 +53,14 @@ function coverageScreen() {
           if (cell.descarga) vias.push(number.format(cell.descarga) + ' por descarga del SAT');
           if (cell.importacion) vias.push(number.format(cell.importacion) + ' por importación');
           if (cell.sinClasificar && (cell.descarga || cell.importacion)) vias.push(number.format(cell.sinClasificar) + ' sin clasificar');
-          rows.push([monthLabelC3(cursor), number.format(cell.count) + ' CFDI', vias.join(' · ') || '—', n('span', 'Con datos', 'tag ok')]);
+          /* El mes con datos SE ENTRA (1.29.0, barrido de
+             diseño): su conteo abre los CFDI de ese mes en
+             Facturas, con el RFC, el sentido y el mes puestos —
+             el número enseña su respaldo. */
+          rows.push([monthLabelC3(cursor), number.format(cell.count) + ' CFDI', vias.join(' · ') || '—',
+            action('Ver los CFDI', () => { scope = group.rfc; const sel = $('scope'); if (sel) sel.value = scope;
+              month = cursor; direction = group.direction === 'received' ? 'Recibidos' : 'Emitidos';
+              invoicePage = 0; navigate('invoices'); })]);
         } else {
           const [yy, mm] = cursor.split('-').map(Number);
           const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();

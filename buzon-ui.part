@@ -16,6 +16,14 @@ function buzonUnreadFor(rfc) {
 function paintBuzonBadge() {
   const badge = $('buzon-badge');
   if (!badge) return;
+  /* Distintivo = la pantalla (1.28.0, P9): con un contribuyente
+     elegido, el contador es el SUYO, no la suma de todos. */
+  if (scope) {
+    const own = buzonUnreadFor(scope);
+    badge.hidden = !own;
+    badge.textContent = own ? number.format(own) : '';
+    return;
+  }
   const map = typeof satData !== 'undefined' && satData ? satData.buzonUnread : null;
   const total = map ? Object.values(map).reduce((sum, value) => sum + Number(value || 0), 0) :
     (buzonCache ? Number(buzonCache.unread || 0) : 0);

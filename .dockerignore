@@ -17,6 +17,8 @@
 !sat-declaraciones.mjs
 !sat-tributario.mjs
 !sat-ciec.mjs
+!sat-executor.mjs
+!ejecutor-local.mjs
 !pagos.mjs
 !salidas-doc.mjs
 !qr-cfdi.mjs
