@@ -177,6 +177,24 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
   assert.equal(called, 0, 'la caducidad se detecta en local y no abre navegador');
 }
 
+/* Resolución del Chromium para las pruebas «extra» de navegador
+   real (bloques 10 a 12): solo cuentan el de la caché de Playwright
+   o el señalado por PACOSAT_CHROMIUM_PATH. En CI se omiten por
+   diseño (lo declara el bloque 10) y el /usr/bin/chromium de las
+   imágenes de CI es un sustituto que arranca unas veces y otras no
+   — CI roja intermitente el 12 nov 2026: una corrida lo usó y pasó
+   el flujo pero no el estado final, la siguiente ni siquiera lo
+   encontró y la tercera lo arrancó sin que el PDF llegara. Sin
+   navegador fiable, la resolución devuelve null y cada bloque se
+   omite con su constancia, como ya hacía cuando el arranque falla. */
+const realChromiumPath = () => {
+  if (process.env.CI) return null;
+  if (process.env.PACOSAT_CHROMIUM_PATH) return process.env.PACOSAT_CHROMIUM_PATH;
+  const shellPath = join(homedir(), '.cache/ms-playwright/chromium_headless_shell-1248',
+    'chrome-headless-shell-linux64/chrome-headless-shell');
+  return existsSync(shellPath) ? shellPath : null;
+};
+
 /* 10 · NAVEGADOR REAL contra un portal simulado servido en local:
      el driver de Playwright rellena el formulario de e.firma de la
      página, pulsa «Generar Constancia» y captura el PDF de la
@@ -184,10 +202,7 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
      Si el entorno no tiene Chromium (CI), la prueba se omite sin
      fallar: queda constancia en la salida. */
 {
-  const shellPath = join(homedir(), '.cache/ms-playwright/chromium_headless_shell-1248',
-    'chrome-headless-shell-linux64/chrome-headless-shell');
-  const executablePath = process.env.PACOSAT_CHROMIUM_PATH ||
-    (existsSync(shellPath) ? shellPath : '/usr/bin/chromium');
+  const executablePath = realChromiumPath();
   const loginPage = (action) => `<!doctype html><html><body>
     <h1>SAT · Acceso</h1>
     <button id="buttonFiel" onclick="document.getElementById('fiel').style.display='block'">Acceso con e.firma</button>
@@ -212,6 +227,8 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
   const base = 'http://127.0.0.1:' + server.address().port;
   let driver = null;
   try {
+    if (!executablePath) throw Object.assign(new Error('sin navegador fiable en este entorno'),
+      { code: 'navegador-no-disponible' });
     driver = await createPlaywrightDriverFactory({ executablePath })();
   } catch (error) {
     console.log('OMITIDA (sin Chromium en este entorno): prueba de navegador real — ' +
@@ -280,10 +297,7 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
      pantalla se detecta por su #divError y diagnostics() entrega
      la foto del momento. */
 {
-  const shellPath = join(homedir(), '.cache/ms-playwright/chromium_headless_shell-1248',
-    'chrome-headless-shell-linux64/chrome-headless-shell');
-  const executablePath = process.env.PACOSAT_CHROMIUM_PATH ||
-    (existsSync(shellPath) ? shellPath : '/usr/bin/chromium');
+  const executablePath = realChromiumPath();
   const passwordPage = (href) => `<!doctype html><html><body>
     <h1>SAT Autenticación</h1>
     <form id="IDPLogin"><input type="text" id="rfc" name="Ecom_User_ID">
@@ -318,6 +332,8 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
   const base = 'http://127.0.0.1:' + server.address().port;
   let driver = null;
   try {
+    if (!executablePath) throw Object.assign(new Error('sin navegador fiable en este entorno'),
+      { code: 'navegador-no-disponible' });
     driver = await createPlaywrightDriverFactory({ executablePath })();
   } catch (error) {
     console.log('OMITIDA (sin Chromium en este entorno): prueba de la forma real del portal — ' +
@@ -415,10 +431,7 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
      marco. Y la variante rota: sin botón nunca, el diagnóstico del
      fallo contiene el HTML DEL MARCO tras su marcador. */
 {
-  const shellPath = join(homedir(), '.cache/ms-playwright/chromium_headless_shell-1248',
-    'chrome-headless-shell-linux64/chrome-headless-shell');
-  const executablePath = process.env.PACOSAT_CHROMIUM_PATH ||
-    (existsSync(shellPath) ? shellPath : '/usr/bin/chromium');
+  const executablePath = realChromiumPath();
   const loginPage = (action) => `<!doctype html><html><body>
     <h1>SAT · Acceso</h1>
     <button id="buttonFiel" onclick="document.getElementById('fiel').style.display='block'">Acceso con e.firma</button>
@@ -460,6 +473,8 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
   const base = 'http://127.0.0.1:' + server.address().port;
   let driver = null;
   try {
+    if (!executablePath) throw Object.assign(new Error('sin navegador fiable en este entorno'),
+      { code: 'navegador-no-disponible' });
     driver = await createPlaywrightDriverFactory({ executablePath })();
   } catch (error) {
     console.log('OMITIDA (sin Chromium en este entorno): prueba del Buzón simulado — ' +
