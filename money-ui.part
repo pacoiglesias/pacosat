@@ -93,8 +93,9 @@ function dineroScreen() {
   const summary = panel('El dinero, de un vistazo', 'Saldos abiertos calculados desde tus complementos de pago: si una factura PPD no tiene complemento, su saldo es el total; las PUE nacen pagadas.');
   const strip = n('div', undefined, 'traffic-strip');
   const sum = items => items.reduce((acc, item) => acc + item.balance, 0n);
-  strip.append(statusPill(receivable.length ? 'warn' : 'ok', 'Por cobrar: $' + centsLabel(sum(receivable))),
-    statusPill(payable.length ? 'warn' : 'ok', 'Por pagar: $' + centsLabel(sum(payable))),
+  const bajarA = id => () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
+  strip.append(statusPill(receivable.length ? 'warn' : 'ok', 'Por cobrar: $' + centsLabel(sum(receivable)), '', bajarA('dinero-por-cobrar')),
+    statusPill(payable.length ? 'warn' : 'ok', 'Por pagar: $' + centsLabel(sum(payable)), '', bajarA('dinero-por-pagar')),
     statusPill('dim', open.length + ' facturas con saldo abierto'));
   summary.append(strip);
   if (cancNumero > 0) {
@@ -229,6 +230,9 @@ function dineroMonthPanel(receivable, payable) {
 }
 function balancePanel(title, description, items, partyField, paidLabel = 'Ya se pagó') {
   const panelEl = panel(title, description);
+  /* Ancla para las pastillas del resumen (1.29.0, barrido):
+     «Por cobrar» y «Por pagar» del vistazo bajan a su panel. */
+  panelEl.id = title === 'Por cobrar' ? 'dinero-por-cobrar' : title === 'Por pagar' ? 'dinero-por-pagar' : '';
   if (!items.length) { panelEl.append(n('p', 'Sin saldos abiertos. Todo cobrado/pagado o sin facturas a crédito.', 'empty')); return panelEl; }
   /* Antigüedad resumida */
   const strip = n('div', undefined, 'traffic-strip');

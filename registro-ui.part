@@ -1,0 +1,112 @@
+/* ===== Registro unificado (1.28.0, P1) =====
+   La bitácora única del sistema: conexiones, acciones y fallos
+   en lenguaje llano, en orden cronológico, con filtro por RFC y
+   por clase y exportación CSV. Es una proyección de solo lectura
+   del servidor (los diarios de los cuatro motores, los accesos,
+   la actividad, los correos y las acciones del administrador):
+   aquí no se escribe nada. Cada fallo trae su motivo y, cuando
+   el motor guardó la página del momento, el botón para verla —
+   la misma evidencia de los diarios, sin cazarla pantalla a
+   pantalla. Vive en una parte diferida: Hoy solo paga una línea. */
+let registroFiltro = { rfc: '', clase: '' };
+const REGISTRO_CLASE = { conexion: ['ok', 'Conexión'], accion: ['dim', 'Acción'], fallo: ['bad', 'Fallo'] };
+function registroScreen() {
+  const wrap = n('div');
+  if (typeof satToken === 'undefined' || !satToken) {
+    wrap.append(panel('Registro', 'El Registro vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver qué hizo el sistema, qué intentó y qué no pudo.'));
+    return [wrap];
+  }
+  const head = panel('Registro',
+    'Todo lo que el sistema hizo, intentó y no pudo, en una sola lista y en lenguaje llano: conexiones con el SAT, acciones (tuyas y automáticas) y fallos con su motivo. Cuando un motor guardó la página del momento del fallo, el botón «Ver la página del fallo» la abre.');
+  const body = n('div');
+  head.append(body);
+  wrap.append(head);
+  const pintar = async () => {
+    body.replaceChildren(n('p', 'Leyendo el registro…', 'muted'));
+    let data = null;
+    try {
+      data = await satApi('registro?limit=300' +
+        (registroFiltro.rfc ? '&rfc=' + encodeURIComponent(registroFiltro.rfc) : '') +
+        (registroFiltro.clase ? '&clase=' + encodeURIComponent(registroFiltro.clase) : ''));
+    } catch (error) { body.replaceChildren(n('p', error.message, 'error-text')); return; }
+    if (!body.isConnected) return;
+    body.replaceChildren();
+    const filtros = n('div', undefined, 'actions');
+    const selRfc = select([['', 'Todos los contribuyentes'], ...people.map(person => [person.id, person.id])],
+      registroFiltro.rfc, 'Contribuyente');
+    selRfc.onchange = () => { registroFiltro.rfc = selRfc.value; pintar(); };
+    const selClase = select([['', 'Todo: conexiones, acciones y fallos'], ['conexion', 'Solo conexiones'],
+      ['accion', 'Solo acciones'], ['fallo', 'Solo fallos']], registroFiltro.clase, 'Clase');
+    selClase.onchange = () => { registroFiltro.clase = selClase.value; pintar(); };
+    /* Sin botón de CSV aquí: la exportación es la acción
+       principal de la pantalla (arriba a la derecha), como en
+       el resto — el mismo gesto no se pinta dos veces. */
+    filtros.append(selRfc, selClase);
+    body.append(filtros);
+    body.append(n('p', number.format(data.total) + ' suceso(s)' +
+      (registroFiltro.rfc ? ' de ' + registroFiltro.rfc : '') +
+      (registroFiltro.clase ? ' · ' + (REGISTRO_CLASE[registroFiltro.clase]?.[1] || registroFiltro.clase) : '') +
+      ' · lo más reciente primero.', 'muted'));
+    if (!data.items.length) {
+      body.append(empty('Sin sucesos con ese filtro', 'Cambia el contribuyente o la clase: el registro completo sigue estando, solo está filtrado.'));
+      return;
+    }
+    /* Gramática visual del Registro (1.29.0, peldaño 1):
+       línea de tiempo POR DÍA, la fecha en el formato humano
+       único de la casa y el fallo con su traza abrible DENTRO
+       de la fila — pasos, error literal y la página guardada
+       del momento, para corregir desde el propio log. */
+    const list = n('div', undefined, 'activity-list reg-timeline');
+    let diaActual = '';
+    for (const item of data.items) {
+      const dia = new Date(item.at).toLocaleDateString('es-MX',
+        { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      if (dia !== diaActual) {
+        diaActual = dia;
+        list.append(n('h3', dia, 'reg-dia'));
+      }
+      const [nivel, etiqueta] = REGISTRO_CLASE[item.clase] || ['dim', 'Acción'];
+      const row = n('div', undefined, 'activity-item' + (item.clase === 'fallo' ? ' reg-fallo' : ''));
+      const linea = n('div', undefined, 'reg-linea');
+      linea.append(statusPill(nivel, etiqueta),
+        n('span', typeof fmtFechaHora === 'function' ? fmtFechaHora(item.at) : '', 'sat-step-time'),
+        n('span', item.texto +
+          (item.rfc ? ' · ' + item.rfc : '') +
+          (item.origen === 'paco' ? ' · lo lanzaste tú' : item.origen === 'sistema' ? ' · lo hizo el sistema solo' : '')));
+      if (item.evidencia && (item.evidencia.hasShot || item.evidencia.hasHtml)) {
+        const evidencia = evidenceButtons(item.evidencia.motor,
+          { id: item.evidencia.runId, hasShot: item.evidencia.hasShot, hasHtml: item.evidencia.hasHtml });
+        if (evidencia) linea.append(evidencia);
+      }
+      row.append(linea);
+      if (item.detalle && ((item.detalle.steps || []).length || item.detalle.error)) {
+        const det = item.detalle;
+        const details = n('details', undefined, 'reg-detalle');
+        details.append(n('summary', 'Ver la traza completa del intento'));
+        const caja = n('div', undefined, 'reg-traza');
+        for (const step of det.steps || [])
+          caja.append(n('p', (typeof fmtFechaHora === 'function' ? fmtFechaHora(step.at) : '') + ' · ' +
+            (step.paso || '') + (step.detalle ? ' — ' + step.detalle : ''), 'reg-step'));
+        if (det.error) caja.append(n('p', 'Error literal: ' + det.error +
+          (det.errorKind ? ' (clase: ' + det.errorKind + ')' : ''), 'error-text'));
+        if ((det.attempts || 0) > 1) caja.append(n('p', 'Intentos de esta corrida: ' + det.attempts, 'muted'));
+        details.append(caja);
+        row.append(details);
+      }
+      list.append(row);
+    }
+    body.append(list);
+  };
+  pintar();
+  return [wrap];
+}
+/* Exportar el CSV con el filtro en curso (la acción principal de
+   la pantalla y su botón en los filtros llaman aquí). */
+async function downloadRegistroCsv() {
+  try {
+    const params = [registroFiltro.rfc ? 'rfc=' + encodeURIComponent(registroFiltro.rfc) : '',
+      registroFiltro.clase ? 'clase=' + encodeURIComponent(registroFiltro.clase) : ''].filter(Boolean).join('&');
+    download(await satApiBlob('registro/csv' + (params ? '?' + params : '')), 'registro-pacosat.csv');
+    toast('Registro exportado en CSV.', 'ok');
+  } catch (error) { toast(error.message, 'error'); }
+}

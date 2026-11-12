@@ -98,7 +98,7 @@ async function refreshAvisos(force = false) {
     try {
       avisosCache = await satApi('notices');
       avisosFetchedAt = Date.now();
-      paintAvisosBadge(avisosCache.counts.total);
+      paintAvisosBadge(avisosBadgeCount(avisosCache));
       if (page === 'avisos') render();
     } catch { /* sin servidor alcanzable: no se inventa ningún conteo */ }
     avisosInflight = null;
@@ -111,6 +111,14 @@ function paintAvisosBadge(count) {
   if (!badge) return;
   badge.hidden = !count;
   badge.textContent = count ? number.format(count) : '';
+}
+/* Distintivo = la pantalla (1.28.0, P9): con un contribuyente
+   elegido, el contador de Avisos es el de ESE RFC (el payload ya
+   trae el conteo por RFC); sin elección, el total de siempre. */
+function avisosBadgeCount(data) {
+  if (!data) return 0;
+  if (scope && data.porRfc) return Number(data.porRfc[scope] || 0);
+  return Number(data.counts?.total || 0);
 }
 function avisoFecha(ts) {
   return new Date(ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
@@ -377,7 +385,7 @@ function avisoBatch(accion) {
       avisosSeleccion.clear();
       avisosCache = result;
       avisosFetchedAt = Date.now();
-      paintAvisosBadge(result.counts.total);
+      paintAvisosBadge(avisosBadgeCount(result));
       toast('Lote terminado: ' + number.format(result.aplicados) + ' aplicados, ' + number.format(result.saltados) + ' saltados.', 'ok');
       soundCue('success');
       render();
@@ -571,7 +579,7 @@ async function avisoMarkPaid(aviso, card, button) {
     try {
       const data = await satApi('notices');
       aplicado = (data.historial || []).some(item => item.id === aviso.id);
-      if (aplicado) { avisosCache = data; avisosFetchedAt = Date.now(); paintAvisosBadge(data.counts.total); }
+      if (aplicado) { avisosCache = data; avisosFetchedAt = Date.now(); paintAvisosBadge(avisosBadgeCount(data)); }
     } catch { /* sin re-lectura posible: manda el error original */ }
     if (aplicado) { confirmar('Quedó marcado como pagado. Quedó en el historial.'); return; }
     toast(error.message, 'error');

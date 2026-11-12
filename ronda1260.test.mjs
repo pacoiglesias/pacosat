@@ -54,12 +54,15 @@ const moneyUi = read('money-ui.part');
 const buzonUi = read('buzon-ui.part');
 
 /* Sello y techos */
-assert.ok(html.includes('"version":"1.27.0"'), 'el artefacto se sella 1.27.0');
+assert.ok(html.includes('"version":"1.29.0"'), 'el artefacto se sella con la versión vigente (1.29.0)');
 const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
-assert.ok(htmlBytes <= 572000, 'la página pesa ' + htmlBytes + ' B (tope 572.000, sin subir)');
+/* Techo 598.000 desde la 1.29.0 (ejecutor local, papelera,
+   peldaños 1 y 2 y Totales navegable): la página crece a
+   594.876 B, con la contabilidad en el anexo de ronda1110. */
+assert.ok(htmlBytes <= 598000, 'la página pesa ' + htmlBytes + ' B (tope 598.000, re-basificado en la 1.29.0)');
 const cssBytes = ['style.part', 'design.part', 'polish.part']
   .reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-assert.ok(cssBytes <= 39600, 'el CSS pesa ' + cssBytes + ' B (tope 39.600, anexo 1.26.0 en ronda1110)');
+assert.ok(cssBytes <= 42500, 'el CSS pesa ' + cssBytes + ' B (tope 42.500, anexo 1.29.0 en ronda1110)');
 
 /* Tokens cerrados */
 for (const token of ['--r-s:8px', '--r-m:12px', '--r-l:14px', '--r-pill:100px',

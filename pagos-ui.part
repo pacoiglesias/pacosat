@@ -183,6 +183,18 @@ function pagosScreen() {
     return [wrap];
   }
   pagosSteps = {};
+  /* Vencimientos de impuestos primero (1.29.0, punto 5): la
+     tarjeta que abre la pantalla — «Todo pagado» si no hay
+     vencimientos con respaldo, o la lista SAT/IMSS/ISN con su
+     importe, su documento y sus avisos, y el botón «Preparar
+     pagos» (nunca «Pagar todo»: preparar deja la lista lista
+     para autorizar en el banco; pagar sigue siendo tu gesto). */
+  const vencPanel = panel('Impuestos y cuotas por pagar',
+    'Lo que consta por pagar de este RFC, sacado de tus propias líneas ya preparadas y cruzado contra el banco para no pagar dos veces lo mismo.');
+  const vencBody = n('div');
+  vencPanel.append(vencBody);
+  wrap.append(vencPanel);
+  pagosFillVencimientos(vencBody, () => { if (typeof render === 'function') render(); });
   const steps = n('div', undefined, 'steps');
   wrap.append(steps);
   const step1 = pagosMakeStep(1, 'A quién le pagas');
@@ -225,6 +237,61 @@ function pagosScreen() {
   wrap.append(historyPanel);
   pagosFillHistory(histBody, outBody);
   return [wrap];
+}
+/* La tarjeta de vencimientos (1.29.0, punto 5): consume
+   GET /api/pagos/vencimientos y pinta exactamente lo que el
+   servidor respaldó — ningún importe nace en el cliente. */
+async function pagosFillVencimientos(body, refrescar) {
+  body.replaceChildren(n('p', 'Revisando tus vencimientos y cruzándolos con el banco…', 'muted'));
+  let data = null;
+  try { data = await satApi('pagos/vencimientos?rfc=' + encodeURIComponent(scope)); }
+  catch (error) { if (body.isConnected) body.replaceChildren(n('p', error.message, 'error-text')); return; }
+  if (!body.isConnected) return;
+  body.replaceChildren();
+  const dinero = cents => '$' + (typeof centsLabel === 'function' ? centsLabel(BigInt(cents || 0)) : String(cents || 0));
+  if (data.todoPagado) {
+    const ok = n('div', undefined, 'pagos-todo-pagado');
+    ok.append(n('strong', '✓ Todo pagado'),
+      n('p', 'No consta ningún vencimiento de impuestos o cuotas por pagar de este RFC: ni líneas pendientes, ni meses declarados sin su línea. Cuando aparezca uno, aquí saldrá con su importe y su documento.'));
+    body.append(ok);
+  } else {
+    const bar = n('div', undefined, 'traffic-strip');
+    bar.append(statusPill('warn', number.format((data.vencimientos || []).length) + ' vencimiento(s) · ' + dinero(data.totalCents)));
+    body.append(bar);
+  }
+  for (const v of data.vencimientos || []) {
+    const row = n('div', undefined, 'cp-row');
+    row.append(statusPill(v.caducada ? 'bad' : 'warn', v.organismo));
+    const main = n('div', undefined, 'cp-main');
+    main.append(n('span', v.concepto + ' — ' + dinero(v.importeCents)));
+    main.append(n('small', 'Respaldo: ' + (v.respaldo?.label || 'su preparación') +
+      (v.lineaCaptura ? ' · Línea de captura ' + v.lineaCaptura : ''), 'muted'));
+    if (v.caducada) main.append(n('small', '⚠ ' + v.avisoCaducidad, 'error-text'));
+    else if (v.avisoCaducidad) main.append(n('small', '⚠ ' + v.avisoCaducidad, 'muted'));
+    row.append(main);
+    body.append(row);
+  }
+  for (const c of data.cruces || [])
+    body.append(n('p', 'Ya consta pagado (no se prepara otra vez): ' + c.concepto + ' — ' + c.motivo + '.', 'muted'));
+  if ((data.faltantes || []).length) {
+    const meses = data.faltantes.map(f => f.periodo).filter(Boolean);
+    body.append(n('p', '⚠ Sin importe que conste: ' +
+      (meses.length === 1 ? 'el mes ' + meses[0] : 'los meses ' + meses.join(', ')) +
+      ' no constan presentados con acuse verificado ni tienen línea respaldada en el expediente — cuánto se debe no consta, y por eso esto no se puede preparar.', 'error-text'));
+  }
+  if ((data.vencimientos || []).length) {
+    const preparar = n('button', 'Preparar pagos', 'primary');
+    preparar.type = 'button';
+    preparar.onclick = async () => {
+      preparar.disabled = true; preparar.textContent = 'Preparando…';
+      try {
+        const creada = await satApi('pagos/preparar-vencimientos', { rfc: scope });
+        toast('Pagos preparados: la lista quedó en «Preparaciones anteriores» (' + creada.id + '), lista para autorizar en el banco. No se ha pagado nada.', 'ok');
+        refrescar();
+      } catch (error) { toast(error.message, 'error'); preparar.disabled = false; preparar.textContent = 'Preparar pagos'; }
+    };
+    body.append(n('p', 'Preparar junta los vencimientos en una sola lista del banco con su documento por concepto. Pagar sigue siendo tu gesto en el banco: aquí nada se paga solo.', 'muted'), preparar);
+  }
 }
 async function pagosFillHistory(histBody, outBody) {
   histBody.replaceChildren(n('p', 'Cargando tus preparaciones…', 'muted'));

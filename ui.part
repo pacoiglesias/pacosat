@@ -12,9 +12,11 @@ const screens = {
   tributario: ['Buzón Tributario', 'Las notificaciones del SAT para este RFC: PacoSAT las lista sin abrir ninguna.', 'Consultar ahora'],
   invoices: ['Facturas', 'Todos tus CFDI: emitidos y recibidos, su estado en el SAT y su PDF, en una sola tabla.', 'Importar XML / ZIP'],
   docs: ['Documentos', 'Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados, con «Ver» de un clic.', 'Archivar PDF'],
+  declaraciones: ['Declaraciones', 'El mapa de tus declaraciones por año y mes: qué consta, qué falta y cómo se recupera del SAT.', 'Recuperar del SAT'],
+  registro: ['Registro', 'Todo lo que el sistema hizo, intentó y no pudo: conexiones, acciones y fallos en lenguaje llano.', 'Exportar CSV'],
   dinero: ['Dinero', 'Cuánto debes, cuánto te deben y qué ya se movió.', 'Abrir Cierre y reportes'],
   pagos: ['Pagos al banco', 'Prepara los pagos del mes en tres pasos y llévate las tablas para el banco.', 'Preparar los pagos'],
-  sat: ['SAT', 'Descarga tus facturas, tu constancia y tus declaraciones del SAT.', 'Importar paquete'],
+  sat: ['Centro SAT', 'Descarga tus facturas, tu constancia y tus declaraciones del SAT.', 'Importar paquete'],
   salidas: ['Cierre y reportes', 'Cierra el mes paso a paso, mira qué vence y prepara lo de tu contadora.', 'Exportación completa'],
   settings: ['Ajustes', 'Contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema y acerca de.', 'Guardar ajustes'],
   preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Preguntar']
@@ -82,6 +84,23 @@ const invoiceSelection = new Set();
 let invoiceKind = '', invoiceOrder = 'recent', invoiceState = '', invoicePayState = '';
 let submit, importing = false, ready = false;
 const number = new Intl.NumberFormat('es-MX');
+/* UN formato humano de fecha en las listas (1.29.0, peldaño 1):
+   «12 nov, 12:00» — el mismo en Hoy, Buzón, Registro y
+   Declaraciones, sin mezclar ISO ni fechas largas por pantalla. */
+const MESES_CORTOS_1290 = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function fmtFechaHora(ms) {
+  if (!ms) return '—';
+  const d = new Date(Number(ms));
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.getDate() + ' ' + MESES_CORTOS_1290[d.getMonth()] + ', ' +
+    String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function fmtFechaCorta(ms) {
+  if (!ms) return '—';
+  const d = new Date(Number(ms));
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.getDate() + ' ' + MESES_CORTOS_1290[d.getMonth()] + ' ' + d.getFullYear();
+}
 const scopes = () => new Map(people.map(person => [person.id, person.name]));
 const matches = invoice => {
   const known = scopes();
@@ -261,6 +280,20 @@ function monthlyTotals() {
   }
   return groups;
 }
+/* Totales por RFC y mes (1.29.0, adenda): ordenados por AÑOS y
+   navegables — cada total se puede verificar hasta el documento.
+   Un bloque por año (con su total del año; el año en curso
+   desplegado, los anteriores plegados), los meses como filas
+   clicables y, al tocar un mes, su detalle: los CFDI que
+   componen los totales, recibidos y emitidos por separado, con
+   folio, contraparte, importe y estado, y la suma del detalle
+   igualando el total enseñado. Las notas del mes (complementos
+   de pago que no son facturas, nómina aparte, canceladas fuera
+   de totales) viven DENTRO del detalle, no en la lista. Los
+   botones de cabecera se conservan; dentro del detalle,
+   «Reporte mensual» y «Paquete mensual» actúan sobre ESE mes. */
+let totalesDetalle = null;
+const MESES_TOT = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 function totalsPanel() {
   const totals = monthlyTotals();
   const wrap = panel('Totales por RFC y mes');
@@ -268,31 +301,102 @@ function totalsPanel() {
     wrap.append(empty('Sin comprobantes todavía', 'Los totales por contribuyente y mes aparecerán al importar o sincronizar CFDI.'));
     return wrap;
   }
-  wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'),
-    action('Reporte mensual', reportDialog, 'metric-link', 'print'),
-    action('Paquete mensual', monthlyPackageDialog, 'metric-link', 'box'));
-  const rows = [];
-  let truncated = false;
-  for (const [rfc, group] of totals) {
-    if (group.months.length > 12) truncated = true;
-    for (const [monthKey, g] of group.months.slice(0, 12)) rows.push([
-      cell(group.name, rfc), monthKey.slice(5, 7) + '/' + monthKey.slice(0, 4),
-      number.format(g.received), cell(centsLabel(g.receivedCents), foreignNote(g.foreign, 'received')),
-      number.format(g.issued), cell(centsLabel(g.issuedCents),
-        [foreignNote(g.foreign, 'issued'),
-          g.rep ? g.rep + ' complemento(s) de pago (no son facturas en otra moneda)' : '',
-          g.cancelled ? g.cancelled + ' cancelada(s), fuera de los totales' : '',
-          g.nomina ? g.nomina + ' de nómina, aparte' : ''].filter(Boolean).join(' · '))
-    ]);
+  if (totalesDetalle && totals.has(totalesDetalle.rfc)) {
+    const group = totals.get(totalesDetalle.rfc);
+    const found = group.months.find(([key]) => key === totalesDetalle.monthKey);
+    if (found) { totalesDetallePintar(wrap, totalesDetalle.rfc, group, found[0], found[1]); return wrap; }
+    totalesDetalle = null;
   }
-  wrap.append(grid(['Contribuyente', 'Mes', 'Recibidos', 'Importe recibidos', 'Emitidos', 'Importe emitidos'], rows));
-  wrap.append(n('p', 'Importes en MXN sumados al centavo.' + (truncated ? ' Se muestran los últimos 12 meses por RFC; la exportación CSV incluye todos.' : '')));
+  wrap.querySelector('.panel-head').append(action('Exportar totales CSV', exportTotalsCsv, 'metric-link', 'down'),
+    action('Reporte mensual', () => reportDialog(), 'metric-link', 'print'),
+    action('Paquete mensual', () => monthlyPackageDialog(), 'metric-link', 'box'));
+  const anioEnCurso = String(new Date().getFullYear());
+  for (const [rfc, group] of totals) {
+    wrap.append(n('h3', group.name + ' · ' + rfc, 'tot-rfc'));
+    const porAnio = new Map();
+    for (const [monthKey, g] of group.months) {
+      const anio = monthKey.slice(0, 4);
+      if (!porAnio.has(anio)) porAnio.set(anio, []);
+      porAnio.get(anio).push([monthKey, g]);
+    }
+    for (const [anio, meses] of [...porAnio.entries()].sort((a, b) => b[0].localeCompare(a[0]))) {
+      const tot = meses.reduce((acc, [, g]) => ({ received: acc.received + g.received,
+        receivedCents: acc.receivedCents + g.receivedCents, issued: acc.issued + g.issued,
+        issuedCents: acc.issuedCents + g.issuedCents }),
+        { received: 0, receivedCents: 0n, issued: 0, issuedCents: 0n });
+      const bloque = n('details', undefined, 'tot-anio');
+      if (anio === anioEnCurso) bloque.open = true;
+      const sum = n('summary', undefined, 'tot-anio-sum');
+      sum.append(n('strong', anio),
+        n('span', 'Recibidos ' + number.format(tot.received) + ' · $' + centsLabel(tot.receivedCents) +
+          ' — Emitidos ' + number.format(tot.issued) + ' · $' + centsLabel(tot.issuedCents), 'muted'));
+      bloque.append(sum);
+      for (const [monthKey, g] of meses) {
+        const fila = n('button', undefined, 'tot-mes');
+        fila.type = 'button';
+        fila.append(n('strong', MESES_TOT[Number(monthKey.slice(5, 7)) - 1] + ' ' + anio),
+          n('span', 'Recibidos ' + number.format(g.received) + ' · $' + centsLabel(g.receivedCents) +
+            ' — Emitidos ' + number.format(g.issued) + ' · $' + centsLabel(g.issuedCents)),
+          n('span', 'Ver los CFDI →', 'tot-mes-go'));
+        fila.onclick = () => { totalesDetalle = { rfc, monthKey }; render(); };
+        bloque.append(fila);
+      }
+      wrap.append(bloque);
+    }
+  }
+  wrap.append(n('p', 'Importes en MXN sumados al centavo. Toca un mes para bajar hasta los CFDI que componen sus totales: cada número, con su respaldo.'));
   return wrap;
 }
-function reportDialog() {
+function totalesDetallePintar(wrap, rfc, group, monthKey, g) {
+  const volver = n('button', '← Volver a los totales', 'soft small');
+  volver.type = 'button';
+  volver.onclick = () => { totalesDetalle = null; render(); };
+  const head = n('div', undefined, 'tot-det-head');
+  head.append(volver, n('strong', MESES_TOT[Number(monthKey.slice(5, 7)) - 1] + ' ' + monthKey.slice(0, 4) +
+    ' · ' + group.name + ' (' + rfc + ')'));
+  const acts = n('div', undefined, 'actions');
+  acts.append(action('Reporte mensual de este mes', () => reportDialog(monthKey), 'soft small', 'print'),
+    action('Paquete mensual de este mes', () => monthlyPackageDialog(rfc, monthKey), 'soft small', 'box'));
+  wrap.append(head, acts);
+  /* Las notas del mes, dentro de su detalle (1.29.0): lo que NO
+     suma y por qué — complementos de pago, nómina, canceladas y
+     divisas verdaderas contadas aparte. */
+  const notas = [foreignNote(g.foreign, 'received'), foreignNote(g.foreign, 'issued'),
+    g.rep ? g.rep + ' complemento(s) de pago (no son facturas: no suman)' : '',
+    g.cancelled ? g.cancelled + ' cancelada(s), fuera de los totales' : '',
+    g.nomina ? g.nomina + ' de nómina, aparte' : ''].filter(Boolean);
+  if (notas.length) wrap.append(n('p', notas.join(' · ') + '.', 'muted'));
+  /* El detalle con el MISMO criterio de monthlyTotals: sin
+     canceladas, sin complementos (P) ni nómina (N), y solo MXN
+     en los pesos — así la suma del detalle IGUALA el total. */
+  const filas = invoices.filter(row => row.date.startsWith(monthKey) && !rowCancelled(row) &&
+    row.kind !== 'P' && row.kind !== 'N' && (row.currency || 'MXN').toUpperCase() === 'MXN');
+  const folioDe = row => row.fiscal ? ((row.fiscal.serie ? row.fiscal.serie + '-' : '') + (row.fiscal.folio || '')) || '—' : '—';
+  const estadoDe = row => { const st = invoiceStateOf(row); return st === 'none' ? 'Sin consultar' : st === 'efos' ? '69-B' : st; };
+  const seccion = (titulo, lista, totalCentsMes, totalNum) => {
+    const box = n('div', undefined, 'tot-det-sec');
+    box.append(n('h3', titulo + ' · ' + number.format(lista.length)));
+    if (!lista.length) box.append(n('p', 'Sin CFDI en esta lista.', 'muted'));
+    else box.append(grid(['Folio', 'Contraparte', 'Fecha', 'Importe', 'Estado'], lista.map(row => [
+      cell(folioDe(row), row.id), cell(titulo === 'Recibidos' ? (row.from.name || row.from.rfc) : (row.to.name || row.to.rfc),
+        titulo === 'Recibidos' ? row.from.rfc : row.to.rfc), dateLabel(row.date),
+      cell('$' + centsLabel(totalCents(row))), cell(estadoDe(row)),
+      action('Ver', () => invoiceDetail(row), 'metric-link', 'arrow')])));
+    const suma = lista.reduce((acc, row) => acc + totalCents(row), 0n);
+    box.append(n('p', 'Suma del detalle: $' + centsLabel(suma) + ' — ' +
+      (suma === totalCentsMes && lista.length === totalNum
+        ? 'iguala el total del mes ✓'
+        : 'el total del mes es $' + centsLabel(totalCentsMes) + ' (' + number.format(totalNum) + '): si no cuadran, falta cargar CFDI en esta copia local.'), 'tot-suma'));
+    return box;
+  };
+  wrap.append(seccion('Recibidos', filas.filter(row => row.to.rfc === rfc), g.receivedCents, g.received),
+    seccion('Emitidos', filas.filter(row => row.from.rfc === rfc), g.issuedCents, g.issued));
+}
+function reportDialog(mesPreseleccionado = '') {
   const months = [...new Set([...monthlyTotals().values()].flatMap(group => group.months.map(([key]) => key)))].sort().reverse();
   check(months.length, 'Todavía no hay totales para reportar.');
-  const monthSel = select(months.map(key => [key, key.slice(5, 7) + '/' + key.slice(0, 4)]), months[0], 'Mes del reporte');
+  const monthSel = select(months.map(key => [key, key.slice(5, 7) + '/' + key.slice(0, 4)]),
+    months.includes(mesPreseleccionado) ? mesPreseleccionado : months[0], 'Mes del reporte');
   dialog('Reporte mensual por RFC', [n('p', 'Vista para imprimir o guardar en PDF del mes elegido. Respeta el contribuyente seleccionado en el selector principal; sin selección, incluye a todos.'),
     field('Mes', monthSel)], () => printMonthlyReport(monthSel.value), 'Generar e imprimir');
 }
@@ -360,12 +464,13 @@ function reportFoot(rfc) {
    y mes con los totales en CSV, la base DIOT de ese mes en CSV, un
    resumen HTML listo para imprimir/guardar en PDF y el manifiesto.
    Solo descarga del usuario: PacoSAT no envía nada a terceros. */
-function monthlyPackageDialog() {
+function monthlyPackageDialog(rfcPreseleccionado = '', mesPreseleccionado = '') {
   const totals = monthlyTotals();
   check(totals.size, 'Todavía no hay totales para preparar un paquete.');
   const rfcs = [...totals.keys()];
   const rfcSel = select(rfcs.map(rfc => [rfc, (totals.get(rfc).name || rfc) + ' · ' + rfc]),
-    scope && totals.has(scope) ? scope : rfcs[0], 'Contribuyente');
+    rfcPreseleccionado && totals.has(rfcPreseleccionado) ? rfcPreseleccionado
+      : scope && totals.has(scope) ? scope : rfcs[0], 'Contribuyente');
   const monthSel = select([], '', 'Mes');
   const fillMonths = () => {
     monthSel.replaceChildren(...totals.get(rfcSel.value).months.map(([key]) => {
@@ -373,6 +478,8 @@ function monthlyPackageDialog() {
       option.value = key;
       return option;
     }));
+    if (mesPreseleccionado && totals.get(rfcSel.value).months.some(([key]) => key === mesPreseleccionado))
+      monthSel.value = mesPreseleccionado;
   };
   rfcSel.onchange = fillMonths;
   fillMonths();
@@ -878,6 +985,10 @@ function tabbar(items, current, pick) {
    sección en curso: una sola etiqueta por contexto, siempre con
    verbo + objeto. */
 function primaryLabel() {
+  /* Buzón (1.29.0, peldaño 1): «Marcar todo leído» existe UNA
+     sola vez — el botón de su franja —; la acción principal de
+     la cabecera en Buzón es importar, que es lo que su clic hace. */
+  if (page === 'buzon') return 'Importar XML / ZIP';
   if (page === 'sat') return { descargar: 'Importar paquete', estado: 'Revisar mis CFDI ahora', listas: 'Actualizar listados', descargado: 'Actualizar estado' }[satTab] || 'Importar paquete';
   if (page === 'settings') return { general: 'Guardar ajustes', contribuyentes: 'Agregar RFC', correo: 'Guardar el correo', respaldos: 'Crear respaldo', sinconexion: 'Sincronizar ahora', sistema: 'Actualizar estado', acerca: 'Ver la versión' }[ajustesSection] || 'Guardar ajustes';
   if (page === 'salidas') return { cierre: 'Exportación completa', calendario: 'Crear paquete de defensa', diot: 'Exportar CSV', reportes: 'Exportación completa' }[cierreSection] || 'Exportación completa';
@@ -911,6 +1022,7 @@ function ensureLazyPart(name) {
 }
 function lazyPartForView(view) {
   if (view === 'pagos') return 'pagos';
+  if (view === 'registro') return 'registro';
   if (view === 'salidas' && cierreSection === 'reportes') return 'salidas';
   if (view === 'dinero' && dineroTab === 'bancos') return 'bancos';
   return null;
@@ -973,6 +1085,8 @@ function render() {
      pantalla; la puerta de arriba garantiza que, cuando la
      vista es la suya, la función ya existe. */
   const content = ({ home, avisos: avisosScreen, buzon: buzonScreen, tributario: tributarioScreen, invoices: invoiceScreen, docs: docsView, dinero: dineroView,
+    declaraciones: declaracionesScreen,
+    registro: typeof registroScreen === 'function' ? registroScreen : null,
     pagos: typeof pagosScreen === 'function' ? pagosScreen : null,
     sat: satView, salidas: cierreView, settings: ajustesView, preguntas: preguntasScreen })[page]();
   for (const el of content) el.classList?.add('view-in');
@@ -1041,11 +1155,11 @@ function todayPanel() {
      vence — sin que Paco tenga que adivinarlo. Se rellena con los
      datos del servidor cuando está disponible. */
   const clarity = n('div', undefined, 'today-clarity');
-  const colHizo = n('div', undefined, 'today-col');
+  const colHizo = n('div', undefined, 'today-col today-col-hizo');
   colHizo.append(n('h3', 'Lo que el sistema ya hizo'));
-  const colFalta = n('div', undefined, 'today-col');
+  const colFalta = n('div', undefined, 'today-col today-col-falta');
   colFalta.append(n('h3', 'Lo que falta'));
-  const colVence = n('div', undefined, 'today-col');
+  const colVence = n('div', undefined, 'today-col today-col-vence');
   colVence.append(n('h3', 'Lo que vence'));
   clarity.append(colHizo, colFalta, colVence);
   wrap.append(clarity);
@@ -1076,9 +1190,10 @@ function todayPanel() {
           satApiLectura('reports/checklist?month=' + todayKey.slice(0, 7)).catch(() => null),
           satApiLectura('satdocs').catch(() => null),
           satApiLectura('monthly').catch(() => null),
-          satApiLectura('activity/digest').catch(() => null)]) };
+          satApiLectura('activity/digest').catch(() => null),
+          satApiLectura('registro/resumen').catch(() => null)]) };
       }
-      const [avisos, reconcile, checklist, satdocs, monthly, digest] = todayCache.data;
+      const [avisos, reconcile, checklist, satdocs, monthly, digest, registro] = todayCache.data;
       let cHizo = colHizo, cFalta = colFalta, cVence = colVence;
       if (!wrap.isConnected) {
         const vivas = document.querySelectorAll('.today-clarity .today-col');
@@ -1090,10 +1205,12 @@ function todayPanel() {
       line(cHizo, resueltos.length
         ? 'Hoy se solventaron ' + resueltos.length + ' aviso(s): ' + resueltos.slice(0, 2).map(item => item.titulo).join('; ') + (resueltos.length > 2 ? '…' : '') + '.'
         : 'Hoy no se ha cerrado ningún aviso todavía.', () => navigate('avisos'));
-      if (reconcile) line(cHizo, 'Conciliaciones confirmadas y vigentes: ' + reconcile.confirmed.length + '.', () => navigate('dinero'));
+      /* Sin ruido (1.28.0, P5): la línea de conciliaciones solo
+         existe cuando hay alguna que contar. */
+      if (reconcile?.confirmed.length) line(cHizo, 'Conciliaciones confirmadas y vigentes: ' + reconcile.confirmed.length + '.', () => navigate('dinero'));
       const informes = (avisos?.historial || []).filter(item => item.kind === 'informe').length;
       if (informes) line(cHizo, 'Informes mensuales enviados en el historial: ' + informes + '.');
-      if (!resueltos.length && !reconcile) line(cHizo, 'Sin actividad registrada hoy: el sistema vigila en silencio.');
+      if (!resueltos.length && !reconcile?.confirmed.length) line(cHizo, 'Sin actividad registrada hoy: el sistema vigila en silencio.');
       /* Lo que falta: avisos abiertos y pasos del cierre en rojo/ámbar. */
       if (avisos?.counts?.total) line(cFalta, avisos.counts.total + ' aviso(s) abiertos: ' +
         [avisos.counts.mal ? avisos.counts.mal + ' por corregir' : '', avisos.counts.falta ? avisos.counts.falta + ' que faltan' : '',
@@ -1174,9 +1291,47 @@ function todayPanel() {
         else if (gesto) prota = ['Dar tu gesto para la descarga CIEC', 'La corrida mensual quedó esperando tu captcha: el mes se baja desde su tarjeta en el Centro SAT y la corrida retoma su sitio sola.', () => navigate('sat')];
         else if (portalCambio) prota = ['El portal del SAT cambió', 'La sonda lo detectó antes de la corrida: nada que hacer por tu parte; la próxima descarga entra avisada.', () => navigate('avisos')];
         else if (porConfirmar) prota = ['Confirmar un pago', porConfirmar.titulo + (porConfirmar.accion ? ' — ' + porConfirmar.accion + '.' : ''), () => navigate('avisos')];
+        /* Hoy veraz (1.28.0, P4): si el servidor cuenta avisos
+           abiertos y ninguno de los casos urgentes aplica, el
+           protagonista es ese conteo — Hoy NUNCA dice «Todo en
+           orden» con avisos abiertos. El protagonista nace del
+           conteo del servidor, no de la foto local. */
+        else if (avisos.counts?.total > 0) {
+          const primero = abiertos[0];
+          prota = ['Revisar tus avisos abiertos',
+            avisos.counts.total + (avisos.counts.total === 1 ? ' aviso abierto' : ' avisos abiertos') +
+            (primero ? ': el primero es «' + primero.titulo + '»' : '') + '.',
+            () => navigate('avisos')];
+        }
         if (prota) pasoVivo.replaceChildren(n('strong', 'Siguiente paso · ' + prota[0]),
           n('p', prota[1]), action('Hacerlo ahora', prota[2], 'primary', 'arrow'));
       }
+      /* La línea del Registro (1.28.0, P1): qué hizo el sistema en
+         24 h y, si algo falló, qué fue — un toque a la bitácora. */
+      if (registro) line(cHizo, 'Registro (24 h): ' + registro.conexiones + ' conexión(es) · ' + registro.acciones + ' acción(es)' +
+        (registro.fallos ? ' · ' + registro.fallos + ' fallo(s)' + (registro.ultimoFallo
+          ? ' — el último: ' + String(registro.ultimoFallo.texto).slice(0, 110) : '') : ' · sin fallos') + '.',
+        () => navigate('registro'));
+      /* La línea de la máquina (1.29.0, peldaño 1): última pasada
+         de cada motor y del respaldo, y el estado del ejecutor —
+         la ejecución del SAT vive en tu equipo; si no está en
+         línea, los trabajos esperan, no fallan. Las siguientes
+         pasadas automáticas son semanales (Buzón y Declaraciones)
+         mientras el ejecutor esté en tu equipo. */
+      try {
+        const ex = await satApiLectura('executor/overview').catch(() => null);
+        const ultimoDe = kind => (ex?.trabajos || []).find(job => job.kind === kind && job.estado === 'hecho');
+        const buz = ultimoDe('buzon-listar'), dec = ultimoDe('declaraciones-recuperar');
+        const dl = typeof satData !== 'undefined' ? satData?.downloads?.lastAt : null;
+        const bk = typeof satData !== 'undefined' ? satData?.backup?.last : null;
+        line(cHizo, 'Máquina: descargas ' + (dl ? fmtFechaHora(dl) : 'sin registro') +
+          ' · Buzón ' + (buz ? fmtFechaHora(buz.actualizado) : 'sin pasar por el ejecutor') +
+          ' · Declaraciones ' + (dec ? fmtFechaHora(dec.actualizado) : 'sin pasar por el ejecutor') +
+          ' · Respaldo ' + (bk ? fmtFechaHora(bk) : 'sin registro') +
+          ' · Ejecutor ' + (ex?.enLinea ? 'en línea en tu equipo' : 'sin conexión: los trabajos del SAT esperan tu equipo') +
+          '. Siguientes pasadas: automáticas semanales con tu equipo en línea.',
+          () => navigate('registro'));
+      } catch { /* la línea de la máquina es un extra: nunca rompe Hoy */ }
     } catch { /* la transparencia es un extra: nunca rompe el Resumen */ }
   })();
   return wrap;
@@ -1339,7 +1494,15 @@ function home() {
     card.append(acts);
     blocks.push(card);
   }
-  blocks.push(secondary, tasks, totalsPanel());
+  blocks.push(secondary);
+  /* Sin duplicados (1.28.0, P5): con UN solo contribuyente visible
+     la tabla «Contribuyentes» repite los conteos de las tarjetas de
+     métricas (recibidos/emitidos/PDF del mismo RFC); fuera — sus
+     acciones viven también en Facturas, Documentos y Ajustes
+     (Renombrar incluido). Con 0 (el alta guiada) o con varios, la
+     tabla se queda. */
+  if (visiblePeople.length !== 1) blocks.push(tasks);
+  blocks.push(totalsPanel());
   return blocks;
 }
 
@@ -1831,6 +1994,15 @@ function showEntry() {
     try { sessionStorage.setItem('pacosat-entry-skip', '1'); } catch { /* sin almacén: se aparta igual */ }
     entry.hidden = true;
   };
+  /* Ver/ocultar la contraseña (1.29.0, peldaño 1 — solo la parte
+     visual): el botón cambia el tipo del campo, nada más. */
+  const showBtn = $('entry-show');
+  if (showBtn) showBtn.onclick = () => {
+    const visible = input.type === 'text';
+    input.type = visible ? 'password' : 'text';
+    showBtn.textContent = visible ? 'Ver' : 'Ocultar';
+    try { input.focus(); } catch { /* sin foco */ }
+  };
   setTimeout(() => { try { input.focus(); } catch { /* sin foco: la pantalla queda */ } }, 60);
 }
 async function maybeShowEntry() {
@@ -1979,7 +2151,10 @@ function docsView() {
        declaraciones a un toque, sin cazarlas por las pantallas. */
     if (typeof docsTopCards === 'function') parts.unshift(docsTopCards());
     parts.push(satDocsSection());
-    if (typeof declaracionesSection === 'function') parts.push(declaracionesSection());
+    /* Declaraciones tiene destino propio desde la 1.28.0 (P2):
+       la sección ya no vive al fondo de Documentos — nada de
+       contenido repetido en dos pantallas. La tarjeta superior
+       de docsTopCards lleva a su destino. */
     if (typeof trabajosSatSection === 'function') parts.push(trabajosSatSection());
   }
   return parts;

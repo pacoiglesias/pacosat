@@ -18,12 +18,25 @@ function bancosScreen() {
   const draw = data => {
     body.replaceChildren();
     /* Posición */
-    const position = panel('Posición total', 'La suma de los últimos saldos finales archivados, por banco y en total. La fecha es el mes del estado más reciente.');
+    const position = panel('Posición total', 'La suma de los últimos saldos finales archivados, por banco y en total. Cada saldo enseña el mes de su estado: la suma nunca mezcla meses en silencio (1.28.0, P10).');
     const strip = n('div', undefined, 'traffic-strip');
     strip.append(statusPill('ok', 'Total: $' + data.position.total + (data.position.asOf ? ' · a ' + data.position.asOf : '')));
     for (const [bank, total] of Object.entries(data.position.byBank))
       strip.append(statusPill('dim', bank + ': $' + total));
     position.append(strip);
+    /* El mes de CADA cuenta que compone la suma, y el aviso si
+       no coinciden: antes el total podía mezclar octubre de una
+       cuenta con septiembre de otra sin decirlo. */
+    const cuentas = data.position.cuentas || [];
+    if (cuentas.length) {
+      const meses = new Set(cuentas.map(cuenta => cuenta.mes));
+      for (const cuenta of cuentas)
+        position.append(n('p', cuenta.banco + (cuenta.nombre ? ' · ' + cuenta.nombre : '') +
+          ': $' + cuenta.saldo + ' — saldo de ' + cuenta.mes + '.', 'today-line'));
+      if (meses.size > 1)
+        position.append(n('p', '⚠ Ojo: el total suma saldos de meses distintos (' + [...meses].sort().join(', ') +
+          '): cada cuenta aporta su último estado archivado. Sube el estado que falta y la posición queda de un solo mes.', 'today-line'));
+    }
     body.append(position);
     if (!data.accounts.length) {
       const empty = panel('Tus cuentas', 'Da de alta la primera cuenta con un toque o con el formulario. Después sube el PDF de cada mes y PacoSAT lee los saldos.');

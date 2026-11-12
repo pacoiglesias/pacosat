@@ -47,19 +47,22 @@
        agrupado como Sistema. Documentos tiene entrada propia y
        visible; ningún destino lleva a otra pantalla disfrazado. -->
   <nav aria-label="Navegación principal">
-    <span class="nav-caption">CADA DÍA</span>
+    <span class="nav-caption">LA MAÑANA</span>
     <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span></button>
-    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero <span id="dinero-badge" class="news-badge" hidden></span></button>
-    <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
-    <button data-view="docs"><svg><use href="#i-folder"/></svg> Documentos</button>
-    <span class="nav-caption nav-divider">EL TRABAJO</span>
     <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
     <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Buzón <span id="buzon-badge" class="news-badge" hidden></span></button>
     <button data-view="tributario"><svg><use href="#i-mail"/></svg> Buzón Tributario <span id="tributario-badge" class="news-badge" hidden></span></button>
+    <span class="nav-caption nav-divider">EL DINERO</span>
+    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero <span id="dinero-badge" class="news-badge" hidden></span></button>
     <button data-view="pagos"><svg><use href="#i-bank"/></svg> Pagos al banco</button>
     <button data-view="salidas"><svg><use href="#i-check"/></svg> Cierre y reportes</button>
-    <span class="nav-caption nav-divider">SISTEMA</span>
-    <button data-view="sat"><svg><use href="#i-shield"/></svg> SAT</button>
+    <span class="nav-caption nav-divider">EL SAT Y LOS PAPELES</span>
+    <button data-view="sat"><svg><use href="#i-shield"/></svg> Centro SAT</button>
+    <button data-view="declaraciones"><svg><use href="#i-pdf"/></svg> Declaraciones</button>
+    <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
+    <button data-view="docs"><svg><use href="#i-folder"/></svg> Documentos</button>
+    <span class="nav-caption nav-divider">LA CASA</span>
+    <button data-view="registro"><svg><use href="#i-clock"/></svg> Registro</button>
     <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
   </nav>
   <!-- Actividad del sistema en el propio menú (1.18.0): el punto y
@@ -94,8 +97,8 @@
 <nav class="bottombar" aria-label="Navegación rápida">
   <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy</button>
   <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos</button>
-  <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
-  <button data-view="pagos"><svg><use href="#i-bank"/></svg> Pagos</button>
+  <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Buzón</button>
+  <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
   <button id="more-button" type="button"><svg><use href="#i-dots"/></svg> Más</button>
 </nav>
 </div>
@@ -112,12 +115,14 @@
     <p class="entry-sub">Tu espacio fiscal, guardado en tu propio servidor.</p>
     <form id="entry-form" class="entry-form">
       <label for="entry-pass">Tu contraseña de administrador</label>
-      <input id="entry-pass" type="password" autocomplete="current-password" placeholder="Contraseña">
+      <div class="entry-pass-row">
+        <input id="entry-pass" type="password" autocomplete="current-password" placeholder="Contraseña">
+        <button id="entry-show" type="button" class="quiet" aria-label="Mostrar u ocultar la contraseña">Ver</button>
+      </div>
       <p id="entry-error" class="error-text" role="alert" hidden></p>
       <button id="entry-go" class="primary" type="submit">Entrar</button>
     </form>
     <button id="entry-skip" type="button" class="quiet entry-skip">Entrar con mi acceso de siempre</button>
-    <p class="entry-note">Este login es tuyo y convive con tu acceso de siempre: ninguno sustituye al otro en esta versión.</p>
   </div>
 </section>
 <!-- Avisos flotantes (1.26.0): las confirmaciones se ven donde

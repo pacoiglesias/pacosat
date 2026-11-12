@@ -40,11 +40,21 @@ try {
      trabajo después (Avisos, Pagos, Cierre) y el sistema al
      final (SAT, Ajustes). La 1.23.0 (plan futuro, frente B) suma
      el Buzón tras Avisos: la bandeja vive junto al trabajo. */
-  assert.deepEqual(views, ['home', 'dinero', 'invoices', 'docs', 'avisos', 'buzon', 'tributario', 'pagos', 'salidas', 'sat', 'settings'],
-    'el menú lateral tiene exactamente los 11 destinos del plan, en su orden de tarea (1.18.0 + Buzón 1.23.0 + Buzón Tributario 1.24.0)');
+  /* La 1.28.0 («Paquete de mejoras») suma dos destinos propios:
+     Declaraciones tras Documentos (P2) y Registro en Sistema
+     (P1) — el menú pasa a 13 destinos con el mismo orden de
+     tarea. */
+  /* 1.29.0 (propuesta visual, peldaño 2): el menú se reagrupa
+     como piensa el dueño — La mañana / El dinero / El SAT y los
+     papeles / La casa — con los mismos 13 destinos; la barra
+     inferior pasa a Hoy · Avisos · Buzón · Dinero · Más. Esta
+     aserción sustituye a la del orden 1.18.0/1.28.0, superado
+     por orden expresa de esa propuesta. */
+  assert.deepEqual(views, ['home', 'avisos', 'buzon', 'tributario', 'dinero', 'pagos', 'salidas', 'sat', 'declaraciones', 'invoices', 'docs', 'registro', 'settings'],
+    'el menú lateral tiene exactamente los 13 destinos del plan, reagrupados como piensa el dueño (1.29.0, peldaño 2)');
   const bottomAt = layout.indexOf('bottombar');
   const bottom = layout.slice(bottomAt, bottomAt + 1200);
-  for (const view of ['home', 'avisos', 'invoices', 'pagos']) assert.ok(bottom.includes('data-view="' + view + '"'), 'barra inferior: ' + view);
+  for (const view of ['home', 'avisos', 'buzon', 'dinero']) assert.ok(bottom.includes('data-view="' + view + '"'), 'barra inferior: ' + view);
   assert.ok(bottom.includes('id="more-button"'), 'barra inferior: botón Más');
 
   const ui = read('ui.part');
@@ -287,11 +297,34 @@ try {
      andamiaje JS de avisos/entrada/gráficas y docs/DESIGN.md no
      viaja en el artefacto) y su techo NO se mueve: 572.000.
      En gzip -9 medido aquí: 159.679 B (+3.436 sobre la 1.25.0).
-     La disciplina sigue: la próxima ronda que recorte, que baje
-     los techos. */
-  assert.ok(htmlBytes <= 572000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 572.000)');
+     Anexo 1.28.0 («Paquete de mejoras»): la página crece a
+     576.047 B (+5.326 sobre los 570.721 de la 1.27.0) por el
+     cableado de los dos destinos nuevos en el artefacto
+     principal (botones de menú y mapa de pantallas de
+     Declaraciones y Registro, protagonista veraz de Hoy y su
+     línea del Registro, folios en el detalle de cada mes,
+     distintivos por RFC, Documentos filtrado) — la pantalla
+     del Registro en sí viaja DIFERIDA en su parte (4.852 B
+     fuera de la primera pintura). El techo sube a 580.000
+     con la misma disciplina: la próxima ronda que recorte,
+     que baje el techo.
+     Anexo 1.29.0 (ejecutor local + papelera + peldaños 1 y 2):
+     la página crece a 594.876 B (+18.829 sobre la 1.28.0) por
+     lo que vive en el artefacto principal: el panel del
+     ejecutor y la papelera con su límite honesto en el Buzón
+     Tributario, la línea de la máquina y el formato humano de
+     fechas en Hoy, las celdas de dos líneas de Declaraciones,
+     el Totales por años navegable hasta el CFDI, el menú
+     reagrupado y la entrada con ver/ocultar. La tarjeta
+     de vencimientos de Pagos y el detalle del Registro viajan
+     DIFERIDOS en sus partes, fuera de esta cuenta. El CSS
+     crece a 42.100 B (+2.500) por la gramática de la ronda
+     (pastillas de mes, barra de plazo del Buzón, línea de
+     tiempo del Registro, orden móvil de Hoy, años de Totales).
+     Los techos suben a 598.000 y 42.500 con la misma disciplina. */
+  assert.ok(htmlBytes <= 598000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 598.000)');
   const cssBytes = ['style.part', 'design.part', 'polish.part'].reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-  assert.ok(cssBytes <= 39600, 'el CSS pesa ' + cssBytes + ' B (tope 39.600)');
+  assert.ok(cssBytes <= 42500, 'el CSS pesa ' + cssBytes + ' B (tope 42.500)');
 
   const defined = [...layout.matchAll(/<symbol id="(i-[a-z]+)"/g)].map(match => match[1]);
   assert.ok(defined.length >= 20, 'la hoja de símbolos existe');

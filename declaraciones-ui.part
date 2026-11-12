@@ -177,9 +177,16 @@ function declFallbackPanel(fill, hayError) {
   })();
   return box;
 }
+/* Destino propio (1.28.0, P2): Declaraciones deja de vivir al
+   fondo de Documentos y es una pantalla del menú con su nombre —
+   un toque desde cualquier sitio. La sección es la misma de
+   siempre; Documentos ya no la repite. */
+function declaracionesScreen() {
+  return [declaracionesSection()];
+}
 function declaracionesSection() {
   const section = panel('Declaraciones y acuses',
-    'El mapa de tu año fiscal: qué declaraciones constan presentadas, cuáles tocan y cuáles no constan recuperadas en tu expediente (eso no afirma que no se presentaran: pudieron presentarse por otra vía), y la recuperación del SAT de la declaración y su acuse como documentos distintos en Expedientes, con su fecha de presentación y su número de operación.');
+    'El mapa de tu año: qué consta presentado, qué toca y qué falta por recuperar. Un mes solo se da por bueno con su PDF guardado y su número de operación verificado.');
   /* Ancla fija (1.18.0): los saltos a esta sección van por id, no
      buscando el texto del encabezado. */
   section.id = 'declaraciones-section';
@@ -202,6 +209,7 @@ function declaracionesSection() {
     const yearPicker = select(
       [0, 1, 2, 3, 4].map(back => { const y = new Date().getFullYear() - back; return [String(y), 'Ejercicio ' + y]; }),
       String(declEjercicio), 'Ejercicio');
+    yearPicker.id = 'declaraciones-year';
     yearPicker.onchange = () => { declEjercicio = Number(yearPicker.value); fill(); };
     head.append(yearPicker);
     const runMensuales = n('button', 'Recuperar mensuales del ejercicio', 'primary small');
@@ -324,6 +332,49 @@ function declaracionesSection() {
           : declRun('mensuales', fill, recuperar, seleccion.periodo);
         box.append(recuperar);
       }
+      /* Folios en el detalle de cada mes (1.28.0, P6): si falta
+         el acuse, el gesto del folio vive donde se ve el hueco —
+         «Reimprimir el acuse» si el folio de ese periodo ya
+         consta, «Descubrir los folios» si no — con las mismas
+         llamadas y la misma degradación asistida del panel de
+         folios (el diario guarda la página si el portal no
+         colabora). */
+      if (!esAnual && !celda.acuse && celda.estado !== 'no-toca') {
+        const folioMes = (view.folios || []).find(f => f.tipo !== 'anual' && f.periodo === seleccion.periodo && f.estado !== 'con-acuse');
+        const acts = n('div', undefined, 'actions');
+        if (folioMes) {
+          const reimprimir = n('button', 'Reimprimir el acuse de este mes', 'soft small');
+          reimprimir.type = 'button';
+          reimprimir.onclick = async () => {
+            reimprimir.disabled = true; reimprimir.textContent = 'Entrando al portal…';
+            try {
+              const data = await satApi('declaraciones/folio-run', { rfc: scope, folioId: folioMes.id });
+              const result = data.result || {};
+              if (!result.ok) toast(result.error || 'La reimpresión no pudo completarse.', result.waitingExecutor ? 'ok' : 'error');
+              else toast('Acuse recuperado y archivado en Expedientes.', 'ok');
+              fill(data.view);
+            } catch (error) { toast(error.message, 'error'); reimprimir.disabled = false; reimprimir.textContent = 'Reimprimir el acuse de este mes'; }
+          };
+          acts.append(reimprimir);
+        } else {
+          const descubrir = n('button', 'Descubrir los folios en el SAT', 'soft small');
+          descubrir.type = 'button';
+          descubrir.onclick = async () => {
+            descubrir.disabled = true; descubrir.textContent = 'Consultando las transacciones…';
+            try {
+              const data = await satApi('declaraciones/descubrir-folios', { rfc: scope, ejercicio: declEjercicio });
+              const result = data.result || {};
+              if (!result.ok) toast(result.error || 'El descubrimiento no pudo completarse: el diario guarda la página que enseñó el portal.', result.waitingExecutor ? 'ok' : 'error');
+              else toast(result.descubiertos
+                ? 'Descubiertos ' + result.descubiertos + ' folio(s) nuevos: su acuse se reimprime desde el detalle del mes.'
+                : 'La consulta no trajo folios nuevos para este ejercicio.', 'ok');
+              fill(data.view);
+            } catch (error) { toast(error.message, 'error'); descubrir.disabled = false; descubrir.textContent = 'Descubrir los folios en el SAT'; }
+          };
+          acts.append(descubrir);
+        }
+        box.append(acts);
+      }
       detalle.append(box);
     };
     const marcar = (clave, cell) => {
@@ -334,10 +385,14 @@ function declaracionesSection() {
     for (const mes of mapa.meses) {
       const cell = n('button', undefined, 'decl-cell decl-mapa-' + mes.estado);
       cell.type = 'button';
-      cell.append(n('strong', DECL_MESES[Number(mes.periodo.slice(5, 7)) - 1] || mes.periodo),
-        n('span', DECL_ESTADO_TEXTO[mes.estado] || mes.estado),
+      /* Celda en dos líneas (1.29.0, peldaño 1): mes + pastilla de
+         estado arriba; la fecha que importa debajo. */
+      const linea1 = n('span', undefined, 'decl-cell-top');
+      linea1.append(n('strong', DECL_MESES[Number(mes.periodo.slice(5, 7)) - 1] || mes.periodo),
+        n('span', DECL_ESTADO_TEXTO[mes.estado] || mes.estado, 'decl-pill decl-pill-' + mes.estado));
+      cell.append(linea1,
         n('small', mes.estado === 'presentada' ? declFechaCorta(mes.fechaPresentacion)
-          : mes.estado === 'no-toca' ? ''
+          : mes.estado === 'no-toca' ? 'no toca'
           : (mes.estado === 'sin-recuperar' ? 'límite el ' : 'vence el ') + declFechaCorta(mes.limite)));
       cell.onclick = () => { seleccion = { tipo: 'mensual', periodo: mes.periodo }; marcar(mes.periodo, cell); pintarDetalle(); };
       celdas.set(mes.periodo, cell);
@@ -346,10 +401,12 @@ function declaracionesSection() {
     if (mapa.anual) {
       const cell = n('button', undefined, 'decl-cell decl-mapa-' + mapa.anual.estado + ' decl-anual');
       cell.type = 'button';
-      cell.append(n('strong', 'Declaración anual ' + view.ejercicio),
-        n('span', DECL_ESTADO_TEXTO[mapa.anual.estado] || mapa.anual.estado),
+      const linea1 = n('span', undefined, 'decl-cell-top');
+      linea1.append(n('strong', 'Declaración anual ' + view.ejercicio),
+        n('span', DECL_ESTADO_TEXTO[mapa.anual.estado] || mapa.anual.estado, 'decl-pill decl-pill-' + mapa.anual.estado));
+      cell.append(linea1,
         n('small', mapa.anual.estado === 'presentada' ? declFechaCorta(mapa.anual.fechaPresentacion)
-          : mapa.anual.estado === 'no-toca' ? ''
+          : mapa.anual.estado === 'no-toca' ? 'no toca'
           : (mapa.anual.estado === 'sin-recuperar' ? 'límite el ' : 'vence el ') + declFechaCorta(mapa.anual.limite)));
       cell.onclick = () => { seleccion = { tipo: 'anual' }; marcar('anual', cell); pintarDetalle(); };
       celdas.set('anual', cell);
@@ -535,6 +592,15 @@ async function declRun(kind, fill, button, periodo = '') {
       { rfc: scope, ejercicio: declEjercicio, tipo: kind === 'anual' ? 'anual' : 'mensual', periodo: periodo });
     const result = data.result || {};
     if (!result.ok) {
+      /* Esperando tu equipo (1.29.0): sin ejecutor en línea el
+         trabajo queda en cola — no es un fallo del SAT ni tuyo;
+         se dice en tono neutro y el Registro lo enseña como
+         acción pendiente, no como error. */
+      if (result.waitingExecutor) {
+        toast(result.error || 'Trabajo en cola: se hará desde tu equipo cuando el ejecutor esté en línea.', 'ok');
+        fill(data.view);
+        return;
+      }
       toast(result.error || 'La recuperación no pudo completarse.', 'error');
       fill(data.view);
       return;

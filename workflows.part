@@ -948,6 +948,8 @@ $('primary').onclick = handle(async () => {
   if (page === 'dinero') { navigate('salidas'); return; }
   if (page === 'pagos') { render(); return; }
   if (page === 'preguntas') { render(); const q = document.querySelector('main input[type="text"]'); if (q) q.focus(); return; }
+  if (page === 'registro') { if (typeof downloadRegistroCsv === 'function') await downloadRegistroCsv(); return; }
+  if (page === 'declaraciones') { render(); const sel = $('declaraciones-year'); if (sel) sel.focus(); return; }
   return page === 'docs' ? addDocument() : chooseImport();
 });
 for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
@@ -1010,9 +1012,16 @@ document.addEventListener('keydown', event => {
   globalSearchInput.focus();
   globalSearchInput.select();
 });
-$('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render(); };
+$('scope').onchange = () => { scope = $('scope').value; invoicePage = 0; render();
+  /* Los distintivos cuentan el RFC elegido (1.28.0, P9). */
+  if (typeof paintBuzonBadge === 'function') paintBuzonBadge();
+  if (typeof paintTribBadge === 'function') paintTribBadge();
+  if (typeof avisosBadgeCount === 'function' && typeof avisosCache !== 'undefined' && avisosCache) paintAvisosBadge(avisosBadgeCount(avisosCache)); };
 /* F5: el selector de la barra superior manda igual que el lateral. */
-if ($('scope-top')) $('scope-top').onchange = () => { scope = $('scope-top').value; invoicePage = 0; render(); };
+if ($('scope-top')) $('scope-top').onchange = () => { scope = $('scope-top').value; invoicePage = 0; render();
+  if (typeof paintBuzonBadge === 'function') paintBuzonBadge();
+  if (typeof paintTribBadge === 'function') paintTribBadge();
+  if (typeof avisosBadgeCount === 'function' && typeof avisosCache !== 'undefined' && avisosCache) paintAvisosBadge(avisosBadgeCount(avisosCache)); };
 $('incoming').onchange = () => { const files = [...$('incoming').files]; $('incoming').value = ''; importBatch(files).catch(error => announce(error.message, true)); };
 $('folder').onchange = () => { const files = [...$('folder').files]; $('folder').value = ''; importBatch(files, scope, { fromFolder: true }).catch(error => announce(error.message, true)); };
 $('restore').onchange = handle(() => {

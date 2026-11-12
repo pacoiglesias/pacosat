@@ -184,7 +184,7 @@ const css = stripCssComments(['style.part','design.part','polish.part'].map(read
    chequeos del núcleo; ciec vive en el panel del Centro SAT; y
    final-ui trae el arranque, el modo sin conexión y el invitado. */
 const MAIN_PARTS = ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','ciec-ui.part','declaraciones-ui.part','monitor-ui.part','coverage-ui.part','problemas-ui.part','settings-ui.part','lists-ui.part','money-ui.part','compliance-ui.part','final-ui.part','avisos-ui.part','buzon-ui.part','tributario-ui.part','capacidades-ui.part'];
-const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part' };
+const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part', registro: 'registro-ui.part' };
 const lazyScripts = {};
 for (const [name, file] of Object.entries(LAZY_PARTS)) lazyScripts[name] = stripJsComments(read(file));
 const lazyManifest = 'const PACOSAT_LAZY = ' + JSON.stringify(Object.fromEntries(Object.keys(LAZY_PARTS).map(name => [name, '/parte/' + name]))) + ';\n';

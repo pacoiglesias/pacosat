@@ -43,7 +43,9 @@ function docsTopCards() {
   const gridBox = n('div', undefined, 'cmd-grid');
   wrap.append(gridBox);
   const cSlot = n('div'), oSlot = n('div');
-  const irAlMapa = () => document.getElementById('declaraciones-section')?.scrollIntoView({ behavior: 'smooth' });
+  /* Declaraciones es destino propio desde la 1.28.0 (P2): la
+     tarjeta lleva a su pantalla, no a una sección de esta. */
+  const irAlMapa = () => navigate('declaraciones');
   /* A0 (1.23.0): la tarjeta de Declaraciones lleva «Descargar»
      junto a «Ver el mapa», como las demás: lanza la recuperación
      mensual del ejercicio en curso para el RFC de la tarjeta con
@@ -89,7 +91,15 @@ function satDocsSection() {
       body.append(n('p', 'Aún no hay RFC dados de alta: agrega el primero en Ajustes › Contribuyentes y sus documentos se vigilarán aquí.', 'empty'));
       return;
     }
-    for (const profile of view.profiles) {
+    /* Sin mezcla de RFC (1.28.0, P7): con un contribuyente
+       elegido, la sección enseña SOLO sus tarjetas y sus
+       formularios, como ya hacen las tarjetas de arriba. */
+    const visibles = scope ? view.profiles.filter(profile => profile.rfc === scope) : view.profiles;
+    if (!visibles.length) {
+      body.append(n('p', 'El contribuyente elegido no tiene documentos del SAT vigilados todavía.', 'empty'));
+      return;
+    }
+    for (const profile of visibles) {
       const card = n('article', undefined, 'sat-card');
       const head = n('div', undefined, 'sat-card-head');
       head.append(n('strong', profile.rfc), satDocPill(profile.constancia, 'Constancia'), satDocPill(profile.opinion, 'Opinión'));
