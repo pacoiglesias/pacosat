@@ -1,0 +1,298 @@
+/* ===== Buzón (1.23.0, frente B) =====
+   Bandeja de entrada del contribuyente elegido: los CFDI recibidos
+   y los documentos nuevos, lo nuevo primero, con leído/no leído.
+   El servidor lleva la cuenta en GET /api/buzon?rfc= y en
+   status.buzonUnread; marcar leído es POST /api/buzon/read.
+   Abrir un CFDI salta a su ficha (invoiceDetail, el abridor de
+   siempre) y un documento abre el mismo visor de Documentos
+   (viewDocOnline). El Buzón Tributario del SAT no se promete
+   automático: esto es lo que ya entró en tu expediente. */
+let buzonCache = null;
+function buzonUnreadFor(rfc) {
+  const map = typeof satData !== 'undefined' && satData ? satData.buzonUnread : null;
+  if (map) return Number(map[rfc] || 0);
+  return buzonCache && buzonCache.rfc === rfc ? Number(buzonCache.unread || 0) : 0;
+}
+function paintBuzonBadge() {
+  const badge = $('buzon-badge');
+  if (!badge) return;
+  const map = typeof satData !== 'undefined' && satData ? satData.buzonUnread : null;
+  const total = map ? Object.values(map).reduce((sum, value) => sum + Number(value || 0), 0) :
+    (buzonCache ? Number(buzonCache.unread || 0) : 0);
+  badge.hidden = !total;
+  badge.textContent = total ? number.format(total) : '';
+}
+function buzonCuando(at) {
+  if (!at) return '';
+  const ms = typeof at === 'number' ? at : Date.parse(at);
+  return Number.isFinite(ms) ? localDateTime(ms) : String(at);
+}
+/* ===== Reenvío por correo (1.24.0, punto 11) =====
+   Cada comprobante viaja en su propio correo, con el XML y el
+   PDF adjuntos y los datos que lo prueban. El destino se
+   recuerda por RFC y la regla automática («todo lo que llegue
+   a este Buzón, a esta dirección») es opcional y nace apagada:
+   se enciende solo desde este diálogo, marcándola. */
+let buzonForwardCfg = { dests: [], autoTo: '', sugerencia: '' };
+const buzonSeleccion = new Set();
+let buzonSeleccionRfc = '';
+async function forwardDialog(rfc, ids, onSent) {
+  const lista = [...new Set((ids || []).map(String).filter(Boolean))];
+  if (!rfc || !lista.length) { toast('Elige al menos un comprobante para reenviar.', 'error'); return; }
+  let cfg = { dests: [], autoTo: '', sugerencia: '' };
+  try { cfg = await satApi('buzon/forward-config?rfc=' + encodeURIComponent(rfc)); } catch { /* sin lectura: campo libre */ }
+  const inicial = (cfg.dests || [])[0] || cfg.sugerencia || cfg.autoTo || '';
+  const form = n('form', undefined, 'dialog-form');
+  form.append(n('h3', 'Reenviar por correo · ' + rfc),
+    n('p', (lista.length === 1 ? 'El comprobante viaja' : 'Cada uno de los ' + lista.length + ' comprobantes viaja') +
+      ' en su propio correo, con el XML y el PDF adjuntos y los datos que lo prueban: emisor, serie y folio, fecha, total y UUID.', 'muted'));
+  const destino = input('email', { value: inicial, placeholder: 'direccion@ejemplo.mx' });
+  destino.setAttribute('list', 'fwd-dests');
+  const dl = n('datalist'); dl.id = 'fwd-dests';
+  for (const d of [...new Set([...(cfg.dests || []), cfg.sugerencia, cfg.autoTo].filter(Boolean))]) {
+    const opt = n('option'); opt.value = d; dl.append(opt);
+  }
+  form.append(fieldWrap('Enviar a', destino), dl);
+  if (cfg.sugerencia && !(cfg.dests || []).length)
+    form.append(n('p', 'Sugerencia para este RFC: ' + cfg.sugerencia + ' — el buzón de recepción de tu facturador; consta en tus documentos y puedes cambiarla.', 'muted'));
+  if (cfg.autoTo && cfg.autoTo !== inicial)
+    form.append(n('p', 'Ya hay una regla automática activa hacia ' + cfg.autoTo + ': se gestiona desde el Buzón de este RFC.', 'muted'));
+  const auto = input('checkbox', { checked: Boolean(cfg.autoTo) && cfg.autoTo === inicial });
+  const autoLabel = n('label');
+  autoLabel.append(auto, n('span', ' Reenviar automáticamente todo lo que llegue a este Buzón a esta dirección'));
+  form.append(autoLabel);
+  const send = n('button', 'Reenviar ahora', 'primary');
+  send.type = 'submit';
+  const cancel = n('button', 'Cancelar', 'soft');
+  cancel.type = 'button';
+  cancel.onclick = closeDialog;
+  form.append(send, cancel);
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const to = destino.value.trim();
+    if (!to) { toast('Escribe la dirección de destino.', 'error'); return; }
+    send.disabled = true; send.textContent = 'Enviando…';
+    try {
+      const result = await satApi('buzon/forward', { rfc, ids: lista, to });
+      /* La regla solo se toca si la casilla habla de ESTA
+         dirección: encenderla la fija; apagarla la quita solo
+         si apuntaba aquí. */
+      const reglaPrevia = cfg.autoTo || '';
+      let postCfg = null;
+      if (auto.checked) postCfg = to;
+      else if (reglaPrevia && reglaPrevia === to) postCfg = '';
+      if (postCfg !== null && postCfg !== reglaPrevia)
+        await satApi('buzon/forward-config', { rfc, autoTo: postCfg });
+      const fallos = (result.resultados || []).filter(row => !row.ok);
+      closeDialog();
+      if (result.enviados && !fallos.length) announce('Reenviado: ' + result.enviados + ' comprobante(s) a ' + to + '.');
+      else if (result.enviados) toast('Reenviados ' + result.enviados + '; sin enviar ' + fallos.length + ': ' + (fallos[0].error || 'revisa la bitácora de envíos.'), 'error');
+      else toast(result.error || 'No se pudo reenviar.', 'error');
+      if (onSent) onSent();
+      render();
+    } catch (error) {
+      /* Respuesta perdida = resultado desconocido: antes de
+         enseñar un error se comprueba la bitácora de envíos
+         (el asunto lleva el UUID); si el reenvío consta, se
+         dice que salió. */
+      let enviado = false;
+      try {
+        const log = await satApi('mail/log');
+        enviado = (log.sends || []).some(row => row.kind === 'reenvio' && row.ok &&
+          lista.some(id => String(row.subject || '').includes(id)) && Date.now() - Number(row.at) < 5 * 60000);
+      } catch { /* sin bitácora legible: manda el error original */ }
+      if (enviado) { closeDialog(); announce('Reenviado: consta en la bitácora de envíos.'); if (onSent) onSent(); render(); return; }
+      toast(error.message, 'error');
+      send.disabled = false; send.textContent = 'Reenviar ahora';
+    }
+  };
+  showDialog(form);
+}
+function buzonScreen() {
+  const wrap = n('div');
+  if (typeof satToken === 'undefined' || !satToken) {
+    wrap.append(panel('Buzón', 'El Buzón vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver lo que llegó.'));
+    return [wrap];
+  }
+  const head = panel('Buzón · ' + (scope || 'sin contribuyente'),
+    'Lo nuevo que llegó a este RFC: CFDI recibidos y documentos del SAT, lo más reciente primero y lo sin leer destacado. Abrir un CFDI lleva a su ficha; un documento se abre en el visor.');
+  const body = n('div');
+  head.append(body);
+  wrap.append(head);
+  if (!scope) {
+    body.append(empty('Elige un contribuyente', 'El Buzón es por RFC: elige arriba el contribuyente del que quieres ver lo que llegó.'));
+    return [wrap];
+  }
+  const rfc = scope;
+  const paint = data => {
+    buzonCache = data;
+    if (typeof satData !== 'undefined' && satData && satData.buzonUnread) satData.buzonUnread[rfc] = data.unread || 0;
+    paintBuzonBadge();
+    body.replaceChildren();
+    const bar = n('div', undefined, 'traffic-strip');
+    bar.append(statusPill(data.unread ? 'warn' : 'ok',
+      data.unread ? number.format(data.unread) + ' sin leer' : 'Todo leído'));
+    const all = n('button', 'Marcar todo leído', 'soft small');
+    all.type = 'button';
+    all.disabled = !data.unread;
+    all.onclick = async () => {
+      all.disabled = true;
+      try {
+        const result = await satApi('buzon/read', { rfc, all: true });
+        for (const item of data.items || []) item.read = true;
+        data.unread = result.unread;
+        paint(data);
+        toast('Buzón al día: todo marcado como leído.', 'ok');
+      } catch (error) {
+        /* Respuesta perdida: se re-lee el buzón antes de declarar
+           el error (regla de verdad de las acciones). */
+        try {
+          const fresh = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
+          if (!fresh.unread) { paint(fresh); toast('Quedó registrado: todo consta leído.', 'ok'); return; }
+        } catch { /* sin re-lectura: manda el error original */ }
+        toast(error.message, 'error');
+        all.disabled = false;
+      }
+    };
+    bar.append(all);
+    body.append(bar);
+    /* Regla automática de reenvío (punto 11): si está activa se
+       dice en la cara del Buzón, con su gesto para quitarla. */
+    if (buzonForwardCfg.autoTo) {
+      const autoBar = n('div', undefined, 'traffic-strip');
+      autoBar.append(statusPill('ok', 'Reenvío automático activo'),
+        n('span', 'Todo lo que llegue a este Buzón se reenvía a ' + buzonForwardCfg.autoTo + '.'));
+      const quitar = n('button', 'Quitar la regla', 'soft small');
+      quitar.type = 'button';
+      quitar.onclick = async () => {
+        quitar.disabled = true;
+        try {
+          await satApi('buzon/forward-config', { rfc, autoTo: '' });
+          buzonForwardCfg.autoTo = '';
+          paint(data);
+          announce('Regla de reenvío automático retirada.');
+        } catch (error) { toast(error.message, 'error'); quitar.disabled = false; }
+      };
+      autoBar.append(quitar);
+      body.append(autoBar);
+    }
+    /* Selección múltiple para reenviar por lote (punto 11). */
+    if (buzonSeleccion.size) {
+      const selBar = n('div', undefined, 'traffic-strip');
+      selBar.append(statusPill('warn', number.format(buzonSeleccion.size) + ' elegido(s) para reenviar'));
+      const sendSel = n('button', 'Reenviar seleccionados', 'primary small');
+      sendSel.type = 'button';
+      sendSel.onclick = () => forwardDialog(rfc, [...buzonSeleccion], () => { buzonSeleccion.clear(); paint(data); });
+      const clearSel = n('button', 'Limpiar', 'soft small');
+      clearSel.type = 'button';
+      clearSel.onclick = () => { buzonSeleccion.clear(); paint(data); };
+      selBar.append(sendSel, clearSel);
+      body.append(selBar);
+    }
+    const items = data.items || [];
+    if (!items.length) {
+      body.append(empty('Buzón vacío', 'Cuando llegue un CFDI o un documento nuevo de este RFC, aparecerá aquí.'));
+      return;
+    }
+    for (const item of items) {
+      const row = n('div', undefined, 'cp-row');
+      if (item.kind === 'cfdi' && item.uuid) {
+        const check = input('checkbox', { checked: buzonSeleccion.has(item.uuid),
+          'aria-label': 'Elegir este comprobante para reenviar' });
+        check.onchange = () => {
+          if (check.checked) buzonSeleccion.add(item.uuid); else buzonSeleccion.delete(item.uuid);
+          paint(data);
+        };
+        row.append(check);
+      }
+      row.append(statusPill(item.read ? 'dim' : 'warn',
+        item.kind === 'cfdi' ? (item.read ? 'CFDI' : 'CFDI nuevo') : (item.read ? 'Documento' : 'Documento nuevo')));
+      /* La fila en líneas (1.26.0, Ronda Visual): título,
+         detalle y meta (importe · fecha) en su línea cada uno,
+         con la pieza .cp-main de la casa — nada de la frase
+         corrida «título · detalle · importe · fecha». Y el
+         importe no se repite: el servidor lo trae crudo dentro
+         del detalle y la meta lo enseña ya formateado, así que
+         el segmento crudo sale de la línea de detalle (regla de
+         Paco: el mismo dato dos veces en una pantalla es un
+         error de diseño). */
+      const main = n('div', undefined, 'cp-main');
+      const titleText = item.titulo || (item.kind === 'cfdi' ? 'CFDI recibido' : 'Documento');
+      if (!item.read) main.append(n('strong', titleText));
+      else main.append(n('span', titleText));
+      const detalleSegs = (item.detalle || '').split(' · ')
+        .filter(seg => seg && seg !== String(item.importe || ''));
+      if (detalleSegs.length) main.append(n('span', detalleSegs.join(' · '), 'muted'));
+      const meta = [item.importe ? '$' + money(item.importe) : '',
+        item.at ? buzonCuando(item.at) : ''].filter(Boolean).join(' · ');
+      if (meta) main.append(n('span', meta, 'muted bz-meta'));
+      row.append(main);
+      const open = n('button', item.kind === 'cfdi' ? 'Abrir ficha' : 'Ver documento', 'soft small');
+      open.type = 'button';
+      open.onclick = () => {
+        if (item.kind === 'cfdi') {
+          const found = (invoices || []).find(row => row.id === String(item.uuid || '').toUpperCase());
+          if (found) { invoiceDetail(found); return; }
+          if (item.uuid) { term = item.uuid; invoicePage = 0; navigate('invoices'); return; }
+          navigate('invoices');
+          return;
+        }
+        const docId = item.fileId || item.docId ||
+          (String(item.key || '').includes(':') ? String(item.key).split(':').slice(1).join(':') : item.key);
+        viewDocOnline({ id: docId, rfc, kind: item.titulo || 'Documento',
+          name: (item.titulo || 'Documento') + ' · ' + rfc + '.pdf' })
+          .catch(error => toast(error.message, 'error'));
+      };
+      row.append(open);
+      if (item.kind === 'cfdi' && item.uuid) {
+        const fwd = n('button', 'Reenviar', 'soft small');
+        fwd.type = 'button';
+        fwd.onclick = () => forwardDialog(rfc, [item.uuid]);
+        row.append(fwd);
+      }
+      if (!item.read) {
+        const read = n('button', 'Marcar leído', 'soft small');
+        read.type = 'button';
+        read.onclick = async () => {
+          read.disabled = true;
+          try {
+            const result = await satApi('buzon/read', { rfc, keys: [item.key] });
+            item.read = true;
+            data.unread = result.unread;
+            paint(data);
+          } catch (error) {
+            try {
+              const fresh = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
+              if ((fresh.items || []).find(candidate => candidate.key === item.key)?.read) {
+                paint(fresh);
+                toast('Quedó marcado como leído.', 'ok');
+                return;
+              }
+            } catch { /* sin re-lectura: manda el error original */ }
+            toast(error.message, 'error');
+            read.disabled = false;
+          }
+        };
+        row.append(read);
+      }
+      body.append(row);
+    }
+  };
+  if (buzonSeleccionRfc !== rfc) { buzonSeleccion.clear(); buzonSeleccionRfc = rfc; }
+  /* Esqueleto de carga (1.25.0): bloques con la forma de la
+     bandeja mientras llega, no un párrafo suelto. */
+  const buzonSkel = n('div', undefined, 'skel');
+  buzonSkel.setAttribute('aria-busy', 'true');
+  buzonSkel.setAttribute('aria-label', 'Cargando el buzón');
+  for (let i = 0; i < 3; i++) buzonSkel.append(n('div', undefined, 'skel-block'));
+  body.append(buzonSkel);
+  (async () => {
+    try {
+      const data = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
+      try { buzonForwardCfg = await satApi('buzon/forward-config?rfc=' + encodeURIComponent(rfc)); }
+      catch { buzonForwardCfg = { dests: [], autoTo: '', sugerencia: '' }; }
+      if (body.isConnected) paint(data);
+    } catch (error) { if (body.isConnected) body.replaceChildren(n('p', error.message, 'error-text')); }
+  })();
+  return [wrap];
+}

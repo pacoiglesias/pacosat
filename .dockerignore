@@ -11,7 +11,15 @@
 !backup-core.mjs
 !Faro-Fiscal.html
 !capacidades.json
+!lazy.json
 !bank-statement.mjs
 !sat-doc-browser.mjs
 !sat-declaraciones.mjs
+!sat-tributario.mjs
+!sat-ciec.mjs
 !pagos.mjs
+!salidas-doc.mjs
+!qr-cfdi.mjs
+!news-mail.mjs
+!secret-box.mjs
+!push.mjs

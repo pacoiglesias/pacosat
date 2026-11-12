@@ -150,7 +150,14 @@ function avisosScreen() {
     return [wrap];
   }
   if (!avisosCache) {
+    /* Esqueleto de carga (1.25.0): bloques neutros con la forma de
+       las tarjetas, no un párrafo de texto — como Hoy y Cobertura. */
     const loading = panel('Centro de Avisos', 'Consultando el servidor…');
+    const skel = n('div', undefined, 'skel');
+    skel.setAttribute('aria-busy', 'true');
+    skel.setAttribute('aria-label', 'Cargando los avisos');
+    for (let i = 0; i < 3; i++) skel.append(n('div', undefined, 'skel-block'));
+    loading.append(skel);
     wrap.append(loading);
     refreshAvisos(true);
     return [wrap];
@@ -159,7 +166,12 @@ function avisosScreen() {
   /* Filtro por RFC propio (1.9.0): con varios RFC, cada quien ve
      solo lo suyo sin abrir cada tarjeta. */
   const rfcsConAvisos = Object.keys(data.porRfc || {});
-  if (avisosRfcFiltro && !rfcsConAvisos.includes(avisosRfcFiltro)) avisosRfcFiltro = '';
+  /* Regla de contribuyente (1.23.0, D4): Avisos tampoco mezcla
+     RFC — sin filtro elegido manda el contribuyente seleccionado
+     (scope), y la opción «Todos los RFC» desaparece del filtro. */
+  if (!avisosRfcFiltro && scope && rfcsConAvisos.includes(scope)) avisosRfcFiltro = scope;
+  if (avisosRfcFiltro && !rfcsConAvisos.includes(avisosRfcFiltro))
+    avisosRfcFiltro = rfcsConAvisos.includes(scope) ? scope : (rfcsConAvisos[0] || '');
   const visiblesPorRfc = aviso => !avisosRfcFiltro || aviso.rfc === avisosRfcFiltro;
   avisosVisibles = data.avisos.filter(visiblesPorRfc).map(aviso => aviso.id);
   for (const id of [...avisosSeleccion]) if (!avisosVisibles.includes(id)) avisosSeleccion.delete(id);
@@ -188,7 +200,7 @@ function avisosScreen() {
       : 'Sin avisos abiertos. Todo en orden.');
     if (rfcsConAvisos.length > 1) {
       const filtro = n('div', undefined, 'filters');
-      const picker = select([['', 'Todos los RFC'], ...rfcsConAvisos.map(rfc => [rfc, 'RFC ' + rfc + ' (' + data.porRfc[rfc] + ')'])],
+      const picker = select(rfcsConAvisos.map(rfc => [rfc, 'RFC ' + rfc + ' (' + data.porRfc[rfc] + ')']),
         avisosRfcFiltro, 'Filtrar avisos por RFC');
       picker.onchange = () => { avisosRfcFiltro = picker.value; render(); };
       filtro.append(picker);
@@ -206,12 +218,27 @@ function avisosScreen() {
     resumen.append(avisosBatchBar());
     wrap.append(resumen);
     let algunaSeccion = false;
+    /* Agrupados por causa raíz (1.25.0, mejora nº 2): el servidor
+       marca los avisos que comparten causa (grupo) y la sección
+       enseña UNA tarjeta de grupo con el total y sus comprobantes
+       dentro, desplegables — las acciones de cada uno quedan en
+       su tarjeta, como siempre. */
+    const gruposPorClave = new Map((data.grupos || []).map(grupo => [grupo.clave, grupo]));
+    const porId = new Map(data.avisos.map(aviso => [aviso.id, aviso]));
+    const gruposPintados = new Set();
     for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
       const deClase = data.avisos.filter(aviso => aviso.clase === clase && visiblesPorRfc(aviso));
       if (!deClase.length) continue;
       algunaSeccion = true;
       const section = panel(etiqueta + ' (' + number.format(deClase.length) + ')');
-      for (const aviso of deClase) section.append(avisoCard(aviso));
+      for (const aviso of deClase) {
+        const grupo = aviso.grupo ? gruposPorClave.get(aviso.grupo) : null;
+        if (grupo) {
+          if (gruposPintados.has(grupo.clave)) continue;
+          gruposPintados.add(grupo.clave);
+          section.append(avisoGrupoCard(grupo, grupo.miembros.map(id => porId.get(id)).filter(Boolean)));
+        } else section.append(avisoCard(aviso));
+      }
       wrap.append(section);
     }
     if (!algunaSeccion && avisosRfcFiltro) {
@@ -226,7 +253,29 @@ function avisosScreen() {
       const row = n('div', undefined, 'cp-row');
       row.append(statusPill('ok', '✓ ' + avisoFecha(aviso.resuelto)),
         n('span', aviso.titulo + (aviso.resolucion ? ' — ' + aviso.resolucion : '')));
-      history.append(row);
+      /* Reabrir, editar el cierre y ver la bitácora (1.18.0): el
+         historial deja de ser una lista muerta; un error de dedo
+         tiene vuelta atrás y cada aviso cuenta su historia. */
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Reabrir', async () => {
+        await satApi('notices/reopen', { id: aviso.id });
+        await avisoAfterChange('Aviso reabierto: vuelve a estar en tus pendientes.');
+      }, 'soft'));
+      if (aviso.kind === 'saldo') acts.append(action('Editar cierre', () => avisoHistorialEditar(aviso), 'soft'));
+      const logBox = n('div'); logBox.hidden = true;
+      acts.append(action('Bitácora', async () => {
+        if (!logBox.hidden) { logBox.hidden = true; return; }
+        logBox.hidden = false;
+        logBox.replaceChildren(n('p', 'Leyendo la bitácora…', 'muted'));
+        try {
+          const data = await satApi('notices/log?id=' + aviso.id);
+          logBox.replaceChildren(...(data.log || []).map(entry =>
+            n('p', avisoFecha(entry.at) + ' · ' + entry.nota, 'muted')));
+          if (!data.log?.length) logBox.append(n('p', 'Sin movimientos registrados.', 'muted'));
+        } catch (error) { logBox.replaceChildren(n('p', error.message, 'error-text')); }
+      }, 'soft'));
+      row.append(acts);
+      history.append(row, logBox);
     }
     wrap.append(history);
   }
@@ -270,9 +319,6 @@ function avisosMailSection(config) {
   el.append(form);
   return el;
 }
-/* Nombre anterior del mismo panel: se conserva como alias para no
-   romper ningún llamador que aún lo use. */
-function avisosConfigPanel(config) { return avisosMailSection(config); }
 /* Barra de acciones por lote: casilla «seleccionar visibles», conteo
    y las tres acciones. Antes de aplicar, confirmación con el conteo;
    al terminar, el servidor reporta aplicados y saltados. */
@@ -338,6 +384,59 @@ function avisoBatch(accion) {
     } catch (error) { toast(error.message, 'error'); }
   }, boton);
 }
+/* Tarjeta de grupo (1.25.0, mejora nº 2): una sola causa con N
+   comprobantes — el titular dice la causa y el total; dentro,
+   cada comprobante con su tarjeta y sus acciones de siempre. */
+function avisoGrupoCard(grupo, miembros) {
+  const card = n('div', undefined, 'aviso-card');
+  const head = n('div', undefined, 'aviso-head');
+  const primero = miembros[0] || {};
+  head.append(avisoPill(primero), n('strong',
+    number.format(grupo.cuenta) + ' avisos de la misma causa' +
+    (grupo.nombre ? ' · ' + grupo.nombre : '')));
+  card.append(head);
+  card.append(n('p', 'La misma causa se repite en ' + number.format(grupo.cuenta) + ' comprobantes' +
+    (grupo.importeTotal && grupo.importeTotal !== '0.00' ? ': en total $' + money(grupo.importeTotal) : '') +
+    '. Ábrelos para ver cada uno con su siguiente paso.', 'muted'));
+  const detalle = n('div');
+  detalle.hidden = true;
+  for (const aviso of miembros) detalle.append(avisoCard(aviso));
+  const toggle = n('button', 'Ver los ' + number.format(grupo.cuenta) + ' comprobantes', 'soft small');
+  toggle.onclick = () => {
+    detalle.hidden = !detalle.hidden;
+    toggle.textContent = detalle.hidden ? 'Ver los ' + number.format(grupo.cuenta) + ' comprobantes' : 'Ocultar los comprobantes';
+  };
+  card.append(toggle, detalle);
+  return card;
+}
+/* Recordatorio de cobro (1.25.0, AGREGAR 5): nace un BORRADOR
+   desde el aviso; Paco revisa texto y destino y SOLO su toque
+   en «Enviar recordatorio» lo manda. Nada sale al prepararlo. */
+function avisoRecordatorio(aviso) {
+  (async () => {
+    try {
+      const data = await satApi('reminders/draft', { ref: aviso.ref });
+      const borrador = data.reminder;
+      const destino = input('email', { value: borrador.destino || '', placeholder: 'correo@cliente.mx' });
+      const asunto = input('text', { value: borrador.asunto || '' });
+      const cuerpo = n('textarea');
+      cuerpo.value = borrador.cuerpo || '';
+      cuerpo.rows = 9;
+      dialog('Recordatorio de cobro — borrador', [
+        n('p', 'Esto es un BORRADOR: no se ha enviado nada. Revisa el texto y el correo del cliente; solo saldrá cuando pulses «Enviar recordatorio».'),
+        field('Correo del cliente', destino), field('Asunto', asunto), field('Texto', cuerpo)],
+      async () => {
+        try {
+          check(/^\S+@\S+\.\S+$/.test(destino.value.trim()), 'Escribe el correo del cliente.');
+          await satApi('reminders/send', { id: borrador.id, to: destino.value.trim(),
+            asunto: asunto.value, cuerpo: cuerpo.value });
+          toast('Recordatorio enviado a ' + destino.value.trim() + '.', 'ok');
+          soundCue('success');
+        } catch (error) { toast(error.message, 'error'); }
+      }, 'Enviar recordatorio');
+    } catch (error) { toast(error.message, 'error'); }
+  })();
+}
 function avisoCard(aviso) {
   const card = n('div', undefined, 'aviso-card');
   const head = n('div', undefined, 'aviso-head');
@@ -370,8 +469,16 @@ function avisoCard(aviso) {
   gestiones.append(cambiarResp);
   if (aviso.kind === 'saldo') {
     const paid = n('button', 'Ya se pagó', 'primary');
-    paid.onclick = () => avisoMarkPaid(aviso);
+    paid.onclick = () => avisoMarkPaid(aviso, card, paid);
     mainRow.append(paid);
+    /* Recordatorio de cobro como borrador (1.25.0, AGREGAR 5):
+       solo en saldos POR COBRAR — es al cliente a quien se le
+       recuerda, nunca a un proveedor. */
+    if (aviso.direccion === 'cobrar') {
+      const reminder = n('button', 'Recordatorio de cobro', 'soft small');
+      reminder.onclick = () => avisoRecordatorio(aviso);
+      gestiones.append(reminder);
+    }
     if (aviso.estado === 'por-confirmar') {
       const no = n('button', 'Aún no', 'soft small');
       no.onclick = () => avisoConfirmNo(aviso);
@@ -426,29 +533,57 @@ async function avisoAfterChange(message) {
    sin diálogo, sin campo «Fecha del pago», sin nota. Se llama al mismo
    cierre que ya acepta el servidor — POST notices/answer con
    respuesta 'si' y NADA más — y la fecha de hoy la anota la bitácora
-   sola. La confirmación es breve («Pagado. Quedó en el historial.»).
-   No hay «Deshacer»: en la app solo existe deshacer para los vínculos
-   de la conciliación bancaria (reconcile/undo) y el servidor no tiene
-   reapertura de un aviso solventado, así que no se finge el botón. */
-async function avisoMarkPaid(aviso) {
+   sola. La confirmación es breve («Pagado. Quedó en el historial.»)
+   y desde la 1.18.0 trae «Deshacer»: el servidor ya sabe reabrir un
+   aviso solventado (notices/reopen), así que un error de dedo se
+   corrige sin salir de la pantalla. */
+async function avisoMarkPaid(aviso, card, button) {
+  /* Instantáneo (1.23.0, D2): al toque, la tarjeta se marca
+     solventada EN EL SITIO (optimista) y la petición sale detrás;
+     los conteos se refrescan desde GET /api/notices en segundo
+     plano y el aviso sale de la lista sin recargar a mano. Si la
+     respuesta se pierde o la red falla, se RE-LEE /api/notices:
+     si el aviso ya consta solventado se mantiene el estado y se
+     dice «Quedó marcado como pagado»; solo si la re-lectura PRUEBA que no
+     se aplicó se revierte lo optimista y se enseña el error.
+     Nunca se reintenta la escritura a ciegas. */
+  if (button) { button.disabled = true; button.textContent = 'Registrando…'; }
+  if (card) card.replaceChildren(statusPill('ok', 'Pagado'), n('span', 'Registrando el pago…'));
+  const confirmar = mensaje => {
+    toastUndo(mensaje, async () => {
+      await satApi('notices/reopen', { id: aviso.id });
+      announce('Pago deshecho: el aviso vuelve a estar abierto.');
+      await refreshAvisos(true);
+      render();
+    });
+    soundCue('success');
+    avisosCache = null;
+    refreshAvisos(true).catch(() => {});
+  };
   try {
-    await satApi('notices/answer', { id: aviso.id, respuesta: 'si' });
-    await avisoAfterChange('Pagado. Quedó en el historial.');
-  } catch (error) { toast(error.message, 'error'); }
+    const result = await satApiGuardar('notices/answer', { id: aviso.id, respuesta: 'si' }, async () => {
+      const data = await satApi('notices');
+      return (data.historial || []).some(item => item.id === aviso.id);
+    });
+    confirmar(result?.aplicadoTrasError ? 'Quedó marcado como pagado. Quedó en el historial.' : 'Pagado. Quedó en el historial.');
+  } catch (error) {
+    let aplicado = false;
+    try {
+      const data = await satApi('notices');
+      aplicado = (data.historial || []).some(item => item.id === aviso.id);
+      if (aplicado) { avisosCache = data; avisosFetchedAt = Date.now(); paintAvisosBadge(data.counts.total); }
+    } catch { /* sin re-lectura posible: manda el error original */ }
+    if (aplicado) { confirmar('Quedó marcado como pagado. Quedó en el historial.'); return; }
+    toast(error.message, 'error');
+    if (page === 'avisos') render(); /* revierte lo optimista repintando desde el servidor */
+  }
 }
-/* Nombre anterior de esta acción: se conserva como alias de un toque
-   (ya no abre ningún diálogo) por si algún llamador lo conserva. */
-function avisoMarkPaidDialog(aviso) { return avisoMarkPaid(aviso); }
-/* PREPARADA, NO CONECTADA (1.11.0): edición posterior y opcional de un
-   cierre ya hecho — «Añadir una nota» / «Cambiar la fecha del pago»
-   desde el historial del aviso (flujos §3.3, paso 3). El historial que
-   pinta avisosScreen es hoy una lista de solo lectura, sin superficie
-   de detalle, y el servidor no ofrece enmienda de un aviso ya
-   solventado (notices/answer solo acepta avisos abiertos y no hay
-   endpoint de nota/fecha sobre el historial). La función deja armado
-   el diálogo con los dos campos para conectarla a las filas del
-   historial en cuanto exista ese endpoint; no se engancha a ningún
-   botón para no ofrecer un camino que el servidor rechazaría. */
+/* (El alias avisoMarkPaidDialog de la 1.11.0 se retiró en la
+   1.18.0: ningún llamador lo usa; la acción es avisoMarkPaid.) */
+/* Edición posterior de un cierre ya hecho (flujos §3.3, paso 3):
+   preparada en la 1.11.0 y CONECTADA en la 1.18.0 al endpoint del
+   servidor notices/edit-close, que reescribe la nota del pago
+   manual sin tocar el estado del aviso. */
 function avisoHistorialEditar(aviso) {
   const nota = input('text', { placeholder: 'Ej. Pagado con Konfío el 8 de noviembre' });
   const fecha = input('date', {});
@@ -456,7 +591,7 @@ function avisoHistorialEditar(aviso) {
     [n('p', 'Añade una nota o cambia la fecha del pago de «' + aviso.titulo + '». Es opcional y posterior: el aviso ya quedó cerrado con un toque.'),
      field('Fecha del pago', fecha), field('Nota', nota)],
     async () => {
-      await satApi('notices/answer', { id: aviso.id, respuesta: 'si', nota: nota.value.trim(), fecha: fecha.value });
+      await satApi('notices/edit-close', { id: aviso.id, nota: nota.value.trim(), fecha: fecha.value });
       await avisoAfterChange('Cierre actualizado en el historial.');
     }, 'Guardar');
 }
@@ -466,7 +601,11 @@ function avisoConfirmNo(aviso) {
       ? 'Confirmas que ' + (aviso.nombre || 'la contraparte') + ' aún NO ha pagado. El aviso pasará a «Lo que está mal» como saldo vencido: en PacoSAT no consta el pago.'
       : 'Confirmas que aún NO se ha pagado. El aviso pasará a «Lo que está mal» como saldo vencido: en PacoSAT no consta el pago.')],
     async () => {
-      await satApi('notices/answer', { id: aviso.id, respuesta: 'no' });
+      await satApiGuardar('notices/answer', { id: aviso.id, respuesta: 'no' }, async () => {
+        const data = await satApi('notices');
+        const actual = (data.avisos || []).find(item => item.id === aviso.id);
+        return !actual || actual.estado !== 'por-confirmar';
+      });
       await avisoAfterChange('Aviso de atraso creado en «Lo que está mal».');
     }, 'Sí, aún no');
 }

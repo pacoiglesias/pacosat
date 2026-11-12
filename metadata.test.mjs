@@ -77,6 +77,10 @@ try {
     recipient: 'to@example.com', user: '', password: '' })).status, 200);
   assert.equal((await call('/api/unlock', { rfc, minutes: 60, days: 7, direction: 'received', password: 'simulated',
     certificate: 'YQ==', key: 'Yg==' })).status, 200);
+  /* 1.15.0: la descarga automática mensual tiene su propia suite
+     (ronda1150); aquí se apaga para que la Metadata de octubre la
+     pida la solicitud manual de este escenario, no la corrida. */
+  assert.equal((await call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
   /* Primera vuelta: se programa el CFDI y también el Metadata diario. */
   await service.tick();
   const cfdiCall = calls.find(entry => entry.type === undefined);

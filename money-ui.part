@@ -9,10 +9,34 @@
    Ya me pagaron» de UN TOQUE — el mismo gesto que en Avisos —: llama a
    POST money/mark-paid solo con el uuid, sin diálogo y sin fecha (el
    servidor anota la fecha solo), y la fila se actualiza en el sitio con
-   confirmación breve. La conciliación y el resto de motores no cambian. */
+   confirmación breve. La conciliación y el resto de motores no cambian.
+   Ronda 1.20.0 (criterio único de canceladas, decisión de Paco del
+   11 nov): las canceladas salen de los saldos abiertos y de la antigua
+   alerta de «canceladas con pago», y se enseñan en su línea propia
+   «Canceladas en el periodo», fuera de los totales — como el papel. */
 /* Pagos marcados en esta sesión (el saldo oficial vive en el servidor):
    mismo patrón que visorMarcados en el Visor de comprobantes. */
 const dineroMarcados = new Set();
+/* Folio y vencimiento del servidor por UUID (1.18.0): la respuesta
+   de /api/money ya trae el folio del CFDI y la fecha de vencimiento
+   según el calendario de la contraparte; las filas los enseñan en
+   cuanto llegan, sin esperar a que el cálculo local los adivine. */
+/* Canceladas del servidor (1.20.0): /api/money las trae APARTE
+   (número e importe total) con el criterio único — fuera de los
+   saldos, en su línea propia — y la pantalla prefiere esa cifra
+   cuando ya llegó; si no, la calcula en local con la misma regla. */
+let dineroServerInfo = new Map(), dineroServerCargado = false, dineroCanceladasSrv = null;
+/* Estado del refresco con el servidor (1.26.0): la pantalla lo
+   dice — antes el fetch fallaba en silencio (.catch vacío) y
+   Paco veía saldos viejos sin saberlo. */
+let dineroRefresh = '';
+function dineroVenceTexto(due) {
+  if (!due) return '';
+  const dias = Math.round((Date.parse(due + 'T12:00:00') - Date.now()) / 86400000);
+  if (dias < 0) return ' · 🔴 vencido hace ' + (-dias) + (dias === -1 ? ' día' : ' días') + ' (venció el ' + due + ')';
+  if (dias === 0) return ' · vence hoy (' + due + ')';
+  return ' · vence el ' + due;
+}
 function paidByMap() {
   const paidBy = new Map();
   for (const payment of invoices) {
@@ -32,36 +56,176 @@ const AGE_BUCKETS = [[0, 30, '0–30 días'], [31, 60, '31–60 días'], [61, 90
 const ageDaysOf = row => Math.max(0, Math.floor((Date.now() - Date.parse(row.date)) / 86400000));
 function dineroScreen() {
   const wrap = n('div');
+  if (typeof satToken !== 'undefined' && satToken && !dineroServerCargado) {
+    dineroServerCargado = true;
+    dineroRefresh = 'cargando';
+    satApi('money').then(data => {
+      dineroServerInfo = new Map((data.balances || []).map(b => [b.id, b]));
+      dineroCanceladasSrv = data.canceladas || null;
+      dineroRefresh = '';
+      if (page === 'dinero') render();
+    }).catch(() => {
+      dineroRefresh = 'error';
+      if (page === 'dinero') render();
+    });
+  }
   const paidBy = paidByMap();
   const own = new Set(people.map(person => person.id));
+  /* Criterio único de canceladas (1.20.0, decisión de Paco del
+     11 nov): la factura cancelada NO entra en los saldos abiertos
+     — no se debe ni se cobra, como en el PDF de saldos — y se
+     enseña aparte, en su línea «Canceladas en el periodo», fuera
+     de todo total. La antigua alerta de «canceladas con pago»
+     desaparece de Dinero: la detección de una cancelación sigue
+     viviendo en la Vigilancia y en el Centro de Avisos, que no
+     cambian. */
   const open = invoices.filter(row => row.kind === 'I').map(row => ({ row, ...balanceOf(row, paidBy),
-    state: invoiceStateOf(row) })).filter(item => item.balance > 0n && !dineroMarcados.has(item.row.id));
+    state: invoiceStateOf(row) })).filter(item => item.balance > 0n && item.state !== 'Cancelado' &&
+    !dineroMarcados.has(item.row.id));
   const receivable = open.filter(item => own.has(item.row.from.rfc) && (!scope || item.row.from.rfc === scope));
   const payable = open.filter(item => own.has(item.row.to.rfc) && (!scope || item.row.to.rfc === scope));
-  const cancelledPaid = invoices.filter(row => row.kind === 'I' && invoiceStateOf(row) === 'Cancelado' &&
-    (paidBy.get(row.id) || 0n) > 0n);
+  const canceladasLocal = invoices.filter(row => row.kind === 'I' && invoiceStateOf(row) === 'Cancelado' &&
+    (own.has(row.from.rfc) || own.has(row.to.rfc)) && (!scope || row.from.rfc === scope || row.to.rfc === scope));
+  const cancNumero = dineroCanceladasSrv ? dineroCanceladasSrv.count : canceladasLocal.length;
+  const cancImporte = dineroCanceladasSrv ? moneyCents(dineroCanceladasSrv.total)
+    : canceladasLocal.reduce((acc, row) => acc + totalCents(row), 0n);
   /* Resumen */
   const summary = panel('El dinero, de un vistazo', 'Saldos abiertos calculados desde tus complementos de pago: si una factura PPD no tiene complemento, su saldo es el total; las PUE nacen pagadas.');
   const strip = n('div', undefined, 'traffic-strip');
   const sum = items => items.reduce((acc, item) => acc + item.balance, 0n);
   strip.append(statusPill(receivable.length ? 'warn' : 'ok', 'Por cobrar: $' + centsLabel(sum(receivable))),
     statusPill(payable.length ? 'warn' : 'ok', 'Por pagar: $' + centsLabel(sum(payable))),
-    statusPill(cancelledPaid.length ? 'bad' : 'ok', cancelledPaid.length + ' canceladas con pago'),
     statusPill('dim', open.length + ' facturas con saldo abierto'));
   summary.append(strip);
-  if (cancelledPaid.length) {
-    const alertBox = n('p', '🔴 ALERTA ROJA: hay CFDI cancelados que ya tenían pagos registrados: ' +
-      cancelledPaid.map(row => row.id.slice(0, 8) + '… ($' + centsLabel(paidBy.get(row.id)) + ' pagados)').join(' · ') +
-      '. Revisión inmediata con tu contadora.', 'error-text');
-    summary.append(alertBox);
+  if (cancNumero > 0) {
+    /* La línea propia de las canceladas: número e importe, FUERA
+       de los totales de arriba. Sin alarma: no son una deuda. */
+    summary.append(n('p', 'Canceladas en el periodo: ' + cancNumero + (cancNumero === 1 ? ' factura' : ' facturas') +
+      ' por $' + centsLabel(cancImporte) + '. No suman en por pagar ni en por cobrar: una factura cancelada no se debe ni se cobra; constan aquí aparte, fuera de los totales.', 'muted'));
   }
+  if (dineroRefresh === 'cargando')
+    summary.append(n('p', 'Actualizando los saldos con el servidor…', 'muted'));
+  else if (dineroRefresh === 'error')
+    summary.append(n('p', 'No se pudo actualizar con el servidor: ves los saldos de la última copia guardada.', 'error-text'));
+  summary.append(dineroAgeChart(receivable, payable));
   wrap.append(summary);
+  wrap.append(dineroMonthPanel(receivable, payable));
+  wrap.append(dineroForecastPanel());
   wrap.append(balancePanel('Por cobrar', 'Lo que te deben: facturas emitidas a crédito (PPD) sin cobro completo.', receivable, 'to', 'Ya me pagaron'));
-  wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. La antigüedad se cuenta desde la fecha de la factura.', payable, 'from', 'Ya se pagó'));
+  wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. Cada fila dice cuándo vence según el calendario de la contraparte.', payable, 'from', 'Ya se pagó'));
   wrap.append(expectedPanel());
   wrap.append(counterpart360Panel(paidBy));
   wrap.append(reconcilePanel(paidBy));
   return [wrap];
+}
+/* La antigüedad, en barras (1.26.0, Ronda Visual): los mismos
+   escalones de AGE_BUCKETS que cada panel resume en pastillas,
+   pero juntos y de un vistazo en el resumen — dónde se
+   concentra el saldo viejo se ve, no se lee. */
+function dineroAgeChart(receivable, payable) {
+  const wrap = n('div', undefined, 'age-chart');
+  const sum = items => items.reduce((acc, item) => acc + item.balance, 0n);
+  let max = 0n;
+  const rows = AGE_BUCKETS.map(([min, maxAge, label]) => {
+    const en = items => items.filter(item => { const age = ageDaysOf(item.row); return age >= min && age <= maxAge; });
+    const cobrar = sum(en(receivable)), pagar = sum(en(payable));
+    if (cobrar > max) max = cobrar;
+    if (pagar > max) max = pagar;
+    return { label, cobrar, pagar };
+  });
+  if (!max) return wrap;
+  const line = (cls, etiqueta, cents) => {
+    const row = n('div', undefined, 'age-line');
+    const track = n('div', undefined, 'age-track');
+    const fill = n('div', undefined, 'age-fill ' + cls);
+    fill.style.width = String(Math.max(2, Math.round(Number(cents) / Number(max) * 100))) + '%';
+    track.append(fill);
+    row.append(n('span', etiqueta, 'age-kind'), track, n('span', '$' + centsLabel(cents), 'age-num'));
+    return row;
+  };
+  for (const row of rows) {
+    if (!row.cobrar && !row.pagar) continue;
+    wrap.append(n('span', row.label, 'age-label'));
+    if (row.cobrar) wrap.append(line('cobrar', 'Por cobrar', row.cobrar));
+    if (row.pagar) wrap.append(line('pagar', 'Por pagar', row.pagar));
+  }
+  return wrap;
+}
+/* Saldos abiertos por mes (1.26.0, Ronda Visual): Dinero no
+   tenía ninguna gráfica — la única vivía escondida en
+   Cobertura y la de Hoy enseña emitidos/recibidos, no saldos.
+   Esta agrupa el saldo VIVO por el mes de cada factura, en las
+   dos direcciones, con la misma geometría sobria de la casa. */
+function dineroMonthPanel(receivable, payable) {
+  const wrap = panel('Saldos abiertos por mes', 'El saldo que falta, agrupado por el mes de cada factura: de qué meses es el dinero que aún no se mueve.');
+  const byMonth = new Map();
+  const add = (items, kind) => {
+    for (const item of items) {
+      const key = String(item.row.date || '').slice(0, 7);
+      if (!key) continue;
+      if (!byMonth.has(key)) byMonth.set(key, { cobrar: 0n, pagar: 0n });
+      byMonth.get(key)[kind] += item.balance;
+    }
+  };
+  add(receivable, 'cobrar');
+  add(payable, 'pagar');
+  const keys = [...byMonth.keys()].sort();
+  if (!keys.length) {
+    wrap.append(n('p', 'Sin saldos abiertos: cuando una factura quede a crédito, su mes aparecerá aquí.', 'empty'));
+    return wrap;
+  }
+  const shown = keys.slice(-6);
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [key, value] of Object.entries(attrs || {})) node.setAttribute(key, value);
+    return node;
+  };
+  let max = 0n;
+  for (const key of shown) {
+    const g = byMonth.get(key);
+    if (g.cobrar > max) max = g.cobrar;
+    if (g.pagar > max) max = g.pagar;
+  }
+  const W = 640, base = 178, top = 24, plotH = base - top;
+  const svg = el('svg', { viewBox: '0 0 ' + W + ' 218', class: 'chart', role: 'img',
+    'aria-label': 'Saldos abiertos por mes, por cobrar y por pagar' });
+  const legend = n('div', undefined, 'chart-legend');
+  legend.append(n('span', undefined, 'sw-legend sw-cobrar'), n('span', 'Por cobrar'),
+    n('span', undefined, 'sw-legend sw-pagar'), n('span', 'Por pagar'));
+  const slot = W / shown.length, barW = Math.min(34, slot / 4);
+  const val = (x, y, text, anchor) => {
+    const t = el('text', { x, y, 'text-anchor': anchor || 'middle', class: 'chart-val' });
+    t.textContent = text;
+    return t;
+  };
+  shown.forEach((key, i) => {
+    const g = byMonth.get(key);
+    const cx = slot * i + slot / 2;
+    const hc = Number(g.cobrar) / Number(max) * plotH;
+    const hp = Number(g.pagar) / Number(max) * plotH;
+    if (g.cobrar > 0n) {
+      const bar = el('rect', { x: cx - barW - 3, y: base - hc, width: barW, height: Math.max(2, hc), rx: 3, class: 'bar-cobrar' });
+      const title = el('title', {});
+      title.textContent = 'Por cobrar ' + monthName(key) + ': $' + centsLabel(g.cobrar);
+      bar.append(title);
+      svg.append(bar, val(cx - barW / 2 - 3, base - hc - 6, '$' + shortMoney(g.cobrar)));
+    }
+    if (g.pagar > 0n) {
+      const bar = el('rect', { x: cx + 3, y: base - hp, width: barW, height: Math.max(2, hp), rx: 3, class: 'bar-pagar' });
+      const title = el('title', {});
+      title.textContent = 'Por pagar ' + monthName(key) + ': $' + centsLabel(g.pagar);
+      bar.append(title);
+      const dy = g.cobrar > 0n && Math.abs(hc - hp) < 14 ? 12 : 6;
+      svg.append(bar, val(cx + barW / 2 + 3, base - hp - dy, '$' + shortMoney(g.pagar)));
+    }
+    const lab = el('text', { x: cx, y: base + 18, 'text-anchor': 'middle', class: 'chart-lab' });
+    lab.textContent = monthName(key);
+    svg.append(lab);
+  });
+  svg.append(el('line', { x1: 6, y1: base, x2: W - 6, y2: base, class: 'chart-axis' }));
+  wrap.append(legend, svg);
+  return wrap;
 }
 function balancePanel(title, description, items, partyField, paidLabel = 'Ya se pagó') {
   const panelEl = panel(title, description);
@@ -90,11 +254,20 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
       const row = n('div', undefined, 'cp-row clickable');
       const main = n('div', undefined, 'cp-main');
       /* Total, pagado y saldo en líneas separadas (sistema-visual §4:
-         nada de «Total · pagado · saldo» en texto corrido). */
-      main.append(n('span', item.row.date + ' · ' + item.row.id.slice(0, 13) + '… · ' + ageDaysOf(item.row) + ' días'),
+         nada de «Total · pagado · saldo» en texto corrido). La fila
+         se nombra por su FOLIO (1.18.0) y enseña el vencimiento del
+         calendario de la contraparte, no solo la edad. */
+      const folioFila = item.row.fiscal ? ((item.row.fiscal.serie ? item.row.fiscal.serie + '-' : '') + (item.row.fiscal.folio || '')) : '';
+      main.append(n('span', (folioFila ? 'Folio ' + folioFila + ' · ' : '') + dateLabel(item.row.date) +
+          dineroVenceTexto(dineroServerInfo.get(item.row.id)?.due) + ' · ' + ageDaysOf(item.row) + ' días'),
         n('span', 'Total $' + centsLabel(item.total), 'muted'),
         n('span', 'Pagado $' + centsLabel(item.paid), 'muted'),
         n('strong', 'Saldo $' + centsLabel(item.balance)));
+      /* Cada saldo, explicado en una línea (1.25.0, mejora nº 5):
+         qué falta exactamente — el complemento del resto, o la
+         marca — y para cuándo. Lo calcula el servidor. */
+      const faltaSrv = dineroServerInfo.get(item.row.id)?.falta;
+      if (faltaSrv) main.append(n('span', faltaSrv, 'muted'));
       row.append(main);
       /* Un toque (1.11.0): sin diálogo, sin fecha; la fila se actualiza
          en el sitio. Solo en la copia del servidor, como en el Visor:
@@ -115,19 +288,76 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
    endpoint — POST money/mark-paid solo con el uuid, SIN nota y SIN
    fecha (el servidor compone la nota con la fecha de hoy). La fila se
    confirma en el sitio y la pantalla se repinta sola con los saldos
-   actualizados; sin «Deshacer», como en Avisos: no hay endpoint de
-   reapertura de un pago manual. */
+   actualizados. Desde la 1.18.0 trae «Deshacer»: money/unmark-paid
+   quita solo el pago manual, nunca un complemento enlazado. */
 async function dineroMarkPaid(item, rowEl, paidLabel) {
   try {
-    await satApi('money/mark-paid', { uuid: item.row.id });
+    /* Con recomprobación (pieza H): si la respuesta se perdió tras
+       guardarse, el saldo re-leído ya no mostrará la deuda y se
+       enseña el éxito real en la fila, no el error. */
+    await satApiGuardar('money/mark-paid', { uuid: item.row.id }, async () => {
+      const data = await satApi('money');
+      const balance = (data.balances || []).find(row => row.id === item.row.id);
+      return !balance || Number(balance.balance) <= 0;
+    });
     dineroMarcados.add(item.row.id);
     const cobrado = paidLabel === 'Ya me pagaron';
     const texto = cobrado ? 'Cobrado. Quedó en el historial.' : 'Pagado. Quedó en el historial.';
     if (rowEl) { rowEl.onclick = null; rowEl.classList.remove('clickable'); rowEl.replaceChildren(statusPill('ok', cobrado ? 'Cobrado' : 'Pagado'), n('span', texto)); }
-    toast(texto, 'ok');
+    /* Con «Deshacer» (1.18.0): el servidor sabe quitar SOLO el pago
+       manual (money/unmark-paid); los pagos de complementos no se
+       tocan. */
+    toastUndo(texto, async () => {
+      await satApi('money/unmark-paid', { uuid: item.row.id });
+      dineroMarcados.delete(item.row.id);
+      dineroServerCargado = false;
+      announce('Pago deshecho: el saldo vuelve a estar abierto.');
+      render();
+    });
     soundCue('success');
     setTimeout(() => { if (page === 'dinero') render(); }, 1600);
   } catch (error) { toast(error.message, 'error'); }
+}
+/* Previsión del mes (1.25.0, AGREGAR 4): lo que entra y lo que
+   sale según lo que CONSTA — saldos que vencen, recurrencias de
+   tus CFDI y líneas fijas del catálogo de pagos — cada línea con
+   su base escrita. Nada se estima sin decir de dónde sale. */
+function dineroForecastPanel() {
+  const panelEl = panel('Previsión del mes', 'Lo que entra y lo que sale este mes según tu expediente: cada línea dice su base. La nómina solo entra si consta como línea fija del catálogo de pagos.');
+  if (!(typeof satToken !== 'undefined' && satToken)) {
+    panelEl.append(n('p', 'La previsión vive en la copia del servidor (el NAS), donde está el expediente completo.', 'empty'));
+    return panelEl;
+  }
+  const monthInput = input('month', { value: new Date().toISOString().slice(0, 7), 'aria-label': 'Mes de la previsión' });
+  const body = n('div');
+  body.append(n('p', 'Calculando la previsión…', 'muted'));
+  const paint = async () => {
+    try {
+      const data = await satApi('forecast?month=' + monthInput.value);
+      const strip = n('div', undefined, 'traffic-strip');
+      strip.append(statusPill('ok', 'Entra: $' + money(data.totalEntradas)),
+        statusPill('warn', 'Sale: $' + money(data.totalSalidas)),
+        statusPill(Number(data.neto) >= 0 ? 'ok' : 'bad', 'Neto: $' + money(data.neto)));
+      body.replaceChildren(strip);
+      const lineas = [...(data.entradas || []).map(l => ({ ...l, direccion: 'entrada' })),
+        ...(data.salidas || []).map(l => ({ ...l, direccion: 'salida' }))]
+        .sort((a, b) => a.fecha.localeCompare(b.fecha));
+      for (const linea of lineas) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill(linea.direccion === 'entrada' ? 'ok' : 'warn', linea.direccion === 'entrada' ? 'Entra' : 'Sale'),
+          n('span', linea.fecha.slice(8) + '/' + linea.fecha.slice(5, 7) + ' · ' + linea.concepto),
+          n('span', linea.base, 'muted'),
+          n('strong', '$' + money(linea.importe)));
+        body.append(row);
+      }
+      if (!data.entradas?.length && !data.salidas?.length)
+        body.append(n('p', 'Sin movimientos previstos en el expediente para este mes.', 'empty'));
+    } catch (error) { body.replaceChildren(n('p', error.message, 'error-text')); }
+  };
+  monthInput.onchange = paint;
+  panelEl.append(fieldWrap('Mes', monthInput), body);
+  paint();
+  return panelEl;
 }
 function expectedPanel() {
   const panelEl = panel('Facturas esperadas', 'Proveedores que te facturan casi cada mes y este mes aún no han llegado. Si era un gasto fijo, algo pasa.');
@@ -161,6 +391,7 @@ function expectedPanel() {
 function counterpart360Panel(paidBy) {
   const panelEl = panel('Expediente 360 por contraparte', 'Todo lo de una empresa en una tarjeta: sus CFDI, pagos, saldos, su situación en listas y sus documentos.');
   const select = n('select');
+  select.dataset.cpSelect = '1';
   const parties = new Map();
   for (const row of invoices) {
     for (const party of [row.from, row.to]) if (!parties.has(party.rfc)) parties.set(party.rfc, party.name || party.rfc);
@@ -179,7 +410,10 @@ function counterpart360Panel(paidBy) {
       if (row.kind !== 'I') continue;
       const balance = balanceOf(row, paidBy);
       if (row.from.rfc === rfc) received += balance.total; else issued += balance.total;
-      if (balance.balance > 0n) openBalance += balance.balance;
+      /* El saldo abierto sigue el criterio único (1.20.0): una
+         factura cancelada no deja saldo, aunque su histórico de
+         facturación y pagos se siga contando arriba. */
+      if (balance.balance > 0n && invoiceStateOf(row) !== 'Cancelado') openBalance += balance.balance;
       paidTotal += balance.paid;
     }
     const docs = documents.filter(doc => doc.rfc === rfc);
@@ -212,7 +446,12 @@ function counterpart360Panel(paidBy) {
       const edit = n('button', 'Editar calendario', 'soft small');
       edit.onclick = () => counterpartDialog(cp || { rfc, name: parties.get(rfc) || '' });
       calRow.append(edit);
-    }).catch(() => {});
+    }).catch(() => {
+      /* También esto se dice (1.26.0): sin respuesta, la fila
+         enseña que el calendario no se pudo consultar, en vez
+         de quedarse vacía en silencio. */
+      calRow.append(statusPill('dim', 'Calendario de pago: no se pudo consultar ahora.'));
+    });
     const seeInvoices = n('button', 'Ver sus CFDI', 'soft');
     seeInvoices.onclick = () => { setInvoiceTerm(rfc); navigate('invoices'); };
     body.append(seeInvoices);

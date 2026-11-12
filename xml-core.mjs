@@ -461,4 +461,293 @@ async function decryptBackup(file, password) {
   return JSON.parse(new TextDecoder().decode(plain));
 }
 
-export { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc };
+/* ===== Modelo único de problema (1.13.0) =====
+   TODO estado-problema de la app se cuenta igual, en cualquier
+   pantalla y en los correos: semáforo (rojo = algo tuyo está en
+   riesgo o caduca; ámbar = el sistema tuvo un problema y se está
+   ocupando o espera tu gesto; gris = informativo), un titular que
+   dice DE QUIÉN es el problema, una línea de «qué significa para
+   ti» y una de «qué pasa ahora» (lo que el sistema hace solo o tu
+   único gesto). El detalle técnico —códigos del SAT, mensajes del
+   servidor— viaja en `detalle` y la superficie lo enseña solo tras
+   un «Ver detalle». Esta función es pura y sin DOM a propósito:
+   la comparten la superficie y las pruebas la fijan tal cual.
+   Fuentes: 'vigilancia' (estado de un CFDI), 'satdoc' y 'decl'
+   (clase de fallo de los motores de documentos/declaraciones),
+   'ciec' (clase de fallo o descarga incompleta), 'bandeja',
+   'descarga' (solicitudes masivas), 'revision' (la revisión manual
+   detenida) y 'salud' (chequeos del propio sistema). */
+function problemSpec(source, info = {}) {
+  const detalle = String(info.error || info.detalle || '');
+  const spec = (level, titulo, significa, ahora, accion = '') =>
+    ({ level, titulo, significa, ahora, accion, detalle });
+  if (source === 'vigilancia') {
+    const efos = Array.isArray(info.efos) ? info.efos : [];
+    if (efos.includes('Definitivo')) return spec('rojo', 'Este emisor está en el listado 69-B (definitivo)',
+      'El SAT confirmó que este RFC facturó operaciones inexistentes: estos comprobantes no deben deducirse.',
+      'Avisa a tu contadora antes de deducir o pagar comprobantes de este emisor.');
+    if (efos.length) return spec('ambar', 'Este emisor está en el listado 69-B (presunto)',
+      'El SAT presume operaciones inexistentes de este RFC. Puede aclararlo, pero mientras tanto deducir sus comprobantes tiene riesgo.',
+      'Pide aclaración al emisor y avisa a tu contadora antes de deducir.');
+    if (info.state === 'Cancelado') return spec('ambar', 'El SAT canceló este comprobante',
+      'Para el SAT este comprobante ya no existe.',
+      'Si ya lo pagaste o lo dedujiste, avisa a tu contadora. Si no, no tienes que hacer nada.');
+    if (info.state === 'No encontrado') return spec('gris', 'El SAT no localizó este comprobante',
+      'Con los datos del comprobante, el servicio del SAT no lo encuentra. Pasa con comprobantes muy antiguos o cuando el servicio no lo tiene a mano: no es un error tuyo.',
+      'Nada: PacoSAT lo vuelve a comprobar el mes que viene.');
+    if (info.state === 'Formato rechazado') return spec('ambar', 'PacoSAT preguntó mal al SAT',
+      'El SAT rechazó cómo PacoSAT formuló la consulta, no el comprobante: la pregunta ya va corregida desde la actualización.',
+      'Nada: este comprobante se vuelve a revisar solo, con la pregunta buena.');
+    if (info.state === 'Vigente') return spec('gris', 'El SAT lo confirma vigente',
+      'El comprobante está vigente en el SAT.', 'Nada: está en orden.');
+    if (info.error || info.state === 'Error') {
+      const significa = /timeout|aborted|AbortError/i.test(detalle) ? 'El servicio del SAT tardó demasiado en responder a la consulta de este comprobante.' :
+        /HTTP \d{3}/.test(detalle) ? 'El servicio del SAT respondió con un error al consultar este comprobante.' :
+        /fetch|network|conexi|red\b/i.test(detalle) ? 'No hubo conexión con el servicio del SAT al consultar este comprobante.' :
+        'Hubo un problema al consultar el estado de este comprobante en el SAT.';
+      return spec('ambar', 'No se pudo preguntar al SAT esta vez', significa,
+        'Nada: se vuelve a intentar solo, sin que tengas que hacer nada.');
+    }
+    return spec('gris', 'Este comprobante aún no se revisa',
+      'Está en la cola de revisión del SAT.', 'Nada: PacoSAT lo revisará solo.');
+  }
+  if (source === 'lista') {
+    /* Listas (1.13.1): qué significa que una contraparte aparezca en
+       un listado, según la lista, la situación y el rol (proveedor
+       o cliente). La explicación vive en la propia tarjeta de la
+       pantalla de Listas: info trae { generico, listId, detail, rol,
+       dinero, cfdiCount, saldo } con las cifras ya calculadas por el
+       servidor desde los CFDI guardados. */
+    if (info.generico) return spec('gris', 'Es el RFC genérico: no es una empresa real',
+      'Este RFC se usa en las facturas a «público en general», cuando el cliente no pide factura con su RFC. ' +
+      'Que aparezca en un listado no señala a ninguna empresa concreta.',
+      'Nada: su aparición no supone ningún riesgo para ti.');
+    const detail = String(info.detail || '');
+    const es69b = info.listId === '69b' || info.listId === '69b-bis';
+    const facturado = (info.dinero ? ' los ' + info.dinero + ' que te ha facturado' : ' lo que te ha facturado') +
+      (info.cfdiCount ? ' en ' + info.cfdiCount + ' CFDI' : '');
+    if (es69b && /desvirtuad|sentencia favorable/i.test(detail)) return spec('gris', 'Ya aclaró su situación en el 69-B',
+      'Este contribuyente estuvo en el listado 69-B y desvirtuó la presunción (o un tribunal le dio la razón): el SAT lo da por regularizado.',
+      'Nada: por este listado no hay riesgo.');
+    if (es69b && /definitiv/i.test(detail)) {
+      if (info.rol === 'cliente') return spec('ambar', 'Este cliente está en el listado 69-B (definitivo)',
+        'El SAT confirmó que ESTE contribuyente facturó operaciones inexistentes: es un problema de sus facturas, ' +
+        'no de las tuyas. No contamina las facturas que tú le emitiste ni tus deducciones.',
+        'El riesgo práctico es de cobro y de seguir vendiéndole a crédito' +
+        (info.saldo ? ': hoy tienes ' + info.saldo + ' por cobrarle.' : '.'));
+      return spec('rojo', 'Proveedor en el 69-B definitivo: su dinero está en riesgo',
+        'El SAT presume que las operaciones de este proveedor no existieron. En riesgo están la deducción y el ' +
+        'IVA acreditable de' + facturado + '.',
+        'Arma el expediente de materialidad (contrato, evidencia de entrega o del servicio, pagos) y trátalo con tu contadora.');
+    }
+    if (es69b && /presunt/i.test(detail)) {
+      if (info.rol === 'cliente') return spec('ambar', 'Este cliente está en el listado 69-B (presunto)',
+        'El SAT presume que este contribuyente factura operaciones inexistentes, pero aún puede aclararlo ante el SAT. ' +
+        'Es un problema de sus facturas: no contamina las que tú le emitiste.',
+        'Vigila si pasa a definitivo y cuida el crédito que le das' +
+        (info.saldo ? ': hoy tienes ' + info.saldo + ' por cobrarle.' : '.'));
+      return spec('ambar', 'Proveedor en el 69-B presunto: aún puede aclararlo',
+        'El SAT presume que las operaciones de este proveedor no existieron, pero todavía puede desvirtuarlo ante el SAT. ' +
+        'Mientras tanto, deducir' + facturado + ' tiene riesgo.',
+        'Vigila si pasa a definitivo: PacoSAT te avisa del cambio. Si pasa, tocará armar el expediente de materialidad.');
+    }
+    if (info.rol === 'propio') return spec('rojo', 'Tu RFC aparece en un listado del SAT',
+      'El listado «' + (info.label || 'del SAT') + '» (' + detail + ') incluye uno de tus RFC: es un problema tuyo con el SAT, no de una contraparte.',
+      'Trátalo con tu contadora cuanto antes.');
+    if (info.rol === 'cliente') return spec('ambar', 'Este cliente tiene un problema con el SAT (art. 69)',
+      'El SAT lo publicó en el listado de «' + detail + '»: el problema es DEL CLIENTE con el SAT (él debe créditos o ' +
+      'está en ese supuesto). No contamina las facturas que tú le emitiste ni tus deducciones.',
+      'El riesgo práctico es cobrarle y seguir vendiéndole a crédito' +
+      (info.saldo ? ': la cifra que importa es su saldo vivo, ' + info.saldo + ' por cobrar.' : '.'));
+    if (info.rol === 'proveedor') return spec('ambar', 'Este proveedor aparece en el art. 69',
+      'El SAT lo publicó en el listado de «' + detail + '»: es su problema con el SAT. Este listado NO presume que sus ' +
+      'operaciones no existieran — eso es el 69-B —, así que sus facturas no pierden deducibilidad por aparecer aquí.',
+      'Vigila que siga operando con normalidad; si algún día pasa al 69-B, PacoSAT te avisa y ahí sí habría riesgo para tus deducciones.');
+    return spec('gris', 'Aparece en un listado del SAT',
+      'El SAT publicó este RFC en el listado «' + (info.label || '') + '» (' + detail + ').',
+      'Revisa su ficha en esta pantalla para ver el detalle y las cifras.');
+  }
+  if (source === 'satdoc' || source === 'decl') {
+    const kind = String(info.kind || '');
+    const que = source === 'decl' ? 'las declaraciones' : 'el documento';
+    if (kind === 'portal-caido') return spec('ambar', 'El portal del SAT no respondió',
+      'El SAT no contestó o cortó la conexión a mitad del trámite. Tu e.firma y tus datos están bien.',
+      'Nada por tu parte: inténtalo de nuevo en un rato. Si la descarga es la automática del mes, PacoSAT lo reintenta solo.');
+    if (kind === 'portal-rechaza') return spec('ambar', 'El portal del SAT rechazó el acceso',
+      'La sesión se intentó abrir, pero el portal no dejó pasar la firma de este RFC.',
+      'Revisa el detalle; si se repite, comprueba en el SAT que la e.firma de este RFC siga vigente.');
+    if (kind === 'paso-interactivo') return spec('ambar', 'El portal del SAT cambió su página',
+      'La sesión se abrió y firmó bien, pero el portal enseñó una página distinta de la que PacoSAT sabe usar, y ' + que + ' no bajó.',
+      'Mientras PacoSAT se actualiza para esa página, el documento se puede subir a mano y queda archivado y vigilado igual.', 'subir-doc');
+    if (kind === 'navegador-no-disponible') return spec('ambar', 'Falta una pieza de PacoSAT',
+      'El navegador interno que habla con el portal no está disponible en esta instalación, así que la descarga automática no puede correr.',
+      'El documento se puede subir a mano y queda archivado y vigilado igual.', 'subir-doc');
+    if (kind === 'documento-invalido') return spec('ambar', 'Lo que bajó del portal no era un PDF válido',
+      'El portal entregó algo que no se pudo archivar; no se guardó nada.',
+      'Inténtalo de nuevo: suele ser un fallo pasajero del portal.');
+    if (kind === 'respuesta-inesperada') return spec('ambar', 'El portal respondió algo que PacoSAT no esperaba',
+      'El trámite no enseñó la pantalla que PacoSAT conoce, y ' + que + ' no bajó.',
+      'Inténtalo de nuevo en un rato; si se repite, el diario de la corrida guarda la página para actualizar PacoSAT.');
+    return spec('ambar', source === 'decl' ? 'La recuperación no terminó' : 'La descarga no terminó',
+      'El trámite con el portal del SAT se detuvo antes de terminar.', 'Inténtalo de nuevo en un rato; el detalle técnico queda en el diario.');
+  }
+  if (source === 'ciec') {
+    const kind = String(info.kind || '');
+    if (info.ok && Number(info.found) > 0 && Number(info.downloaded) < Number(info.found))
+      return spec('ambar', 'La descarga quedó incompleta',
+        'El portal dejó bajar ' + Number(info.downloaded) + ' de ' + Number(info.found) + ' facturas del rango: tiene un tope por consulta y unas 2.000 al día por RFC.',
+        'Las que faltan se bajan mañana, o hoy mismo con un rango de fechas más corto.');
+    if (kind === 'credenciales') return spec('ambar', 'El SAT no aceptó la contraseña CIEC',
+      'El portal rechazó el RFC o la contraseña guardados para este contribuyente.',
+      'Tu gesto: revisa la contraseña y vuelve a guardarla en «Acceso con contraseña (CIEC)».', 'cambiar-ciec');
+    if (kind === 'captcha-rechazado') return spec('ambar', 'El portal no aceptó el captcha',
+      'Se escribió el captcha las veces permitidas y el portal no lo dio por bueno; la descarga se detuvo sin bajar nada a medias.',
+      'Lanza la descarga otra vez y escribe el captcha nuevo con calma.');
+    if (kind === 'captcha-sin-respuesta') return spec('gris', 'La descarga esperó el captcha y se cerró',
+      'El portal pidió el captcha y pasaron 10 minutos sin que se escribiera.',
+      'Lanza la descarga cuando puedas escribir el captcha en el momento.');
+    if (kind === 'sesion-invalida') return spec('ambar', 'El portal cortó la sesión a mitad de la descarga',
+      'El portal del SAT cerró la sesión mientras se trabajaba; es un fallo suyo, no de tu contraseña.',
+      'Inténtalo de nuevo en unos minutos.');
+    if (kind === 'sin-ciec') return spec('ambar', 'Falta guardar la contraseña CIEC',
+      'Este RFC está dado de alta para entrar con contraseña, pero la contraseña no está guardada.',
+      'Tu gesto: guárdala en «Acceso con contraseña (CIEC)» y la descarga podrá correr.', 'guardar-ciec');
+    if (kind === 'navegador-no-disponible') return spec('ambar', 'Falta una pieza de PacoSAT',
+      'El navegador interno que habla con el portal no está disponible en esta instalación.',
+      'La descarga por CIEC volverá cuando la pieza esté instalada.');
+    if (kind === 'respuesta-inesperada') return spec('ambar', 'El portal cambió algo que PacoSAT no esperaba',
+      'El portal no enseñó la pantalla que PacoSAT conoce y la descarga se detuvo.',
+      'El diario de la corrida guarda la foto y la página del momento para actualizar PacoSAT.');
+    return spec('ambar', 'La descarga por CIEC no terminó',
+      'La descarga se detuvo antes de terminar.', 'Inténtalo de nuevo en un rato; el detalle técnico queda en el diario de la corrida.');
+  }
+  if (source === 'bandeja') {
+    if (info.error) return spec('ambar', 'La bandeja de importación no se pudo leer',
+      'PacoSAT no pudo abrir la carpeta vigilada, así que los archivos nuevos no se están importando solos.',
+      'Revisa en Operaciones que la carpeta siga existiendo; tus archivos no se han perdido, solo esperan.');
+    if (Number(info.failed) > 0) return spec('ambar', 'Hay archivos de la bandeja que no se importaron',
+      Number(info.failed) + ' archivo(s) no entraron a tu expediente; quedaron apartados, sin tocar lo demás.',
+      'Están en la subcarpeta «errores» de la bandeja: revísalos ahí; el resto se importó bien.');
+    if (Number(info.incidents) > 0) return spec('gris', 'Algunos archivos entraron con incidencias',
+      Number(info.incidents) + ' archivo(s) se importaron pero con avisos que conviene mirar.',
+      'Están en la subcarpeta «incidencias» de la bandeja.');
+    return spec('gris', 'La bandeja está al corriente', 'Todo lo que llegó a la carpeta vigilada se importó.', 'Nada.');
+  }
+  if (source === 'descarga') {
+    if (info.status === 'expired') return spec('gris', 'Una solicitud al SAT venció sin recogerse',
+      'El SAT guardó el paquete un tiempo y lo borró antes de que se recogiera.',
+      'Pide el periodo de nuevo desde el Centro SAT: se solicita y se recoge solo.');
+    if (info.status === 'rejected') return spec('ambar', 'El SAT rechazó una solicitud de descarga',
+      'El SAT no aceptó la solicitud de ese periodo.', 'Revisa el periodo pedido y vuelve a solicitarlo desde el Centro SAT.');
+    return spec('ambar', 'Una solicitud de descarga falló en el SAT',
+      'El SAT no pudo preparar el paquete de ese periodo.', 'Vuelve a solicitarlo desde el Centro SAT; si se repite, espera unas horas.');
+  }
+  if (source === 'revision') return spec('ambar', 'La revisión se detuvo a mitad',
+    'El servicio local no respondió mientras se revisaban tus comprobantes. Lo ya revisado quedó guardado.',
+    'Tu gesto: pulsa «Revisar mis CFDI ahora» para seguir desde donde iba.', 'revisar');
+  if (source === 'salud') {
+    const id = String(info.id || ''), state = String(info.state || ''), dato = String(info.dato || '');
+    if (id === 'db' && state === 'mal') return spec('rojo', 'PacoSAT no puede guardar datos',
+      'La base de datos del sistema no respondió a la prueba de lectura y escritura: lo que se haga ahora podría no guardarse.',
+      'Reinicia el servicio de PacoSAT en tu NAS; si el semáforo sigue en rojo, hay que mirar el disco del NAS.');
+    if (id === 'disco' && state === 'mal') return spec('rojo', 'Queda muy poco espacio en el disco',
+      'El volumen donde vive PacoSAT está casi lleno (' + dato + '): las descargas y los respaldos pueden empezar a fallar.',
+      'Libera espacio en el NAS o amplía el volumen cuanto antes.');
+    if (id === 'disco') return spec('ambar', 'El espacio del disco va justo',
+      'El volumen donde vive PacoSAT se está llenando (' + dato + ').', 'Conviene liberar espacio en el NAS en los próximos días.');
+    if (id === 'respaldo' && state === 'mal') return spec('ambar', 'El último respaldo falló',
+      'La copia de seguridad más reciente no salió bien (' + dato + '): tu expediente sigue trabajando, pero sin red de seguridad nueva.',
+      'Crea un respaldo a mano en Ajustes › Respaldos y revisa el destino programado.');
+    if (id === 'respaldo') return spec('gris', 'Todavía no hay un respaldo reciente',
+      'Es tu red de seguridad si el equipo falla, y hoy no consta un respaldo bueno reciente.',
+      'Programa el respaldo en Ajustes › Respaldos para no depender de acordarte.');
+    if (id === 'bandeja' && state === 'mal') return spec('ambar', 'La bandeja de importación no responde',
+      'La carpeta vigilada no se puede leer (' + dato + '): los archivos nuevos no se importan solos.',
+      'Revisa en Operaciones que la carpeta siga existiendo en el NAS.');
+    if (id === 'bandeja') return spec('gris', 'La bandeja de importación no está activa',
+      'Sin carpeta vigilada, los XML se importan solo a mano (' + dato + ').', 'Si quieres la importación automática, configúrala en el servidor.');
+    if (id === 'documentos' && /Aún no/.test(dato)) return spec('gris', 'Todavía no se ha descargado ningún documento del SAT',
+      'Sin constancias ni opiniones archivadas por la descarga automática: el semáforo de Documentos no tiene nada que vigilar aún.',
+      'Descarga la primera desde Documentos o sube el PDF a mano.', 'ir-docs');
+    if (id === 'documentos') return spec('ambar', 'La última descarga de documentos del SAT falló',
+      'La constancia o la opinión más reciente no bajó en el último intento (' + dato + '): el documento anterior sigue archivado y vigilado.',
+      'Reintenta la descarga en Documentos o sube el PDF a mano si lo necesitas ya.', 'ir-docs');
+    if (id === 'correo') return spec('ambar', 'El correo de avisos no está listo',
+      'Sin el correo listo, los avisos importantes —una cancelación, un 69-B, una descarga que termina mal— se quedan dentro de la app (' + dato + ').',
+      'Configúralo y actívalo en Ajustes › Correo.');
+    if (id === 'vigilancia') return spec('gris', 'La revisión de comprobantes no corre hace días',
+      'El estado de tus CFDI en el SAT puede estar desactualizado (' + dato + ').', 'Se revisa sola con el pulso del sistema; también puedes pulsar «Revisar» en el Centro de mando.');
+    if (id === 'listados') return spec('gris', 'El listado 69-B lleva tiempo sin actualizarse',
+      'El cruce contra el listado oficial puede no ver altas recientes (' + dato + ').', 'Actualízalo en SAT › Listas 69-B o espera a la próxima descarga automática.');
+    return spec('gris', 'Hay un punto del sistema por vigilar', dato || 'Sin detalle.', 'Revísalo cuando puedas.');
+  }
+  return spec('ambar', 'Algo no salió bien', 'Pasó algo que PacoSAT no supo clasificar.', 'El detalle técnico está tras «Ver detalle».');
+}
+/* Pasos visuales de una corrida (1.13.0): cada fase de la tubería
+   con su estado, calculado SOLO de los pasos que el motor ya
+   persiste (sin tocar motores). `phases` = [{label, match:[...]}]
+   en orden; `steps` = [{text}]; `outcome` = 'running' | 'ok' |
+   'failed'. Una fase alcanzada es la última con pasos; las de
+   «⚠ …» marcan aviso en su fase sin cambiar el estado. Con la
+   corrida en orden ('ok') todas las fases quedan hechas — la
+   tubería terminó aunque una fase no dejara paso escrito (p. ej.
+   el captcha que el portal no pidió). */
+function runPhaseStates(phases, steps, outcome) {
+  const reached = phases.map(() => false);
+  const warned = phases.map(() => false);
+  let floor = 0;
+  for (const step of steps || []) {
+    const text = String(step?.text || '');
+    for (let i = floor; i < phases.length; i++) {
+      if ((phases[i].match || []).some(fragment => text.includes(fragment))) {
+        reached[i] = true;
+        if (text.startsWith('⚠')) warned[i] = true;
+        floor = i;
+        break;
+      }
+    }
+    if (text.startsWith('⚠') && floor >= 0 && reached[floor]) warned[floor] = true;
+  }
+  let last = -1;
+  reached.forEach((value, index) => { if (value) last = index; });
+  return phases.map((phase, index) => {
+    let state = 'pending';
+    if (outcome === 'ok') state = 'done';
+    else if (index < last) state = 'done';
+    else if (index === last) state = outcome === 'failed' ? 'failed' : 'current';
+    return { label: phase.label, state, warn: Boolean(warned[index]) };
+  });
+}
+/* Hoja de descarga (1.13.1, pieza C2): los atajos componen el rango
+   EXACTO que se pedirá al SAT, y el resumen previo lo dice en una
+   línea antes de lanzar. Funciones puras: la suite las verifica sin
+   navegador (el atajo «este mes hasta hoy» = día 1 → hoy). */
+const DL_MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function dlShift(iso, days) {
+  const date = new Date(iso + 'T12:00:00Z');
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+function downloadShortcutRange(kind, today) {
+  if (kind === 'mes') return { start: today.slice(0, 8) + '01', end: today };
+  if (kind === 'mes-pasado') {
+    const first = today.slice(0, 8) + '01';
+    return { start: dlShift(first, -1).slice(0, 8) + '01', end: dlShift(first, -1) };
+  }
+  if (kind === '7d') return { start: dlShift(today, -6), end: today };
+  if (kind === '30d') return { start: dlShift(today, -29), end: today };
+  return { start: today.slice(0, 8) + '01', end: today };
+}
+function dlFechaLarga(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return d + ' de ' + DL_MESES[m - 1] + ' de ' + y;
+}
+function downloadSummaryText(name, rfc, direction, start, end) {
+  const sentido = direction === 'received' ? 'recibidos' : direction === 'issued' ? 'emitidos' : 'emitidos y recibidos';
+  const rango = start.slice(0, 7) === end.slice(0, 7)
+    ? 'del ' + Number(start.slice(8)) + ' al ' + dlFechaLarga(end)
+    : 'del ' + dlFechaLarga(start) + ' al ' + dlFechaLarga(end);
+  return 'Se pedirá al SAT: ' + (name ? name + ' (' + rfc + ')' : rfc) + ' · ' + sentido + ' · ' + rango;
+}
+
+export { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc, problemSpec, runPhaseStates, downloadShortcutRange, downloadSummaryText };

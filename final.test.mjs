@@ -34,13 +34,16 @@ try {
   /* Invitado desactivado: ni login ni lectura. */
   assert.equal((await call('/api/guest/login', { password: 'la-que-sea-123' })).status, 403);
   let config = await (await call('/api/guest/config', { password: 'clave-invitado-1', enabled: true })).json();
-  assert.deepEqual(config, { enabled: true, hasPassword: true, rfcs: [] });
+  assert.deepEqual(config, { enabled: true, hasPassword: true, contadora: false, rfcs: [] });
   assert.equal((await call('/api/guest/login', { password: 'incorrecta' })).ok, false);
   const login = await (await call('/api/guest/login', { password: 'clave-invitado-1' })).json();
   assert.ok(login.token);
-  /* El invitado lee… */
+  /* El invitado lee lo de su alcance… */
   assert.equal((await call('/api/money', undefined, login.token)).status, 200);
-  assert.equal((await call('/api/offline-bundle', undefined, login.token)).status, 200);
+  /* M2 (1.22.0): SIN alcance configurado (rfcs: []) ya no ve todo
+     por omisión — el paquete offline y los bancos quedan fuera
+     hasta que se le asigne alcance. */
+  assert.equal((await call('/api/offline-bundle', undefined, login.token)).status, 403);
   /* …pero no escribe ni ve la bitácora de accesos. */
   const blocked = await call('/api/storage', { batch: { people: [] } }, login.token);
   assert.equal(blocked.status, 403);

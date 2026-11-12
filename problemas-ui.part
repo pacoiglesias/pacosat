@@ -1,0 +1,559 @@
+/* ===== Problemas claros, corridas visuales y Centro de mando (1.13.0) =====
+   La superficie del modelo único de problema (problemSpec, en
+   data.part): tarjeta con semáforo, titular de quién es el
+   problema, «qué significa para ti» y «qué pasa ahora», con el
+   detalle técnico tras un «Ver detalle» plegable. Aquí viven
+   también los pasos visuales de las corridas (hecho / en curso /
+   falló aquí), el Centro de mando de Hoy —ver todo de un vistazo
+   y operar cada área en uno o dos toques— y la tarjeta de salud
+   del sistema. Nada de esto decide nada fiscal: solo presenta lo
+   que los motores y el servidor ya saben. */
+const NIVEL_PILL = { rojo: 'bad', ambar: 'warn', gris: 'dim' };
+function haceText(at) {
+  if (!at) return '';
+  const ms = Date.now() - Number(at);
+  if (!(ms >= 0)) return 'ahora mismo';
+  const minutos = Math.floor(ms / 60000);
+  if (minutos < 1) return 'ahora mismo';
+  if (minutos < 60) return 'hace ' + minutos + (minutos === 1 ? ' minuto' : ' minutos');
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return 'hace ' + horas + (horas === 1 ? ' hora' : ' horas');
+  const dias = Math.floor(horas / 24);
+  return 'hace ' + dias + (dias === 1 ? ' día' : ' días');
+}
+/* Tarjeta completa del modelo. `actionEl` es el botón del gesto
+   único, ya construido por quien conoce el contexto (navegar a la
+   tarjeta exacta, reintentar, subir el PDF…). */
+function problemCard(spec, actionEl) {
+  const card = n('div', undefined, 'problem-card');
+  card.dataset.level = spec.level;
+  const head = n('div', undefined, 'problem-head');
+  head.append(statusPill(NIVEL_PILL[spec.level] || 'dim',
+    spec.level === 'rojo' ? 'Atención' : spec.level === 'ambar' ? 'Aviso' : 'Nota'),
+    n('strong', spec.titulo));
+  card.append(head);
+  card.append(n('p', spec.significa, 'problem-means'));
+  const nowLine = n('p', undefined, 'problem-now');
+  nowLine.append(n('strong', 'Qué pasa ahora: '), document.createTextNode(spec.ahora));
+  card.append(nowLine);
+  if (actionEl) { const row = n('div', undefined, 'actions'); row.append(actionEl); card.append(row); }
+  if (spec.detalle) {
+    const fold = n('details', undefined, 'problem-detail');
+    fold.append(n('summary', 'Ver detalle técnico'), n('p', spec.detalle));
+    card.append(fold);
+  }
+  return card;
+}
+/* Versión compacta (una línea) para agrupar problemas por clase:
+   punto de color, titular y qué pasa ahora. */
+function problemRow(spec, count) {
+  const row = n('div', undefined, 'problem-row');
+  row.dataset.level = spec.level;
+  row.append(n('span', undefined, 'problem-dot'),
+    n('strong', (count ? number.format(count) + ' · ' : '') + spec.titulo),
+    n('span', spec.ahora, 'problem-row-now'));
+  return row;
+}
+/* ===== Pasos visuales de una corrida =====
+   Las fases de cada tubería, en el orden en que el motor deja sus
+   pasos escritos. runPhaseStates (data.part) calcula el estado de
+   cada fase sin tocar los motores. */
+const SATDOC_PHASES = [
+  { label: 'Conectar con el SAT', match: ['Conectando'] },
+  { label: 'Firmar con tu e.firma', match: ['Firmando'] },
+  { label: 'Pedir el documento', match: ['Pidiendo'] },
+  { label: 'Guardar en Expedientes', match: ['Guardando', 'Guardado en Expedientes', 'Guardado y enviado'] }
+];
+const CIEC_PHASES = [
+  { label: 'Entrar al portal', match: ['Conectando con el portal', 'Tecleando tu RFC', 'Ya estás dentro'] },
+  { label: 'Escribir el captcha', match: ['pide el captcha', 'no aceptó ese captcha'] },
+  { label: 'Consultar tus facturas', match: ['Buscando tus facturas', 'El portal encontró'] },
+  { label: 'Descargar las facturas', match: ['Descargando tus facturas'] },
+  { label: 'Guardar en tu expediente', match: ['Guardando en tu expediente'] }
+];
+function runPhasesEl(phasesDef, steps, outcome) {
+  const states = runPhaseStates(phasesDef, steps, outcome);
+  const list = n('ol', undefined, 'run-phases');
+  for (const phase of states) {
+    const item = n('li', undefined, 'run-phase');
+    item.dataset.state = phase.state;
+    item.append(n('span',
+      phase.state === 'done' ? '✓' : phase.state === 'failed' ? '✕' :
+      phase.state === 'current' ? '◌' : '·', 'run-phase-mark'),
+      n('span', phase.label + (phase.warn ? ' · con avisos' : '')));
+    list.append(item);
+  }
+  return list;
+}
+/* Botones de evidencia de una corrida caída (la captura y el HTML
+   que el motor guardó en el momento del fallo): a un clic desde el
+   paso fallido. kind: 'satdoc' | 'ciec'. */
+function evidenceButtons(kind, run) {
+  if (!run?.hasShot && !run?.hasHtml) return null;
+  const row = n('div', undefined, 'actions');
+  if (kind === 'satdoc') {
+    if (run.hasShot) row.append(action('Ver la captura del fallo', async () =>
+      window.open(URL.createObjectURL(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
+    if (run.hasHtml) row.append(action('Bajar el HTML de la página', async () =>
+      download(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'), 'soft'));
+  } else if (kind === 'declaraciones' || kind === 'tributario') {
+    /* La página guardada de declaraciones y del buzón (1.27.0):
+       mismo gesto que en documentos — ver la foto del momento o
+       bajar el HTML que el portal enseñó al fallar. */
+    const ruta = kind === 'declaraciones' ? 'declaraciones/artifact' : 'tributario/artifact';
+    if (run.hasShot) row.append(action('Ver la captura del fallo', async () =>
+      window.open(URL.createObjectURL(await satApiBlob(ruta + '?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
+    if (run.hasHtml) row.append(action('Bajar el HTML de la página', async () =>
+      download(await satApiBlob(ruta + '?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'), 'soft'));
+  } else {
+    if (run.hasShot) row.append(action('Ver la foto del fallo', async () =>
+      window.open(URL.createObjectURL(await satApiBlob('ciec/artifact?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
+    if (run.hasHtml) row.append(action('Bajar la página del fallo', async () => {
+      const a = n('a');
+      a.href = URL.createObjectURL(await satApiBlob('ciec/artifact?run=' + run.id + '&part=html'));
+      a.download = 'pagina-del-fallo.html'; a.click();
+    }, 'soft'));
+  }
+  return row.children.length ? row : null;
+}
+/* ===== Centro de mando (Hoy) =====
+   Por área: semáforo grande, el contador que importa, la última
+   actividad y su acción principal ejecutable desde el propio
+   panel (uno o dos toques desde Hoy, con el contexto puesto).
+   La tarjeta entera lleva al detalle del área. */
+function cmdCard(area, level, title, big, last, actionEl, go) {
+  const card = n('article', undefined, 'cmd-card');
+  card.dataset.level = level;
+  card.dataset.area = area;
+  const main = n('button', undefined, 'cmd-main');
+  main.type = 'button';
+  main.append(n('span', undefined, 'cmd-dot'),
+    (() => { const box = n('span', undefined, 'cmd-texts');
+      box.append(n('strong', title, 'cmd-title'), n('span', big, 'cmd-big'),
+        n('small', last || '', 'cmd-last'));
+      return box; })());
+  main.onclick = go;
+  card.append(main);
+  if (actionEl) { const row = n('div', undefined, 'cmd-actions'); row.append(actionEl); card.append(row); }
+  return card;
+}
+/* Tarjeta de UN documento del SAT (1.18.0): la misma pieza vive en
+   el Centro de mando de Hoy y encima de los Expedientes en
+   Documentos — fecha de emisión, semáforo de edad y los dos
+   gestos: Ver (se abre en la app) y Renovar (descarga del portal
+   con el progreso en la propia tarjeta). */
+function docCmdCard(kind, profile) {
+  const nombre = kind === 'constancia' ? 'Constancia de situación fiscal' : 'Opinión de cumplimiento';
+  const go = () => navigate('docs');
+  if (!profile) return cmdCard('satdocs', 'gris', nombre, 'Sin RFC configurados',
+    'Se vigila desde Documentos', null, go);
+  const doc = profile[kind];
+  const level = profile.progress?.running ? 'ambar' : !doc ? 'ambar' :
+    doc.level === 'ok' ? 'ok' : doc.level === 'warn' ? 'ambar' : 'rojo';
+  const acts = n('div');
+  const line = n('span', '', 'muted');
+  if (doc?.fileId) {
+    const ver = n('button', 'Ver', 'soft small');
+    ver.type = 'button';
+    ver.onclick = event => { event.stopPropagation(); viewDocOnline({ id: doc.fileId, rfc: profile.rfc,
+      kind: kind === 'constancia' ? 'Constancia / CIF' : 'Opinión de cumplimiento',
+      name: nombre + ' · ' + profile.rfc + '.pdf' }); };
+    acts.append(ver);
+  }
+  const renovar = n('button', 'Renovar', 'soft small');
+  renovar.type = 'button';
+  renovar.onclick = event => { event.stopPropagation(); satQuickRunDoc(kind, profile.rfc, renovar, line); };
+  acts.append(renovar, line);
+  return cmdCard('satdocs', level, nombre + ' · ' + profile.rfc,
+    profile.progress?.running ? 'Descargando ahora…' :
+      doc ? 'Emitida el ' + localDate(doc.issuedAt) : 'Sin archivar todavía',
+    doc ? 'Hace ' + doc.ageDays + ' días' + (doc.source === 'manual' ? ' · subida a mano' : '') :
+      'Renueva aquí o súbela en Documentos',
+    acts, go);
+}
+function commandCenter() {
+  const wrap = panel('Centro de mando',
+    'Todo tu sistema de un vistazo: cada área con su semáforo, lo que tiene pendiente y su última actividad. La acción principal de cada área se hace desde aquí, sin entrar pantalla por pantalla.');
+  const gridBox = n('div', undefined, 'cmd-grid');
+  wrap.append(gridBox);
+  const seleccion = invoices.filter(matches);
+  /* --- Vigilancia (pieza 2, 1.22.0): pinta al instante con la
+     caché de la sesión y MANDA el servidor al llegar su resumen
+     (antes contradecía a la base: «0 vigentes · Aún sin
+     revisiones» tras la recuperación). --- */
+  const vigSlot = n('div'); vigSlot.dataset.cmdSlot = 'vigilancia';
+  gridBox.append(vigSlot);
+  const paintVigilanciaLocal = () => {
+    let vigentes = 0, porRevisar = 0, problemas = 0, ultimo = 0, pendientesReales = 0;
+    for (const row of seleccion) {
+      const item = fiscalResults.get(row.id);
+      const info = monitorStateInfo(row);
+      if (item?.checked) ultimo = Math.max(ultimo, item.checked);
+      if (!item?.sat) pendientesReales++;
+      if (info.state === 'Vigente') vigentes++;
+      else if (['Cancelado', '69-B', 'No encontrado', 'Formato rechazado', 'Error'].includes(info.state)) problemas++;
+      else porRevisar++;
+    }
+    const level = !seleccion.length ? 'gris' : problemas ? (seleccion.some(row => (fiscalResults.get(row.id)?.efos || []).includes('Definitivo')) ? 'rojo' : 'ambar') : 'ok';
+    vigSlot.replaceChildren(cmdCard('vigilancia', level, 'Vigilancia de CFDI',
+      !seleccion.length ? 'Sin comprobantes' :
+        number.format(vigentes) + ' vigentes · ' + number.format(porRevisar) + ' por revisar · ' + number.format(problemas) + ' con problema',
+      ultimo ? 'Última revisión ' + haceText(ultimo) : 'Aún sin revisiones',
+      pendientesReales ? action('Revisar', () => monitorCheckNow(), 'primary', 'search') : null,
+      () => { satTab = 'estado'; navigate('sat'); }));
+  };
+  paintVigilanciaLocal();
+  const paintVigilanciaServer = summary => {
+    const viva = document.querySelector('[data-cmd-slot="vigilancia"]');
+    if (!viva) return;
+    const data = (scope && summary.perRfc?.[scope]) || summary;
+    const level = !data.total ? 'gris' : data.problemas ? 'ambar' : 'ok';
+    viva.replaceChildren(cmdCard('vigilancia', level, 'Vigilancia de CFDI',
+      !data.total ? 'Sin comprobantes' :
+        number.format(data.vigentes) + ' vigentes · ' + number.format(data.cancelados) + ' cancelados · ' +
+        number.format(data.porRevisar) + ' por revisar · ' + number.format(data.problemas) + ' con problema',
+      data.lastFullSweep ? 'Última vuelta completa ' + haceText(data.lastFullSweep) :
+        data.lastChecked ? 'Última revisión ' + haceText(data.lastChecked) : 'Aún sin revisiones',
+      data.porRevisar ? action('Revisar', () => monitorCheckNow(), 'primary', 'search') : null,
+      () => { satTab = 'estado'; navigate('sat'); }));
+  };
+  let paintDescargaServer = null;
+  /* --- Bandeja y descarga masiva: del estado del servidor. --- */
+  {
+    const wf = (typeof satData !== 'undefined' && satData?.watchFolder) || {};
+    const spec = problemSpec('bandeja', wf);
+    const level = !wf.enabled ? 'gris' : wf.error ? 'ambar' : (wf.failed > 0 ? 'ambar' : 'ok');
+    gridBox.append(cmdCard('bandeja', level, 'Bandeja de importación',
+      !wf.enabled ? 'Sin activar' : wf.error ? 'Con un problema' :
+        number.format(wf.imported || 0) + ' importados · ' + number.format(wf.waiting || 0) + ' esperando',
+      wf.lastProcessed ? 'Último archivo ' + haceText(wf.lastProcessed) :
+        wf.lastScan ? 'Última mirada ' + haceText(wf.lastScan) : 'Sin actividad todavía',
+      null, () => navigate('operations')));
+    const inboxCount = (satData?.inbox || []).length;
+    const failedJobs = (satData?.jobs || []).filter(job => job.status === 'failed' || job.status === 'expired').length;
+    const lastOk = (satData?.profiles || []).reduce((max, row) => Math.max(max, row.lastSatSuccess || 0), 0);
+    const descargaSlot = n('div'); descargaSlot.dataset.cmdSlot = 'descarga';
+    gridBox.append(descargaSlot);
+    descargaSlot.replaceChildren(cmdCard('descarga', failedJobs ? 'ambar' : 'ok', 'Descarga de CFDI del SAT',
+      inboxCount ? number.format(inboxCount) + ' paquete(s) por importar' :
+        failedJobs ? number.format(failedJobs) + ' solicitud(es) con problema' : 'Al día',
+      lastOk ? 'Última descarga buena ' + haceText(lastOk) : 'Aún sin descargas',
+      inboxCount || failedJobs ? action('Ir a la descarga', () => showSatDownload(), 'primary', 'down') : null,
+      () => showSatDownload()));
+    /* Al llegar el servidor, la tarjeta se re-pinta con la
+       actividad REAL de descargas (trabajos y corridas mensuales
+       registrados), no con la sesión: pieza 2. */
+    paintDescargaServer = downloads => {
+      const viva = document.querySelector('[data-cmd-slot="descarga"]');
+      if (!downloads || !viva) return;
+      const d = downloads;
+      viva.replaceChildren(cmdCard('descarga',
+        d.failedJobs ? 'ambar' : d.pendingJobs ? 'ambar' : 'ok', 'Descarga de CFDI del SAT',
+        d.pendingJobs ? number.format(d.pendingJobs) + ' solicitud(es) en curso en el SAT' :
+          d.failedJobs ? number.format(d.failedJobs) + ' solicitud(es) con problema' :
+          number.format(d.finishedJobs) + ' trabajos terminados',
+        (d.lastRun ? 'Mensual de ' + d.lastRun.month + ': ' + d.lastRun.status + ' · ' : '') +
+          (d.lastAt ? 'Última descarga ' + haceText(d.lastAt) : 'Aún sin descargas'),
+        d.pendingJobs || d.failedJobs ? action('Ir a la descarga', () => showSatDownload(), 'primary', 'down') : null,
+        () => showSatDownload()));
+    };
+  }
+  /* --- Pagos del mes (N5, 1.22.0): el semáforo ya no es fijo —
+     se re-pinta con la preparación REAL del mes (sin lista →
+     gris; armada sin pagar → ámbar; pagada → verde con fecha). --- */
+  const pagosSlotEl = n('div'); pagosSlotEl.dataset.cmdSlot = 'pagos';
+  gridBox.append(pagosSlotEl);
+  let paintPagosServer = null;
+  {
+    const hoyFecha = new Date();
+    const mesClave = hoyFecha.getFullYear() + '-' + String(hoyFecha.getMonth() + 1).padStart(2, '0');
+    const mesNombre = hoyFecha.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+    pagosSlotEl.replaceChildren(cmdCard('pagos', 'gris', 'Pagos del mes',
+      'Armar los pagos de ' + mesNombre, 'Consultando la lista del mes…',
+      action('Armar pagos', () => { pagosMes = mesClave; navigate('pagos'); }, 'primary', 'bank'),
+      () => { pagosMes = mesClave; navigate('pagos'); }));
+    paintPagosServer = preparations => {
+      const viva = document.querySelector('[data-cmd-slot="pagos"]');
+      if (!viva) return;
+      const delMes = (preparations || []).filter(p => p.month === mesClave);
+      const ultima = delMes[0];
+      const pagada = delMes.find(p => p.pagadaEn);
+      viva.replaceChildren(cmdCard('pagos',
+        pagada ? 'ok' : ultima ? 'ambar' : 'gris', 'Pagos del mes',
+        pagada ? 'La lista de ' + mesNombre + ' ya se pagó' :
+          ultima ? 'Lista de ' + mesNombre + ' armada · falta pagarla en el banco' :
+            'Sin lista de pagos de ' + mesNombre + ' todavía',
+        pagada ? 'Pagada el ' + localDate(pagada.pagadaEn) :
+          ultima ? number.format(ultima.operaciones) + ' operaciones · $' + number.format(Math.round(ultima.totalCents / 100)) :
+            'El mes ya va puesto: solo queda armar la lista',
+        action(pagada ? 'Ver pagos' : 'Armar pagos', () => { pagosMes = mesClave; navigate('pagos'); }, 'primary', 'bank'),
+        () => { pagosMes = mesClave; navigate('pagos'); }));
+    };
+  }
+  /* --- Documentos (N6 + B3, 1.22.0): manda el conteo del
+     SERVIDOR (antes contaba el almacén local del navegador), y
+     la línea de la copia de fuera del NAS trae su fecha real. --- */
+  const docsSlotEl = n('div'); docsSlotEl.dataset.cmdSlot = 'documentos';
+  gridBox.append(docsSlotEl);
+  let paintDocumentosServer = null;
+  {
+    const docs = documents.filter(doc => !scope || doc.rfc === scope);
+    const ultimoDoc = docs[0];
+    docsSlotEl.replaceChildren(cmdCard('documentos', ultimoDoc ? 'ok' : 'gris', 'Documentos',
+      ultimoDoc ? ultimoDoc.kind : 'Sin documentos todavía',
+      ultimoDoc ? (ultimoDoc.name || '') + ' · ' + dateLabel(ultimoDoc.date) : '',
+      ultimoDoc ? action('Ver', () => viewDocOnline(ultimoDoc), 'primary', 'eye') : null,
+      () => { docFilter = ''; navigate('docs'); }));
+    paintDocumentosServer = (expediente, backup) => {
+      const viva = document.querySelector('[data-cmd-slot="documentos"]');
+      if (!expediente || !viva) return;
+      viva.replaceChildren(cmdCard('documentos', expediente.total ? 'ok' : 'gris', 'Documentos',
+        number.format(expediente.satDocumentos) + ' del SAT · ' + number.format(expediente.declaraciones) +
+          ' declaraciones · ' + number.format(expediente.archivados) + ' en Expedientes',
+        backup?.secondaryOk ? 'Tu copia de fuera del NAS es del ' + localDate(backup.secondaryOk) :
+          backup?.secondaryError ? 'La copia de fuera del NAS falló: revísala en Respaldos' :
+          'El expediente vive en el servidor',
+        ultimoDoc ? action('Ver el último', () => viewDocOnline(ultimoDoc), 'primary', 'eye') : null,
+        () => { docFilter = ''; navigate('docs'); }));
+    };
+  }
+  /* --- Documentos del SAT, CIEC y Declaraciones: se rellenan con
+     sus vistas del servidor cuando llegan (mismo patrón que el
+     panel «Hoy»: la tarjeta nace con hueco y se completa sola). --- */
+  const dineroSlot = n('div'); dineroSlot.dataset.cmdSlot = 'dinero';
+  const satdocsCSlot = n('div'); satdocsCSlot.dataset.cmdSlot = 'satdocs-c';
+  const satdocsOSlot = n('div'); satdocsOSlot.dataset.cmdSlot = 'satdocs-o';
+  const ciecSlot = n('div'); ciecSlot.dataset.cmdSlot = 'ciec';
+  const declSlot = n('div'); declSlot.dataset.cmdSlot = 'decl';
+  const mensualSlot = n('div'); mensualSlot.dataset.cmdSlot = 'mensual';
+  gridBox.append(dineroSlot, satdocsCSlot, satdocsOSlot, ciecSlot, declSlot, mensualSlot);
+  (async () => {
+    try {
+      /* Se cede el turno ANTES de pintar: el panel aún no está en
+         el documento cuando commandCenter() corre (home() devuelve
+         los bloques y render() los inserta después). Sin esta
+         cesión, con la caché de 30 s caliente el relleno corría
+         contra un panel aún no insertado y las tarjetas quedaban
+         vacías al volver a Hoy — el mismo defecto latente que el
+         panel «Hoy» arrastraba. Y cada pintado busca su hueco
+         VIVO en el documento: si hubo otro render entre tanto, se
+         pinta en el panel que Paco está viendo, no en el muerto. */
+      await Promise.resolve();
+      const slot = name => document.querySelector('[data-cmd-slot="' + name + '"]');
+      if (typeof satToken === 'undefined' || !satToken) {
+        const sDocs = slot('satdocs-c');
+        if (sDocs) sDocs.replaceChildren(cmdCard('satdocs', 'gris', 'Documentos del SAT',
+          'Abre PacoSAT desde el servidor de tu casa', '', null, () => navigate('docs')));
+        slot('satdocs-o')?.remove(); slot('dinero')?.remove();
+        slot('ciec')?.remove(); slot('decl')?.remove(); slot('mensual')?.remove();
+        return;
+      }
+      if (!todayCache.data || Date.now() - todayCache.at > 30000) {
+        todayCache = { at: Date.now(), data: await Promise.all([
+          satApi('notices').catch(() => null), satApi('reconcile').catch(() => null),
+          satApi('reports/checklist?month=' + new Date().toISOString().slice(0, 7)).catch(() => null),
+          satApi('satdocs').catch(() => null)]) };
+      }
+      const satdocs = todayCache.data[3];
+      /* Documentos del SAT (1.18.0): la tarjeta única se parte en
+         las dos de cada documento — Constancia y Opinión con su
+         fecha, su semáforo y Ver/Renovar — del RFC elegido arriba
+         (o del único que haya). */
+      const profiles = satdocs?.profiles || [];
+      const objetivo = profiles.find(row => row.rfc === scope) || (profiles.length === 1 ? profiles[0] : null);
+      const sDocC = slot('satdocs-c'), sDocO = slot('satdocs-o');
+      if (sDocC) sDocC.replaceChildren(docCmdCard('constancia', objetivo));
+      if (sDocO) sDocO.replaceChildren(docCmdCard('opinion', objetivo));
+      /* Pieza 2 + N5 + N6: el estado del servidor se pide FRESCO
+         en cada entrada a Hoy (sin la caché de 30 s) y repinta
+         Vigilancia, Descarga, Documentos y Pagos. */
+      const status = await satApi('status').catch(() => null);
+      if (status) {
+        if (status.watchSummary && slot('vigilancia')) paintVigilanciaServer(status.watchSummary);
+        if (status.downloads && slot('descarga')) paintDescargaServer?.(status.downloads);
+        if (status.expediente && slot('documentos')) paintDocumentosServer?.(status.expediente, status.backup);
+      }
+      const rfcPagos = scope || profiles[0]?.rfc || '';
+      if (rfcPagos && slot('pagos')) {
+        const preps = await satApi('pagos/preparations?rfc=' + encodeURIComponent(rfcPagos)).catch(() => null);
+        const sPagosViva = slot('pagos');
+        if (preps && sPagosViva) paintPagosServer?.(preps.preparations || []);
+      }
+      /* Dinero (1.18.0): por pagar, por cobrar y lo vencido según
+         el calendario de cada contraparte — la tarjeta que Hoy no
+         tenía y que lleva a la pantalla con el detalle. */
+      const sDin = slot('dinero');
+      if (sDin) {
+        const money = await satApi('money').catch(() => null);
+        const sDinViva = slot('dinero');
+        if (sDinViva) {
+          if (!money) sDinViva.remove();
+          else {
+            const hoyLocal = new Date();
+            const hoyKey = hoyLocal.getFullYear() + '-' + String(hoyLocal.getMonth() + 1).padStart(2, '0') + '-' + String(hoyLocal.getDate()).padStart(2, '0');
+            let porPagar = 0, porCobrar = 0, vencido = 0;
+            for (const b of money.balances || []) {
+              const saldo = Number(b.balance) || 0;
+              if (saldo <= 0) continue;
+              if (b.receivable) porCobrar += saldo; else porPagar += saldo;
+              if (b.due && b.due < hoyKey) vencido += saldo;
+            }
+            const fmt = v => '$' + number.format(Math.round(v));
+            sDinViva.replaceChildren(cmdCard('dinero', vencido > 0 ? 'ambar' : 'ok', 'Dinero',
+              'Por pagar ' + fmt(porPagar) + ' · Por cobrar ' + fmt(porCobrar),
+              vencido > 0 ? 'Vencido ' + fmt(vencido) + ' según el calendario de cada contraparte' : 'Nada vencido',
+              null, () => navigate('dinero')));
+          }
+        }
+      }
+      /* CIEC: solo si algún RFC entra con contraseña. */
+      const ciec = await loadCiec().catch(() => ({ profiles: [] }));
+      const ciecProfiles = ciec.profiles || [];
+      const sCiec = slot('ciec');
+      if (sCiec) {
+        if (!ciecProfiles.length) sCiec.remove();
+        else {
+          const conCaptcha = ciecProfiles.find(row => row.captcha);
+          const corriendo = ciecProfiles.find(row => row.progress?.running);
+          const fallo = ciecProfiles.find(row => row.progress && row.progress.ok === false);
+          const ultimaCiec = ciecProfiles.reduce((max, row) => Math.max(max, row.runs?.[0]?.started || 0), 0);
+          let ciecAction = null;
+          if (conCaptcha) ciecAction = action('Escribir el captcha', () => showSatDownload(), 'primary', 'key');
+          else if (ciecProfiles.length === 1) {
+            const unico = ciecProfiles[0];
+            ciecAction = action('Descargar', async () => {
+              ciecData = await satApi('ciec/run', { rfc: unico.rfc,
+                start: ciecMxDay(new Date(Date.now() - 6 * 86400000)), end: ciecMxDay(), direction: 'both' });
+              announce('Descarga CIEC de ' + unico.rfc + ' en marcha: cuando el portal pida el captcha, su tarjeta estará en el Centro de mando y en la pestaña de descarga.');
+              render();
+            }, 'primary', 'down');
+          }
+          sCiec.replaceChildren(cmdCard('ciec',
+            conCaptcha ? 'ambar' : corriendo ? 'ambar' : fallo ? 'ambar' : 'ok',
+            'Descarga con CIEC',
+            conCaptcha ? 'El portal espera el captcha de ' + conCaptcha.rfc :
+              corriendo ? 'Descargando ' + corriendo.rfc + '…' :
+              fallo ? 'La última descarga de ' + fallo.rfc + ' no terminó' :
+              ciecProfiles.length + ' RFC con contraseña',
+            ultimaCiec ? 'Última descarga ' + haceText(ultimaCiec) : 'Sin descargas todavía',
+            ciecAction, () => showSatDownload()));
+        }
+      }
+      /* Declaraciones: con el RFC elegido (scope) ya puesto. */
+      const sDecl = slot('decl');
+      if (sDecl) {
+        if (!scope) {
+          sDecl.replaceChildren(cmdCard('decl', 'gris', 'Declaraciones',
+            'Elige un contribuyente para ver las suyas', 'Se recuperan desde Documentos',
+            null, () => navigate('docs')));
+        } else {
+          const view = await satApi('declaraciones?rfc=' + encodeURIComponent(scope) +
+            '&ejercicio=' + new Date().getFullYear()).catch(() => null);
+          const sDeclViva = slot('decl');
+          if (sDeclViva) {
+            const sinRecuperar = (view?.mensuales || []).filter(mes => mes.estado === 'sin-recuperar').length;
+            sDeclViva.replaceChildren(cmdCard('decl',
+              !view ? 'gris' : view?.lastError ? 'ambar' : 'ok', 'Declaraciones',
+              view ? (sinRecuperar ? number.format(sinRecuperar) + ' periodos sin recuperar de ' + scope :
+                'Ejercicio al día de ' + scope) : 'Sin datos del servidor',
+              view?.lastError ? 'El último intento falló ' + haceText(view.lastError.at) : 'Ejercicio ' + new Date().getFullYear(),
+              action('Recuperar', () => navigate('docs'), 'primary', 'down'),
+              () => navigate('docs')));
+          }
+        }
+      }
+      /* Descarga automática mensual (1.15.0): la cuenta de la
+         última corrida o el anuncio de la que viene. Si un RFC
+         CIEC quedó «esperando tu gesto», el botón lanza la
+         descarga de ESE mes exacto desde aquí. */
+      const sMen = slot('mensual');
+      if (sMen) {
+        const men = await satApi('monthly').catch(() => null);
+        const sMenViva = slot('mensual');
+        if (sMenViva) {
+          if (!men) sMenViva.remove();
+          else {
+            const mesNombre = key => new Date(key + '-15T12:00:00').toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+            const abierta = (men.runs || []).find(run => run.status === 'en-curso');
+            const ultima = abierta || (men.runs || [])[0];
+            const gesto = ultima ? Object.entries(ultima.perRfc || {}).find(([, entry]) => entry.status === 'esperando-gesto') : null;
+            let menAction = null;
+            if (gesto) {
+              const [gy, gm] = ultima.month.split('-').map(Number);
+              const ultimoDia = new Date(Date.UTC(gy, gm, 0)).getUTCDate();
+              menAction = action('Descargar ' + gesto[0] + ' con CIEC', async () => {
+                ciecData = await satApi('ciec/run', { rfc: gesto[0], start: ultima.month + '-01',
+                  end: ultima.month + '-' + String(ultimoDia).padStart(2, '0'), direction: 'both' });
+                announce('Descarga CIEC de ' + gesto[0] + ' para ' + mesNombre(ultima.month) + ' en marcha: cuando el portal pida el captcha, su tarjeta estará aquí y en la pestaña de descarga.');
+                render();
+              }, 'primary', 'key');
+            } else if (!ultima && men.config.enabled) {
+              menAction = action('Descargar el mes pasado ahora', async () => {
+                try { await satApi('monthly/run-now', {}); announce('Corrida de ' + mesNombre(men.targetMonth) + ' lanzada: baja sola y su cuenta quedará aquí al terminar.'); }
+                catch (error) { toast(error.message, 'error'); }
+                render();
+              }, 'primary', 'down');
+            }
+            sMenViva.replaceChildren(cmdCard('mensual',
+              abierta ? 'ambar' : !ultima ? 'ok' : ultima.status === 'hecha' ? 'ok' : 'ambar',
+              'Descarga automática mensual',
+              abierta ? 'Bajando ' + mesNombre(abierta.month) + '…' :
+                !ultima ? 'El día ' + men.config.day + ' baja sola el mes anterior' :
+                ultima.status === 'hecha' ? mesNombre(ultima.month) + ' completo: ' + number.format(ultima.totals?.found || 0) + ' CFDI · 0 huecos' :
+                  mesNombre(ultima.month) + ' quedó ' + (ultima.status === 'parcial' ? 'parcial' : 'sin completar'),
+              abierta ? 'Empezó ' + haceText(abierta.startedAt) :
+                !ultima ? 'Primera corrida: ' + mesNombre(men.targetMonth) :
+                gesto ? gesto[0] + ' espera tu captcha (CIEC)' :
+                ultima.totals ? number.format(ultima.totals.added || 0) + ' nuevos · ' + number.format(ultima.totals.duplicates || 0) + ' ya estaban' : '',
+              menAction,
+              () => { satTab = 'descargado'; navigate('sat'); }));
+          }
+        }
+      }
+    } catch { /* el centro de mando nunca rompe la portada */ }
+  })();
+  return wrap;
+}
+/* ===== Salud del sistema (Hoy) =====
+   El chequeo del servidor (satData.health) con el modelo único:
+   si todo está bien, la tarjeta se ve tranquila y pequeña (una
+   fila de comprobaciones con su dato); si algo se tuerce, crece
+   con la tarjeta del problema y su gesto. */
+function healthCard() {
+  const health = (typeof satData !== 'undefined' && satData?.health) || null;
+  if (!health) return null;
+  const wrap = panel('Salud del sistema');
+  const head = n('div', undefined, 'panel-head');
+  const estadoGeneral = health.level === 'mal' ?
+    statusPill('bad', 'Algo va mal') : health.level === 'vigilar' ?
+    statusPill('warn', 'A vigilar') : statusPill('ok', 'Todo bien');
+  head.append(estadoGeneral, n('span', 'Comprobado ' + haceText(health.at), 'muted'));
+  wrap.append(head);
+  if (health.level === 'bien') {
+    const fila = n('div', undefined, 'health-ok-row');
+    for (const check of health.checks) {
+      const chip = n('span', undefined, 'health-chip');
+      chip.append(n('strong', '✓ ' + check.label), n('small', check.dato));
+      fila.append(chip);
+    }
+    wrap.append(fila);
+    return wrap;
+  }
+  for (const check of health.checks) {
+    if (check.state === 'bien') {
+      const okLine = n('p', '✓ ' + check.label + ' — ' + check.dato, 'health-ok-line');
+      wrap.append(okLine);
+      continue;
+    }
+    const spec = problemSpec('salud', check);
+    let gesto = null;
+    if (check.id === 'bandeja') gesto = action('Ver en Operaciones', () => navigate('operations'), 'soft');
+    else if (check.id === 'respaldo') gesto = action('Ir a Respaldos', () => navigate('backup'), 'soft');
+    else if (check.id === 'documentos') gesto = action('Ir a Documentos', () => navigate('docs'), 'soft');
+    else if (check.id === 'vigilancia') gesto = action('Revisar ahora', () => monitorCheckNow(), 'soft');
+    else if (check.id === 'listados') gesto = action('Ir a Listas 69-B', () => { satTab = 'listas'; navigate('sat'); }, 'soft');
+    else if (check.id === 'correo') gesto = action('Ir a Ajustes › Correo', () => { ajustesSection = 'correo'; navigate('settings'); }, 'soft');
+    wrap.append(problemCard(spec, gesto));
+  }
+  return wrap;
+}

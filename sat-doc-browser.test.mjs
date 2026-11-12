@@ -347,6 +347,151 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
   server.close();
 }
 
+
+/* 14 · CONSTANCIA DESDE EL BUZÓN (1.13.0, evidencia real 10 nov
+     2026): la landing tras firmar es el Buzón Tributario y el
+     trámite vive en un iframe (SessionBroker → ConsultaTramite);
+     en la página principal NO hay botón. El marco tarda en
+     aparecer y su botón tarda más: el flujo entra al trámite, lo
+     anuncia en el diario y captura el PDF. */
+{
+  const FRAME_URL = 'https://rfcampc.siat.sat.gob.mx/app/seg/SessionBroker?url=/PTSC/IdcSiat/autc/ReimpresionTramite/ConsultaTramite.jsf&parametro=c';
+  const page = new FakePage({ pdf: PDF, afterLogin: 'https://wwwmat.sat.gob.mx/accesoC/inicio' });
+  let frameCalls = 0, generateCalls = 0;
+  page.tramiteFrameUrl = async () => (++frameCalls >= 2 ? FRAME_URL : '');
+  page.clickText = async () => false; /* en el Buzón no hay botón en la página */
+  page.clickFrameGenerate = async () => (++generateCalls >= 2);
+  page.diagnostics = async () => ({ url: page.url(), screenshot: null,
+    html: '<html><title>BUZÓN TRIBUTARIO</title></html>',
+    frames: [{ url: FRAME_URL, html: '<html>ConsultaTramite</html>' }] });
+  const { launch } = fakeDriver(page);
+  const steps = [];
+  const fetchBrowser = createSatDocBrowserFetch({ launchDriver: launch, now: () => Date.now(),
+    resolveCredentials: async () => ({ ...CREDS, key: KEY_3DES }) });
+  const result = await fetchBrowser({ rfc: RFC }, 'constancia',
+    { step: (text, url) => steps.push({ text, url }) });
+  assert.deepEqual(result.content, PDF, 'la constancia baja desde el marco del Buzón');
+  const entrada = steps.find(step => step.text === 'Entrando al trámite…');
+  assert.ok(entrada, 'el diario anuncia la entrada al trámite');
+  assert.equal(entrada.url, FRAME_URL, 'el paso lleva la URL del marco');
+  console.log('OK 1.13.0: constancia desde el Buzón — marco vigilado, botón tardío dentro del marco y PDF capturado.');
+}
+
+/* 15 · EL MARCO NUNCA APARECE (1.13.0): error claro paso-interactivo
+     y el diagnóstico viaja con los marcos, no solo con la página. */
+{
+  const page = new FakePage({ afterLogin: 'https://wwwmat.sat.gob.mx/accesoC/inicio' });
+  page.tramiteFrameUrl = async () => '';
+  page.clickText = async () => false;
+  page.diagnostics = async () => ({ url: page.url(), screenshot: null,
+    html: '<html><title>BUZÓN TRIBUTARIO</title></html>',
+    frames: [{ url: 'https://wwwmat.sat.gob.mx/accesoC/inicio', html: '<html>BUZÓN SIN MARCO</html>' }] });
+  const { launch } = fakeDriver(page);
+  const fetchBrowser = createSatDocBrowserFetch({ launchDriver: launch, now: () => Date.now(),
+    timeoutMs: 6_000, resolveCredentials: async () => ({ ...CREDS, key: KEY_3DES }) });
+  const error = await fetchBrowser({ rfc: RFC }, 'constancia').then(() => null, e => e);
+  assert.ok(error instanceof SatDocError);
+  assert.equal(error.code, 'paso-interactivo');
+  assert.match(error.message, /marco \(iframe\)/, 'el error nombra el marco que no apareció');
+  assert.ok(error.diag, 'el fallo viaja con diagnóstico');
+  assert.ok(Array.isArray(error.diag.frames) && error.diag.frames.length === 1,
+    'el diagnóstico incluye los marcos de la página');
+  console.log('OK 1.13.0: sin marco del trámite, error claro y diagnóstico con marcos.');
+}
+
+/* 16 · NAVEGADOR REAL contra el BUZÓN simulado (1.13.0): el Buzón
+     con su iframe#iframetoload hacia un SessionBroker que sirve
+     ConsultaTramite con el botón COMO INPUT (value=, sin texto) y
+     TARDE (1,2 s); el clic abre el PDF en la propia navegación del
+     marco. Y la variante rota: sin botón nunca, el diagnóstico del
+     fallo contiene el HTML DEL MARCO tras su marcador. */
+{
+  const shellPath = join(homedir(), '.cache/ms-playwright/chromium_headless_shell-1248',
+    'chrome-headless-shell-linux64/chrome-headless-shell');
+  const executablePath = process.env.PACOSAT_CHROMIUM_PATH ||
+    (existsSync(shellPath) ? shellPath : '/usr/bin/chromium');
+  const loginPage = (action) => `<!doctype html><html><body>
+    <h1>SAT · Acceso</h1>
+    <button id="buttonFiel" onclick="document.getElementById('fiel').style.display='block'">Acceso con e.firma</button>
+    <form id="fiel" style="display:none" action="${action}" method="get">
+      <input type="file" id="fileCertificate">
+      <input type="file" id="filePrivateKey">
+      <input type="password" id="privateKeyPassword">
+      <div id="divError"></div>
+      <input type="submit" id="submit" value="Enviar">
+    </form></body></html>`;
+  const buzonPage = (broker) => `<!doctype html><html><head><title>BUZÓN TRIBUTARIO</title></head><body>
+    <nav>Inicio › Constancia de Situación Fiscal</nav>
+    <h1>Buzón Tributario de ${RFC} | empresa de prueba</h1>
+    <iframe id="iframetoload" src="${broker}"></iframe></body></html>`;
+  const tramitePage = (conBoton) => `<!doctype html><html><body>
+    <h2>Reimpresión de acuses del RFC</h2><p id="marca-tramite">CONSULTA-TRAMITE-SIMULADO</p>
+    ${conBoton ? `<script>setTimeout(() => {
+      const b = document.createElement('input');
+      b.type = 'submit'; b.value = 'Generar Constancia';
+      b.onclick = () => { location.href = '/PTSC/IdcSiat/IdcGeneraConstancia.jsf'; };
+      document.body.append(b);
+    }, 1200);</script>` : '<p>El trámite no ofrece el botón en esta variante.</p>'}
+    </body></html>`;
+  const server = createServer((req, res) => {
+    const url = new URL(req.url, 'http://127.0.0.1');
+    res.setHeader('content-type', 'text/html; charset=utf-8');
+    if (url.pathname === '/PTSC/IdcSiat/IdcGeneraConstancia.jsf') {
+      res.setHeader('content-type', 'application/pdf'); res.end(PDF);
+    }
+    else if (url.pathname === '/lanzador-buzon') res.end(loginPage('/buzon'));
+    else if (url.pathname === '/buzon') res.end(buzonPage('/app/seg/SessionBroker?url=/PTSC/IdcSiat/autc/ReimpresionTramite/ConsultaTramite.jsf&parametro=c'));
+    else if (url.pathname === '/app/seg/SessionBroker') res.end(tramitePage(true));
+    else if (url.pathname === '/lanzador-buzon-roto') res.end(loginPage('/buzon-roto'));
+    else if (url.pathname === '/buzon-roto') res.end(buzonPage('/broker-roto'));
+    else if (url.pathname === '/broker-roto') res.end(tramitePage(false));
+    else { res.statusCode = 404; res.end('no'); }
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  let driver = null;
+  try {
+    driver = await createPlaywrightDriverFactory({ executablePath })();
+  } catch (error) {
+    console.log('OMITIDA (sin Chromium en este entorno): prueba del Buzón simulado — ' +
+      (error.code || error.message));
+  }
+  if (driver) {
+    let driver2 = null;
+    try {
+      const page = await driver.newPage();
+      const steps = [];
+      const csf = await fetchDocumentInBrowser({ page, kind: 'constancia',
+        creds: { ...CREDS, key: KEY_3DES }, urls: { constancia: base + '/lanzador-buzon' },
+        hooks: { step: (text, url) => steps.push({ text, url }) } });
+      assert.deepEqual(csf.content, PDF, 'constancia real desde el iframe del Buzón simulado');
+      assert.ok(steps.some(step => step.text === 'Entrando al trámite…' &&
+        step.url.includes('SessionBroker')), 'el diario registra la entrada al trámite con su URL');
+      /* Variante rota: driver NUEVO (las pilas de PDF son del
+         contexto: reutilizar el de la corrida buena contaminaría
+         la espera con su PDF). El error es paso-interactivo y el
+         diagnóstico de su página trae el HTML del marco. */
+      driver2 = await createPlaywrightDriverFactory({ executablePath })();
+      const page2 = await driver2.newPage();
+      const error = await fetchDocumentInBrowser({ page: page2, kind: 'constancia',
+        creds: { ...CREDS, key: KEY_3DES }, urls: { constancia: base + '/lanzador-buzon-roto' },
+        timeoutMs: 9_000 }).then(() => null, e => e);
+      assert.ok(error instanceof SatDocError);
+      assert.equal(error.code, 'paso-interactivo');
+      const diag = await page2.diagnostics();
+      assert.ok(diag.frames.length >= 1, 'diagnostics ve el marco del Buzón');
+      assert.ok(diag.html.includes('MARCO (iframe)'), 'el HTML compuesto marca la sección del marco');
+      assert.ok(diag.html.includes('CONSULTA-TRAMITE-SIMULADO'), 'el HTML del marco viaja en el diagnóstico');
+      console.log('OK extra: navegador REAL — constancia desde el iframe del Buzón (botón input tardío) ' +
+        'y diagnóstico con el HTML del marco cuando el botón no aparece.');
+      if (driver2) await driver2.close();
+    } finally {
+      await driver.close();
+    }
+  }
+  server.close();
+}
+
 console.log('OK: sidecar de navegador — llave AES convertida a 3DES legible por el motor JS ' +
   'del portal, constancia capturada de la respuesta, opinión por su fase de respuesta completa ' +
   'en Base64, rebote y rechazo diferenciados, pipeline HTTP→navegador con caducada sin red.');

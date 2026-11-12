@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" content="#0e2a47">
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><link rel="manifest" href="/manifest.webmanifest"><meta name="theme-color" id="theme-color-meta" content="#0e2a47">
 <style>/*STYLES*/</style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -33,36 +33,49 @@
 <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
 <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.8 12S6.2 5.4 12 5.4 21.2 12 21.2 12 17.8 18.6 12 18.6 2.8 12 2.8 12z"/><circle cx="12" cy="12" r="3"/></symbol>
 <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.4"/><path d="M12 2.9v3.1m0 12v3.1M2.9 12h3.1m12 0h3.1M5.3 5.3l2.2 2.2m9 9 2.2 2.2m0-13.4-2.2 2.2m-9 9-2.2 2.2"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="M3 13.5 5.6 4.8A2 2 0 0 1 7.5 3.5h9a2 2 0 0 1 1.9 1.3L21 13.5V19a1.6 1.6 0 0 1-1.6 1.6H4.6A1.6 1.6 0 0 1 3 19z"/><path d="M3 13.5h5.2l1.3 2.4a1.6 1.6 0 0 0 1.4.9h2.2a1.6 1.6 0 0 0 1.4-.9l1.3-2.4H21"/></symbol>
+<symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/></symbol>
+<symbol id="i-code" viewBox="0 0 24 24"><path d="m8.5 8-4 4 4 4m7-8 4 4-4 4M13.5 5.5l-3 13"/></symbol>
+<symbol id="i-pdf" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4"/><path d="M6.5 15.5h11"/></symbol>
 </svg>
 <div class="frame">
 <aside class="sidebar">
-  <div class="brand"><span class="logo"><svg id="brand-mark"><use href="#i-logo"/></svg><img id="brand-logo" alt="" hidden></span><span><span id="brand-name">PacoSAT</span><small>ESPACIO DE TRABAJO</small></span></div>
-  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"><option value="">Todos los RFC</option></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
+  <div class="brand"><span class="logo"><svg id="brand-mark"><use href="#i-logo"/></svg><img id="brand-logo" alt="" hidden src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></span><span><span id="brand-name">PacoSAT</span><small>ESPACIO DE TRABAJO</small></span></div>
+  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
+  <!-- Menú por tarea (1.18.0): lo de cada día arriba —Hoy, Dinero,
+       Facturas, Documentos—, el trabajo en medio y lo técnico
+       agrupado como Sistema. Documentos tiene entrada propia y
+       visible; ningún destino lleva a otra pantalla disfrazado. -->
   <nav aria-label="Navegación principal">
     <span class="nav-caption">CADA DÍA</span>
     <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span></button>
-    <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
-    <span class="nav-caption nav-divider">EL TRABAJO</span>
+    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero <span id="dinero-badge" class="news-badge" hidden></span></button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Documentos</button>
-    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
+    <span class="nav-caption nav-divider">EL TRABAJO</span>
+    <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
+    <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Buzón <span id="buzon-badge" class="news-badge" hidden></span></button>
+    <button data-view="tributario"><svg><use href="#i-mail"/></svg> Buzón Tributario <span id="tributario-badge" class="news-badge" hidden></span></button>
     <button data-view="pagos"><svg><use href="#i-bank"/></svg> Pagos al banco</button>
-    <button data-view="sat"><svg><use href="#i-shield"/></svg> SAT</button>
-    <span class="nav-caption nav-divider">EL CIERRE</span>
     <button data-view="salidas"><svg><use href="#i-check"/></svg> Cierre y reportes</button>
-    <span class="nav-caption nav-divider">LA CASA</span>
+    <span class="nav-caption nav-divider">SISTEMA</span>
+    <button data-view="sat"><svg><use href="#i-shield"/></svg> SAT</button>
     <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
   </nav>
+  <!-- Actividad del sistema en el propio menú (1.18.0): el punto y
+       la línea los pinta el pulso de actividad; sin trabajos dice
+       cuándo es la próxima revisión automática. -->
+  <div class="local" id="side-activity" style="margin-top:0" hidden><span class="dot" id="side-activity-dot" aria-hidden="true"></span><span id="side-activity-text">Sin trabajos en curso</span></div>
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Guardado en este equipo</span></div>
   <div class="side-version" id="side-version"></div>
 </aside>
 <div id="offline-banner" class="offline-banner" hidden></div>
 <main>
-  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, folio fiscal o RFC…" aria-label="Buscador global de CFDI" title="Buscador global (Ctrl+K)"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="ask-button" class="icon-button" type="button" aria-label="Preguntas: pregunta en lenguaje normal" title="Preguntas"><svg><use href="#i-help"/></svg></button><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
+  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><!-- F5 (1.22.0): el contribuyente también arriba, visible sin abrir la barra lateral — pensado para el día del segundo RFC. Espejo del selector lateral: cambiar uno cambia el otro. --><select id="scope-top" class="scope-top" aria-label="Contribuyente" title="Contribuyente"></select><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, folio fiscal o RFC…" aria-label="Buscador global de CFDI" title="Buscador global (Ctrl+K)"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="ask-button" class="icon-button" type="button" aria-label="Preguntas: pregunta en lenguaje normal" title="Preguntas"><svg><use href="#i-help"/></svg></button><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
   <div class="page">
     <header class="heading">
       <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
-      <div class="actions"><button id="inspect"><svg><use href="#i-file"/></svg> Abrir XML</button><button id="pdf-import"><svg><use href="#i-file"/></svg> Factura PDF</button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
+      <div class="actions"><button id="inspect"><svg><use href="#i-code"/></svg> Abrir XML</button><button id="pdf-import"><svg><use href="#i-pdf"/></svg> Factura PDF</button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
     </header>
     <p id="status" role="status" hidden></p>
     <section id="activity-dock" class="activity-dock" hidden aria-live="polite">
@@ -87,6 +100,29 @@
 </nav>
 </div>
 <section id="print-report" aria-hidden="true"></section>
+<!-- Pantalla de entrada diseñada (1.26.0): la cara del login
+     propio. Vive oculta; la enseña maybeShowEntry() cuando el
+     login propio está configurado y no hay sesión suya activa.
+     Convive con la puerta vigente: «Entrar con mi acceso de
+     siempre» la aparta por la sesión del navegador. -->
+<section id="entry" class="entry" hidden aria-label="Entrada a PacoSAT">
+  <div class="entry-card">
+    <span class="logo entry-logo"><svg><use href="#i-logo"/></svg></span>
+    <h1 class="entry-title">PacoSAT</h1>
+    <p class="entry-sub">Tu espacio fiscal, guardado en tu propio servidor.</p>
+    <form id="entry-form" class="entry-form">
+      <label for="entry-pass">Tu contraseña de administrador</label>
+      <input id="entry-pass" type="password" autocomplete="current-password" placeholder="Contraseña">
+      <p id="entry-error" class="error-text" role="alert" hidden></p>
+      <button id="entry-go" class="primary" type="submit">Entrar</button>
+    </form>
+    <button id="entry-skip" type="button" class="quiet entry-skip">Entrar con mi acceso de siempre</button>
+    <p class="entry-note">Este login es tuyo y convive con tu acceso de siempre: ninguno sustituye al otro en esta versión.</p>
+  </div>
+</section>
+<!-- Avisos flotantes (1.26.0): las confirmaciones se ven donde
+     está el dedo; la barra #status sigue siendo el registro. -->
+<div id="toasts" class="toasts" aria-live="polite"></div>
 <input id="incoming" type="file" accept=".xml,.zip" multiple hidden>
 <input id="inspectFile" type="file" accept=".xml,text/xml,application/xml" hidden>
 <input id="invoice-pdf" type="file" accept=".pdf,application/pdf" hidden>

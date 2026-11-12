@@ -125,7 +125,117 @@ function settingsScreen() {
   saveBar.append(action('Guardar ajustes', saveAppSettings, 'primary', 'check'));
   panels.push(saveBar);
   if (satToken && !guestMode) panels.push(guestPanel());
+  if (satToken && !guestMode) { panels.push(paperlessPanel()); panels.push(pushPanel()); }
   return panels;
+}
+/* Puente a Paperless (1.25.0, AGREGAR 2): las constancias,
+   opiniones y acuses que PacoSAT archiva se copian también a tu
+   Paperless con sus etiquetas. La ACTIVACIÓN es tuya: la
+   dirección de tu Paperless y su token de API se guardan en el
+   servidor (el token nunca vuelve a enseñarse). Si Paperless
+   falla al consumir un documento, queda en la cola con su error
+   y se reintenta: el original de PacoSAT nunca se pierde. */
+function paperlessPanel() {
+  const panelEl = panel('Puente a Paperless', 'Copia en tu archivo documental (Paperless-ngx) de las constancias, opiniones y acuses que PacoSAT archiva, con etiquetas por RFC y tipo.');
+  const body = n('div');
+  panelEl.append(body);
+  const draw = async () => {
+    body.replaceChildren(n('p', 'Consultando el puente…', 'muted'));
+    try {
+      const estado = await satApi('paperless');
+      body.replaceChildren();
+      const enCola = (estado.cola?.pendiente || 0) + (estado.cola?.error || 0);
+      const strip = n('div', undefined, 'traffic-strip');
+      strip.append(statusPill(estado.enabled ? 'ok' : 'dim', estado.enabled ? 'Puente ACTIVADO' : 'Puente apagado'),
+        statusPill(estado.tokenSet ? 'ok' : 'warn', estado.tokenSet ? 'Token guardado' : 'Sin token'),
+        statusPill(enCola ? 'warn' : 'ok', number.format(enCola) + ' en cola'),
+        statusPill('dim', number.format(estado.cola?.subido || 0) + ' copiados'));
+      body.append(strip);
+      if (estado.ultimoError) body.append(n('p', 'Último error de la cola: ' + estado.ultimoError, 'error-text'));
+      const form = n('div', undefined, 'sat-form');
+      const activo = input('checkbox', { checked: Boolean(estado.enabled) });
+      const base = input('url', { value: estado.baseUrl || '', placeholder: 'http://192.168.68.126:8000', 'aria-label': 'Dirección de Paperless' });
+      const token = input('password', { placeholder: estado.tokenSet ? 'Token guardado — escribe solo para cambiarlo' : 'Token de API de Paperless', autocomplete: 'new-password' });
+      const activoLabel = n('label', undefined, 'switch-line');
+      activoLabel.append(activo, n('span', 'Activar el puente'));
+      const guardar = n('button', 'Guardar el puente', 'soft');
+      guardar.onclick = async () => {
+        try {
+          await satApi('paperless/config', { enabled: activo.checked, baseUrl: base.value.trim(),
+            token: token.value.trim() || undefined });
+          toast('Puente a Paperless guardado.', 'ok'); draw();
+        } catch (error) { toast(error.message, 'error'); }
+      };
+      form.append(activoLabel, fieldWrap('Dirección de tu Paperless', base), fieldWrap('Token de API', token), guardar);
+      body.append(form);
+      if (enCola) {
+        const retry = n('button', 'Reintentar la cola ahora', 'soft');
+        retry.onclick = async () => {
+          try { const r = await satApi('paperless/retry', {}); toast('Cola procesada: ' + r.subidos + ' documento(s) copiado(s) en esta pasada.', 'ok'); draw(); }
+          catch (error) { toast(error.message, 'error'); }
+        };
+        body.append(retry);
+      }
+      body.append(n('p', 'Nota honesta: la subida usa la API estándar de Paperless-ngx. Si tu Paperless tiene el consumo averiado, los documentos se quedan en la cola con el error a la vista hasta que lo repares — PacoSAT no finge haber copiado lo que no copió.', 'muted'));
+    } catch (error) { body.replaceChildren(n('p', error.message, 'error-text')); }
+  };
+  draw();
+  return panelEl;
+}
+/* Avisos push PWA (1.25.0, AGREGAR 9): suscripción de ESTE
+   dispositivo a los avisos críticos (69-B definitivo, factura
+   cobrada cancelada y demás «mal + alta»). El aviso que viaja
+   es genérico — ningún dato fiscal sale en la notificación — y
+   al tocarla se abre la app, donde sí está el detalle. */
+function pushPanel() {
+  const panelEl = panel('Avisos push en este dispositivo', 'Un aviso en la pantalla de bloqueo cuando nazca algo crítico. Sin datos fiscales en la notificación: al tocarla se abre PacoSAT.');
+  const body = n('div');
+  panelEl.append(body);
+  const deB64 = texto => Uint8Array.from(atob(texto.replaceAll('-', '+').replaceAll('_', '/')),
+    c => c.charCodeAt(0));
+  const draw = async () => {
+    body.replaceChildren();
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      body.append(n('p', 'Este navegador no admite avisos push. En el iPhone, instala PacoSAT en la pantalla de inicio (Compartir → Añadir a pantalla de inicio) y vuelve aquí.', 'empty'));
+      return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    const actual = await registration.pushManager.getSubscription();
+    body.append(statusPill(actual ? 'ok' : 'dim', actual ? 'Push ACTIVADO en este dispositivo' : 'Push desactivado en este dispositivo'));
+    const fila = n('div', undefined, 'sat-actions');
+    if (!actual) {
+      const activar = n('button', 'Activar avisos push', 'primary');
+      activar.onclick = async () => {
+        try {
+          const clave = await satApi('push/vapid');
+          const sub = await registration.pushManager.subscribe({ userVisibleOnly: true,
+            applicationServerKey: deB64(clave.key) });
+          const json = sub.toJSON();
+          await satApi('push/subscribe', { endpoint: json.endpoint, keys: json.keys });
+          toast('Avisos push activados en este dispositivo.', 'ok'); draw();
+        } catch (error) { toast(error.message, 'error'); }
+      };
+      fila.append(activar);
+    } else {
+      const prueba = n('button', 'Enviar una prueba', 'soft');
+      prueba.onclick = async () => {
+        try { await satApi('push/test', {}); toast('Prueba enviada: mira la pantalla de bloqueo.', 'ok'); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      const desactivar = n('button', 'Desactivar en este dispositivo', 'soft');
+      desactivar.onclick = async () => {
+        try {
+          await satApi('push/unsubscribe', { endpoint: actual.endpoint });
+          await actual.unsubscribe();
+          toast('Avisos push desactivados en este dispositivo.', 'ok'); draw();
+        } catch (error) { toast(error.message, 'error'); }
+      };
+      fila.append(prueba, desactivar);
+    }
+    body.append(fila);
+  };
+  draw().catch(error => body.replaceChildren(n('p', error.message, 'error-text')));
+  return panelEl;
 }
 async function saveAppSettings() {
   const name = $('settings-name')?.value ?? appSettings.installName;

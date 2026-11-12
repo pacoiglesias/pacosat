@@ -150,23 +150,32 @@ function answerQuestion(raw) {
   const sumWhere = predicate => invoices.filter(predicate).reduce((acc, row) => acc + Number(totalCents(row)), 0) / 100;
   if (/cu[aá]nto debo/.test(text)) {
     const paidBy = paidByMap();
-    let total = 0n;
+    let total = 0n, mayor = null;
     for (const row of invoices) {
       if (row.kind !== 'I' || !people.some(person => person.id === row.to.rfc)) continue;
+      if (invoiceStateOf(row) === 'Cancelado') continue; /* criterio único (1.20.0): la cancelada no se debe */
       const balance = balanceOf(row, paidBy).balance;
-      if (balance > 0n) total += balance;
+      if (balance > 0n) { total += balance; if (!mayor || balance > mayor.balance) mayor = { row, balance }; }
     }
-    return 'Por PAGAR tienes abiertos $' + centsLabel(total) + '. El detalle con antigüedad está en la pantalla Dinero.';
+    /* La respuesta lleva el documento en la mano (1.25.0,
+       mejora nº 7): la cifra y el comprobante mayor, en el
+       mismo toque. */
+    return { text: 'Por PAGAR tienes abiertos $' + centsLabel(total) +
+        (mayor ? '. El mayor es de ' + (mayor.row.from.name || mayor.row.from.rfc) + ' por $' + centsLabel(mayor.balance) + ': ábrelo aquí mismo.' : '.'),
+      invoice: mayor?.row };
   }
   if (/cu[aá]nto me deben/.test(text)) {
     const paidBy = paidByMap();
-    let total = 0n;
+    let total = 0n, mayor = null;
     for (const row of invoices) {
       if (row.kind !== 'I' || !people.some(person => person.id === row.from.rfc)) continue;
+      if (invoiceStateOf(row) === 'Cancelado') continue; /* criterio único (1.20.0): la cancelada no se cobra */
       const balance = balanceOf(row, paidBy).balance;
-      if (balance > 0n) total += balance;
+      if (balance > 0n) { total += balance; if (!mayor || balance > mayor.balance) mayor = { row, balance }; }
     }
-    return 'Por COBRAR tienes abiertos $' + centsLabel(total) + '. El detalle con antigüedad está en la pantalla Dinero.';
+    return { text: 'Por COBRAR tienes abiertos $' + centsLabel(total) +
+        (mayor ? '. El mayor es de ' + (mayor.row.to.name || mayor.row.to.rfc) + ' por $' + centsLabel(mayor.balance) + ': ábrelo aquí mismo.' : '.'),
+      invoice: mayor?.row };
   }
   if (/iva/.test(text) && period) {
     let payable = 0n, creditable = 0n;
@@ -190,8 +199,11 @@ function answerQuestion(raw) {
       (!party || row.from.rfc === party || row.to.rfc === party));
     if (party || period) {
       const total = base.reduce((acc, row) => acc + Number(totalCents(row)), 0) / 100;
-      return 'Hay ' + base.length + ' CFDI' + (period ? ' de ' + period : '') + (party ? ' relacionados con ' + party : '') +
-        ' por un total de $' + total.toLocaleString('es-MX', { minimumFractionDigits: 2 }) + '.';
+      const mayor = base.slice().sort((a, b) => (totalCents(b) > totalCents(a) ? 1 : -1))[0];
+      return { text: 'Hay ' + base.length + ' CFDI' + (period ? ' de ' + period : '') + (party ? ' relacionados con ' + party : '') +
+          ' por un total de $' + total.toLocaleString('es-MX', { minimumFractionDigits: 2 }) +
+          (mayor ? '. El mayor, $' + centsLabel(totalCents(mayor)) + ', se abre aquí mismo.' : '.'),
+        invoice: mayor };
     }
   }
   return 'Puedo responder con tus datos locales, sin salir de aquí: «¿cuánto me deben?», «¿cuánto debo?», «¿cuánto IVA tengo en octubre?», «¿qué vence esta semana?» o «¿cuánto facturó [RFC] este mes?».';
@@ -211,11 +223,27 @@ function preguntasScreen() {
   const question = input('text', { placeholder: '¿Cuánto IVA tengo en octubre?' });
   const ask = n('button', 'Preguntar', 'soft');
   const answer = n('p', '', 'empty');
-  const run = () => { try { answer.textContent = answerQuestion(question.value); announce('Respuesta lista.'); } catch (error) { answer.textContent = error.message; } };
+  const answerActions = n('div', undefined, 'sat-actions');
+  const run = () => {
+    try {
+      /* Cifra + comprobante en el mismo toque (1.25.0, mejora
+         nº 7): algunas respuestas traen la factura a la que se
+         refieren y la pantalla ofrece abrirla sin salir. */
+      const resultado = answerQuestion(question.value);
+      answer.textContent = typeof resultado === 'string' ? resultado : resultado.text;
+      answerActions.replaceChildren();
+      if (typeof resultado !== 'string' && resultado.invoice) {
+        const abrir = n('button', 'Abrir el comprobante', 'primary small');
+        abrir.onclick = () => invoiceDetail(resultado.invoice);
+        answerActions.append(abrir);
+      }
+      announce('Respuesta lista.');
+    } catch (error) { answer.textContent = error.message; answerActions.replaceChildren(); }
+  };
   ask.onclick = run;
   question.onkeydown = event => { if (event.key === 'Enter') run(); };
   form.append(fieldWrap('Tu pregunta', question), ask);
-  panelEl.append(form, answer);
+  panelEl.append(form, answer, answerActions);
   wrap.append(panelEl);
   return [wrap];
 }
@@ -284,6 +312,39 @@ function activityPanel() {
   return panelEl;
 }
 /* ===== Acceso invitado (Ajustes) ===== */
+/* Vista Nora (1.25.0, AGREGAR 3): la contadora entra como
+   invitada y su pantalla inicial es ESTA — la lista del mes con
+   su estado, de solo lectura: qué consta y qué falta, sin un
+   solo control que cambie nada. La marca «contadora» la pone
+   Paco en el panel de invitado; el servidor la expone como
+   sesionContadora a quien pregunta con esa sesión. */
+let noraSesionCache = null;
+function noraVistaPanel() {
+  const panelEl = panel('Tu lista del mes', 'Solo lectura: el estado del cierre de cada RFC, tal como consta en PacoSAT. Lo que falte se lo prepara Paco; tú solo consultas.');
+  const monthInput = input('month', { value: new Date().toISOString().slice(0, 7), 'aria-label': 'Mes' });
+  const body = n('div');
+  body.append(n('p', 'Consultando la lista del mes…', 'muted'));
+  const paint = async () => {
+    try {
+      const data = await satApi('reports/checklist?month=' + monthInput.value);
+      body.replaceChildren();
+      const hechos = (data.items || []).filter(item => item.level === 'ok').length;
+      body.append(n('p', 'Van ' + hechos + ' de ' + (data.items || []).length + ' pasos del cierre de ' + data.month + ' en verde.'));
+      for (const item of data.items || []) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill(item.level === 'ok' ? 'ok' : item.level === 'bad' ? 'bad' : 'warn',
+            item.level === 'ok' ? '✓ Hecho' : 'Falta'),
+          n('span', item.label), n('span', item.detail || '', 'muted'));
+        body.append(row);
+      }
+      if (!data.items?.length) body.append(n('p', 'Sin pasos para ese mes.', 'empty'));
+    } catch (error) { body.replaceChildren(n('p', error.message, 'error-text')); }
+  };
+  monthInput.onchange = paint;
+  panelEl.append(fieldWrap('Mes', monthInput), body);
+  paint();
+  return panelEl;
+}
 function guestPanel() {
   const panelEl = panel('Acceso invitado de solo lectura', 'Una credencial SEPARADA para que otra persona (tu contadora, por ejemplo) consulte sin poder cambiar nada. Está desactivado por defecto; cada entrada y cada intento quedan en la bitácora de accesos. La dirección de entrada es la misma app con /invitado al final.');
   const body = n('div');
@@ -338,6 +399,23 @@ function guestPanel() {
       };
       scopeBox.append(saveScope);
       body.append(scopeBox);
+      /* Vista de la contadora (1.25.0, AGREGAR 3): con esta marca,
+         la sesión invitada abre en su lista del mes (solo
+         lectura) en vez del Resumen general. */
+      const noraBox = n('div', undefined, 'sat-form');
+      noraBox.append(n('strong', 'Vista de la contadora'));
+      noraBox.append(n('p', 'Si este acceso es el de tu contadora, márcalo: al entrar verá primero su lista del mes con el estado de cada paso, siempre en solo lectura.', 'muted'));
+      const noraLabel = n('label', undefined, 'switch-line');
+      const noraCheck = input('checkbox', { checked: Boolean(config.contadora) });
+      noraCheck.onchange = async () => {
+        try {
+          await satApi('guest/config', { contadora: noraCheck.checked });
+          announce(noraCheck.checked ? 'Vista de la contadora activada para el acceso invitado.' : 'Vista de la contadora desactivada.');
+        } catch (error) { toast(error.message, 'error'); noraCheck.checked = !noraCheck.checked; }
+      };
+      noraLabel.append(noraCheck, n('span', 'Este acceso es el de la contadora'));
+      noraBox.append(noraLabel);
+      body.append(noraBox);
       const log = await satApi('access-log');
       if (log.entries.length) {
         body.append(n('h4', 'Bitácora de accesos'));

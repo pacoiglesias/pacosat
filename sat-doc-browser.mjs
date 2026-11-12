@@ -42,7 +42,9 @@ import { SatDocError, CSF_ENTRY_URL, OPINION_ENTRY_URL, isPdfBuffer, failure } f
            fillFielForm({ cer, key, password }),
            submitFiel(), divError(), clickText(texto),
            waitForPdf(ms), responses(), close(),
-           diagnostics() -> { url, screenshot, html } (opcional)
+           diagnostics() -> { url, screenshot, html, frames } (opcional)
+           tramiteFrameUrl() -> url del marco del trámite (opcional, 1.13.0)
+           clickFrameGenerate() -> bool (opcional, 1.13.0)
 
    Arreglo 1.10.1 (primera corrida real, 9 nov 2026): la corrida
    murió con «setInputFiles: Timeout 30000ms — waiting for
@@ -245,11 +247,43 @@ export async function satBrowserLogin(page, { cer, key, password, entryUrl, hook
   }
   void lastError;
   step('Firmando con tu e.firma…');
-  try {
-    await page.clickButtonFiel();
-  } catch {
+  /* Endurecimiento 1.22.0 (piezas 5 y 11, sobre la rutina ÚNICA de
+     entrada que comparten constancia, opinión y declaraciones):
+     la corrida real de la Opinión del 11 nov murió JUSTO aquí —
+     conectó a las 08:15:00 y murió a las 08:15:01 en «Firmar» —
+     mientras la Constancia del mismo RFC bajaba entera 90
+     segundos antes con la misma firma. La pantalla de acceso del
+     NIDP es inestable (a veces sirve primero la variante de
+     contraseña o llega a medias), así que un solo intento no
+     basta: (1) si el acceso no aparece, se RECARGA la entrada y
+     se reintenta; (2) si sigue sin aparecer, se busca el acceso
+     por su TEXTO visible («e.firma») y se vuelve a sondear el
+     formulario — la sonda (el propio clickButtonFiel, que espera
+     a que #fileCertificate exista) es la que manda: sin
+     formulario confirmado NO se teclea nada de la e.firma —;
+     (3) si ni así, el error nombra la última pantalla vista, que
+     es la evidencia que el diario guarda con su captura y su
+     HTML para contar la causa probada. */
+  let fielOpened = false;
+  try { await page.clickButtonFiel(); fielOpened = true; } catch { /* primer intento */ }
+  if (!fielOpened) {
+    step('El acceso con e.firma no apareció; recargando la entrada del portal…');
+    await page.goto(entryUrl).catch(() => {});
+    try { await page.clickButtonFiel(); fielOpened = true; } catch { /* segundo intento */ }
+  }
+  if (!fielOpened && typeof page.clickText === 'function') {
+    const clicked = await page.clickText('e.firma').catch(() => false);
+    if (clicked) {
+      try { await page.clickButtonFiel(); fielOpened = true; } catch { /* manda la sonda */ }
+    }
+  }
+  if (!fielOpened) {
+    let lastUrl = '';
+    try { lastUrl = page.url(); } catch { /* página en transición */ }
     throw failure('respuesta-inesperada', 'El portal del SAT no mostró el acceso con e.firma que ' +
-      'PacoSAT sabe usar. Nada de tu e.firma salió de este equipo; si el portal cambió su página, ' +
+      'PacoSAT sabe usar ni recargando su entrada ni buscándolo por su texto' +
+      (lastUrl ? ' (última pantalla: ' + lastUrl + ')' : '') +
+      '. Nada de tu e.firma salió de este equipo; si el portal cambió su página, ' +
       'habrá que actualizar PacoSAT.');
   }
   await page.fillFielForm({ cer, key, password });
@@ -294,18 +328,75 @@ export async function fetchDocumentInBrowser({ page, creds, kind, urls = {}, tim
 
   if (kind === 'constancia') {
     try { hooks?.step?.('Pidiendo la constancia…', page.url()); } catch { /* progreso opcional */ }
-    if (!/\/operacion\/43824/.test(page.url()) && !/IdcSiat/i.test(page.url())) {
-      throw failure('portal-rechaza', 'El portal del SAT no dejó entrar a «Reimprime tus acuses ' +
-        'del RFC» tras el acceso con e.firma. Si el portal cambió la ruta, habrá que actualizar PacoSAT.');
+    /* Evidencia real (corrida 3aed8862 del NAS, 10 nov 2026): tras
+       firmar, wwwmat presenta el BUZÓN TRIBUTARIO y el trámite de
+       la constancia vive dentro de UN iframe —SessionBroker hacia
+       rfcampc…/IdcSiat/autc/ReimpresionTramite/ConsultaTramite.jsf—;
+       en la página principal del Buzón NO existe ningún botón
+       «Generar Constancia» («Generar» aparece 0 veces en su HTML:
+       la espera antigua sobre la página principal moría siempre).
+       Flujo corregido: se vigila la aparición del marco del
+       trámite, se entra en él (paso «Entrando al trámite…» con su
+       URL) y el control de generar se busca en TODOS los marcos
+       con espera —el iframe tarda en cargar y su botón puede
+       tardar más—, primero por su texto y después por la
+       heurística de botón/enlace dentro del marco. La ruta clásica
+       (/operacion/43824, botón en la página) sigue funcionando por
+       el mismo camino. El PDF se captura de la respuesta del
+       navegador, salga en la página, en un popup o en el marco:
+       nunca se re-pide por HTTP. */
+    const esperaTotal = Math.min(45_000, Math.max(3_000, deadline - Date.now()));
+    const inicio = Date.now();
+    let frameUrl = '';
+    let clicked = false;
+    let menuTried = false;
+    while (Date.now() - inicio < esperaTotal && !clicked) {
+      if (!frameUrl && typeof page.tramiteFrameUrl === 'function') {
+        frameUrl = await page.tramiteFrameUrl().catch(() => '');
+        if (frameUrl) {
+          try { hooks?.step?.('Entrando al trámite…', frameUrl); } catch { /* progreso opcional */ }
+        }
+      }
+      /* Endurecimiento 1.27.0 (bloque C): el marco del trámite
+         puede no cargar SOLO — en el Buzón hay que PEDIRLO desde
+         su menú (el iframe#iframetoload recibe su src al elegir
+         el trámite). Si a los 10 s no hay marco ni botón, se
+         pulsa UNA vez la entrada del menú que lo carga y se
+         sigue vigilando: es navegación entre secciones del
+         portal, jamás sobre una notificación. */
+      if (!menuTried && !frameUrl && Date.now() - inicio > 10_000) {
+        menuTried = true;
+        for (const textoMenu of ['Constancia de situación fiscal', 'Reimprime tus acuses', 'Reimpresión de acuses']) {
+          if (await page.clickText(textoMenu).catch(() => false)) {
+            try { hooks?.step?.('Abriendo el trámite desde el menú del Buzón…', textoMenu); } catch { /* progreso opcional */ }
+            break;
+          }
+        }
+      }
+      clicked = await page.clickText('Generar Constancia').catch(() => false);
+      if (!clicked && frameUrl && typeof page.clickFrameGenerate === 'function') {
+        clicked = await page.clickFrameGenerate().catch(() => false);
+      }
+      if (!clicked) await sleep(1500);
     }
-    const clicked = await page.clickText('Generar Constancia').catch(() => false);
+    if (!clicked) {
+      /* Último recurso: cualquier control «Generar» a secas, en la
+         página o en sus marcos (cubre variantes del trámite cuyo
+         botón no lleva el texto completo). */
+      clicked = await page.clickText('Generar').catch(() => false);
+    }
     const pdf = await page.waitForPdf(Math.min(45_000, Math.max(5_000, deadline - Date.now())));
     if (pdf && isPdfBuffer(pdf)) return { content: pdf, keyMaterial };
-    throw failure('paso-interactivo', clicked
-      ? 'La sesión con el SAT se abrió, pero el PDF de la constancia no llegó en la respuesta ' +
-        'del navegador. Puede ser lentitud del portal: inténtalo de nuevo.'
-      : 'La sesión con el SAT se abrió, pero la constancia pide pulsar «Generar Constancia» en ' +
-        'pantalla y ese botón no apareció. Si el portal cambió su página, habrá que actualizar PacoSAT.');
+    throw failure('paso-interactivo', !frameUrl && !clicked
+      ? 'La sesión con el SAT se abrió, pero el Buzón no enseñó el marco (iframe) del trámite ' +
+        'de la constancia ni apareció el botón «Generar Constancia». Si el portal cambió su ' +
+        'página, habrá que actualizar PacoSAT: el diario de la corrida guarda la página y sus marcos.'
+      : clicked
+        ? 'La sesión con el SAT se abrió y se pulsó generar, pero el PDF de la constancia no ' +
+          'llegó en la respuesta del navegador. Puede ser lentitud del portal: inténtalo de nuevo.'
+        : 'La sesión con el SAT se abrió y el trámite cargó dentro de su marco, pero el botón ' +
+          'de generar la constancia no apareció dentro. Si el portal cambió esa pantalla, habrá ' +
+          'que actualizar PacoSAT: el diario de la corrida guarda la página y el marco del trámite.');
   }
 
   /* Opinión: el SPA puede entregar el PDF como respuesta binaria o
@@ -438,35 +529,43 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
     const context = await browser.newContext({ acceptDownloads: true });
     const page = await context.newPage();
     const pdfBodies = [];
-    /* El portal entrega el PDF como DESCARGA del navegador (la URL
-       no cambia y el cuerpo no llega por el evento de respuesta):
-       se captura el archivo descargado por el propio navegador. */
-    page.on('download', (download) => {
-      download.path()
-        .then(path => readFile(path))
-        .then(body => { if (body && body.length) pdfBodies.push(body); })
-        .catch(() => {});
-    });
     const textResponses = [];
-    page.on('response', (response) => {
-      const url = response.url();
-      const type = (response.headers()['content-type'] || '').toLowerCase();
-      if (type.includes('application/pdf')) {
-        response.body().then(body => { if (body && body.length) pdfBodies.push(body); }).catch(() => {});
-      } else if (type.includes('json') || type.includes('text')) {
-        response.body().then(body => {
-          if (body && body.length && body.length < 1_500_000) {
-            textResponses.push({ url, body: body.toString('utf8') });
-            if (textResponses.length > 60) textResponses.shift();
-          }
-        }).catch(() => {});
-      }
-    });
     let lastPdfUrl = '';
-    page.on('response', (response) => {
-      const type = (response.headers()['content-type'] || '').toLowerCase();
-      if (type.includes('application/pdf')) lastPdfUrl = response.url();
-    });
+    /* Las escuchas viven por página y se aplican también a los
+       POPUPS que el portal abra (context.on('page')): el PDF de la
+       constancia puede llegar como respuesta de la ventana
+       emergente que abre «Generar Constancia», no de la principal.
+       Las respuestas de los MARCOS (iframes) ya llegan por la
+       escucha de su página. Todo cuerpo capturado va a las mismas
+       pilas: waitForPdf no distingue —ni debe— de dónde salió. */
+    const wirePage = (wired) => {
+      /* El portal entrega el PDF como DESCARGA del navegador (la URL
+         no cambia y el cuerpo no llega por el evento de respuesta):
+         se captura el archivo descargado por el propio navegador. */
+      wired.on('download', (download) => {
+        download.path()
+          .then(path => readFile(path))
+          .then(body => { if (body && body.length) pdfBodies.push(body); })
+          .catch(() => {});
+      });
+      wired.on('response', (response) => {
+        const url = response.url();
+        const type = (response.headers()['content-type'] || '').toLowerCase();
+        if (type.includes('application/pdf')) {
+          lastPdfUrl = url;
+          response.body().then(body => { if (body && body.length) pdfBodies.push(body); }).catch(() => {});
+        } else if (type.includes('json') || type.includes('text')) {
+          response.body().then(body => {
+            if (body && body.length && body.length < 1_500_000) {
+              textResponses.push({ url, body: body.toString('utf8') });
+              if (textResponses.length > 60) textResponses.shift();
+            }
+          }).catch(() => {});
+        }
+      });
+    };
+    wirePage(page);
+    context.on('page', wirePage);
     const wrapper = {
       async goto(url) { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }); },
       url: () => page.url(),
@@ -540,11 +639,58 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         await page.waitForTimeout(400);
       },
       /* Foto del momento para el diario de la corrida: captura de
-         pantalla y volcado HTML de la página tal como quedó. */
+         pantalla y volcado HTML de la página tal como quedó, INCLUIDO
+         el HTML de cada marco (iframe): el trámite de la constancia
+         vive dentro del marco del Buzón y guardar solo la página
+         principal costó una hora de extracción forense el 10 nov
+         2026. El HTML compuesto lleva cada marco tras un marcador
+         con su URL, para que el artefacto «html» del diario lo
+         contenga todo sin cambiar el contrato del servidor. */
       async diagnostics() {
         const screenshot = await page.screenshot({ type: 'png' }).catch(() => null);
-        const html = await page.content().catch(() => '');
-        return { url: page.url(), screenshot, html };
+        let html = await page.content().catch(() => '');
+        const frames = [];
+        for (const frame of page.frames()) {
+          if (frame === page.mainFrame()) continue;
+          const frameHtml = await frame.content().catch(() => '');
+          frames.push({ url: frame.url(), html: frameHtml });
+          if (frameHtml) html += '\n<!-- ===== MARCO (iframe): ' + frame.url() + ' ===== -->\n' + frameHtml;
+        }
+        return { url: page.url(), screenshot, html, frames };
+      },
+      /* El marco del trámite de la constancia (1.13.0): el Buzón
+         Tributario carga «Reimprime tus acuses» dentro de
+         iframe#iframetoload (SessionBroker → rfcampc/ConsultaTramite).
+         Devuelve la URL del marco si ya navega ahí; si el iframe
+         aún no navega pero su src ya está en el DOM, ese src. */
+      async tramiteFrameUrl() {
+        for (const frame of page.frames()) {
+          const url = frame.url() || '';
+          if (/rfcampc|ConsultaTramite|IdcSiat|SessionBroker/i.test(url)) return url;
+        }
+        return page.evaluate(() => {
+          const el = document.querySelector('iframe#iframetoload');
+          return el ? String(el.getAttribute('src') || '') : '';
+        }).catch(() => '');
+      },
+      /* El control de generar DENTRO de un marco: además del texto
+         (clickText ya busca en todos los marcos), los botones JSF
+         suelen ser <input type="submit" value="Generar…">, cuyo
+         texto no es contenido sino atributo: heurística por valor
+         y por :has-text en botón/enlace del marco. */
+      async clickFrameGenerate() {
+        for (const frame of page.frames()) {
+          if (frame === page.mainFrame()) continue;
+          const control = frame.locator(
+            'input[type="submit"][value*="Generar" i], input[type="button"][value*="Generar" i], ' +
+            'button:has-text("Generar"), a:has-text("Generar")').first();
+          if (await control.count().catch(() => 0)) {
+            await control.click({ timeout: 8_000 }).catch(() => {});
+            await page.waitForTimeout(600);
+            return true;
+          }
+        }
+        return false;
       },
       async divError() {
         return page.evaluate(() => {
@@ -622,6 +768,36 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
             acuse: has('acuse'), declaracion: has('declaracion') || has('anual') };
         })).catch(() => []);
       },
+      /* Filas crudas de la Consulta de transacciones (1.27.0,
+         ficha 22513): la ficha pública describe QUÉ enseña el
+         servicio (nº de operación, tipo, ejercicio, periodo,
+         fechas) pero no su mecánica interna, así que la lectura
+         es genérica y honesta: recorre los marcos y devuelve las
+         filas de cualquier tabla cuya cabecera hable de operación
+         o folio, con sus celdas en crudo; la interpretación
+         (qué celda es el folio, cuál el periodo) la hace el motor
+         de declaraciones, que es quien puede equivocarse en voz
+         alta en el diario. Si el portal no enseña esa tabla, la
+         lista vuelve vacía y el motor lo declara. */
+      async transacciones() {
+        const rows = [];
+        for (const frame of page.frames()) {
+          const found = await frame.evaluate(() => {
+            const out = [];
+            for (const table of document.querySelectorAll('table')) {
+              const head = (table.querySelector('tr')?.textContent || '').toLowerCase();
+              if (!/operaci|folio/.test(head)) continue;
+              for (const tr of table.querySelectorAll('tr')) {
+                const cells = [...tr.querySelectorAll('td')].map(td => (td.textContent || '').trim());
+                if (cells.length >= 2) out.push({ cells });
+              }
+            }
+            return out;
+          }).catch(() => []);
+          rows.push(...found);
+        }
+        return rows;
+      },
       async clickDeclDownload(kind, index) {
         const clicked = await page.evaluate(([k, i]) => {
           const links = [...document.querySelectorAll('a[data-descargar="' + k + '"]')];
@@ -632,6 +808,204 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         }, [kind, index]).catch(() => false);
         if (!clicked) throw new Error('La fila no ofreció la descarga pedida (' + kind + ').');
         await page.waitForTimeout(500);
+      },
+      /* ===== Primitivas del portal de consulta por CIEC (1.12.0) =====
+         El contrato de campos es el documentado para portalcfdi:
+         acceso NIDP con #rfc/#password/#userCaptcha y captcha como
+         imagen data:; consultas con el radio de fechas de postback
+         y resultados completos en el DOM. Cada primitiva devuelve
+         lo que encontró sin inventar: si el portal real difiere,
+         el motor falla con diagnóstico en el diario. */
+      async ciecHasLoginForm() {
+        return page.evaluate(() => !!document.querySelector('#userCaptcha')).catch(() => false);
+      },
+      async ciecCaptchaImage() {
+        return page.evaluate(() => {
+          const img = document.querySelector('img[src^="data:image"]');
+          return img ? String(img.getAttribute('src') || '') : '';
+        }).catch(() => '');
+      },
+      async ciecFillLogin({ rfc, password, captcha }) {
+        const fillFirst = async (selectors, value) => {
+          for (const sel of selectors) {
+            try { await page.fill(sel, String(value), { timeout: 4_000 }); return true; } catch { /* siguiente candidato */ }
+          }
+          return false;
+        };
+        const rfcOk = await fillFirst(['#rfc', 'input[name="rfc"]', 'input[id*="rfc" i]'], rfc);
+        const passOk = await fillFirst(['#password', 'input[type="password"]'], password);
+        const captchaOk = await fillFirst(['#userCaptcha'], captcha);
+        return { rfc: rfcOk, password: passOk, captcha: captchaOk };
+      },
+      async ciecSubmitLogin() {
+        /* Como el envío con e.firma: se pulsa el #submit VISIBLE
+           sin esperar tras el clic; el aterrizaje lo vigila el
+           motor mirando la URL. */
+        try { await page.click('#submit:visible', { timeout: 10_000, noWaitAfter: true }); }
+        catch { await page.click('#submit', { timeout: 10_000, noWaitAfter: true }); }
+        await page.waitForTimeout(400);
+      },
+      async ciecErrorText() {
+        return page.evaluate(() => {
+          for (const sel of ['#msgError', '.msg-error', '#errormsg', '#divError']) {
+            const el = document.querySelector(sel);
+            if (!el) continue;
+            const style = getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden') continue;
+            const text = (el.textContent || '').trim();
+            if (text) return text;
+          }
+          return '';
+        }).catch(() => '');
+      },
+      async ciecClickFechasRadio() {
+        /* Clic NATIVO por localizador: el onclick del radio hace
+           el postback que habilita los controles de fecha; marcar
+           el radio por script no lo dispara. */
+        try {
+          await page.locator('#ctl00_MainContent_RdoFechas').click({ timeout: 10_000 });
+          await page.waitForTimeout(800);
+          return true;
+        } catch {
+          return page.evaluate(() => {
+            const el = document.querySelector('#ctl00_MainContent_RdoFechas');
+            if (!el) return false;
+            el.click();
+            return true;
+          }).catch(() => false);
+        }
+      },
+      async ciecSetRecibidosDay({ yyyy, mm, dd }) {
+        /* Recibidos se consulta día a día: año/mes/día en
+           desplegables (valor si existe; si no, índice) y la
+           jornada completa 00:00:00–23:59:59. */
+        return page.evaluate(({ yyyy, mm, dd }) => {
+          const set = (selectors, value, index) => {
+            for (const sel of selectors) {
+              const el = document.querySelector(sel);
+              if (!el) continue;
+              el.disabled = false;
+              if ([...el.options].some(option => option.value === String(value))) el.value = String(value);
+              else if (index != null && el.options[index]) el.selectedIndex = index;
+              else el.value = String(value);
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return true;
+            }
+            return false;
+          };
+          const year = set(['select#DdlAnio', '#ctl00_MainContent_CldFecha_DdlAnio'], yyyy, null);
+          const month = set(['#ctl00_MainContent_CldFecha_DdlMes'], mm, Number(mm) - 1);
+          const dayOk = set(['#ctl00_MainContent_CldFecha_DdlDia'], dd, Number(dd) - 1);
+          set(['#ctl00_MainContent_CldFecha_DdlHora'], '0', 0);
+          set(['#ctl00_MainContent_CldFecha_DdlMinuto'], '0', 0);
+          set(['#ctl00_MainContent_CldFecha_DdlSegundo'], '0', 0);
+          set(['#ctl00_MainContent_CldFecha_DdlHoraFin'], '23', 23);
+          set(['#ctl00_MainContent_CldFecha_DdlMinutoFin'], '59', 59);
+          set(['#ctl00_MainContent_CldFecha_DdlSegundoFin'], '59', 59);
+          return year && month && dayOk;
+        }, { yyyy, mm, dd }).catch(() => false);
+      },
+      async ciecSetEmitidosRange({ from, to }) {
+        /* Emitidos acepta el rango entero: las cajas de fecha son
+           de solo lectura a propósito (muestran el calendario) y
+           se fuerzan por script con su evento change. */
+        await page.waitForFunction(() => {
+          const el = document.querySelector('#ctl00_MainContent_CldFechaInicial2_DdlHora');
+          return Boolean(el) && !el.disabled;
+        }, null, { timeout: 15_000 }).catch(() => {});
+        return page.evaluate(({ from, to }) => {
+          const force = (id, value) => {
+            const el = document.getElementById(id);
+            if (!el) return false;
+            el.removeAttribute('disabled');
+            el.readOnly = false;
+            el.value = value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+          };
+          const set = (id, value, index) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.disabled = false;
+            if ([...el.options].some(option => option.value === String(value))) el.value = String(value);
+            else if (index != null && el.options[index]) el.selectedIndex = index;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          };
+          const a = force('ctl00_MainContent_CldFechaInicial2_Calendario_text', from);
+          const b = force('ctl00_MainContent_CldFechaFinal2_Calendario_text', to);
+          set('ctl00_MainContent_CldFechaInicial2_DdlHora', '0', 0);
+          set('ctl00_MainContent_CldFechaInicial2_DdlMinuto', '0', 0);
+          set('ctl00_MainContent_CldFechaInicial2_DdlSegundo', '0', 0);
+          set('ctl00_MainContent_CldFechaFinal2_DdlHora', '23', 23);
+          set('ctl00_MainContent_CldFechaFinal2_DdlMinuto', '59', 59);
+          set('ctl00_MainContent_CldFechaFinal2_DdlSegundo', '59', 59);
+          return a && b;
+        }, { from, to }).catch(() => false);
+      },
+      async ciecSearch() {
+        await page.waitForSelector('#ctl00_MainContent_BtnBusqueda', { timeout: 15_000 });
+        await page.click('#ctl00_MainContent_BtnBusqueda');
+        await page.waitForTimeout(600);
+      },
+      async ciecWaitResults(ms) {
+        /* La búsqueda es un postback parcial: networkidle no
+           basta. Se espera a que el indicador de progreso se
+           oculte Y haya filas o el panel de «sin resultados». */
+        const end = Date.now() + Math.max(0, ms);
+        while (Date.now() < end) {
+          const done = await page.evaluate(() => {
+            const visible = el => Boolean(el) && getComputedStyle(el).display !== 'none' &&
+              getComputedStyle(el).visibility !== 'hidden';
+            const progress = document.querySelector('#ctl00_MainContent_UpdateProgress1');
+            const rows = document.querySelectorAll('input.ListaFolios').length;
+            return !visible(progress) && (rows > 0 || visible(document.querySelector('#ctl00_MainContent_PnlNoResultados')));
+          }).catch(() => false);
+          if (done) return true;
+          await page.waitForTimeout(700);
+        }
+        return false;
+      },
+      async ciecRows() {
+        return page.evaluate(() => {
+          const rows = [];
+          for (const input of document.querySelectorAll('input.ListaFolios')) {
+            const uuid = (input.value || '').trim().toUpperCase();
+            if (!uuid) continue;
+            const tr = input.closest('tr');
+            let url = '';
+            const span = tr ? tr.querySelector('span[name="BtnDescarga"]') : null;
+            const match = (span?.getAttribute('onclick') || '').match(/RecuperaCfdi\.aspx\?Datos=[^'")\s]+/);
+            if (match) url = new URL(match[0], location.href).href;
+            if (!url && tr) {
+              const link = tr.querySelector('a[href*="RecuperaCfdi"]');
+              if (link) url = link.href;
+            }
+            rows.push({ uuid, url });
+          }
+          const quotaEl = document.querySelector('[id$="hfDescarga"]');
+          const noRes = document.querySelector('#ctl00_MainContent_PnlNoResultados');
+          const noResVisible = Boolean(noRes) && getComputedStyle(noRes).display !== 'none' &&
+            getComputedStyle(noRes).visibility !== 'hidden';
+          return { rows, quota: quotaEl ? String(quotaEl.value || '') : '', noResults: noResVisible };
+        }).catch(() => ({ rows: [], quota: '', noResults: false }));
+      },
+      async ciecDownloadXml(url) {
+        /* La descarga llega por el evento download del navegador
+           (el mismo canal que ya recoge los PDF): se espera el
+           cuerpo nuevo y se retira del canal para no mezclarlo
+           con documentos. */
+        const before = pdfBodies.length;
+        const pending = page.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
+        await page.goto(url, { waitUntil: 'commit', timeout: 30_000 }).catch(() => {});
+        const download = await pending;
+        if (!download) return null;
+        const end = Date.now() + 15_000;
+        while (Date.now() < end) {
+          if (pdfBodies.length > before) { const [body] = pdfBodies.splice(before, 1); return body; }
+          await page.waitForTimeout(300);
+        }
+        return null;
       },
       async evaluate(fn, arg) { return page.evaluate(fn, arg); },
       async close() { await context.close().catch(() => {}); }

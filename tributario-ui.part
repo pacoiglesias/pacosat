@@ -1,0 +1,203 @@
+/* ===== Buzón Tributario del SAT (1.24.0, punto 1) =====
+   La bandeja de notificaciones de la AUTORIDAD para el
+   contribuyente elegido: la consulta la corre el servidor con la
+   e.firma del perfil y SOLO LISTA — fecha, asunto, remitente y
+   estado — sin abrir ninguna notificación, porque abrirla puede
+   darla por notificada e iniciar plazos. Lo listado queda
+   guardado y se consulta aquí (GET /api/tributario?rfc=); lanzar
+   es POST /api/tributario/run y cancelar POST
+   /api/tributario/cancel, con el diario por pasos en la propia
+   pantalla, como en Declaraciones. */
+let tribCache = null;
+function tribSinAbrirFor(rfc) {
+  const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
+  if (map) return Number(map[rfc]?.sinAbrir || 0);
+  return tribCache && tribCache.rfc === rfc ? Number(tribCache.sinAbrir || 0) : 0;
+}
+function tribConsultadoFor(rfc) {
+  const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
+  if (map) return Boolean(map[rfc]);
+  return Boolean(tribCache && tribCache.rfc === rfc && tribCache.ultimaConsulta);
+}
+/* La próxima «tenida por notificada» de un RFC (1.27.0): Hoy la
+   nombra junto al contador de sin abrir, porque el plazo corre
+   aunque nadie abra la notificación. */
+function tribTenidaFor(rfc) {
+  const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
+  if (map && map[rfc]?.proximaTenida) return map[rfc].proximaTenida;
+  return tribCache && tribCache.rfc === rfc ? tribCache.proximaTenida || null : null;
+}
+function paintTribBadge() {
+  const badge = $('tributario-badge');
+  if (!badge) return;
+  const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
+  const total = map ? Object.values(map).reduce((sum, value) => sum + Number(value?.sinAbrir || 0), 0) :
+    (tribCache ? Number(tribCache.sinAbrir || 0) : 0);
+  badge.hidden = !total;
+  badge.textContent = total ? number.format(total) : '';
+}
+function tributarioScreen() {
+  const wrap = n('div');
+  if (typeof satToken === 'undefined' || !satToken) {
+    wrap.append(panel('Buzón Tributario', 'El Buzón Tributario se consulta desde el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver las notificaciones del SAT.'));
+    return [wrap];
+  }
+  const head = panel('Buzón Tributario · ' + (scope || 'sin contribuyente'),
+    'Las notificaciones que el SAT deja en su buzón oficial para este RFC. PacoSAT solo las LISTA: no abre ninguna, porque abrirla puede darla por notificada e iniciar plazos. Abrirlas es tu gesto, en el portal oficial.');
+  const body = n('div');
+  head.append(body);
+  wrap.append(head);
+  if (!scope) {
+    body.append(empty('Elige un contribuyente', 'El Buzón Tributario es por RFC: elige arriba el contribuyente cuyas notificaciones quieres consultar.'));
+    return [wrap];
+  }
+  const rfc = scope;
+  let running = false;
+  let poller = null;
+  const stopPoller = () => { if (poller) { clearInterval(poller); poller = null; } };
+  const paint = data => {
+    tribCache = data;
+    if (typeof satData !== 'undefined' && satData) {
+      satData.tributario = satData.tributario || {};
+      if (data.total || data.ultimaConsulta) satData.tributario[rfc] = { total: data.total || 0, sinAbrir: data.sinAbrir || 0,
+        proximaTenida: data.proximaTenida || null };
+    }
+    paintTribBadge();
+    body.replaceChildren();
+    const progreso = data.progreso || {};
+    const isRunning = running || Boolean(progreso.running);
+    /* Semáforo y modelo único de problema: de quién es (del SAT),
+       qué significa y el gesto único (Consultar / Abrir en el
+       portal oficial). */
+    const bar = n('div', undefined, 'traffic-strip');
+    if (isRunning) bar.append(statusPill('warn', 'Consultando el buzón…'));
+    else if (!data.ultimaConsulta && !data.total) bar.append(statusPill('dim', 'Sin consultar todavía'));
+    else if (data.sinAbrir) bar.append(statusPill('warn', number.format(data.sinAbrir) + ' sin abrir'));
+    else bar.append(statusPill('ok', 'Sin notificaciones pendientes'));
+    const consultar = n('button', isRunning ? 'Consultando…' : 'Consultar ahora', 'primary small');
+    consultar.type = 'button';
+    consultar.disabled = isRunning;
+    consultar.onclick = () => run();
+    bar.append(consultar);
+    if (isRunning) {
+      const cancelar = n('button', 'Cancelar', 'soft small');
+      cancelar.type = 'button';
+      cancelar.onclick = async () => {
+        cancelar.disabled = true;
+        try { await satApi('tributario/cancel', { rfc }); toast('Cancelación pedida: la consulta se detiene en el punto seguro.', 'ok'); }
+        catch (error) { toast(error.message, 'error'); cancelar.disabled = false; }
+      };
+      bar.append(cancelar);
+    }
+    body.append(bar);
+    if (isRunning && progreso.step)
+      body.append(n('p', progreso.step, 'today-line'));
+    if (data.sinAbrir)
+      body.append(n('p', 'Son notificaciones de la autoridad para ' + rfc + '. PacoSAT te las enseña en lista; ' +
+        'para leer su contenido entra tú al portal oficial del SAT y ábrelas allí: ese gesto puede iniciar sus plazos.', 'today-line'));
+    /* El plazo corre aunque nadie abra (1.27.0): la fecha en que
+       la más antigua se tiene por notificada va en voz alta —
+       no abrir NO congela nada (arts. 134-I y 135 del CFF). */
+    if (data.sinAbrir && data.proximaTenida)
+      body.append(n('p', '⏰ No abrirlas no congela el plazo: la más antigua se tiene por notificada el ' +
+        declFechaLarga(data.proximaTenida.tenida) + ' aunque nadie la abra' +
+        ' (ábrela tú antes del ' + declFechaLarga(data.proximaTenida.limite) + '; efectos desde el ' +
+        declFechaLarga(data.proximaTenida.efectos) + ').', 'today-line'));
+    else if (data.ultimaConsulta)
+      body.append(n('p', 'Última consulta: ' + buzonCuando(data.ultimaConsulta) + ' · ' +
+        number.format(data.total || 0) + ' notificación(es) en la bandeja.', 'today-line'));
+    const items = data.notificaciones || [];
+    if (!items.length) {
+      body.append(data.ultimaConsulta
+        ? empty('Bandeja vacía en la última consulta', 'El SAT no enseñó notificaciones para este RFC. Cuando deje una, la verás aquí en la siguiente consulta.')
+        : empty('Todavía no consultas este buzón', 'Toca «Consultar ahora»: PacoSAT entra con la e.firma de este RFC y te trae la lista, sin abrir ninguna notificación.'));
+    }
+    for (const item of items) {
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill(item.abierta ? 'dim' : 'warn', item.abierta ? 'Abierta' : 'Sin abrir'));
+      const texto = n('span',
+        (item.asunto || 'Notificación del SAT') +
+        (item.remitente ? ' · ' + item.remitente : '') +
+        (item.fecha ? ' · ' + item.fecha : '') +
+        (item.estado ? ' · ' + item.estado : '') +
+        (!item.abierta && item.plazo ? ' · se tiene por notificada el ' + declFechaLarga(item.plazo.tenida) : ''));
+      if (!item.abierta) { const strong = n('strong'); strong.append(texto); row.append(strong); }
+      else row.append(texto);
+      body.append(row);
+    }
+    /* Diario por pasos de las últimas consultas: la evidencia de
+       qué hizo la máquina, plegada como detalle. */
+    const runs = data.runs || [];
+    if (runs.length) {
+      const details = n('details', undefined, 'decl-diario');
+      const summary = n('summary', 'Diario de consultas');
+      details.append(summary);
+      for (const run of runs) {
+        const block = n('div', undefined, 'decl-diario-run');
+        block.append(n('p', (run.ok ? '✓ ' : '✗ ') + buzonCuando(run.started) + ' · ' +
+          (run.ok ? run.encontradas + ' en la bandeja, ' + run.sinAbrir + ' sin abrir'
+            : (run.error || 'sin detalle')) +
+          (run.attempts > 1 ? ' · ' + run.attempts + ' intentos' : ''), run.ok ? 'muted' : 'error-text'));
+        for (const step of run.steps || [])
+          block.append(n('p', '· ' + (step.paso || '') + (step.detalle ? ' — ' + step.detalle : ''), 'muted'));
+        if (!run.ok) {
+          /* La página guardada del fallo (1.27.0): verla o
+             bajarla sin repetir la consulta a ciegas. */
+          const evidencia = evidenceButtons('tributario', run);
+          if (evidencia) block.append(evidencia);
+        }
+        details.append(block);
+      }
+      body.append(details);
+    }
+  };
+  const refresh = async () => {
+    const data = await satApi('tributario?rfc=' + encodeURIComponent(rfc));
+    if (body.isConnected) paint(data);
+    return data;
+  };
+  const run = async () => {
+    if (running) return;
+    running = true;
+    try { await refresh(); } catch { /* el estado previo basta para pintar el «consultando» */ }
+    poller = setInterval(() => { refresh().catch(() => {}); }, 2500);
+    try {
+      const outcome = await satApi('tributario/run', { rfc });
+      stopPoller();
+      running = false;
+      const view = outcome.view || await refresh();
+      if (body.isConnected) paint(view);
+      if (outcome.result?.ok) toast('Buzón Tributario consultado: ' + (outcome.result.encontradas || 0) +
+        ' en la bandeja, ' + (outcome.result.sinAbrir || 0) + ' sin abrir.', 'ok');
+      else if (outcome.result?.yaEnCurso) toast(outcome.result.error, 'error');
+      else if (!outcome.result?.cancelled) toast(outcome.result?.error || 'La consulta no terminó.', 'error');
+    } catch (error) {
+      stopPoller();
+      running = false;
+      /* Respuesta perdida tras una corrida larga: se re-lee el
+         estado antes de declarar el error (regla de verdad de
+         las acciones) — si la consulta consta terminada, manda
+         su resultado, no el error de red. */
+      try {
+        const fresh = await refresh();
+        if (fresh.ultimaConsulta && (!tribCache || fresh.ultimaConsulta !== tribCache.ultimaConsulta || !fresh.progreso?.running)) {
+          toast('La consulta terminó: arriba está su resultado re-leído.', 'ok');
+          return;
+        }
+      } catch { /* sin re-lectura: manda el error original */ }
+      if (body.isConnected) refresh().catch(() => {});
+      toast(error.message, 'error');
+    }
+  };
+  /* Esqueleto de carga (1.25.0), como en el resto de pantallas. */
+  const tribSkel = n('div', undefined, 'skel');
+  tribSkel.setAttribute('aria-busy', 'true');
+  tribSkel.setAttribute('aria-label', 'Cargando el Buzón Tributario');
+  for (let i = 0; i < 3; i++) tribSkel.append(n('div', undefined, 'skel-block'));
+  body.append(tribSkel);
+  (async () => {
+    try { await refresh(); }
+    catch (error) { if (body.isConnected) body.replaceChildren(n('p', error.message, 'error-text')); }
+  })();
+  return [wrap];
+}
