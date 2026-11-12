@@ -330,6 +330,15 @@ const CREDS = { rfc: RFC, cer: Buffer.from('certificado-de-juguete'), password: 
         creds: { ...CREDS, key: KEY_3DES }, urls: { constancia: base + '/lanzador-v2' } });
       assert.deepEqual(csf.content, PDF,
         'constancia a través de la navegación real a la página de e.firma con inputs ocultos');
+      /* El diagnóstico se toma sobre un estado de página DETERMINADO:
+         tras la bajada buena, la página principal puede quedar en la
+         de reimpresión o en el visor de PDF del navegador según el
+         entorno (visto en CI, 12 nov 2026: el visor ganó la carrera y
+         la aserción sobre «Generar Constancia» falló sin que el
+         producto fallara). Se navega de vuelta a la página de
+         reimpresión del portal simulado y el diagnóstico se juzga
+         sobre esa página conocida. */
+      await page.goto(base + '/operacion/43824/reimprime');
       const diag = await page.diagnostics();
       assert.equal(diag.screenshot[0], 0x89, 'diagnostics entrega la captura PNG');
       assert.ok(diag.html.includes('Generar Constancia'), 'diagnostics entrega el HTML de la página');
