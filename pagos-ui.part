@@ -212,7 +212,7 @@ function pagosScreen() {
   const step3 = pagosMakeStep(3, 'Las tablas para el banco');
   step3.note.textContent = 'Se abre al armar la lista del mes';
   step3.body.hidden = !pagosLineas.length;
-  step3.body.append(n('p', 'Un clic en una celda copia ese dato solo, entero, listo para pegarlo en su campo del banco. Con «Copiar la tabla» te llevas la tabla entera de un grupo. Al final tienes también el archivo de texto y el JSON (ese último es el que leerá el navegador del NAS).', 'muted'));
+  step3.body.append(n('p', 'Un clic en una celda copia ese dato solo, entero, listo para pegarlo en su campo del banco. Con «Copiar la tabla» te llevas la tabla entera de un grupo. Al final tienes también el archivo de texto y el archivo para el banco.', 'muted'));
   const genBtn = n('button', 'Generar las tablas', 'primary');
   genBtn.disabled = !pagosLineas.length;
   pagosGenBtn = genBtn;
@@ -286,12 +286,94 @@ async function pagosFillVencimientos(body, refrescar) {
       preparar.disabled = true; preparar.textContent = 'Preparando…';
       try {
         const creada = await satApi('pagos/preparar-vencimientos', { rfc: scope });
-        toast('Pagos preparados: la lista quedó en «Preparaciones anteriores» (' + creada.id + '), lista para autorizar en el banco. No se ha pagado nada.', 'ok');
+        toast('Pagos preparados: la lista de ' + (creada.month || pagosMes || 'este mes') +
+          (creada.totalCents ? ' por $' + pagosCentsText(creada.totalCents) : '') +
+          ' quedó en «Preparaciones anteriores», lista para autorizar en el banco. No se ha pagado nada.', 'ok');
         refrescar();
       } catch (error) { toast(error.message, 'error'); preparar.disabled = false; preparar.textContent = 'Preparar pagos'; }
     };
     body.append(n('p', 'Preparar junta los vencimientos en una sola lista del banco con su documento por concepto. Pagar sigue siendo tu gesto en el banco: aquí nada se paga solo.', 'muted'), preparar);
   }
+}
+/* F11 · Repetir una preparación (1.31.0): las líneas de la
+   anterior vuelven al formulario del paso 2 tal cual, con el
+   importe editable en su campo como al armarla, y los datos
+   del grupo precargados. Repetir precarga: la preparación
+   nueva solo nace cuando Paco genera las tablas — no se crea
+   ni se paga nada en silencio al pulsar el botón. */
+async function pagosRepetir1310(item, outBody) {
+  const detalle = await satApi('pagos/preparation?rfc=' + encodeURIComponent(scope) + '&id=' + encodeURIComponent(item.id));
+  const prep = detalle.preparation;
+  check(prep, 'Esa preparación ya no se puede leer.');
+  const texto = cents => (Number(cents || 0) / 100).toFixed(2);
+  const convertir = (lineas, grupo) => (lineas || []).map(linea => ({
+    beneficiaryId: linea.beneficiaryId || '', nombre: linea.nombre, rfc: linea.rfc || '', banco: linea.banco || '',
+    grupo: linea.grupo || grupo, cuenta: linea.cuenta || '', clabe: linea.clabe || '', motivo: linea.motivo || '',
+    folio: linea.folio || '', uuid: linea.uuid || '', fijo: Boolean(linea.fijo),
+    base: texto(linea.baseCents), iva: texto(linea.ivaCents), total: texto(linea.totalCents), incluir: true }));
+  pagosLineas = [...convertir(prep.bbva?.lines, 'BBVA'),
+    ...convertir(prep.interbancario?.lines, 'Interbancario'),
+    ...convertir(prep.speiIndividual?.lines, 'Interbancario')];
+  pagosSinCatalogo = [];
+  pagosPrep = null;
+  pagosTxt = '';
+  pagosMes = prep.month || item.month || pagosMes;
+  if (pagosPrepBodyRef) pagosFillPrepare(pagosPrepBodyRef, outBody);
+  if (pagosGroupInputs && prep.group) {
+    if (prep.group.descripcion) pagosGroupInputs.descripcion.value = prep.group.descripcion;
+    if (prep.group.cuentaRetiro) pagosGroupInputs.cuentaRetiro.value = prep.group.cuentaRetiro;
+    if (prep.group.referencia) pagosGroupInputs.referencia.value = prep.group.referencia;
+    if (prep.group.fechaCargo) pagosGroupInputs.fechaCargo.value = prep.group.fechaCargo;
+    if (prep.group.fechaAbono) pagosGroupInputs.fechaAbono.value = prep.group.fechaAbono;
+    if (prep.group.fechaAplicacion) pagosGroupInputs.fechaAplicacion.value = prep.group.fechaAplicacion;
+  }
+  pagosScroll(pagosSteps[2]?.section);
+  toast('Preparación repetida en el paso 2: mismas líneas, con el importe editable. Revisa y genera las tablas cuando esté lista.', 'ok');
+}
+/* F3 · «Ya se pagó» amarrado al banco (1.31.0): antes de sellar
+   la preparación se buscan movimientos del banco con el mismo
+   importe total y fecha cercana (±5 días desde hoy, el día en
+   que se está marcando). Si hay uno, el diálogo lo enseña y
+   pregunta «¿Es este movimiento del banco?»; al aceptarlo, el
+   sello sale con la referencia al movimiento (en el payload y
+   en la bitácora, vía logEvent). Sin coincidencia, el marcado
+   sigue como siempre, sin bloquear nada. */
+async function pagosMovimientoCoincidente1310(totalCents) {
+  try {
+    const data = await satApi('banks/movements');
+    const hoyMs = Date.now();
+    return (data.movements || []).find(mv => {
+      const cents = mv.amountCents !== undefined ? Number(mv.amountCents) : Number(moneyCents(mv.amount || '0'));
+      if (Math.abs(cents) !== Number(totalCents)) return false;
+      const fecha = Date.parse(String(mv.date || '') + 'T12:00:00');
+      return Number.isFinite(fecha) && Math.abs(hoyMs - fecha) <= 5 * 86400000;
+    }) || null;
+  } catch { return null; }
+}
+async function pagosSellarPagada1310(item, histBody, outBody, movimiento) {
+  const resultado = await satApi('pagos/preparations/paid', { rfc: scope, id: item.id,
+    ...(movimiento ? { movimientoId: movimiento.id } : {}) });
+  if (movimiento && typeof logEvent === 'function')
+    await logEvent('Pagado en el banco · preparación ' + item.id + ' · movimiento del banco: ' +
+      movimiento.date + ' · ' + (movimiento.concept || '') + ' · $' + movimiento.amount + ' (id ' + movimiento.id + ')');
+  toast('Preparación sellada como pagada: ' + resultado.marcadas + ' factura(s) marcadas como pagadas en Dinero' +
+    (resultado.yaEstaban ? ' · ' + resultado.yaEstaban + ' ya constaban pagadas' : '') +
+    (movimiento ? ' · con la referencia al movimiento del banco del ' + movimiento.date : '') + '.', 'ok');
+  pagosFillHistory(histBody, outBody);
+}
+async function pagosYaPague1310(item, histBody, outBody) {
+  const movimiento = await pagosMovimientoCoincidente1310(item.totalCents);
+  if (!movimiento) { await pagosSellarPagada1310(item, histBody, outBody, null); return; }
+  const sinMovimiento = n('button', 'No: sellar sin movimiento', 'soft small');
+  sinMovimiento.type = 'button';
+  sinMovimiento.onclick = async () => { $('dialog').close(); await pagosSellarPagada1310(item, histBody, outBody, null); };
+  dialog('¿Es este movimiento del banco?',
+    [n('p', 'Hay un movimiento del banco con el mismo importe total de esta preparación y fecha cercana:'),
+     n('p', movimiento.date + ' · ' + (movimiento.concept || '') + ' · $' + movimiento.amount),
+     n('p', 'Si es ese, el pago queda guardado con la referencia a ese movimiento.'),
+     sinMovimiento],
+    async () => { await pagosSellarPagada1310(item, histBody, outBody, movimiento); },
+    'Sí, es ese movimiento');
 }
 async function pagosFillHistory(histBody, outBody) {
   histBody.replaceChildren(n('p', 'Cargando tus preparaciones…', 'muted'));
@@ -332,11 +414,16 @@ async function pagosFillHistory(histBody, outBody) {
         }
         pagosScroll(pagosSteps[3]?.section);
       }, 'soft'));
+      /* F11 en el menú ⋯ universal (1.31.2): repetir la
+         preparación es su acción secundaria — la cara conserva
+         Reabrir y el «Ya pagué». */
+      const menuPrep1312 = cardMenu1312('Más opciones de esta preparación');
+      menuPrep1312._setItems1312([
+        { label: 'Repetir esta preparación', fn: async () => { await pagosRepetir1310(item, outBody); } }
+      ]);
+      acts.append(menuPrep1312);
       if (!item.pagadaEn) acts.append(action('Ya pagué esto en el banco', async () => {
-        const resultado = await satApi('pagos/preparations/paid', { rfc: scope, id: item.id });
-        toast('Preparación sellada como pagada: ' + resultado.marcadas + ' factura(s) marcadas como pagadas en Dinero' +
-          (resultado.yaEstaban ? ' · ' + resultado.yaEstaban + ' ya constaban pagadas' : '') + '.', 'ok');
-        pagosFillHistory(histBody, outBody);
+        await pagosYaPague1310(item, histBody, outBody);
       }, 'primary'));
       row.append(acts);
       histBody.append(row);
@@ -362,7 +449,8 @@ async function pagosFillCatalog(catBody, prepBody, outBody) {
   if (scope === 'MFI6212158B4' && !pagosCatalogo.length) {
     const seedBox = n('div', undefined, 'pagos-seed');
     seedBox.append(n('p', 'Tu catálogo está vacío. Para Mano Fil ya tienes verificados a García Rivera, Brisbane, Aceros y BG (cuentas y CLABE comprobadas el 9 de noviembre de 2026): cárgalos de un clic y edítalos cuando quieras.', 'muted'));
-    const seed = n('button', 'Cargar los beneficiarios verificados de Mano Fil', 'primary small');
+    const seed = n('button', 'Cargar los beneficiarios verificados de ' +
+      ((typeof people !== 'undefined' ? people.find(p => p.id === scope)?.name : '') || 'este contribuyente'), 'primary');
     seed.onclick = async () => {
       seed.disabled = true;
       try {
@@ -578,7 +666,7 @@ function pagosFillPrepare(prepBody, outBody) {
       pagosGuardarCuentaLocal(data.cuentaRetiro);
     }
   }).catch(() => {});
-  const armar = n('button', 'Armar la lista desde las facturas del mes', 'primary');
+  const armar = n('button', 'Armar la lista desde las facturas del mes', 'primary pagos-armar');
   const linesBox = n('div');
   armar.onclick = async () => {
     armar.disabled = true;
@@ -704,7 +792,7 @@ function pagosOutputTable(headers, rows, overFlags) {
   return tableWrap;
 }
 function pagosCopyTableBtn(headers, rows) {
-  const btn = n('button', 'Copiar la tabla', 'soft small');
+  const btn = n('button', 'Copiar la tabla', 'primary');
   btn.onclick = () => pagosCopyText([headers.join('\t'), ...rows.map(cells => cells.join('\t'))].join('\n'), 'Tabla copiada entera: pégala donde la necesites.');
   return btn;
 }
@@ -768,10 +856,10 @@ function pagosFillOutput(outBody) {
     outBody.append(spei);
   }
   const downloads = n('div', undefined, 'pagos-actions');
-  const txtBtn = n('button', 'Descargar el texto (.txt)', 'soft small');
+  const txtBtn = n('button', 'Descargar el texto (.txt)', 'soft');
   txtBtn.onclick = () => download(new Blob([pagosTxt], { type: 'text/plain;charset=utf-8' }),
     'pagos-' + scope + '-' + (prep.month || pagosMes) + '.txt');
-  const jsonBtn = n('button', 'Descargar el JSON (para el navegador del NAS)', 'soft small');
+  const jsonBtn = n('button', 'Descargar el archivo para el banco', 'soft');
   jsonBtn.onclick = () => download(new Blob([JSON.stringify(prep, null, 2)], { type: 'application/json;charset=utf-8' }),
     'pagos-' + scope + '-' + (prep.month || pagosMes) + '.json');
   downloads.append(txtBtn, jsonBtn);

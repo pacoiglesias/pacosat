@@ -385,6 +385,40 @@ function invoiceDetail(row) {
   }
   summary.append(headline, parties, cell(row.id, 'Folio fiscal'));
   summary.append(statusCell(row.id));
+  /* Nota pegada al comprobante (F12, 1.31.0): texto libre de Paco
+     sobre ESTE CFDI («esto es la renta de diciembre»). Vive en el
+     servidor (tabla cfdi_notas), jamás toca el XML, y viaja en el
+     Excel de facturas. Sin servidor no hay nota que guardar y no
+     se finge un editor local. */
+  if (satToken) {
+    const notaSlot = n('div', undefined, 'actions');
+    summary.append(notaSlot);
+    const pintarNota = notaActual => {
+      if (!notaSlot.isConnected && notaActual === undefined) return;
+      notaSlot.replaceChildren();
+      const input = document.createElement('input');
+      input.type = 'text'; input.maxLength = 500;
+      input.placeholder = 'Nota sobre este comprobante (opcional)';
+      input.value = notaActual || '';
+      input.style.flex = '1'; input.style.minWidth = '220px';
+      const guardar = n('button', notaActual ? 'Guardar nota' : 'Añadir nota', 'soft small');
+      guardar.type = 'button';
+      guardar.onclick = async () => {
+        guardar.disabled = true; guardar.textContent = 'Guardando…';
+        try {
+          const r = await satApi('cfdi/nota', { uuid: row.id, nota: input.value });
+          toast(r.nota ? 'Nota guardada en el comprobante.' : 'Nota retirada del comprobante.', 'ok');
+          pintarNota(r.nota);
+        } catch (error) { toast(error.message, 'error'); guardar.disabled = false; guardar.textContent = 'Guardar nota'; }
+      };
+      notaSlot.append(input, guardar,
+        n('span', 'Tu nota sobre este comprobante: se ve aquí y en el Excel de facturas.', 'muted'));
+    };
+    pintarNota('');
+    satApi('cfdi/notas').then(data => {
+      if (notaSlot.isConnected) pintarNota((data.notas || {})[row.id] || '');
+    }).catch(() => {});
+  }
   /* Saldo y «Marcar pagada» en el propio detalle (1.18.0): la
      factura dice si está pagada, parcial o pendiente y cuánto
      falta; el gesto vive aquí y no solo en Dinero, y se deshace. */
@@ -665,28 +699,58 @@ function invoiceActions(row) {
     revisar.onclick = () => monitorCheckOne(row, revisar);
     wrap.append(revisar);
   }
-  /* Acciones directas por fila (UX-14): lo esencial sin abrir el
-     detalle — ver, descargar el XML, imprimir y copiar el UUID. */
-  wrap.append(action('Ver CFDI', () => invoiceDetail(row)),
-    action('Descargar XML', async () => {
-      const file = await readStore('files', 'xml:' + row.id);
-      check(file, 'Archivo no encontrado.');
-      download(file.blob, row.id + '.xml');
-    }, undefined, 'down'),
-    action('Imprimir', async () => {
-      const file = await readStore('files', 'xml:' + row.id);
-      check(file, 'Archivo no encontrado.');
-      cfdiPrint(row, parseCfdiFull(bytes(await file.blob.arrayBuffer())));
-    }, undefined, 'print'),
-    action('Copiar UUID', async () => {
-      try { await navigator.clipboard.writeText(row.id); announce('UUID copiado: ' + row.id); }
-      catch { announce('No se pudo copiar al portapapeles en este navegador.', true); }
-    }),
-    action('Ver XML', async () => {
-      const file = await readStore('files', 'xml:' + row.id);
-      check(file, 'Archivo no encontrado.');
-      await viewXml(file.blob, row.id + '.xml');
-    }));
+  /* Acciones directas por fila (1.32.1, F3): la tabla cumple su
+     propio subtítulo — «su PDF, en una sola tabla» — con PDF y
+     XML de un toque en la fila (el PDF diseñado lo construye el
+     servidor desde el XML guardado, como en el detalle). El
+     resto vive en el menú ⋯ de la fila: Imprimir, Copiar UUID,
+     Ver XML y Archivar. */
+  const bajarXml = async () => {
+    const file = await readStore('files', 'xml:' + row.id);
+    check(file, 'Archivo no encontrado.');
+    download(file.blob, row.id + '.xml');
+  };
+  wrap.append(action('Ver CFDI', () => invoiceDetail(row)));
+  if (typeof satToken !== 'undefined' && satToken) {
+    wrap.append(action('PDF', async event => {
+      const boton = event?.currentTarget;
+      if (boton) { boton.disabled = true; boton.textContent = 'Preparando…'; }
+      try {
+        const data = await satApi('salidas/cfdi', { id: row.id, format: 'pdf', rfc: scope });
+        download(new Blob([decode64(data.content)], { type: data.type || 'application/pdf' }), data.name);
+      } catch (error) { toast(error.message, 'error'); }
+      finally { if (boton) { boton.disabled = false; boton.textContent = 'PDF'; } }
+    }, undefined, 'file'));
+  }
+  wrap.append(action('XML', bajarXml, undefined, 'down'));
+  const menuFila = cardMenu1312('Más opciones de esta factura');
+  const itemsFila = [
+    { label: 'Imprimir', fn: async () => {
+        const file = await readStore('files', 'xml:' + row.id);
+        check(file, 'Archivo no encontrado.');
+        cfdiPrint(row, parseCfdiFull(bytes(await file.blob.arrayBuffer())));
+      } },
+    { label: 'Copiar UUID', fn: async () => {
+        try { await navigator.clipboard.writeText(row.id); announce('UUID copiado: ' + row.id); }
+        catch { announce('No se pudo copiar al portapapeles en este navegador.', true); }
+      } },
+    { label: 'Ver XML', fn: async () => {
+        const file = await readStore('files', 'xml:' + row.id);
+        check(file, 'Archivo no encontrado.');
+        await viewXml(file.blob, row.id + '.xml');
+      } }];
+  /* Archivar (1.31.1): el gesto de guardar fuera de las vistas
+     de trabajo, con su Deshacer. Un CFDI no se borra nunca
+     desde la app; archivado vive en Archivo, recuperable. Solo
+     con servidor (la marca es suya) y nunca para el invitado. */
+  if ((typeof guestMode === 'undefined' || !guestMode) &&
+    typeof satToken !== 'undefined' && satToken &&
+    typeof cfdiArchivar1311 === 'function') {
+    itemsFila.push({ label: 'Archivar', fn: () => cfdiArchivar1311(row)
+      .catch(error => announce(error.message, true)) });
+  }
+  menuFila._setItems1312(itemsFila);
+  wrap.append(menuFila);
   return wrap;
 }
 async function viewXml(file, name) {
@@ -889,7 +953,7 @@ async function restoreDialog(file) {
     setTimeout(() => {
       dialog('Confirmar restauración', [
         n('p', 'Este respaldo contiene: ' + summary + '.'),
-        rawBackup.operations ? n('p', 'Incluye el estado operativo (descargas, criterios 5002 y avisos pendientes).') :
+        rawBackup.operations ? n('p', 'Incluye el estado operativo (descargas, el libro de peticiones al SAT y avisos pendientes).') :
           n('p', 'No incluye estado operativo (es un respaldo anterior): tras restaurar, desbloquea cada perfil para reanudar las descargas.'),
         n('p', 'Al restaurar se REEMPLAZAN los expedientes actuales por los del respaldo.'),
         field('Guardar antes una copia cifrada de lo actual (con la contraseña de este respaldo)', saveFirst),
@@ -904,7 +968,7 @@ async function restoreDialog(file) {
         if (rawBackup.operations && typeof satToken !== 'undefined' && satToken) {
           await satApi('backup/operations', rawBackup.operations);
           await pollSat();
-          operationsNote = ' También se restauró el estado operativo (descargas, criterios 5002 y avisos pendientes); desbloquea cada perfil para reanudar.';
+          operationsNote = ' También se restauró el estado operativo (descargas, el libro de peticiones al SAT y avisos pendientes); desbloquea cada perfil para reanudar.';
         }
         await refresh();
         await logEvent('Respaldo restaurado desde un archivo cifrado');
@@ -924,18 +988,48 @@ $('inspectFile').onchange = handle(async () => {
 $('primary').onclick = handle(async () => {
   /* Despacho por DESTINO (1.11.0): la acción principal depende de la
      pestaña o sección en curso, no de la vista absorbida. */
-  if (page === 'avisos') { await refreshAvisos(true); render(); return; }
+  if (page === 'avisos') {
+    /* La principal de Avisos es el recálculo veraz (1.29.1, D7):
+       trabaja a la vista y enseña hora, cambio o error literal. */
+    if (typeof avisosRecalcular === 'function') await avisosRecalcular().catch(error => announce(error.message, true));
+    else { await refreshAvisos(true); render(); }
+    return;
+  }
   if (page === 'sat') {
     if (satTab === 'estado') { await pollMonitor(); return; }
     if (satTab === 'listas') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
     if (satTab === 'descargado') { await pollSat(); render(); return; }
-    return chooseImport();
+    if (satTab === 'ejecutor') { document.querySelector('.executor-pair')?.click(); return; }
+    /* Descargar (1.32.1, G4): la cabecera de la pantalla de
+       descargar ABRE la hoja de descarga del RFC elegido — antes
+       decía «Importar paquete» y abría el importador de archivos
+       en la propia pantalla de bajar del SAT. */
+    if (typeof downloadSheet === 'function' && scope) { downloadSheet(scope); return; }
+    showSatDownload(); return;
+  }
+  if (page === 'buzon') {
+    /* «Marcar todo leído» (1.32.1, R1): la cabecera pulsa el
+       MISMO botón de la franja de Recibidos; sin nada sin leer,
+       lo dice en vez de fingir el gesto. */
+    const marcar = document.querySelector('.buzon-mark-all');
+    if (marcar && !marcar.disabled) { marcar.click(); return; }
+    toast('Recibidos está al día: no hay nada sin leer.', 'ok'); return;
+  }
+  if (page === 'tributario') {
+    /* «Consultar ahora» (1.32.1, B1): la cabecera pulsa el MISMO
+       botón de la pantalla — antes no tenía rama y caía al
+       importador de archivos con la etiqueta de consultar. */
+    const consultar = document.querySelector('.trib-consultar');
+    if (consultar && !consultar.disabled) { consultar.click(); return; }
+    if (consultar) { toast('La consulta del Buzón ya está en curso.', 'ok'); return; }
+    toast('La pantalla del Buzón aún se está pintando: pulsa «Consultar ahora» en su franja.', 'error'); return;
   }
   if (page === 'settings') {
     if (ajustesSection === 'general') { await saveAppSettings(); return; }
     if (ajustesSection === 'contribuyentes') { await addPerson(); return; }
     if (ajustesSection === 'respaldos') { backupDialog(); return; }
     if (ajustesSection === 'sistema') { await pollSat(); await pollMonitor(); render(); return; }
+    if (ajustesSection === 'api') { render(); return; }
     render(); return;
   }
   if (page === 'salidas') {
@@ -945,11 +1039,32 @@ $('primary').onclick = handle(async () => {
     if (typeof exportFull === 'function') { await exportFull(''); return; }
     toast('La parte de reportes no se pudo cargar: inténtalo otra vez.', 'error'); return;
   }
-  if (page === 'dinero') { navigate('salidas'); return; }
-  if (page === 'pagos') { render(); return; }
+  if (page === 'dinero') {
+    /* «Descargar Excel de saldos» (1.32.1, Di3): la cabecera de
+       Dinero es su salida natural — antes navegaba a otra
+       pantalla disfrazada de acción. */
+    if (typeof descargarSalida1310 === 'function') { descargarSalida1310('salidas/xlsx', { kind: 'dinero' }, $('primary')); return; }
+    toast('La salida de Dinero no se pudo cargar: inténtalo otra vez.', 'error'); return;
+  }
+  if (page === 'pagos') {
+    /* «Preparar los pagos» (1.32.1, G1): baja al paso 2 y pulsa
+       su botón real «Armar la lista desde las facturas del mes»
+       — antes solo repintaba. */
+    const armar = document.querySelector('.pagos-armar');
+    if (armar) { armar.scrollIntoView({ block: 'center' }); armar.click(); return; }
+    toast('Abre primero la tarjeta de vencimientos para preparar los pagos.', 'error'); return;
+  }
   if (page === 'preguntas') { render(); const q = document.querySelector('main input[type="text"]'); if (q) q.focus(); return; }
   if (page === 'registro') { if (typeof downloadRegistroCsv === 'function') await downloadRegistroCsv(); return; }
-  if (page === 'declaraciones') { render(); const sel = $('declaraciones-year'); if (sel) sel.focus(); return; }
+  if (page === 'archivo') { navigate('invoices'); return; }
+  if (page === 'declaraciones') {
+    /* «Descargar declaraciones del SAT» (1.32.1, D2): la
+       cabecera pulsa el MISMO botón grande de la pantalla —
+       antes decía «Recuperar del SAT» y solo enfocaba el año. */
+    const descargar = document.querySelector('.decl-descargar');
+    if (descargar && !descargar.disabled) { descargar.click(); return; }
+    toast('Elige primero el RFC y el ejercicio en la pantalla.', 'error'); return;
+  }
   return page === 'docs' ? addDocument() : chooseImport();
 });
 for (const button of document.querySelectorAll('[data-view]')) button.onclick = () => { announce(); navigate(button.dataset.view); };
@@ -962,6 +1077,65 @@ for (const button of document.querySelectorAll('[data-view]')) button.onclick = 
    Atajo Ctrl/Cmd+K para enfocar el buscador (no pisa la escritura en
    campos: solo actúa fuera de ellos o sobre el propio buscador). */
 const globalSearchInput = $('global-search');
+/* F1 · Buscador único (1.31.0): además del salto a Facturas de
+   siempre, la búsqueda ofrece lo que case en Documentos del SAT
+   (satApi('satdocs')) y en Avisos (satApi('avisos'); si ese
+   nombre aún no responde en el servidor, el de siempre,
+   'notices') por título, asunto o RFC, en un diálogo con sus
+   dos secciones y el enlace a su pantalla (docs / avisos). El
+   comportamiento para UUID/RFC/folio no cambia: esto solo
+   AÑADE resultados cuando los hay y nunca tapa el detalle de
+   una factura única ya abierto. */
+const globalSearchNorm1310 = texto => String(texto || '').toLocaleLowerCase('es-MX')
+  .normalize('NFD').replace(/[̀-ͯ]/g, '');
+function globalSearchCasa1310(consulta, ...textos) {
+  const aguja = globalSearchNorm1310(consulta).trim();
+  if (!aguja) return false;
+  const pajar = globalSearchNorm1310(textos.filter(Boolean).join(' '));
+  if (pajar.includes(aguja)) return true;
+  return aguja.split(/\s+/).some(palabra => palabra.length >= 3 && pajar.includes(palabra));
+}
+async function globalSearchExtras1310(query, facturasEncontradas) {
+  try {
+    if (typeof satToken === 'undefined' || !satToken) return;
+    if (facturasEncontradas === 1) return;
+    const [docsData, avisosData] = await Promise.all([
+      satApi('satdocs').catch(() => null),
+      satApi('avisos').catch(() => satApi('notices').catch(() => null))
+    ]);
+    const docsHits = [];
+    for (const profile of docsData?.profiles || []) {
+      for (const [kind, titulo] of [['constancia', 'Constancia de situación fiscal'], ['opinion', 'Opinión de cumplimiento']]) {
+        if (!profile[kind]) continue;
+        if (globalSearchCasa1310(query, titulo, profile.rfc)) docsHits.push(titulo + ' · ' + profile.rfc);
+      }
+    }
+    const avisosHits = (avisosData?.avisos || []).filter(aviso =>
+      globalSearchCasa1310(query, aviso.titulo, aviso.detalle, aviso.contraparte, aviso.nombre, aviso.rfc)).slice(0, 8);
+    if (!docsHits.length && !avisosHits.length) return;
+    if ($('dialog').open) return;
+    const controls = [];
+    if (docsHits.length) {
+      controls.push(n('h3', 'Documentos del SAT'));
+      for (const hit of docsHits) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(n('span', hit),
+          action('Ir a Documentos', () => { $('dialog').close(); navigate('docs'); }, 'soft small'));
+        controls.push(row);
+      }
+    }
+    if (avisosHits.length) {
+      controls.push(n('h3', 'Avisos'));
+      for (const aviso of avisosHits) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(n('span', (aviso.titulo || 'Aviso') + (aviso.rfc ? ' · ' + aviso.rfc : '')),
+          action('Ir a Avisos', () => { $('dialog').close(); navigate('avisos'); }, 'soft small'));
+        controls.push(row);
+      }
+    }
+    dialog('Más resultados para «' + query + '»', controls);
+  } catch { /* Los extras nunca rompen la búsqueda de Facturas. */ }
+}
 function runGlobalSearch() {
   const query = globalSearchInput.value.trim();
   if (!query) return;
@@ -1001,6 +1175,9 @@ function runGlobalSearch() {
   else announce((hadFilters ? 'Filtros anteriores limpiados. ' : '') +
     (found.length ? number.format(found.length) + ' comprobantes coinciden con «' + query + '».' :
     'Sin comprobantes para «' + query + '».'), !found.length);
+  /* F1: sin bloquear el camino de Facturas, se buscan también
+     los Documentos del SAT y los Avisos que casen. */
+  globalSearchExtras1310(query, found.length);
 }
 globalSearchInput.addEventListener('keydown', event => {
   if (event.key === 'Enter') { event.preventDefault(); runGlobalSearch(); }

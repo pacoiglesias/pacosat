@@ -39,8 +39,14 @@ import { SatDocError, CSF_ENTRY_URL, OPINION_ENTRY_URL, isPdfBuffer, failure } f
    Interfaz de driver (inyectable para pruebas con portal falso):
      launchDriver() -> { newPage(), close() }
      page: goto(url), url(), clickButtonFiel(),
-           fillFielForm({ cer, key, password }),
+           fillFielForm({ cer, key, password, rfc, step })
+             -> { faltan: [campo, ...] } (1.29.2: espera de los
+             campos que la página deriva del certificado y
+             verificación previa al envío),
            submitFiel(), divError(), clickText(texto),
+           fielEmptyFields() -> [campo, ...] (opcional, 1.29.2:
+             ids de los campos del formulario que quedaron vacíos,
+             para nombrarlos en el portal-rechaza),
            waitForPdf(ms), responses(), close(),
            diagnostics() -> { url, screenshot, html, frames } (opcional)
            tramiteFrameUrl() -> url del marco del trámite (opcional, 1.13.0)
@@ -224,7 +230,7 @@ function isNetworkError(error) {
    Compartido con los conectores de declaraciones (punto 7).
    hooks.step(texto, url) es opcional: progreso en lenguaje llano
    que el servidor persiste y enseña en vivo (1.10.1). */
-export async function satBrowserLogin(page, { cer, key, password, entryUrl, hooks } = {}) {
+export async function satBrowserLogin(page, { cer, key, password, rfc, entryUrl, hooks } = {}) {
   const step = (text) => {
     let url = '';
     try { url = page.url(); } catch { /* página en transición */ }
@@ -286,7 +292,28 @@ export async function satBrowserLogin(page, { cer, key, password, entryUrl, hook
       '. Nada de tu e.firma salió de este equipo; si el portal cambió su página, ' +
       'habrá que actualizar PacoSAT.');
   }
-  await page.fillFielForm({ cer, key, password });
+  /* Relleno 1.29.2: el driver carga el certificado, ESPERA a que
+     la página derive sus campos (el RFC lo rellena ella desde el
+     certificado; su validación firmar(event) exige el formulario
+     completo) y verifica ANTES de enviar. La corrida viva del
+     12 nov 2026 (buzon-listar, equipo de Paco) murió justo así:
+     credenciales validadas, formulario enviado al instante y el
+     portal contestó «no ha llenado varios campos requeridos» sin
+     evaluar la firma. Si tras la espera un campo sigue vacío, NO
+     se envía: el error nombra el campo y el diagnóstico del
+     llamador guarda la captura y el HTML de esa pantalla. Los
+     drivers de prueba antiguos (sin retorno) cuentan como
+     «sin datos de sonda» y siguen el camino de siempre. */
+  const relleno = await page.fillFielForm({ cer, key, password, rfc, step });
+  const faltan = Array.isArray(relleno?.faltan) ? relleno.faltan : [];
+  if (faltan.length) {
+    throw failure('respuesta-inesperada', 'El acceso no se envió: ' +
+      (faltan.length === 1
+        ? 'el portal no rellenó el campo ' + faltan[0] + ' de su propio formulario'
+        : 'el portal no rellenó los campos ' + faltan.join(', ') + ' de su propio formulario') +
+      ' y quedó vacío al ir a firmar. Nada se envió al SAT en esta corrida; la captura ' +
+      'y el HTML de la pantalla quedan en el diario para ajustar PacoSAT.');
+  }
   try {
     await page.submitFiel();
   } catch (error) {
@@ -297,7 +324,21 @@ export async function satBrowserLogin(page, { cer, key, password, entryUrl, hook
     throw error;
   }
   const divError = String((await page.divError().catch(() => '')) || '').trim();
-  if (divError) throw failure('portal-rechaza', `El portal del SAT rechazó el acceso: ${divError}`);
+  if (divError) {
+    /* Si el portal vuelve a quejarse de campos sin llenar, el
+       error nombra los que el DOM enseña vacíos EN ESE MOMENTO
+       (solo ids: la sonda jamás saca valores de la página), para
+       que el siguiente diagnóstico sea de un solo paso. */
+    let detalleVacios = '';
+    if (/no ha llenado/i.test(divError) && typeof page.fielEmptyFields === 'function') {
+      const vacios = await page.fielEmptyFields().catch(() => []);
+      if (Array.isArray(vacios) && vacios.length) {
+        detalleVacios = ' Campos que la página tenía vacíos al rechazar: ' +
+          vacios.join(', ') + '.';
+      }
+    }
+    throw failure('portal-rechaza', `El portal del SAT rechazó el acceso: ${divError}` + detalleVacios);
+  }
   const url = page.url();
   if (/Error\.aspx/i.test(url)) {
     throw failure('portal-rechaza', 'El portal del SAT rebotó el acceso a su página de error. ' +
@@ -324,7 +365,7 @@ export async function fetchDocumentInBrowser({ page, creds, kind, urls = {}, tim
   const keyMaterial = prepareKeyForPortal(creds.key, creds.password);
   const deadline = Date.now() + timeoutMs;
   await satBrowserLogin(page, { cer: creds.cer, key: keyMaterial.buffer,
-    password: creds.password, entryUrl, hooks });
+    password: creds.password, rfc: creds.rfc, entryUrl, hooks });
 
   if (kind === 'constancia') {
     try { hooks?.step?.('Pidiendo la constancia…', page.url()); } catch { /* progreso opcional */ }
@@ -505,6 +546,112 @@ export function createSatDocPipelineFetch({ httpFetch, browserFetch }) {
   };
 }
 
+/* ================================================================
+   SONDA DEL FORMULARIO DE E.FIRMA — ÚNICO SITIO (1.29.2)
+
+   Por qué existe: la página de acceso (NIDP) no es un formulario
+   tonto — al cargar el certificado, la PROPIA página lo procesa y
+   rellena el campo del RFC, y su validación (firmar(event)) exige
+   el formulario completo. El relleno de la 1.29.1 cargaba
+   certificado, llave y contraseña y enviaba al instante: la
+   corrida viva del 12 nov 2026 (buzon-listar, ejecutor en el
+   equipo de Paco) llegó al portal, envió y recibió «¡Error! no
+   ha llenado varios campos requeridos» sin que la firma se
+   evaluara. Aquí viven, JUNTOS, todos los selectores y sondeos
+   del formulario: si el portal cambia su plantilla, el ajuste
+   se hace SOLO en este bloque:
+
+   CONFIRMADO con el HTML real del intento de las 19:47
+   (diagnóstico del NAS cerrado el 12 nov a las 21:05): host
+   login.siat.sat.gob.mx, ruta /nidp/app/login, título «SAT
+   Autenticación», form «certform» con inputs txtCertificate,
+   fileCertificate, txtPrivateKey, filePrivateKey,
+   privateKeyPassword y rfc (texto) — el rfc estaba VACÍO en el
+   HTML guardado tras el rechazo — y #divError con el mensaje
+   literal de campos. Los dos «txt*» son los espejos que la
+   página rellena al elegir los archivos: derivados también.
+   (El HTML guardado es la página re-servida tras el error:
+   corroboración fuerte, no foto del instante del envío.)
+
+   - FIEL_FORM: selectores (lado Node) y tiempos de la espera.
+   - sondaFielFormEnPagina(): la función que corre DENTRO de la
+     página y devuelve su estado. OJO: Playwright la serializa,
+     así que no puede usar nada de este módulo — sus literales
+     duplican los de FIEL_FORM a propósito y se cambian a la par.
+     Devuelve SOLO ids y booleanos de vacío: jamás lee un valor
+     fuera de la página (del certificado y la llave solo mira
+     files.length; de la contraseña, si su value tiene longitud).
+   ================================================================ */
+const FIEL_FORM = {
+  cert: '#fileCertificate',
+  key: '#filePrivateKey',
+  password: '#privateKeyPassword',
+  /* Espejos de texto que la página rellena sola al elegir el
+     archivo (ids reales confirmados): se ESPERAN como derivados,
+     pero la verificación previa no los exige — lo probado en el
+     rechazo es el rfc; si un espejo quedara vacío y el portal
+     rechazara, el error enriquecido lo nombrará (fielEmptyFields
+     sí los incluye) y el ajuste será subirlos a exigidos aquí. */
+  textoCert: '#txtCertificate',
+  textoKey: '#txtPrivateKey',
+  esperaDerivadosMs: 12_000,
+  sondeoMs: 250
+};
+
+function sondaFielFormEnPagina() {
+  const inputs = Array.from(document.querySelectorAll('input, select, textarea'));
+  const idDe = (el) => el.id ? '#' + el.id
+    : (el.name ? '[name="' + el.name + '"]'
+      : el.tagName.toLowerCase() + (el.type ? ':' + el.type : ''));
+  const esArchivo = (el) => String(el.type || '').toLowerCase() === 'file';
+  const vacio = (el) => esArchivo(el)
+    ? !(el.files && el.files.length > 0)
+    : String(el.value == null ? '' : el.value).length === 0;
+  const cert = document.getElementById('fileCertificate');
+  const key = document.getElementById('filePrivateKey');
+  const pass = document.getElementById('privateKeyPassword');
+  const textoCert = document.getElementById('txtCertificate');
+  const textoKey = document.getElementById('txtPrivateKey');
+  const rfcRe = /rfc/i;
+  const rfcEl = inputs.find(el => rfcRe.test(el.id || '') || rfcRe.test(el.name || '') ||
+    rfcRe.test(el.getAttribute('placeholder') || '')) || null;
+  const requeridosVacios = inputs
+    .filter(el => (el.required || el.getAttribute('aria-required') === 'true') &&
+      el !== cert && el !== key && el !== pass && el !== rfcEl && vacio(el))
+    .map(idDe);
+  return {
+    certVacio: cert ? vacio(cert) : null,
+    keyVacio: key ? vacio(key) : null,
+    passVacio: pass ? vacio(pass) : null,
+    espejoCertVacio: textoCert ? vacio(textoCert) : null,
+    espejoKeyVacio: textoKey ? vacio(textoKey) : null,
+    rfc: rfcEl ? { id: idDe(rfcEl), vacio: vacio(rfcEl),
+      editable: !rfcEl.readOnly && !rfcEl.disabled && !esArchivo(rfcEl) &&
+        String(rfcEl.type || 'text').toLowerCase() !== 'hidden' } : null,
+    requeridosVacios
+  };
+}
+
+/* Del estado de la sonda a la lista de campos que faltan (ids).
+   La verificación PREVIA exige el conjunto probado (certificado,
+   llave, contraseña, rfc y requeridos); el nombrado POST-rechazo
+   (conEspejos) añade los espejos txt* si quedaron vacíos, para
+   que el diagnóstico del rechazo sea completo. */
+function fielFaltanDesde(estado, { conEspejos = false } = {}) {
+  if (!estado) return [];
+  const faltan = [];
+  if (estado.certVacio) faltan.push(FIEL_FORM.cert);
+  if (estado.keyVacio) faltan.push(FIEL_FORM.key);
+  if (estado.passVacio) faltan.push(FIEL_FORM.password);
+  if (estado.rfc && estado.rfc.vacio) faltan.push(estado.rfc.id);
+  for (const id of estado.requeridosVacios || []) faltan.push(id);
+  if (conEspejos) {
+    if (estado.espejoCertVacio) faltan.push(FIEL_FORM.textoCert);
+    if (estado.espejoKeyVacio) faltan.push(FIEL_FORM.textoKey);
+  }
+  return [...new Set(faltan)];
+}
+
 /* Driver real con playwright-core y el Chromium del sistema (en la
    imagen Docker lo instala el Dockerfile: paquete chromium). Sin
    descarga de navegadores en tiempo de ejecución. */
@@ -566,6 +713,9 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
     };
     wirePage(page);
     context.on('page', wirePage);
+    /* Sonda del formulario de e.firma (bloque FIEL_FORM, arriba):
+       null si la página está en transición y no se puede leer. */
+    const sondaFiel = async () => page.evaluate(sondaFielFormEnPagina).catch(() => null);
     const wrapper = {
       async goto(url) { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }); },
       url: () => page.url(),
@@ -595,17 +745,63 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         }
         await page.waitForSelector('#fileCertificate', { state: 'attached', timeout: 30_000 });
       },
-      async fillFielForm({ cer, key, password }) {
+      async fillFielForm({ cer, key, password, rfc, step, esperaDerivadosMs, legado1291 }) {
         /* Por localizadores y con el input ya confirmado en el DOM:
            los campos de archivo son display:none permanentes, así
-           que nada puede esperarlos «visibles». */
-        await page.locator('#fileCertificate').setInputFiles(
+           que nada puede esperarlos «visibles».
+           Orden 1.29.2 (bloque FIEL_FORM, arriba): certificado →
+           espera de los campos que la página deriva de él (el RFC
+           y cualquier requerido que ella rellene) → llave →
+           contraseña → verificación previa (devuelve { faltan }
+           y satBrowserLogin decide NO enviar si falta algo).
+           `legado1291` reproduce la secuencia vieja SIN espera ni
+           verificación SOLO para la prueba réplica de la ronda;
+           ningún camino de producción lo pasa. */
+        const avisa = (texto) => { try { step?.(texto); } catch { /* la traza nunca tumba el relleno */ } };
+        await page.locator(FIEL_FORM.cert).setInputFiles(
           { name: 'certificado.cer', mimeType: 'application/octet-stream', buffer: cer },
           { timeout: 30_000 });
-        await page.locator('#filePrivateKey').setInputFiles(
+        if (!legado1291) {
+          const limite = Date.now() + Math.max(0,
+            Number.isFinite(esperaDerivadosMs) ? esperaDerivadosMs : FIEL_FORM.esperaDerivadosMs);
+          let estado = await sondaFiel();
+          const rfcEstabaVacio = !!(estado && estado.rfc && estado.rfc.vacio);
+          const derivadosListos = (e) => !!e && (!e.rfc || !e.rfc.vacio) &&
+            !e.espejoCertVacio && !e.espejoKeyVacio &&
+            !(e.requeridosVacios || []).length;
+          while (!derivadosListos(estado) && Date.now() < limite) {
+            await page.waitForTimeout(FIEL_FORM.sondeoMs);
+            estado = await sondaFiel();
+          }
+          if (estado && estado.rfc) {
+            if (!estado.rfc.vacio) {
+              if (rfcEstabaVacio) avisa('el portal rellenó el RFC desde tu certificado');
+            } else if (estado.rfc.editable && rfc &&
+              (estado.rfc.id.startsWith('#') || estado.rfc.id.startsWith('[name='))) {
+              await page.locator(estado.rfc.id).first()
+                .fill(String(rfc), { timeout: 10_000 }).catch(() => {});
+              avisa('rellenando el RFC que el portal dejó vacío');
+              estado = await sondaFiel();
+            }
+          }
+        }
+        await page.locator(FIEL_FORM.key).setInputFiles(
           { name: 'llave.key', mimeType: 'application/octet-stream', buffer: key },
           { timeout: 30_000 });
-        await page.locator('#privateKeyPassword').fill(password, { timeout: 15_000 });
+        await page.locator(FIEL_FORM.password).fill(password, { timeout: 15_000 });
+        if (legado1291) return { faltan: [] };
+        const final = await sondaFiel();
+        /* Sin sonda legible no se bloquea el envío (manda el
+           comportamiento de siempre); con sonda, lo que falte se
+           devuelve y el envío NO se produce. */
+        return { faltan: final ? fielFaltanDesde(final) : [] };
+      },
+      /* Los campos del formulario que el DOM enseña vacíos AHORA
+         (solo ids; la sonda jamás saca valores de la página).
+         satBrowserLogin lo usa para nombrarlos cuando el portal
+         rechaza con «no ha llenado…» tras el envío. */
+      async fielEmptyFields() {
+        return fielFaltanDesde(await sondaFiel(), { conEspejos: true });
       },
       async submitFiel() {
         /* Patrón sat-dm: se pulsa el #submit VISIBLE (el formulario

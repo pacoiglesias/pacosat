@@ -147,10 +147,17 @@ const invoice = (id, date, from, to, total, method = 'PPD') => ({ id, date, kind
       '2026-09-01', 'NUEV030303AAA', OWN, '500.00')] } });
     time = Date.parse('2026-11-13T15:00:00Z');
     await service.tick();
-    assert.equal(sent.length, 1, 'Como mucho, UN correo-resumen.');
-    assert.match(sent[0].subject, /Resumen de avisos: 1/);
-    assert.match(sent[0].text, /Día de pago a/);
-    assert.ok(!/cumple 30 días|cumple 60 días/.test(sent[0].subject + sent[0].text));
+    /* 1.29.2: el resumen sigue siendo UNO solo; el aviso nuevo
+       además nace con su notificación propia (la orden de Paco:
+       toda alerta nueva avisa fuera de la app con sus datos). */
+    const resumenesA = sent.filter(mail => /Resumen de avisos/.test(mail.subject));
+    assert.equal(resumenesA.length, 1, 'Como mucho, UN correo-resumen.');
+    assert.match(resumenesA[0].subject, /Resumen de avisos: 1/);
+    assert.match(resumenesA[0].text, /Día de pago a/);
+    assert.ok(!/cumple 30 días|cumple 60 días/.test(resumenesA[0].subject + resumenesA[0].text));
+    const nacimientosA = sent.filter(mail => /Nueva alerta/.test(mail.subject));
+    assert.equal(nacimientosA.length, 1, 'El aviso nuevo notifica al nacer, una vez.');
+    assert.equal(sent.length, 2, 'Resumen + nacimiento: nada más.');
     notices = await (await call('/api/notices')).json();
     assert.equal(notices.avisos.find(aviso => aviso.importe === '500.00').baseline, false);
     console.log('avisos.test · línea base silenciosa y digest único: ok');

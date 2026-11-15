@@ -239,11 +239,21 @@ function harness(service, proxyKey = '') {
 /* ===== C + D · superficie (fuentes del artefacto construido) ===== */
 {
   const html = readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8');
-  /* Los cuatro verbos exactos y su cableado. */
-  for (const [glyph, verbo] of [['down', 'Descargar CFDI'], ['file', 'Constancia'], ['shield', 'Opinión'], ['folder', 'Declaraciones']])
-    assert.ok(html.includes("mk('" + glyph + "', '" + verbo + "'"), 'botón directo «' + verbo + '»');
-  assert.ok(html.includes("satQuickRunDoc('constancia'"), 'Constancia dispara su kind');
-  assert.ok(html.includes("satQuickRunDoc('opinion'"), 'Opinión dispara su kind');
+  /* Los cuatro verbos exactos y su cableado. 1.29.2: viven como
+     TARJETAS de la parrilla del Centro SAT (satCardGrid), con el
+     mismo cableado de siempre debajo. */
+  /* 1.31.0 (V14): Constancia, Opinión y Declaraciones llevan su
+     icono PROPIO (i-constancia, i-opinion, i-decl) en vez de los
+     genéricos file/shield/folder: los glifos de la tupla son los
+     nuevos nombres. */
+  /* Re-baseline 1.32.1 (A1/S1, orden de Paco): la tarjeta se
+     llama «Descargar CFDI» — «Recibir» era nombre del sistema,
+     no del usuario. */
+  for (const [clave, glyph, verbo] of [['cfdi', 'down', 'Descargar CFDI'], ['constancia', 'constancia', 'Constancia'], ['opinion', 'opinion', 'Opinión'], ['declaraciones', 'decl', 'Declaraciones']])
+    assert.ok(html.includes("['" + clave + "', '" + glyph + "', '" + verbo + "']"), 'tarjeta directa «' + verbo + '»');
+  assert.ok(html.includes("acciones.pedir('constancia'"), 'Constancia dispara su kind');
+  assert.ok(html.includes("acciones.pedir('opinion'"), 'Opinión dispara su kind');
+  assert.ok(html.includes('satQuickRunDoc(kind, rfc'), 'la tarjeta pide el documento por la rutina de siempre');
   assert.ok(html.includes("satApi('satdocs/run', { rfc, kind })"), 'la corrida va al endpoint de siempre con su clase');
   assert.ok(html.includes('downloadSheet(rfc)'), 'Descargar CFDI abre la hoja de descarga (C2) con el RFC elegido');
   assert.ok(html.includes('Este mes hasta hoy') && html.includes('Mes pasado completo') &&
@@ -258,7 +268,11 @@ function harness(service, proxyKey = '') {
      portada «Qué quieres hacer» (satPortada) se retiró en la
      1.18.0: la pregunta la hace el propio panel de acciones
      («¿Qué quieres del SAT?»). */
-  assert.ok(html.indexOf('parts = [satQuickActions(), tabbar(') > 0, 'satView abre con las acciones directas');
+  /* Re-baseline 1.32.1 (S3): la parrilla sigue abriendo la
+     vista y la barra va detrás como franja secundaria — el
+     aserto sigue el nuevo cableado de dos pasos. */
+  assert.ok(html.indexOf('parts = [satCardGrid(), tabsEl]') > 0 &&
+    html.includes("tabsEl.classList.add('tabbar-secundaria')"), 'satView abre con la parrilla de tarjetas (1.29.2) y la barra secundaria (1.32.1)');
   assert.ok(!html.includes('function satPortada('), 'la portada vieja del SAT ya no existe (1.18.0)');
   /* A · el botón por factura y su repintado en sitio. */
   assert.ok(html.includes("'Revisar ahora'") || html.includes('"Revisar ahora"') || html.includes('Revisar ahora'),
@@ -345,8 +359,15 @@ function harness(service, proxyKey = '') {
     await service.tick();
     const individuales = sent.filter(mail => /CFDI cancelado/.test(String(mail.subject)) && !/ponerte/.test(String(mail.subject)));
     assert.equal(individuales.length, 0, 'G: la oleada en primera consulta manda CERO correos individuales');
-    const resumenes = sent.filter(mail => /Al ponerte al día/.test(String(mail.subject)));
+    /* La oleada sale en UN solo resumen con las 30 filas. Los
+       avisos espejo de cancelación no mandan correo propio de
+       nacimiento (1.29.2): su alerta gemela ya viaja en este
+       resumen, que es su único correo. */
+    const resumenes = sent.filter(mail => /Al ponerte al día|Resumen de sucesos/.test(String(mail.subject)));
     assert.equal(resumenes.length, 1, 'G: la oleada entera sale en UN solo resumen');
+    const nacimientosG = sent.filter(mail => /Nueva alerta: CFDI que ya constaba cancelado/.test(String(mail.subject)));
+    assert.equal(nacimientosG.length, 0,
+      'G: el aviso espejo de una cancelación no manda correo de nacimiento — su único correo es este resumen');
     for (let i = 0; i < 30; i++)
       assert.ok(resumenes[0].text.includes('CCCCCCCC-0000-4000-8000-' + String(i).padStart(12, '0')),
         'G2: el resumen trae las 30 filas (falta la ' + i + ')');

@@ -88,6 +88,9 @@ function bankAccountPanel(account, draw) {
   panelEl.append(ownerForm);
   for (const statement of account.statements) {
     const row = n('div', undefined, 'cp-row');
+    /* Marca del mes en la fila (1.31.0): el saldo vivo salta
+       hasta AQUÍ, a su estado de cuenta, al tocar su línea. */
+    row.dataset.statementMonth = statement.month;
     row.append(statusPill(statement.chain === 'broken' ? 'bad' : statement.state === 'ok' ? 'ok' : statement.state === 'manual' ? 'ok' : 'warn', statement.month),
       n('span', (statement.detected ? statement.detected + ' · ' : '') + 'inicial ' + (statement.opening ?? '¿?') +
         ' → final ' + (statement.closing ?? '¿?') + ' · ' + statement.movements + ' movimientos' +
@@ -108,6 +111,11 @@ function bankAccountPanel(account, draw) {
     panelEl.append(row);
     if (statement.chainDetail) panelEl.append(n('p', '⚠ ' + statement.chainDetail, 'error-text'));
   }
+  /* V13 · Saldo vivo (1.31.0): la línea del saldo de esta
+     cuenta en los últimos 90 días, bajo sus estados. */
+  const saldoBox = n('div');
+  panelEl.append(saldoBox);
+  bancosSaldoVivo1310(saldoBox, account, panelEl);
   /* Subida */
   const form = n('div', undefined, 'sat-form');
   const month = input('month', { value: previousMonthKey() });
@@ -175,4 +183,76 @@ function bankAccountForm(draw) {
   form.append(fieldWrap('Banco', bank), fieldWrap('Nombre', name), fieldWrap('Terminación', last4), fieldWrap('RFC dueño', owner), add);
   panelEl.append(form);
   return panelEl;
+}
+/* V13 · Saldo vivo (1.31.0): por cuenta, la línea del saldo en
+   los últimos 90 días de movimientos leídos. El saldo inicial
+   es el del estado del mes en que empieza el periodo SI CONSTA
+   (su «opening»); si no consta, la línea es el acumulado desde
+   el movimiento más antiguo del periodo y se dice así — no se
+   le inventa un saldo de partida a ninguna cuenta. La ventana
+   se ancla en el último movimiento leído: con estados viejos,
+   la línea enseña sus 90 días, no un hueco hasta hoy. Tocar la
+   línea lleva a la fila de su estado de cuenta en este panel. */
+let bancosMovsCache1310 = null;
+function bancosMovimientos1310() {
+  if (!bancosMovsCache1310)
+    bancosMovsCache1310 = satApi('banks/movements').then(data => data.movements || []).catch(() => []);
+  return bancosMovsCache1310;
+}
+async function bancosSaldoVivo1310(box, account, panelEl) {
+  try {
+    const todos = await bancosMovimientos1310();
+    if (!box.isConnected) return;
+    const movs = todos.filter(mv => mv.accountId === account.id)
+      .slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    if (!movs.length) {
+      box.append(n('p', 'Saldo vivo: aún no hay movimientos leídos de esta cuenta.', 'muted'));
+      return;
+    }
+    const centsDe = mv => mv.amountCents !== undefined ? Number(mv.amountCents) : Number(moneyCents(mv.amount || '0'));
+    const ultimoMs = Date.parse(movs[movs.length - 1].date + 'T12:00:00');
+    const periodo = movs.filter(mv => Date.parse(mv.date + 'T12:00:00') >= ultimoMs - 90 * 86400000);
+    const mesInicio = periodo[0].date.slice(0, 7);
+    const estadoBase = (account.statements || []).find(st => st.month === mesInicio) ||
+      (account.statements || []).filter(st => st.month < mesInicio)
+        .sort((a, b) => String(a.month).localeCompare(String(b.month))).pop() || null;
+    let base = estadoBase && estadoBase.opening !== null && estadoBase.opening !== undefined && estadoBase.opening !== ''
+      ? Number(moneyCents(estadoBase.opening)) : null;
+    const baseNota = base !== null
+      ? 'desde el saldo inicial del estado de ' + estadoBase.month
+      : 'acumulado desde el movimiento más antiguo del periodo (no consta saldo inicial del estado)';
+    if (base === null) base = 0;
+    let saldo = base;
+    const puntos = periodo.map(mv => { saldo += centsDe(mv); return { date: mv.date, saldo }; });
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = (tag, attrs, text) => {
+      const node = document.createElementNS(NS, tag);
+      for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+      if (text) node.textContent = text;
+      return node;
+    };
+    const W = 320, H = 92, pad = 8;
+    let min = Math.min(base, ...puntos.map(p => p.saldo)), max = Math.max(base, ...puntos.map(p => p.saldo));
+    if (min === max) { min -= 100; max += 100; }
+    const xDe = i => puntos.length === 1 ? W / 2 : pad + i * (W - 2 * pad) / (puntos.length - 1);
+    const yDe = valor => H - pad - (valor - min) / (max - min) * (H - 2 * pad);
+    const svg = el('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'chart', role: 'img',
+      'aria-label': 'Saldo vivo de la cuenta en los últimos 90 días de movimientos' });
+    svg.append(el('title', {}, 'Saldo vivo · último saldo: $' + centsLabel(BigInt(Math.round(saldo)))));
+    const linea = el('polyline', { class: 'saldo-line',
+      points: puntos.map((p, i) => xDe(i).toFixed(1) + ',' + yDe(p.saldo).toFixed(1)).join(' ') });
+    svg.append(linea);
+    const ultimoPunto = puntos[puntos.length - 1];
+    svg.append(el('circle', { cx: xDe(puntos.length - 1), cy: yDe(ultimoPunto.saldo), r: 3.5, class: 'saldo-punto' }));
+    svg.style.cursor = 'pointer';
+    /* Clicable hasta su estado de cuenta: la fila del estado
+       del mes del último movimiento, en este mismo panel. */
+    svg.addEventListener('click', () => {
+      const fila = panelEl.querySelector('[data-statement-month="' + ultimoPunto.date.slice(0, 7) + '"]') ||
+        panelEl.querySelector('[data-statement-month]');
+      if (fila) fila.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+    box.append(n('p', 'Saldo vivo (90 días): $' + centsLabel(BigInt(Math.round(saldo))) + ' · ' + baseNota +
+      '. Toca la línea para ir a su estado de cuenta.', 'today-line'), svg);
+  } catch { /* el saldo vivo es un extra: sin él, la cuenta sigue en su panel */ }
 }

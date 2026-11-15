@@ -188,13 +188,16 @@ const vista = async ejercicio => {
   const css = readFileSync(join(import.meta.dirname, 'polish.part'), 'utf8');
   assert.ok(css.includes('.decl-mapa-sin-recuperar{background:var(--danger-bg)'), 'el semáforo rojo de la celda sin recuperar vive en el CSS (1.22.0: antes «vencida»)');
   assert.ok(css.includes('.decl-mapa-presentada{background:var(--tint)'), '…y el verde de la presentada');
-  assert.ok(parte.includes('Recuperar este mes del SAT'), 'el gesto del detalle recupera el mes');
+  /* Re-baseline 1.32.1 (D1, auditoría de caminos): el gesto del
+     mes se llama «Descargar», la palabra de Paco — «Recuperar»
+     era la del sistema. */
+  assert.ok(parte.includes('Descargar este mes'), 'el gesto del detalle descarga el mes');
   assert.ok(parte.includes('periodo'), 'la recuperación del detalle va acotada por periodo');
   assert.ok(parte.includes('pintarDetalle'), 'tocar un mes pinta su detalle');
   const html = readFileSync(join(import.meta.dirname, 'Faro-Fiscal.html'), 'utf8');
   /* Anexo 1.26.0: el sello sube con la Ronda Visual. */
-  // 1.29.0: pineo de versión re-apuntado a la vigente, como en cada ronda.
-  assert.ok(html.includes('"version":"1.29.0"'), 'el artefacto se sella con la versión vigente (1.29.0)');
+  // 1.30.0: pineo de versión re-apuntado a la vigente, como en cada ronda.
+  assert.ok(html.includes('"version":"1.32.1"'), 'el artefacto se sella con la versión vigente (1.32.1)');
   assert.ok(html.includes('Mapa de tu año fiscal') || html.includes('de 12 meses presentados'),
     'el mapa viaja dentro del artefacto construido');
   console.log('OK 1.17.0: la pantalla — resumen, alerta, semáforo, detalle y su gesto por periodo.');

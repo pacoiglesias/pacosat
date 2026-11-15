@@ -45,7 +45,13 @@ export const SAT_EXECUTOR_JOB_KINDS = Object.freeze([
   'declaraciones-recuperar',
   'declaracion-folio',
   'declaraciones-transacciones',
-  'documento-sat'
+  'documento-sat',
+  /* (1.30.0) La puerta que se prueba sola: el ejecutor SOLO
+     entra con la e.firma y vuelve — no navega, no lista, no
+     abre nada. Su resultado dice «abre» o el error exacto, y el
+     servidor lo anota por RFC para avisar ANTES de que la
+     puerta se rompa el día que se necesita un papel. */
+  'puerta-probar'
 ]);
 
 /* Operaciones que un ejecutor puede declarar en su resultado. La
@@ -174,8 +180,8 @@ export function assertNoCredentialMaterial(value, path = 'resultado', trail = ''
    avisos y diag: se redacta y se conserva) de lo estructural
    (se barre con assertNoCredentialMaterial). */
 function splitNarrative(result) {
-  const { steps, diag, error, warnings, ...estructural } = result || {};
-  return { steps, diag, error, warnings, estructural };
+  const { steps, diag, diagDecision, error, warnings, ...estructural } = result || {};
+  return { steps, diag, diagDecision, error, warnings, estructural };
 }
 
 /* Los pasos de una traza quedan en texto corto y con los
@@ -197,11 +203,21 @@ export function sanitizeExecutorSteps(steps) {
 function routePlan(kind, payload) {
   switch (kind) {
     case 'buzon-listar':
+      /* Plan por TEXTOS desde la portada nueva (1.31.0,
+         evidencia viva del 13 nov 2026): tras el acceso el
+         portal aterriza en la propia portada del Buzón y la
+         bandeja se alcanza siguiendo su enlace «Mis
+         notificaciones» — la ruta directa a la bandeja
+         terminaba en la 404 genérica. Por eso los pasos 2 y
+         4 ya no ordenan ninguna URL: se navega por los textos
+         visibles de la portada, como hace el motor. Las
+         constantes de ruta quedan en el módulo como
+         documentación del mapa, no como orden de navegación. */
       return [
         { paso: 'Entrar con la e.firma custodiada de este RFC', url: BUZON_LOGIN_URL },
-        { paso: 'Ir a la bandeja de notificaciones (lista)', url: BUZON_LIST_URL },
+        { paso: 'Seguir «Mis notificaciones» en la portada del Buzón hasta la bandeja (lista)', url: '' },
         { paso: 'Leer la lista visible SIN abrir ninguna notificación', url: '' },
-        { paso: 'Si la bandeja de comunicados consta visible, leer también su lista', url: BUZON_COMUNICADOS_URL }
+        { paso: 'Si la bandeja de comunicados consta visible, leer también su lista', url: '' }
       ];
     case 'declaracion-folio':
       return [
@@ -225,6 +241,11 @@ function routePlan(kind, payload) {
       return [
         { paso: 'Entrar con la e.firma custodiada de este RFC', url: DECL_ENTRY_URL },
         { paso: 'Descargar el documento pedido (' + String(payload.documento || 'documento') + ') y devolver su PDF', url: '' }
+      ];
+    case 'puerta-probar':
+      return [
+        { paso: 'Entrar con la e.firma custodiada de este RFC', url: BUZON_LOGIN_URL },
+        { paso: 'Confirmar que el portal deja sesión abierta y volver SIN navegar a ningún trámite', url: '' }
       ];
     default:
       return [];
@@ -377,27 +398,60 @@ export function validateExecutorResult(job = {}, result = {}) {
     if (!SAT_EXECUTOR_OPERATIONS.includes(nombre))
       throw new Error('El resultado declara una operación fuera del protocolo («' + nombre + '») y se rechaza.');
   const out = { steps, operations,
+    /* accesoOk (1.31.0): true SOLO si el ejecutor declara que
+       satBrowserLogin completó en ESTA corrida (booleano
+       estricto: cualquier otra cosa es false). Con esta señal
+       el servidor refresca el veredicto de la puerta aunque el
+       trámite posterior a la entrada haya fallado — entrar y
+       fallar después no es lo mismo que no poder entrar. */
+    accesoOk: result.accesoOk === true,
+    /* accesoFallo (1.32.1): la caída fue EN la entrada misma
+       (booleano estricto + una clase de puerta): el ejecutor
+       declara que su login no se completó, y el servidor
+       escribe en la puerta el veredicto «no abre» con el
+       motivo real — hasta ahora solo puerta-probar podía
+       escribirlo y una entrada rechazada en un trámite dejaba
+       la fila vieja intacta. */
+    accesoFallo: result.accesoFallo === true &&
+      ['portal-rechaza', 'credencial-invalida', 'sin-efirma'].includes(String(result.errorKind || ''))
+      ? String(result.errorKind) : '',
     warnings: (narrativo.warnings || []).map(w => redactExecutorText(String(w).slice(0, 400))).slice(0, 20),
     error: redactExecutorText(String(narrativo.error || '').slice(0, 500)),
     errorKind: String(result.errorKind || '').slice(0, 60),
-    diag: null };
-  if (narrativo.diag && typeof narrativo.diag === 'object') {
+    diag: null, diagDecision: null };
+  const sanearDiag = crudo => {
     let screenshot = null;
-    if (narrativo.diag.screenshotBase64) {
-      const bytes = Buffer.from(String(narrativo.diag.screenshotBase64), 'base64');
+    if (crudo.screenshotBase64) {
+      const bytes = Buffer.from(String(crudo.screenshotBase64), 'base64');
       /* Solo una imagen de verdad se archiva como captura
          (corrección H-1.5); lo demás se descarta, no se guarda. */
       screenshot = isImageBytes(bytes) ? bytes : null;
     }
-    out.diag = { screenshot,
-      html: narrativo.diag.html ? redactExecutorHtml(String(narrativo.diag.html).slice(0, 2 * 1024 * 1024)) : '',
-      url: String(narrativo.diag.url || '').slice(0, 300) };
-    if (out.diag.screenshot && !out.diag.screenshot.length) out.diag.screenshot = null;
-  }
+    const limpio = { screenshot,
+      html: crudo.html ? redactExecutorHtml(String(crudo.html).slice(0, 2 * 1024 * 1024)) : '',
+      url: String(crudo.url || '').slice(0, 300) };
+    if (limpio.screenshot && !limpio.screenshot.length) limpio.screenshot = null;
+    return limpio;
+  };
+  if (narrativo.diag && typeof narrativo.diag === 'object') out.diag = sanearDiag(narrativo.diag);
+  /* La página de DECISIÓN (1.32.1): la portada desde la que se
+     navegó al destino que resultó muerto — viaja ADEMÁS de la
+     página final y se sanea igual. Sin ella, un fallo en ruta
+     muerta solo conservaba la 404 genérica, que no dice nada. */
+  if (narrativo.diagDecision && typeof narrativo.diagDecision === 'object')
+    out.diagDecision = sanearDiag(narrativo.diagDecision);
   if (job.kind === 'buzon-listar') {
     const buzon = validateBuzonResult(result);
     out.notifications = buzon.notifications;
     out.counts = buzon.counts;
+  }
+  if (job.kind === 'puerta-probar') {
+    /* La puerta solo declara «abre» y la operación de entrar:
+       nada de navegar ni listar (1.30.0). Un «hecho» sin el
+       «abre» explícito no acredita la puerta. */
+    out.puerta = result.puerta === 'abre' ? 'abre' : '';
+    if (out.puerta && !operations.includes('entrar-con-efirma'))
+      throw new Error('El resultado de la prueba de puerta no declara la operación de entrar con e.firma.');
   }
   if (job.kind === 'declaraciones-recuperar' || job.kind === 'declaracion-folio' || job.kind === 'documento-sat') {
     const expected = { ejercicio: job.payload?.ejercicio || 0, periodo: job.payload?.periodo || '',

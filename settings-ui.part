@@ -2,7 +2,7 @@
    acento y nombre del remitente de los correos. En modo servidor se
    guardan vía API en el volumen de datos (sobreviven a reinicios y
    redespliegues y viajan en el respaldo completo); en modo local se
-   guardan en este navegador. Nada de esto toca pacosat-secrets. */
+   guardan en este navegador. Nada de esto toca la carpeta de secretos del servidor. */
 const ACCENT_SWATCHES = { '': '#0e6b4f', azul: '#175c9e', teal: '#0f766e', violeta: '#6d28d9',
   burdeos: '#9f2436', ambar: '#9a5b00', rosa: '#b01854', grafito: '#3f5468' };
 let pendingLogo; // undefined = sin cambios · '' = quitar · dataURL = logo nuevo
@@ -93,7 +93,7 @@ function settingsScreen() {
   if (satToken && satData.buildModified) facts.append(fact('Última modificación de esta copia', stampText(new Date(satData.buildModified).toISOString())));
   if (satToken && satData.serverStartedAt) facts.append(fact('Esta instancia se inició', stampText(new Date(satData.serverStartedAt).toISOString())));
   aboutBody.append(facts, n('p', satToken ?
-    'Los ajustes de identidad viven en el servidor, en su volumen de datos junto al estado operativo: sobreviven a reinicios y redespliegues, viajan en el respaldo completo y se restauran con él. Nunca se mezclan con las credenciales de pacosat-secrets.' :
+    'Los ajustes de identidad viven en el servidor, en su volumen de datos junto al estado operativo: sobreviven a reinicios y redespliegues, viajan en el respaldo completo y se restauran con él. Nunca se mezclan con las credenciales guardadas en la carpeta de secretos del servidor.' :
     'Sin servidor, los ajustes se guardan en este navegador. La fecha de inicio de la instancia solo existe en modo servidor y por eso no se muestra aquí.'));
   about.append(aboutBody);
   panels.push(about);
@@ -270,3 +270,201 @@ async function saveAppSettings() {
   applySettings();
   render();
 }
+
+/* ===== API de PacoSAT (1.32.0) =====
+   El panel de control de la puerta /api/v1: qué es, las llaves
+   (crear con enseñanza única, pausar, reactivar, revocar), el
+   uso contado desde el libro de llamadas — el mismo que audita
+   el Registro — y la documentación con ejemplos para Excel,
+   Power BI o cualquier sistema del despacho. Solo lectura
+   siempre: ninguna llave escribe, y lo que la lista de cimientos
+   prohíbe (e.firma, CIEC, contraseñas, contenido del Buzón) no
+   tiene recurso que lo devuelva. */
+function apiDocPanel1320() {
+  const p = panel('API de PacoSAT · Qué es y cómo se usa');
+  const base = location.origin + '/api/v1';
+  p.append(
+    n('p', 'La API deja que TU Excel, tu Power BI o tu sistema propio lean los datos de esta ' +
+      'instalación de PacoSAT: los mismos totales, comprobantes, avisos y documentos que enseñan ' +
+      'las pantallas, con las mismas cifras. Es de SOLO LECTURA y vive aquí, en tu equipo: ' +
+      'ningún dato sale a ningún servidor de nadie.'),
+    n('p', 'Cada sistema que conectes usa su propia llave. La llave se crea aquí, se enseña ' +
+      'una sola vez y en el servidor queda solo su huella: si se pierde, se revoca y se crea ' +
+      'otra. Una llave puede ser de lectura completa o de solo resúmenes, y puede quedar ' +
+      'limitada a un solo RFC.'));
+  const recursos = [
+    ['Estado de la instalación', 'GET /api/v1/estado'],
+    ['Totales por mes (el criterio de la pantalla Totales)', 'GET /api/v1/totales?rfc=TU_RFC&desde=2026-01&hasta=2026-12'],
+    ['Comprobantes (lista paginada: pagina y porPagina)', 'GET /api/v1/cfdi?rfc=TU_RFC&porPagina=50'],
+    ['Un comprobante en detalle', 'GET /api/v1/cfdi/EL_UUID?rfc=TU_RFC'],
+    ['Avisos activos con su plazo y su gesto', 'GET /api/v1/avisos?rfc=TU_RFC'],
+    ['Documentos del expediente', 'GET /api/v1/documentos?rfc=TU_RFC'],
+    ['Resumen del Buzón Tributario (conteos y plazos, sin contenido)', 'GET /api/v1/buzon/resumen?rfc=TU_RFC'],
+    ['El Registro en una ventana de tiempo', 'GET /api/v1/registro?rfc=TU_RFC']];
+  const lista = n('div', undefined, 'api-recursos');
+  for (const [nombre, ruta] of recursos) {
+    const fila = n('div', undefined, 'api-recurso');
+    fila.append(n('span', nombre), n('code', ruta));
+    lista.append(fila);
+  }
+  p.append(lista);
+  const ejemplo = 'curl -H "Authorization: Bearer TU_LLAVE" "' + base + '/totales?rfc=TU_RFC"';
+  const consulta = '= Json.Document(Web.Contents("' + base + '/totales?rfc=TU_RFC", ' +
+    '[Headers=[Authorization="Bearer TU_LLAVE"]]))';
+  const bloque = (titulo, texto) => {
+    const wrap = n('div', undefined, 'api-ejemplo');
+    const copiar = action('Copiar', async () => {
+      try { await navigator.clipboard.writeText(texto); toast('Copiado.', 'ok'); }
+      catch { toast('No se pudo copiar: selecciónalo y cópialo a mano.', 'error'); }
+    }, 'soft');
+    const cabeza = n('div', undefined, 'api-ejemplo-head');
+    cabeza.append(n('strong', titulo), copiar);
+    wrap.append(cabeza,
+      Object.assign(n('code', texto), { style: 'white-space:pre-wrap;word-break:break-all;display:block' }));
+    return wrap;
+  };
+  p.append(
+    n('h4', 'Ejemplo de llamada (curl)'),
+    bloque('curl', ejemplo),
+    n('h4', 'Para Excel o Power BI (Power Query → Obtener datos → En blanco)'),
+    bloque('Power Query', consulta),
+    n('p', 'Las respuestas son JSON con el sobre de la casa: «datos» y, en las listas, «meta» ' +
+      'con la página y el total. Los errores traen su código y su explicación en claro ' +
+      '(401 sin llave, 403 fuera de alcance o de su RFC, 429 si se pasa el ritmo de 60 ' +
+      'llamadas por minuto). La cabecera oficial es Authorization: Bearer; también se ' +
+      'acepta X-API-Key.'));
+  return p;
+}
+function apiPanelSection1320() {
+  const panels = [apiDocPanel1320()];
+  const p = panel('Llaves de acceso y uso');
+  const body = n('div', undefined, 'portal');
+  p.append(body);
+  panels.push(p);
+  const pintar = data => {
+    body.replaceChildren();
+    /* La llave recién creada: se enseña UNA vez, aquí. */
+    if (apiLlaveNueva1320) {
+      const caja = n('div', undefined, 'api-llave-nueva');
+      const codigo = Object.assign(n('code', apiLlaveNueva1320),
+        { style: 'word-break:break-all;display:block;font-size:15px' });
+      const copiar = action('Copiar la llave', async () => {
+        try { await navigator.clipboard.writeText(apiLlaveNueva1320); toast('Llave copiada.', 'ok'); }
+        catch { toast('No se pudo copiar: cópiala a mano.', 'error'); }
+      });
+      const cerrar = action('Ya la guardé', () => { apiLlaveNueva1320 = ''; pintar(data); }, 'soft');
+      const acciones = n('div', undefined, 'actions');
+      acciones.append(copiar, cerrar);
+      caja.append(n('strong', 'Tu llave nueva — cópiala ahora'),
+        n('p', 'No se vuelve a enseñar: en el servidor queda solo su huella. Si la pierdes, ' +
+          'revócala y crea otra.'),
+        codigo, acciones);
+      body.append(caja);
+    }
+    /* Crear una llave. */
+    const form = n('div', undefined, 'api-form');
+    const nombreIn = input('text', { maxlength: '60', placeholder: '¿Para quién o para qué? (p. ej. Excel de la oficina)', autocomplete: 'off' });
+    const alcanceSel = n('select');
+    alcanceSel.append(new Option('Lectura completa', 'lectura'), new Option('Solo resúmenes', 'lectura-resumen'));
+    const rfcSel = n('select');
+    rfcSel.append(new Option('Todos los RFC', ''));
+    for (const person of people) rfcSel.append(new Option(person.name + ' · ' + person.id, person.id));
+    const crear = action('Crear llave', async () => {
+      if (!nombreIn.value.trim()) { toast('Ponle un nombre a la llave.', 'error'); return; }
+      crear.disabled = true;
+      try {
+        const creada = await satApi('apikeys', { nombre: nombreIn.value.trim(),
+          alcance: alcanceSel.value, rfc: rfcSel.value });
+        apiLlaveNueva1320 = creada.llave || '';
+        toast('Llave creada: cópiala ahora, no se vuelve a enseñar.', 'ok');
+        pintar(await satApi('apikeys'));
+      } catch (error) {
+        /* Respuesta perdida ≠ no creada: se re-lee antes de
+           declarar el fallo (doctrina de la casa). */
+        try {
+          const releido = await satApi('apikeys');
+          if (releido.llaves.some(k => k.nombre === nombreIn.value.trim())) {
+            toast('La llave SÍ se creó (la respuesta se perdió por el camino). ' +
+              'Su valor ya no se puede enseñar: revócala y crea otra para copiarla.', 'error');
+            pintar(releido); return;
+          }
+        } catch { /* sin re-lectura: manda el error original */ }
+        toast(error.message, 'error');
+        crear.disabled = false;
+      }
+    });
+    form.append(field('Nombre de la llave', nombreIn), field('Alcance', alcanceSel),
+      field('Limitada a un RFC (opcional)', rfcSel), crear);
+    body.append(form);
+    /* Las llaves, con su uso. */
+    if (!data.llaves.length)
+      body.append(n('p', 'Todavía no hay llaves. Crea la primera para conectar tu Excel o tu sistema.'));
+    const actuar = async (llave, estado, etiqueta) => {
+      if (estado === 'revocada' &&
+          !confirm('¿Revocar la llave «' + llave.nombre + '»? Dejará de funcionar al instante y no hay vuelta atrás: para volver a conectar ese sistema habrá que crear una llave nueva.')) return;
+      try {
+        const fresco = await satApi('apikeys/estado', { id: llave.id, estado });
+        toast('Llave «' + llave.nombre + '»: ' + etiqueta + '.', 'ok');
+        pintar(fresco);
+      } catch (error) {
+        try {
+          const releido = await satApi('apikeys');
+          if (releido.llaves.find(k => k.id === llave.id)?.estado === estado) {
+            toast('Hecho: «' + llave.nombre + '» quedó ' + etiqueta + ' (la respuesta se había perdido).', 'ok');
+            pintar(releido); return;
+          }
+        } catch { /* manda el error original */ }
+        toast(error.message, 'error');
+      }
+    };
+    for (const llave of data.llaves) {
+      const card = n('article', undefined, 'api-key-card');
+      const pillEstado = llave.estado === 'activa' ? ['ok', 'Activa']
+        : llave.estado === 'en-pausa' ? ['warn', 'En pausa'] : ['dim', 'Revocada'];
+      const pillNode = statusPill(pillEstado[0], pillEstado[1]);
+      const menuItems = [];
+      if (llave.estado === 'activa')
+        menuItems.push({ label: 'Pausar', fn: () => actuar(llave, 'en-pausa', 'en pausa') });
+      if (llave.estado === 'en-pausa')
+        menuItems.push({ label: 'Reactivar', fn: () => actuar(llave, 'activa', 'activa otra vez') });
+      if (llave.estado !== 'revocada')
+        menuItems.push({ label: 'Revocar', danger: true, fn: () => actuar(llave, 'revocada', 'revocada') });
+      const head = n('div', undefined, 'tramite-head');
+      head.append(n('strong', llave.nombre), pillNode);
+      if (menuItems.length)
+        head.append(cardMenu1312('Más opciones de la llave ' + llave.nombre, menuItems));
+      const meta = n('p', undefined, 'api-key-meta');
+      meta.append(
+        n('span', (llave.alcance === 'lectura-resumen' ? 'Solo resúmenes' : 'Lectura completa') +
+          (llave.rfc ? ' · solo ' + llave.rfc : ' · todos los RFC')),
+        n('span', 'Creada el ' + localDateTime(llave.creada)),
+        n('span', llave.ultimoUso ? 'Último uso: ' + localDateTime(llave.ultimoUso) : 'Sin uso todavía'),
+        n('span', 'Llamadas: ' + llave.llamadasHoy + ' hoy · ' + llave.llamadasTotal + ' en total'));
+      card.append(head, meta);
+      body.append(card);
+    }
+    /* Últimas llamadas, con su puerta al Registro. */
+    if (data.llamadas?.length) {
+      body.append(n('h4', 'Últimas llamadas'));
+      const listaLlamadas = n('div', undefined, 'api-llamadas');
+      for (const llamada of data.llamadas.slice(0, 12)) {
+        const fila = n('div', undefined, 'api-llamada');
+        fila.append(n('span', localDateTime(llamada.at)),
+          n('span', llamada.llave), n('code', llamada.recurso),
+          n('span', llamada.registros ? llamada.registros + ' registros' : ''),
+          statusPill(llamada.estado < 400 ? 'ok' : llamada.estado === 429 ? 'warn' : 'bad',
+            String(llamada.estado)));
+        listaLlamadas.append(fila);
+      }
+      body.append(listaLlamadas);
+      const alRegistro = action('Verlas en el Registro', () => navigate('registro'), 'soft');
+      body.append(alRegistro);
+    }
+  };
+  body.append(n('p', 'Cargando las llaves…'));
+  satApi('apikeys').then(pintar).catch(error =>
+    body.replaceChildren(n('p', 'El panel de la API vive en el servidor de tu casa: ' +
+      'abre PacoSAT desde ahí para gestionar las llaves. (' + error.message + ')')));
+  return panels;
+}
+let apiLlaveNueva1320 = '';

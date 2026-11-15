@@ -149,15 +149,19 @@ try {
   await expiredSvc.tick();
   time += 5 * 60000;
   await expiredSvc.tick();
-  /* 1.7.4 (punto 17, criterio 3): ya NO hay correo individual por
-     alerta. La solicitud vencida vive en el Centro de Avisos y, como
-     mucho, dentro del ÚNICO correo-resumen del día, cuyo cuerpo la
-     nombra por su título. */
+  /* 1.7.4 (punto 17, criterio 3): la solicitud vencida vive en el
+     Centro de Avisos y dentro del ÚNICO correo-resumen del día.
+     1.29.2 (orden de Paco, 12 nov): cada alerta NUEVA además
+     notifica al nacer con sus datos — el escenario crea DOS
+     trabajos CFDI vencidos (y dos de metadatos), así que la
+     frase vive en 3 correos: el resumen (los nombra a todos) y
+     los dos nacimientos de los trabajos CFDI. Sin duplicados:
+     un tick más no añade ninguno. */
   const expiredMails = () => sent.slice(alertsBefore).filter(mail => /solicitud al SAT quedó vencida/.test(mail.text || '')).length;
-  assert.equal(expiredMails(), 1);
+  assert.equal(expiredMails(), 3);
   assert.equal(sent.slice(alertsBefore).filter(mail => /Resumen de avisos/.test(mail.subject)).length, 1);
   await expiredSvc.tick();
-  assert.equal(expiredMails(), 1);
+  assert.equal(expiredMails(), 3);
   expiredSvc.close();
   let failMode = true;
   const failSvc = await alertHarness({ request: async () => 'request-fail',
@@ -169,22 +173,26 @@ try {
      60 min), así que los tres intentos fallidos ya no caben en 15 min:
      se avanza siguiendo la propia cadencia del backoff. */
   for (const step of [5, 10, 20]) { time += step * 60000; await failSvc.tick(); }
-  assert.equal(failAlerts(), 1);
+  /* 1.29.2: la frase vive en DOS correos — el resumen del día y
+     el nacimiento del aviso — y en ninguno más: el tick extra
+     no duplica. */
+  assert.equal(failAlerts(), 2);
   time += 5 * 60000;
   await failSvc.tick();
-  assert.equal(failAlerts(), 1);
+  assert.equal(failAlerts(), 2);
   failMode = false;
   time += 40 * 60000;
   await failSvc.tick();
-  assert.equal(failAlerts(), 1);
+  assert.equal(failAlerts(), 2, 'la recuperación no añade ni retira correos');
   failMode = true;
   for (const step of [5, 10, 20]) { time += step * 60000; await failSvc.tick(); }
-  /* La segunda oleada de fallos crea su aviso en el Centro, pero el
-     correo-resumen diario ya salió hoy: espera al de mañana. */
-  assert.equal(failAlerts(), 1);
+  /* La segunda oleada de fallos crea su aviso en el Centro; el
+     correo-resumen diario ya salió hoy y espera al de mañana,
+     pero su NACIMIENTO (1.29.2) sí avisa al momento: 3. */
+  assert.equal(failAlerts(), 3);
   time += 22 * 3600000;
   await failSvc.tick();
-  assert.equal(failAlerts(), 2);
+  assert.equal(failAlerts(), 4, 'al día siguiente el resumen la recoge: 4');
   failSvc.close();
   console.log('OK: seguridad local, programación, descarga, RFC ajeno, deduplicación, correo simulado y pausa.');
   console.log('OK: avisos al Centro (sin correo individual) y un solo correo-resumen diario por solicitud vencida y por fallo persistente de la descarga.');
@@ -283,9 +291,10 @@ try {
   guardTime += 5 * 60000;
   await guardService.tick();
   await guardService.tick();
-  /* 1.7.4: el aviso 5002 ya no es un correo suelto: va en el cuerpo
-     del único correo-resumen (y vive en el Centro de Avisos). */
-  assert.equal(guardSent.filter(mail => /agotó las solicitudes de un periodo/.test(mail.text || '')).length, 1);
+  /* 1.7.4: el aviso 5002 va en el cuerpo del correo-resumen (y
+     vive en el Centro de Avisos). 1.29.2: su nacimiento además
+     avisa al momento — la frase vive en los dos correos. */
+  assert.equal(guardSent.filter(mail => /agotó las solicitudes de un periodo/.test(mail.text || '')).length, 2);
   const callsBeforeBlocked = guardCalls.length;
   res = await guardApi.call('/api/request', september);
   assert.equal(res.status, 409);

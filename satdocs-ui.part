@@ -52,7 +52,7 @@ function docsTopCards() {
      el lanzador de siempre (declRun, global en
      declaraciones-ui.part), sin obligar a entrar al mapa. */
   const declActs = n('div');
-  const declDescargar = n('button', 'Descargar', 'soft small');
+  const declDescargar = n('button', 'Descargar declaraciones', 'soft');
   declDescargar.type = 'button';
   declDescargar.onclick = event => {
     event.stopPropagation();
@@ -64,7 +64,7 @@ function docsTopCards() {
   gridBox.append(cSlot, oSlot,
     cmdCard('cfdi', 'ok', 'CFDI del SAT', 'Descarga masiva y vigilancia',
       'Baja los comprobantes del mes o de un periodo',
-      action('Ir a la descarga', () => showSatDownload(), 'soft', 'down'), () => showSatDownload()),
+      action('Descargar del SAT', () => showSatDownload(), 'soft', 'down'), () => showSatDownload()),
     cmdCard('decl', 'ok', 'Declaraciones', 'El mapa de tu año fiscal',
       'Qué consta presentado, qué toca y qué venció',
       declActs, irAlMapa));
@@ -79,9 +79,63 @@ function docsTopCards() {
   })();
   return wrap;
 }
+/* Versiones de los documentos del SAT (F5, 1.31.0): el
+   expediente (documents, ya ordenado por fecha descendente en
+   refresh()) guarda cada versión archivada; agrupadas por
+   (rfc, kind), la primera de cada grupo es la vigente y las
+   anteriores quedan con su fecha, sin pastilla. La tarjeta de
+   cada perfil enseña además su documento del servidor — que
+   sale de latestSatDoc, el más reciente por (rfc, kind) —
+   marcado «Vigente» en su propia línea. */
+function satDocVersiones() {
+  const grupos = new Map();
+  for (const doc of (typeof documents !== 'undefined' ? documents : [])) {
+    if (doc.archived) continue;
+    const kind = doc.kind === 'Constancia / CIF' ? 'constancia' :
+      doc.kind === 'Opinión de cumplimiento' ? 'opinion' : null;
+    if (!kind || !doc.rfc) continue;
+    const clave = doc.rfc + '|' + kind;
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    grupos.get(clave).push(doc);
+  }
+  return grupos;
+}
+/* Subir un papel en 2 toques (F7, 1.31.0): el tipo se sugiere
+   del nombre del archivo — sin acentos y en minúsculas, para
+   que «Opinión» y «opinion» sugieran lo mismo — y Paco lo
+   confirma en el diálogo antes de que nada se suba. */
+function satDocPapelSugerido(nombre) {
+  const limpio = String(nombre || '').toLocaleLowerCase('es-MX')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (limpio.includes('constancia')) return 'constancia';
+  if (limpio.includes('opinion')) return 'opinion';
+  return 'documento';
+}
+function satDocPapelDialog(rfc, fill, file) {
+  const kind = select([['constancia', 'Constancia'], ['opinion', 'Opinión'], ['documento', 'Documento']],
+    satDocPapelSugerido(file.name), 'Tipo de documento');
+  const date = input('date', { required: true, value: new Date().toISOString().slice(0, 10) });
+  /* El mismo diálogo simple de siempre (satDocUploadDialog):
+     tipo confirmado por Paco y fecha; lo que cambia es que el
+     archivo YA viene elegido del selector grande y puede ser
+     PDF o imagen, pensado para el móvil. La subida va por el
+     endpoint existente, satdocs/upload. */
+  dialog('Subir un papel · ' + rfc,
+    [n('p', 'Archivo: ' + file.name + '. El tipo viene sugerido por su nombre: confírmalo o cámbialo antes de archivar.'),
+     field('Documento', kind), field('Fecha de emisión', date)],
+    async () => {
+      const content = bytesToBase64(new Uint8Array(await file.arrayBuffer()));
+      const data = await satApi('satdocs/upload', { rfc, kind: kind.value, date: date.value, content, name: file.name });
+      await refresh();
+      toast('Papel archivado en Expedientes y semáforo actualizado.', 'ok');
+      fill(data);
+    }, 'Archivar papel');
+}
 function satDocsSection() {
   const section = panel('Constancias y opinión del SAT',
-    'La constancia de situación fiscal y la opinión de cumplimiento se vigilan por RECENCIA con la política propia de PacoSAT (verde menos de 60 días, ámbar hasta 90, rojo después): no es una caducidad oficial — la constancia no caduca —, es el margen para que ningún cliente te pida un documento más fresco. Si activas la descarga automática, PacoSAT las renueva cada mes y las envía por correo.');
+    'Vigencia y renovación de tu constancia y tu opinión, por contribuyente.');
+  /* Ancla de «Ver los últimos» de las tarjetas del Centro SAT (1.29.2). */
+  section.id = 'satdocs-section';
   const body = n('div');
   section.append(body);
   const fill = async data => {
@@ -95,6 +149,9 @@ function satDocsSection() {
        elegido, la sección enseña SOLO sus tarjetas y sus
        formularios, como ya hacen las tarjetas de arriba. */
     const visibles = scope ? view.profiles.filter(profile => profile.rfc === scope) : view.profiles;
+    /* F5 (1.31.0): las versiones archivadas de cada (rfc, kind),
+       para marcar la vigente y dejar las anteriores con su fecha. */
+    const versiones = satDocVersiones();
     if (!visibles.length) {
       body.append(n('p', 'El contribuyente elegido no tiene documentos del SAT vigilados todavía.', 'empty'));
       return;
@@ -117,14 +174,44 @@ function satDocsSection() {
       };
       if (profile.constancia) {
         meta.append(n('span', 'Constancia emitida: ' + localDate(profile.constancia.issuedAt) + (profile.constancia.source === 'manual' ? ' (subida a mano)' : '')));
+        /* F5: este es el documento del servidor, el más reciente
+           de su (rfc, kind): lleva su pastilla de vigente. */
+        meta.append(statusPill('ok', 'Vigente'));
         verButton(profile.constancia, 'Constancia', 'Constancia / CIF');
       }
       if (profile.opinion) {
         meta.append(n('span', 'Opinión emitida: ' + localDate(profile.opinion.issuedAt) + (profile.opinion.source === 'manual' ? ' (subida a mano)' : '')));
+        meta.append(statusPill('ok', 'Vigente'));
         verButton(profile.opinion, 'Opinión', 'Opinión de cumplimiento');
       }
       if (profile.lastAttempt) meta.append(n('span', 'Último intento de descarga: ' + localDateTime(profile.lastAttempt)));
       card.append(meta);
+      /* F5 · la lista de versiones (1.31.0): solo cuando hay
+         más de una archivada de la misma clase — la primera
+         (la más reciente del grupo) con su «Vigente» y las
+         anteriores con su fecha y sin pastilla, para que se
+         vea cuál manda sin borrar la historia. */
+      for (const [kindDoc, etiquetaDoc] of [['constancia', 'Constancia'], ['opinion', 'Opinión']]) {
+        const grupo = versiones.get(profile.rfc + '|' + kindDoc) || [];
+        if (grupo.length < 2) continue;
+        const boxVersiones = n('div', undefined, 'sat-versiones');
+        boxVersiones.append(n('strong', 'Versiones · ' + etiquetaDoc));
+        grupo.forEach((doc, indice) => {
+          const fila = n('div', undefined, 'cp-row');
+          fila.append(n('span', (doc.name || etiquetaDoc) + ' · ' +
+            (typeof doc.date === 'string' && doc.date.length >= 10 ? dateLabel(doc.date) : localDate(doc.date))));
+          if (indice === 0) fila.append(statusPill('ok', 'Vigente'));
+          /* Cada versión se abre y se baja desde su fila
+             (1.32.1, Do3): antes la fila era un elemento muerto. */
+          const verV = n('button', 'Ver', 'soft small');
+          verV.onclick = () => viewDocOnline(doc);
+          const bajarV = n('button', 'Descargar', 'soft small');
+          bajarV.onclick = () => downloadDocOnline(doc);
+          fila.append(verV, bajarV);
+          boxVersiones.append(fila);
+        });
+        card.append(boxVersiones);
+      }
       /* Puesta en marcha (M4): lo que falta para que este
          contribuyente quede trabajando, paso a paso. */
       if (profile.arranque && profile.arranque.hechas < profile.arranque.total) {
@@ -166,9 +253,14 @@ function satDocsSection() {
         } catch (error) { toast(error.message, 'error'); }
       };
       form.append(toggleLabel, when, recipients, save);
-      card.append(form);
+      /* La tarjeta es estado + acción (1.32.1, Do5): la
+         configuración de la descarga automática va plegada en
+         su propio «Descarga automática», no mezclada en la cara. */
+      const formDetails = n('details', undefined, 'satdoc-config');
+      formDetails.append(n('summary', 'Descarga automática — configuración'), form);
+      card.append(formDetails);
       const actions = n('div', undefined, 'sat-actions');
-      const run = n('button', 'Descargar ahora', 'soft');
+      const run = n('button', 'Descargar ahora', 'primary');
       run.onclick = async () => {
         run.disabled = true; run.textContent = 'Descargando del portal…';
         /* Progreso EN VIVO (1.10.1): la corrida sigue en el servidor
@@ -202,7 +294,22 @@ function satDocsSection() {
       const upload = n('button', 'Subir PDF a mano', 'soft');
       upload.onclick = () => satDocUploadDialog(profile.rfc, fill,
         !profile.constancia ? 'constancia' : !profile.opinion ? 'opinion' : undefined);
-      actions.append(run, upload);
+      /* Subir un papel en 2 toques (F7, 1.31.0): botón grande
+         junto al de siempre — un toque abre el selector (PDF o
+         imagen, el mismo flujo en el móvil) y al elegir, el
+         diálogo de confirmación ya trae el tipo sugerido por
+         el nombre del archivo. */
+      const papel = n('button', 'Subir un papel', 'soft');
+      papel.type = 'button';
+      const papelInput = input('file', { accept: 'application/pdf,image/*' });
+      papelInput.hidden = true;
+      papel.onclick = () => papelInput.click();
+      papelInput.onchange = () => {
+        const file = papelInput.files[0];
+        papelInput.value = '';
+        if (file) satDocPapelDialog(profile.rfc, fill, file);
+      };
+      actions.append(run, upload, papel, papelInput);
       card.append(actions);
       /* Progreso persistido de la última corrida (o de la que sigue
          en curso en el servidor) y el diario de corridas: al volver

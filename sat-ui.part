@@ -6,7 +6,7 @@ let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
 let satError = '', satPolling = false, cloudRevision;
 const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada' };
 const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
-const criteriaNotes = { disponible: 'Criterio sin usar', ultima: 'Criterio ya usado · no se repite', agotado: 'Criterio quemado ante el SAT (5002)', rescatado: 'Criterio rescatado por el portal' };
+const criteriaNotes = { disponible: 'Criterio sin usar', ultima: 'Criterio ya usado · no se repite', agotado: 'El SAT ya no acepta este criterio tal cual: hay que pedirlo con el cierre exacto', rescatado: 'Criterio rescatado por el portal' };
 
 /* Errores del servidor en lenguaje claro (UX-20): cada mensaje críptico
    conocido se traduce a qué pasó y qué hacer. Los que ya vienen claros
@@ -93,6 +93,46 @@ async function satApiBlob(route, data) {
   }
   return response.blob();
 }
+/* Descarga de salidas para las partes principales (1.31.0):
+   copia del patrón de salidaDescargar de outputs-ui.part, pero
+   con nombre propio — outputs-ui es una parte DIFERIDA que no
+   siempre está cargada cuando el Centro SAT o Declaraciones
+   pintan, y estas pantallas necesitan bajar su PDF/Excel/ZIP
+   sin depender de ella. El servidor manda el artefacto en
+   base64 con su nombre y su tipo; aquí solo se materializa. */
+async function descargarSalida1310(ruta, payload, boton) {
+  const texto = boton ? boton.textContent : '';
+  if (boton) { boton.disabled = true; boton.textContent = 'Preparando…'; }
+  try {
+    const data = await satApi(ruta, payload);
+    download(new Blob([decode64(data.content)], { type: data.type || 'application/octet-stream' }), data.name);
+    toast('Salida lista: ' + data.name, 'ok');
+  } catch (error) { toast(error.message, 'error'); }
+  finally { if (boton) { boton.disabled = false; boton.textContent = texto; } }
+}
+/* Cancelar un trámite desde su tarjeta (1.31.0, A3): cada
+   descriptor que satTramiteEstados adjunta como `cancelar`
+   sabe su vía — el servidor es quien detiene de verdad (en
+   cola sale de la cola; en curso se cancela y su resultado se
+   descarta al llegar). El toast cuenta el resultado tal cual:
+   si el servidor dice que ya no estaba en curso (stopped /
+   habia en falso), también se dice, no se finge una parada. */
+async function cancelarTramite1310(desc) {
+  if (!desc || !desc.tipo) return;
+  try {
+    let data = null;
+    if (desc.tipo === 'satdoc') data = await satApi('satdocs/cancel', { rfc: desc.rfc, kind: desc.kind });
+    else if (desc.tipo === 'decl') data = await satApi('declaraciones/cancel', { rfc: desc.rfc });
+    else if (desc.tipo === 'trib') data = await satApi('tributario/cancel', { rfc: desc.rfc });
+    else if (desc.tipo === 'ejecutor') data = await satApi('executor/cancel', { jobId: desc.jobId });
+    else return;
+    if (data?.message) { toast(data.message, 'ok'); return; }
+    const yaNoEstaba = data?.stopped === false || data?.habia === false || data?.cancelled === false;
+    if (yaNoEstaba) toast('Ese trabajo ya no estaba en curso: no quedaba nada que cancelar.', 'ok');
+    else toast('Cancelación pedida: el trabajo se detiene en el servidor y lo parcial se descarta' +
+      (data?.estado ? ' (' + data.estado + ')' : '') + '.', 'ok');
+  } catch (error) { toast(error.message, 'error'); }
+}
 
 function localDateTime(value) {
   if (!value) return 'Al activar';
@@ -170,140 +210,513 @@ function satQuickCuando(doc) {
     ? 'hoy ' + fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
     : 'el ' + localDate(doc.issuedAt);
 }
-function satQuickActions() {
-  const wrap = panel('¿Qué quieres del SAT?', 'Un toque y la acción corre: sin entrar en tarjetas a buscar el verbo.');
-  const rfc = satQuickRfc && people.some(person => person.id === satQuickRfc) ? satQuickRfc :
-    (scope || people[0]?.id || '');
-  const bar = n('div', undefined, 'sat-quick-bar');
-  bar.append(n('span', 'RFC', 'sat-quick-label'));
-  const selector = select(people.map(person => [person.id, person.name + ' · ' + person.id]), rfc, 'RFC de las acciones directas');
-  selector.onchange = () => {
-    satQuickRfc = selector.value; scope = selector.value;
-    const ambito = $('scope'); if (ambito) ambito.value = scope;
-    render();
-  };
-  bar.append(selector);
-  wrap.append(bar);
-  const grid = n('div', undefined, 'sat-quick-grid');
-  const mk = (glyph, verbo, linea) => {
-    const button = n('button', undefined, 'sat-quick-btn');
-    button.type = 'button';
-    const head = n('span', undefined, 'sat-quick-head');
-    head.append(icon(glyph), n('strong', verbo));
-    const line = n('small', linea, 'sat-quick-line');
-    button.append(head, line);
-    grid.append(button);
-    return { button, line };
-  };
-  const profile = (satData.profiles || []).find(item => item.rfc === rfc);
-  const lastJob = (satData.jobs || []).filter(job => job.rfc === rfc)
-    .sort((a, b) => (b.created || 0) - (a.created || 0))[0];
-  const descargar = mk('down', 'Descargar CFDI',
-    profile?.accessMethod === 'ciec' ? 'Este RFC entra con contraseña (CIEC): se baja desde su tarjeta, con tu captcha.' :
-    lastJob ? 'Última solicitud: ' + (satStatus[lastJob.status] || lastJob.status) + ' · ' + localDateTime(lastJob.created) :
-    'Elige el periodo y PacoSAT lo pide al SAT y lo importa solo.');
-  descargar.button.onclick = () => {
-    if (profile?.accessMethod === 'ciec') {
-      satTab = 'descargar'; render();
-      setTimeout(() => document.querySelector('#ciec-live')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
-      announce('Descarga con CIEC de ' + rfc + ': elige el rango en su tarjeta y escribe el captcha cuando el portal lo enseñe.');
-      return;
-    }
-    downloadSheet(rfc);
-  };
-  const docsProfile = satQuickDocs?.profiles?.find(item => item.rfc === rfc);
-  const constancia = mk('file', 'Constancia',
-    docsProfile ? (docsProfile.constancia ? 'Constancia · descargada ' + satQuickCuando(docsProfile.constancia) :
-      'Constancia · pendiente de tu primera descarga') : 'La constancia de situación fiscal de este RFC, del portal del SAT.');
-  constancia.button.onclick = () => satQuickRunDoc('constancia', rfc, constancia.button, constancia.line);
-  const opinion = mk('shield', 'Opinión',
-    docsProfile ? (docsProfile.opinion ? 'Opinión · descargada ' + satQuickCuando(docsProfile.opinion) :
-      'Opinión · pendiente de tu primera descarga') : 'La opinión de cumplimiento (32-D) de este RFC, del portal del SAT.');
-  opinion.button.onclick = () => satQuickRunDoc('opinion', rfc, opinion.button, opinion.line);
-  const buzonTrib = mk('bell', 'Buzón Tributario',
-    'Las notificaciones del SAT para este RFC: se listan sin abrir ninguna.');
-  buzonTrib.button.onclick = () => {
-    if (scope !== rfc) {
-      scope = rfc;
-      const ambito = $('scope'); if (ambito) ambito.value = scope;
-      const ambitoTop = $('scope-top'); if (ambitoTop) ambitoTop.value = scope;
-    }
-    navigate('tributario');
-  };
-  const declaraciones = mk('folder', 'Declaraciones', 'Las mensuales y la anual ya presentadas, con su rejilla por meses.');
-  declaraciones.button.onclick = () => {
-    if (scope !== rfc) { scope = rfc; const ambito = $('scope'); if (ambito) ambito.value = scope; }
-    navigate('docs');
-    /* Salto por ancla fija (1.18.0): antes se buscaba el encabezado
-       por su texto y el botón se quedaba sin llegar. */
-    setTimeout(() => {
-      document.getElementById('declaraciones-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 90);
-  };
-  wrap.append(grid);
-  /* D3 (1.23.0): el panel es autosuficiente — «Ver» de Constancia y
-     Opinión cuando el documento consta descargado (se rellena con
-     /api/satdocs en el bloque asíncrono de abajo, abriendo el mismo
-     visor que las tarjetas de Documentos) y «Recuperar» de
-     Declaraciones ahí mismo, con el lanzador de siempre (declRun). */
-  const quickActs = n('div', undefined, 'actions');
-  wrap.append(quickActs);
-  const recuperarDecl = n('button', 'Recuperar declaraciones', 'soft small');
-  recuperarDecl.type = 'button';
-  recuperarDecl.onclick = () => {
-    if (scope !== rfc) {
-      scope = rfc;
-      const ambito = $('scope'); if (ambito) ambito.value = scope;
-      const ambitoTop = $('scope-top'); if (ambitoTop) ambitoTop.value = scope;
-    }
-    declEjercicio = new Date().getFullYear();
-    declRun('mensuales', () => { if (page === 'docs') render(); }, recuperarDecl);
-  };
-  quickActs.append(recuperarDecl);
-  /* Las líneas de estado de documentos y declaraciones se rellenan
-     con lo que la API ya expone; si la lectura falla, queda la
-     línea corta de qué hace cada botón. */
-  (async () => {
-    try {
-      const view = await satApi('satdocs');
-      satQuickDocs = view;
-      if (!wrap.isConnected) return;
-      const fresh = view.profiles.find(item => item.rfc === rfc);
-      if (fresh) {
-        constancia.line.textContent = fresh.constancia ? 'Constancia · descargada ' + satQuickCuando(fresh.constancia) :
-          'Constancia · pendiente de tu primera descarga';
-        opinion.line.textContent = fresh.opinion ? 'Opinión · descargada ' + satQuickCuando(fresh.opinion) :
-          'Opinión · pendiente de tu primera descarga';
-        /* «Ver» en el propio panel (D3): el mismo visor que las
-           tarjetas de Documentos, sin cambiar de pantalla. */
-        const verDoc = (doc, kind, label) => {
-          if (!doc?.fileId) return;
-          const ver = n('button', 'Ver ' + label, 'soft small');
-          ver.type = 'button';
-          ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc, kind, name: label + ' · ' + rfc + '.pdf' });
-          quickActs.append(ver);
-        };
-        verDoc(fresh.constancia, 'Constancia / CIF', 'Constancia');
-        verDoc(fresh.opinion, 'Opinión de cumplimiento', 'Opinión');
-      }
-    } catch { /* sin servicio a mano: quedan las líneas cortas */ }
-    try {
-      const trib = await satApi('tributario?rfc=' + encodeURIComponent(rfc));
-      if (!wrap.isConnected) return;
-      buzonTrib.line.textContent = trib.ultimaConsulta
-        ? 'Buzón Tributario · ' + (trib.sinAbrir ? number.format(trib.sinAbrir) + ' sin abrir' : 'sin notificaciones pendientes') +
-          ' · última consulta ' + buzonCuando(trib.ultimaConsulta)
-        : 'Buzón Tributario · sin consultar todavía: la lista se trae sin abrir ninguna.';
-    } catch { /* sin servicio a mano: queda la línea corta */ }
-    try {
-      const ejercicio = new Date().getFullYear();
-      const view = await satApi('declaraciones?rfc=' + encodeURIComponent(rfc) + '&ejercicio=' + ejercicio);
-      if (!wrap.isConnected) return;
-      declaraciones.line.textContent = view.documentos?.length ?
-        view.documentos.length + ' documento(s) recuperados del ejercicio ' + ejercicio + '.' :
-        'Sin recuperar todavía: mensuales y anual del ejercicio ' + ejercicio + '.';
-    } catch { /* idem */ }
+/* ===== Parrilla de trámites del Centro SAT (1.29.2) =====
+   La orden de Paco (12 nov 20:25): «quiero que sea mas visual,
+   el boton de recibir cfdi, complemento, constancia, declaracion,
+   buzon, botones visibles que dentro del boton se pueda
+   actualizar, ver los ultimos, etc, mas visual todo, mas facil,
+   mas sencillo». Cada trámite es una TARJETA-BOTÓN grande con su
+   semáforo verdadero, lo último recibido y sus dos acciones
+   dentro: «Actualizar» corre la vía que le toca (con efecto
+   visible en la propia tarjeta) y «Ver los últimos» lleva a la
+   lista filtrada de su pantalla de siempre. Las pantallas
+   profundas no cambian: la tarjeta es la puerta.
+   El estado de cada tarjeta lo calcula satTramiteEstados SOLO
+   con datos del servidor (el mismo executorEstado que alimenta
+   Hoy y Declaraciones, satdocs, tributario, los trabajos de
+   descarga y los CFDI registrados): ninguna tarjeta dice «al
+   día» si su vía está rota, huérfana o sin probar — dice el
+   porqué en una línea y de quién es el gesto. */
+function satTramiteEstados(d) {
+  const salida = {};
+  /* Alta preparada sin credenciales (1.30.0): las seis tarjetas
+     dicen la verdad — falta su e.firma y el gesto es darla. */
+  if (d.profile?.pending) {
+    const falta = { nivel: 'warn', frase: 'Falta su e.firma', ultimo: 'sin recibir todavía',
+      accion: 'ir-descarga', accionTexto: 'Dar sus credenciales',
+      porque: 'Este RFC consta como contribuyente, pero aún no tiene credenciales en PacoSAT: el gesto es dar su e.firma o su CIEC en la pestaña Descargar CFDI.' };
+    return { cfdi: falta, complementos: falta, constancia: falta, declaraciones: falta, buzon: falta, opinion: falta };
+  }
+  const jobActivo = (kinds) => (d.cola || []).find(job => job.rfc === d.rfc &&
+    kinds.includes(job.kind) && ['en-cola', 'reclamado', 'en-curso'].includes(job.estado));
+  const esperaEquipo = (job) => ({ nivel: 'warn', frase: 'Esperando tu equipo',
+    porque: 'En cola en tu equipo.', accion: 'actualizar' });
+  /* --- Descargar CFDI y Complementos (vía de descarga de siempre) --- */
+  const cfdiBase = (() => {
+    if (!d.profile) return { nivel: 'dim', frase: 'Sin alta de descarga',
+      porque: 'Este RFC no tiene alta de descarga en PacoSAT: se da de alta en la pestaña Descargar CFDI.', accion: 'ir-descarga' };
+    if (d.profile.accessMethod === 'ciec') return { nivel: 'warn', frase: 'Falta tu gesto',
+      porque: 'Este RFC entra con contraseña (CIEC): la descarga pide tu captcha en su tarjeta.', accion: 'ciec', accionTexto: 'Ir a la descarga' };
+    if (d.lastJob?.status === 'pending') return { nivel: 'warn', frase: 'Trabajando',
+      porque: 'Solicitud en curso: el SAT está preparando el paquete.', accion: 'descargar' };
+    if (d.lastJob && d.lastJob.status !== 'finished') return { nivel: 'bad', frase: 'Con problema',
+      porque: 'La última solicitud: ' + (satStatus[d.lastJob.status] || d.lastJob.status) + ' · ' + localDateTime(d.lastJob.created) + '.', accion: 'descargar' };
+    if (d.lastJob?.status === 'finished' || d.ultimoCfdi) return { nivel: 'ok', frase: 'Al día', accion: 'descargar' };
+    return { nivel: 'dim', frase: 'Sin descargar todavía', accion: 'descargar' };
   })();
+  salida.cfdi = { ...cfdiBase,
+    ultimo: d.ultimoCfdi ? 'último: ' + d.ultimoCfdi : (d.lastJob?.status === 'finished'
+      ? 'último paquete · ' + localDateTime(d.lastJob.created) : 'sin recibir todavía') };
+  /* Barra de progreso (1.31.2): la solicitud viva del SAT trae
+     su fase y su inicio reales; sin total conocido, la barra
+     va indeterminada — el SAT no dice cuántos paquetes faltan. */
+  if (d.lastJob?.status === 'pending')
+    salida.cfdi.progreso = { fase: 'El SAT está preparando el paquete', desde: d.lastJob.created || 0 };
+  salida.complementos = (() => {
+    if (!d.complementos?.total) return { nivel: 'dim', frase: 'Sin recibir todavía',
+      ultimo: 'sin recibir todavía', accion: cfdiBase.accion, accionTexto: cfdiBase.accionTexto,
+      tecnico: 'Los complementos llegan con la descarga de CFDI: no hay una bajada aparte para ellos.' };
+    if (cfdiBase.nivel === 'bad') return { nivel: 'warn', frase: 'La última descarga falló',
+      ultimo: 'último: Complemento · ' + localDate(d.complementos.ultima), accion: cfdiBase.accion, accionTexto: cfdiBase.accionTexto,
+      porque: 'Los complementos llegan con la descarga de CFDI: reinténtala desde su tarjeta.' };
+    return { nivel: 'ok', frase: 'Al día',
+      ultimo: 'último: Complemento · ' + localDate(d.complementos.ultima), accion: cfdiBase.accion, accionTexto: cfdiBase.accionTexto,
+      detalle: number.format(d.complementos.total) + ' complemento(s) registrados' };
+  })();
+  /* --- Constancia y Opinión (navegador del servidor) --- */
+  for (const [clave, kind, etiqueta] of [['constancia', 'constancia', 'Constancia'], ['opinion', 'opinion', 'Opinión']]) {
+    const perfil = d.docsProfile;
+    const doc = perfil?.[kind];
+    const progreso = perfil?.progress?.kind === kind ? perfil.progress : null;
+    if (!perfil) salida[clave] = { nivel: 'dim', frase: 'Sin datos a mano',
+      ultimo: 'sin recibir todavía', accion: 'pedir',
+      porque: 'El servidor no respondió a la lectura de documentos: recarga la pantalla.' };
+    else if (progreso?.running) salida[clave] = { nivel: 'warn', frase: 'Trabajando',
+      ultimo: progreso.step || 'Descargando del portal…', accion: 'pedir',
+      /* A3 (1.31.0): la descarga corre de verdad en el servidor,
+         así que su tarjeta lleva con qué pararla allí. */
+      cancelar: { tipo: 'satdoc', rfc: d.rfc, kind },
+      /* Barra (1.31.2): la fase y el inicio son los de la
+         corrida del servidor, no una estimación. */
+      progreso: { fase: progreso.step || 'Descargando del portal…', desde: progreso.at || 0 } };
+    else if (progreso && progreso.ok === false) salida[clave] = { nivel: 'bad', frase: 'Con problema',
+      ultimo: doc ? 'último: ' + etiqueta + ' · ' + satQuickCuando(doc) : 'sin recibir todavía', accion: 'pedir',
+      porque: progreso.step || 'La última descarga no llegó.' };
+    else if (doc) salida[clave] = { nivel: doc.level === 'ok' ? 'ok' : doc.level === 'warn' ? 'warn' : 'bad',
+      frase: doc.level === 'ok' ? 'Al día' : doc.level === 'warn' ? 'Conviene renovarla' : 'Muy vieja: renuevala',
+      ultimo: 'último: ' + etiqueta + ' · ' + satQuickCuando(doc), accion: 'pedir',
+      tecnico: doc.level === 'ok' ? '' : 'La recencia se vigila con la política de PacoSAT (verde menos de 60 días, ámbar hasta 90): el documento no caduca oficialmente.' };
+    else salida[clave] = { nivel: 'warn', frase: 'Sin recibir todavía',
+      ultimo: 'sin recibir todavía', accion: 'pedir',
+      tecnico: 'Cómo llega: PacoSAT lo baja del portal con la e.firma guardada al pulsar «Actualizar».' };
+  }
+  /* --- Declaraciones y Buzón (la puerta del ejecutor) --- */
+  const puerta = (job, datosOk) => {
+    if (job) {
+      if (d.ejecutor?.enLinea && (job.estado === 'reclamado' || job.estado === 'en-curso'))
+        return { nivel: 'warn', frase: 'Trabajando', porque: 'Tu ejecutor lo está corriendo en tu equipo.', accion: 'actualizar' };
+      return esperaEquipo(job);
+    }
+    if (!d.ejecutor?.emparejado) return { nivel: 'warn', frase: 'Esperando tu equipo',
+      porque: 'Todavía no has emparejado ningún equipo: sin ejecutor, esta vía no se toca.',
+      accion: 'emparejar', accionTexto: 'Emparejar tu equipo' };
+    if (!d.ejecutor.enLinea) return { nivel: 'warn', frase: 'Tu equipo no responde',
+      porque: 'Última señal ' + (d.ejecutor.ultimoVisto ? localDateTime(d.ejecutor.ultimoVisto) : 'sin registrar') +
+        ': abre el ejecutor en tu equipo y esta vía vuelve sola.', accion: 'actualizar' };
+    return datosOk;
+  };
+  const declJob = jobActivo(['declaraciones-recuperar', 'declaracion-folio']);
+  salida.declaraciones = { ...puerta(declJob, { nivel: 'ok', frase: 'Al día', accion: 'actualizar' }),
+    ultimo: d.ultimoAcuse ? 'último: ' + d.ultimoAcuse : 'sin recibir todavía' };
+  if (!declJob && d.declProgreso?.running)
+    salida.declaraciones = { nivel: 'warn', frase: 'Trabajando', ultimo: salida.declaraciones.ultimo,
+      porque: d.declProgreso.step || 'Recuperando declaraciones…', accion: 'actualizar' };
+  /* A5 · Último resultado verdadero (1.31.0): sin trabajo activo,
+     un «Al día» heredado no puede tapar el último fallo REAL —
+     primero el progreso persistido (ok === false) y, si no, el
+     último trabajo terminado del ejecutor para este RFC: solo
+     un 'fallido' cambia la tarjeta; un 'hecho' deja lo de
+     siempre, porque el acuse ya manda en su línea de último. */
+  if (!declJob && !d.declProgreso?.running) {
+    if (d.declProgreso?.ok === false) {
+      salida.declaraciones = { nivel: 'bad', frase: 'La última recuperación falló',
+        ultimo: salida.declaraciones.ultimo, accion: 'actualizar',
+        porque: d.declProgreso.step || 'La última recuperación no llegó.' };
+    } else {
+      const terminado = (d.cola || []).filter(job => job.rfc === d.rfc &&
+        ['declaraciones-recuperar', 'declaracion-folio'].includes(job.kind) &&
+        ['hecho', 'fallido'].includes(job.estado))
+        .sort((a, b) => ((b.creado ?? b.created) || 0) - ((a.creado ?? a.created) || 0))[0];
+      if (terminado?.estado === 'fallido') {
+        const cuandoMs = typeof (terminado.creado ?? terminado.created) === 'number'
+          ? (terminado.creado ?? terminado.created) : Date.parse(terminado.creado ?? terminado.created);
+        salida.declaraciones = { nivel: 'bad', frase: 'La última recuperación falló',
+          ultimo: salida.declaraciones.ultimo, accion: 'actualizar',
+          porque: (terminado.error || 'La última recuperación no llegó.') +
+            (Number.isFinite(cuandoMs) ? ' · ' + localDateTime(cuandoMs) : '') + '.' };
+      }
+    }
+  }
+  /* A3 (1.31.0): si Declaraciones está viva de verdad, su
+     tarjeta lleva el descriptor de su Cancelar — el trabajo
+     del ejecutor por su jobId y, si no, la corrida local por
+     su RFC. */
+  if (declJob) salida.declaraciones.cancelar = { tipo: 'ejecutor', jobId: declJob.id };
+  else if (d.declProgreso?.running) salida.declaraciones.cancelar = { tipo: 'decl', rfc: d.rfc };
+  /* Barra (1.31.2): trabajo vivo de Declaraciones — del
+     ejecutor (su traza real manda la fase) o de la corrida del
+     servidor (su paso y su inicio). */
+  if (declJob) {
+    const pasos = declJob.steps || [];
+    salida.declaraciones.progreso = { fase: pasos[pasos.length - 1]?.paso ||
+      (declJob.estado === 'en-cola' ? 'En cola: esperando a tu equipo' : 'Trabajando en tu equipo'),
+      desde: declJob.creado || 0 };
+  } else if (d.declProgreso?.running)
+    salida.declaraciones.progreso = { fase: d.declProgreso.step || 'Recuperando declaraciones…', desde: d.declProgreso.at || 0 };
+  const buzonJob = jobActivo(['buzon-listar']);
+  const buzonOk = d.trib?.ultimaConsulta
+    ? (d.trib.sinAbrir ? { nivel: 'warn', frase: number.format(d.trib.sinAbrir) + ' sin abrir', accion: 'actualizar',
+        porque: 'Las notificaciones se listan sin abrir ninguna: abrirlas es tu gesto, en el portal oficial.' }
+      : { nivel: 'ok', frase: 'Al día', accion: 'actualizar' })
+    : { nivel: 'dim', frase: 'Sin consultar todavía', accion: 'actualizar' };
+  salida.buzon = { ...puerta(buzonJob, buzonOk),
+    ultimo: d.trib?.ultimaConsulta ? 'última consulta · ' + buzonCuando(d.trib.ultimaConsulta) : 'sin consultar todavía' };
+  if (!buzonJob && d.ejecutor?.emparejado && !d.ejecutor.enLinea && d.trib?.ultimaConsulta)
+    salida.buzon.porque = 'Tu equipo no está en línea ahora: la próxima consulta espera a que lo abras.';
+  /* A5 · Buzón (1.31.0): sin trabajo activo, si la última
+     corrida del diario terminó MAL y es posterior a la última
+     consulta buena, la tarjeta lo dice — la fecha de la buena
+     no convierte en «al día» una consulta que después falló. */
+  if (!buzonJob) {
+    const run0 = d.trib?.runs?.[0];
+    const finMs = run0 ? (typeof run0.finished === 'number' ? run0.finished : Date.parse(run0.finished)) : NaN;
+    const buenaMs = d.trib?.ultimaConsulta
+      ? (typeof d.trib.ultimaConsulta === 'number' ? d.trib.ultimaConsulta : Date.parse(d.trib.ultimaConsulta)) : 0;
+    if (run0 && !run0.ok && Number.isFinite(finMs) && finMs > (buenaMs || 0))
+      salida.buzon = { ...salida.buzon, nivel: 'bad', frase: 'La última consulta falló',
+        porque: run0.error || 'La última consulta no llegó.' };
+  }
+  /* A3 · Buzón (1.31.0): vivo por el ejecutor (su jobId) o por
+     la corrida del tributario en el servidor (su RFC). */
+  if (buzonJob) salida.buzon.cancelar = { tipo: 'ejecutor', jobId: buzonJob.id };
+  else if (d.trib?.progreso?.running) salida.buzon.cancelar = { tipo: 'trib', rfc: d.rfc };
+  /* Barra (1.31.2): trabajo vivo del Buzón, con la misma
+     doctrina que Declaraciones. */
+  if (buzonJob) {
+    const pasos = buzonJob.steps || [];
+    salida.buzon.progreso = { fase: pasos[pasos.length - 1]?.paso ||
+      (buzonJob.estado === 'en-cola' ? 'En cola: esperando a tu equipo' : 'Trabajando en tu equipo'),
+      desde: buzonJob.creado || 0 };
+  } else if (d.trib?.progreso?.running)
+    salida.buzon.progreso = { fase: d.trib.progreso.step || 'Consultando el buzón…', desde: d.trib.progreso.at || 0 };
+  /* La puerta auto-probada (1.30.0): su veredicto, en el detalle
+     de esta tarjeta; si nunca se probó, no se dice nada. */
+  if (d.puerta?.probada)
+    salida.buzon.detalle = 'Puerta probada el ' + localDateTime(d.puerta.probada) + ': ' +
+      (d.puerta.ok ? 'abre — la e.firma entra sola cada semana' : 'NO abre — ' + (d.puerta.error || 'sin motivo registrado'));
+  return salida;
+}
+let satGridDocs = null;
+function satCardGrid() {
+  const wrap = panel('¿Qué quieres del SAT?', 'Cada trámite en su tarjeta: su estado verdadero, lo último recibido y sus dos botones — Actualizar y Ver los últimos.');
+  /* El selector (1.30.0): las personas de siempre más los RFC
+     con perfil o alta preparada que aún no consten como persona. */
+  const personas = [...people];
+  for (const p of (satData.profiles || []))
+    if (!personas.some(person => person.id === p.rfc))
+      personas.push({ id: p.rfc, name: (p.pending || (satData.pendingProfiles || []).includes(p.rfc)) ? 'Alta preparada (faltan credenciales)' : 'Contribuyente' });
+  const rfc = satQuickRfc && personas.some(person => person.id === satQuickRfc) ? satQuickRfc :
+    (scope || personas[0]?.id || '');
+  /* Selector propio SOLO cuando aporta algo (1.31.1): si la
+     parrilla conoce RFC que el selector global de la cabecera no
+     trae (un alta preparada que aún no es persona), la barra se
+     pinta; en el caso normal la parrilla sigue al contribuyente
+     de arriba y no duplica el selector en la misma pantalla. */
+  if (personas.some(person => !people.some(p => p.id === person.id))) {
+    const bar = n('div', undefined, 'sat-quick-bar');
+    bar.append(n('span', 'RFC', 'sat-quick-label'));
+    const selector = select(personas.map(person => [person.id, person.name + ' · ' + person.id]), rfc, 'RFC de las tarjetas');
+    selector.onchange = () => {
+      satQuickRfc = selector.value; scope = selector.value;
+      const ambito = $('scope'); if (ambito) ambito.value = scope;
+      render();
+    };
+    bar.append(selector);
+    wrap.append(bar);
+  }
+  /* Filtro «Solo lo que me necesita» (1.31.2): conmutador de la
+     parrilla; el orden por urgencia lo pone el pintado por
+     rangos (style.order: la DOM no se mueve, los asserts de
+     orden de casa quedan intactos). */
+  let soloNecesita1312 = false;
+  let ultimosEstados1312 = null;
+  const filtroRow = n('div', undefined, 'traffic-strip');
+  const filtroBtn = n('button', 'Solo lo que me necesita', 'soft small filtro-necesita-btn');
+  filtroBtn.type = 'button';
+  filtroBtn.setAttribute('aria-pressed', 'false');
+  filtroRow.append(filtroBtn);
+  wrap.append(filtroRow);
+  const grid = n('div', undefined, 'tramite-grid');
+  wrap.append(grid);
+  /* Iconos propios por trámite (V14, 1.31.0): constancia,
+     declaraciones, buzón y opinión dibujan lo suyo; CFDI y
+     complementos se quedan con los genéricos de siempre. */
+  const DEFINICIONES = [
+    ['cfdi', 'down', 'Descargar CFDI'],
+    ['complementos', 'check', 'Complementos'],
+    ['constancia', 'constancia', 'Constancia'],
+    ['declaraciones', 'decl', 'Declaraciones'],
+    ['buzon', 'buzontrib', 'Buzón Tributario'],
+    ['opinion', 'opinion', 'Opinión']
+  ];
+  const tarjetas = {};
+  for (const [clave, glyph, nombre] of DEFINICIONES) {
+    const card = n('article', undefined, 'tramite-card');
+    const head = n('div', undefined, 'tramite-head');
+    head.append(icon(glyph), n('strong', nombre));
+    /* Etiqueta del foco (1.31.1): la tarjeta que necesita a Paco
+       lo dice con palabras, no solo con el color. */
+    const focoTag = n('span', 'Te necesita', 'tramite-foco-tag');
+    focoTag.hidden = true;
+    head.append(focoTag);
+    const estadoBox = n('div', undefined, 'tramite-estado');
+    const pillSlot = n('span');
+    estadoBox.append(pillSlot);
+    const ultimo = n('p', 'Leyendo el estado…', 'tramite-ultimo');
+    /* Frescura (1.31.2, cierra V7): «última vez · próxima vez»
+       cuando la cadencia consta; sin cadencia, no se pinta. */
+    const frescura = n('p', '', 'tramite-frescura');
+    frescura.hidden = true;
+    /* Barra de progreso (1.31.2): solo con trabajo vivo. */
+    const progresoSlot = n('div');
+    /* Menú ⋯ (1.31.2): acciones reales por tarjeta; el pintado
+       lo rellena según el estado (sin acciones, ni se enseña). */
+    const menu = cardMenu1312('Más opciones de ' + nombre);
+    head.append(menu);
+    const detalle = n('p', '', 'tramite-detalle');
+    const porque = n('p', '', 'tramite-porque');
+    /* Detalle técnico plegado (1.31.1): la explicación de cómo
+       llega un documento vive aquí, cerrada; la cara de la
+       tarjeta dice qué es, su estado y su último resultado. */
+    const fold = n('details', undefined, 'tramite-fold');
+    const foldSum = n('summary', 'Detalle');
+    const foldText = n('p', '');
+    fold.append(foldSum, foldText);
+    fold.hidden = true;
+    const acts = n('div', undefined, 'tramite-acts');
+    const actualizar = n('button', 'Descargar ahora', 'primary');
+    actualizar.type = 'button';
+    const ver = n('button', 'Ver los últimos', 'soft');
+    ver.type = 'button';
+    /* Cancelar (A3, 1.31.0): vive en la misma fila, pero SOLO
+       se enseña cuando el estado pintado trae descriptor de
+       cancelar — un trabajo vivo de verdad, no por cortesía. */
+    const cancelBtn = n('button', 'Cancelar', 'soft');
+    cancelBtn.type = 'button';
+    cancelBtn.hidden = true;
+    acts.append(actualizar, ver, cancelBtn);
+    pillSlot.append(statusPill('dim', 'Leyendo…'));
+    card.append(head, estadoBox, ultimo, frescura, detalle, porque, fold, progresoSlot, acts);
+    grid.append(card);
+    tarjetas[clave] = { card, pillSlot, ultimo, frescura, progresoSlot, menu, detalle, porque, fold, foldText, focoTag, actualizar, ver, cancelBtn };
+  }
+  const fijarScope = () => {
+    if (scope !== rfc) {
+      scope = rfc;
+      const ambito = $('scope'); if (ambito) ambito.value = scope;
+      const ambitoTop = $('scope-top'); if (ambitoTop) ambitoTop.value = scope;
+    }
+  };
+  tarjetas.cfdi.ver.onclick = () => { fijarScope(); invoiceKind = ''; month = ''; term = ''; navigate('invoices'); };
+  tarjetas.complementos.ver.onclick = () => { fijarScope(); invoiceKind = 'P'; month = ''; term = ''; navigate('invoices'); };
+  const irDocumentos = () => { fijarScope(); navigate('docs');
+    setTimeout(() => document.getElementById('satdocs-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 90); };
+  tarjetas.constancia.ver.onclick = irDocumentos;
+  tarjetas.opinion.ver.onclick = irDocumentos;
+  tarjetas.declaraciones.ver.onclick = () => { fijarScope(); navigate('declaraciones'); };
+  tarjetas.buzon.ver.onclick = () => { fijarScope(); navigate('tributario'); };
+  const pintar = (estados) => {
+    ultimosEstados1312 = estados;
+    /* Foco (V3, rehecho en 1.31.1): la tarjeta que pide el
+       gesto de Paco —o que enseña el último fallo— se marca
+       para que el CSS la realce SOLA (borde y fondo del acento
+       y su etiqueta); las demás quedan a contraste pleno, sin
+       atenuar: el lavado de la 1.31.0 las hacía ilegibles. */
+    let hayFoco = false;
+    for (const [clave] of DEFINICIONES) {
+      const t = tarjetas[clave]; const e = estados[clave];
+      if (!e) continue;
+      t.pillSlot.replaceChildren(statusPill(e.nivel, (e.nivel === 'ok' || e.nivel === 'bad' ? '● ' : e.nivel === 'warn' ? '● ' : '○ ') + e.frase));
+      /* Sin repetir (1.31.1): si la línea de «último» solo
+         repite la pastilla («Sin recibir todavía» / «sin recibir
+         todavía») o constata que aún no hay nada mientras la
+         tarjeta ya enseña otro estado, la línea no se pinta: el
+         mismo dato dos veces en una tarjeta es ruido. */
+      const normTxt = s => String(s || '').trim().toLowerCase().replace(/\.$/, '');
+      const ultimoTxt = !e.ultimo || normTxt(e.ultimo) === normTxt(e.frase) ||
+        (/^sin (recibir|consultar|descargar)/.test(normTxt(e.ultimo)) && e.nivel !== 'ok') ? '' : e.ultimo;
+      t.ultimo.textContent = ultimoTxt;
+      t.ultimo.hidden = !ultimoTxt;
+      t.detalle.textContent = e.detalle || '';
+      t.detalle.hidden = !e.detalle;
+      t.porque.textContent = e.porque || '';
+      t.porque.hidden = !e.porque;
+      t.fold.hidden = !e.tecnico;
+      if (e.tecnico) t.foldText.textContent = e.tecnico;
+      t.actualizar.textContent = e.accionTexto ||
+        ({ cfdi: 'Descargar ahora', complementos: 'Descargar ahora', constancia: 'Descargar ahora',
+           declaraciones: 'Descargar ahora', buzon: 'Consultar ahora', opinion: 'Descargar ahora' })[clave] || 'Descargar ahora';
+      t.actualizar.disabled = false;
+      const frase = e.frase || '';
+      const esFoco = e.nivel === 'bad' || frase === 'Falta tu gesto' || frase === 'Falta su e.firma' ||
+        frase === 'Con problema' || frase.startsWith('La última');
+      t.card.classList.toggle('tramite-foco', esFoco);
+      t.focoTag.hidden = !esFoco;
+      if (esFoco) hayFoco = true;
+      /* Cancelar solo con descriptor vivo (A3): sin él, el
+         botón ni se enseña — nada de botones muertos. */
+      if (e.cancelar) {
+        t.cancelBtn.hidden = false;
+        t.cancelBtn.disabled = false;
+        const desc = e.cancelar;
+        t.cancelBtn.onclick = async () => {
+          t.cancelBtn.disabled = true;
+          await cancelarTramite1310(desc);
+          cargar();
+        };
+      } else {
+        t.cancelBtn.hidden = true;
+        t.cancelBtn.onclick = null;
+      }
+      /* Orden por urgencia (1.31.2): te necesita/falló primero,
+         esperando después, al día al final — por style.order,
+         sin mover la DOM. El filtro esconde lo que no necesita
+         a Paco (rango 0 es lo suyo). */
+      const rango1312 = esFoco || e.nivel === 'bad' ? 0 : e.nivel === 'warn' ? 1 : e.nivel === 'dim' ? 2 : 3;
+      t.card.style.order = String(rango1312);
+      t.card.hidden = soloNecesita1312 && rango1312 > 0;
+      /* Menú ⋯ (1.31.2): solo acciones que ya existen — el
+         detalle de la tarjeta, su destino real, su historial
+         en el Registro y Cancelar si hay trabajo vivo suyo. */
+      const destinoTxt = { cfdi: 'Ver en Facturas', complementos: 'Ver en Facturas',
+        constancia: 'Ver en Documentos', opinion: 'Ver en Documentos',
+        declaraciones: 'Abrir Declaraciones', buzon: 'Abrir el Buzón Tributario' }[clave];
+      const menuItems = [];
+      if (e.tecnico) menuItems.push({ label: 'Ver el detalle', fn: () => { t.fold.hidden = false; t.fold.open = true; } });
+      if (destinoTxt) menuItems.push({ label: destinoTxt, fn: () => t.ver.click() });
+      menuItems.push({ label: 'Ver su historial en el Registro', fn: () => navigate('registro') });
+      if (e.cancelar) { const descM = e.cancelar; menuItems.push({ label: 'Cancelar este trabajo', danger: true,
+        fn: async () => { await cancelarTramite1310(descM); cargar(); } }); }
+      t.menu._setItems1312(menuItems);
+      /* Barra de progreso (1.31.2): solo con trabajo vivo; la
+         línea de «último» se retira si solo repite la fase. */
+      if (e.progreso) {
+        t.progresoSlot.replaceChildren(jobProgress1312(e.progreso));
+        if (ultimoTxt && e.progreso.fase && ultimoTxt === e.progreso.fase) t.ultimo.hidden = true;
+      } else t.progresoSlot.replaceChildren();
+      /* Frescura (1.31.2): con próxima vez conocida, la línea
+         la trae junto a la última — y la de «último» cede su
+         sitio para no decir lo mismo dos veces. */
+      if (e.proxima) {
+        t.frescura.textContent = (ultimoTxt ? 'Última vez: ' + ultimoTxt.replace(/^últim[oa]:\s*/i, '') + ' · ' : '') +
+          'Próxima vez: ' + e.proxima;
+        t.frescura.hidden = false;
+        if (ultimoTxt) t.ultimo.hidden = true;
+      } else t.frescura.hidden = true;
+    }
+    grid.classList.toggle('tiene-foco', hayFoco);
+  };
+  filtroBtn.onclick = () => {
+    soloNecesita1312 = !soloNecesita1312;
+    filtroBtn.setAttribute('aria-pressed', String(soloNecesita1312));
+    if (ultimosEstados1312) pintar(ultimosEstados1312);
+  };
+  const acciones = {
+    descargar: () => downloadSheet(rfc),
+    'ir-descarga': () => { satTab = 'descargar'; render(); },
+    ciec: () => { satTab = 'descargar'; render();
+      setTimeout(() => document.querySelector('#ciec-live')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+      announce('Descarga con CIEC de ' + rfc + ': elige el rango en su tarjeta y escribe el captcha cuando el portal lo enseñe.'); },
+    emparejar: () => { satTab = 'ejecutor'; render();
+      setTimeout(() => document.querySelector('.executor-pair')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80); },
+    pedir: async (clave) => {
+      const t = tarjetas[clave];
+      await satQuickRunDoc(clave, rfc, t.actualizar, t.ultimo);
+      cargar();
+    },
+    decl: async (btn) => { declEjercicio = new Date().getFullYear(); declRun('mensuales', () => cargar(), btn); },
+    buzon: async (btn) => {
+      btn.disabled = true;
+      try { await satApi('tributario/run', { rfc }); toast('Consulta del Buzón pedida: se corre en tu equipo con tu e.firma.', 'ok'); }
+      catch (error) { toast(error.message, 'error'); }
+      btn.disabled = false; cargar();
+    }
+  };
+  const cargar = async () => {
+   try {
+    const [docs, trib, decl, overview] = await Promise.all([
+      satApi('satdocs').catch(() => null),
+      satApi('tributario?rfc=' + encodeURIComponent(rfc)).catch(() => null),
+      satApi('declaraciones?rfc=' + encodeURIComponent(rfc) + '&ejercicio=' + new Date().getFullYear()).catch(() => null),
+      satApiLectura('executor/overview').catch(() => null)
+    ]);
+    if (!wrap.isConnected) return;
+    satGridDocs = docs; satQuickDocs = docs;
+    const profileCrudo = (satData.profiles || []).find(item => item.rfc === rfc);
+    /* «Faltan credenciales» (1.30.0): la marca autoritativa es la
+       lista pendingProfiles del servidor (el alta preparada tiene
+       fila desde la 1.24.0; la fila sola no la distingue). */
+    const profile = profileCrudo && !profileCrudo.pending && (satData.pendingProfiles || []).includes(rfc)
+      ? { ...profileCrudo, pending: true } : profileCrudo;
+    const lastJob = (satData.jobs || []).filter(job => job.rfc === rfc)
+      .sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+    const delRfc = invoices.filter(row => row.from?.rfc === rfc || row.to?.rfc === rfc);
+    const ultimoRow = delRfc.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    const pagos = delRfc.filter(row => row.kind === 'P');
+    const ultimoPago = pagos.slice().sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+    const docsProfile = docs?.profiles?.find(item => item.rfc === rfc);
+    const ejecutores = (overview?.ejecutores || []).filter(e => !e.revocado);
+    const ejecutor = { emparejado: ejecutores.length > 0, enLinea: Boolean(overview?.enLinea),
+      ultimoVisto: ejecutores.reduce((m, e) => Math.max(m, e.ultimoVisto || 0), 0) || null };
+    const ultimoDoc = (decl?.documentos || []).slice().sort((a, b) => (b.created || 0) - (a.created || 0))[0];
+    const ultimoAcuse = ultimoDoc ? 'Acuse ' + (ultimoDoc.tipo === 'anual' ? 'anual ' + ultimoDoc.ejercicio
+      : MESES_CORTOS_1290[Number(String(ultimoDoc.periodo || '').slice(5, 7)) - 1] + ' ' + ultimoDoc.ejercicio) +
+      (ultimoDoc.fechaPresentacion ? ' · presentada el ' + ultimoDoc.fechaPresentacion : '') : '';
+    const estados = satTramiteEstados({ rfc, profile, lastJob, docsProfile, trib,
+      puerta: (satData.puerta || {})[rfc] || null,
+      declProgreso: decl?.progreso || null, ejecutor, cola: overview?.trabajos || [],
+      ultimoCfdi: ultimoRow ? (ultimoRow.to?.rfc === rfc ? 'Recibido' : 'Emitido') + ' · ' + localDate(ultimoRow.date) : '',
+      complementos: { total: pagos.length, ultima: ultimoPago?.date || '' },
+      ultimoAcuse });
+    /* Frescura (1.31.2): la próxima vez SOLO sale de una
+       cadencia que consta — la revisión automática del RFC,
+       la renovación mensual configurada de los documentos o
+       la consulta automática semanal del Buzón. Sin fuente,
+       la tarjeta se queda con su «última vez» de siempre. */
+    if (profile && !profile.pending && profile.unlocked && profile.nextRun) {
+      estados.cfdi.proxima = localDateTime(profile.nextRun);
+      estados.complementos.proxima = estados.cfdi.proxima;
+    }
+    if (docsProfile?.config?.enabled) {
+      const cadencia = 'el día ' + docsProfile.config.day + ' de cada mes';
+      estados.constancia.proxima = cadencia;
+      estados.opinion.proxima = cadencia;
+    }
+    if (trib?.proximaAuto) estados.buzon.proxima = localDateTime(trib.proximaAuto);
+    if (decl?.proximaAuto) estados.declaraciones.proxima = localDateTime(decl.proximaAuto);
+    pintar(estados);
+    /* El botón principal de cada tarjeta según su estado. */
+    const enlazar = (clave, fn) => { tarjetas[clave].actualizar.onclick = () => fn(tarjetas[clave].actualizar, clave); };
+    enlazar('cfdi', () => acciones[estados.cfdi.accion]?.());
+    enlazar('complementos', () => acciones[estados.complementos.accion]?.());
+    enlazar('constancia', () => estados.constancia.accion === 'ir-descarga' ? acciones['ir-descarga']() : acciones.pedir('constancia'));
+    enlazar('opinion', () => estados.opinion.accion === 'ir-descarga' ? acciones['ir-descarga']() : acciones.pedir('opinion'));
+    enlazar('declaraciones', (btn) => estados.declaraciones.accion === 'ir-descarga' ? acciones['ir-descarga']() : estados.declaraciones.accion === 'emparejar' ? acciones.emparejar() : acciones.decl(btn));
+    enlazar('buzon', (btn) => estados.buzon.accion === 'ir-descarga' ? acciones['ir-descarga']() : estados.buzon.accion === 'emparejar' ? acciones.emparejar() : acciones.buzon(btn));
+   } catch (error) {
+    /* Sin silencio (regla de la casa): si la lectura del estado
+       falla, las tarjetas lo DICEN en su sitio en vez de quedarse
+       en «Leyendo…» para siempre. */
+    for (const clave of Object.keys(tarjetas)) {
+      const t = tarjetas[clave];
+      t.pillSlot.replaceChildren(statusPill('dim', '○ Sin datos a mano'));
+      t.ultimo.textContent = '';
+      t.porque.textContent = 'La lectura del estado falló: ' + (error?.message || error);
+      t.porque.hidden = false;
+    }
+   }
+  };
+  cargar();
   return wrap;
 }
 /* Pantalla de descarga de la pestaña SAT (1.11.0): SOLO la descarga.
@@ -401,7 +814,7 @@ function fillSat(target = $('sat-live')) {
   const queue = panel('Solicitudes recientes');
   const jobs = satData.jobs.filter(row => !scope || row.rfc === scope);
   if (jobs.length) queue.append(grid(['RFC', 'Periodo', 'Estado', 'Acción'], jobs.map(row => [
-    cell(row.rfc, directions[row.direction] + (row.kind === 'metadata' ? ' · Metadatos' : '')), dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
+    cell(row.rfc, directions[row.direction] + (row.kind === 'metadata' ? ' · Solo el listado' : '')), dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
     cell(satStatus[row.status] || row.status, [row.error || (row.status === 'pending' ? 'Próxima consulta ' + localDateTime(row.due) : ''),
       criteriaNotes[row.criteriaState] || ''].filter(Boolean).join(' · ')),
     row.status === 'pending' ? action('Reintentar consulta', async () => { satData = await satApi('retry', { id: row.id }); fillSat(); announce('Consulta programada para el siguiente ciclo del servicio.'); }) : n('span', 'Creada ' + localDateTime(row.created))
@@ -414,7 +827,12 @@ function fillSat(target = $('sat-live')) {
   /* La tarjeta CIEC (1.12.0) cierra la pantalla cuando algún RFC
      usa ese método: ahí se elige el rango y se descarga, con el
      captcha escrito por Paco en la propia tarjeta. */
-  const satNodes = [schedules, queue, satCriteriaBookDetails()];
+  /* Descargar primero (1.32.1, S5): la pestaña abre con las
+     solicitudes (el trabajo) y la tabla de revisión automática
+     — configuración — va plegada debajo, no presidiendo. */
+  const schedulesFold = n('details', undefined, 'seal-details');
+  schedulesFold.append(n('summary', 'Revisión automática por RFC — configuración'), schedules);
+  const satNodes = [queue, schedulesFold, satCriteriaBookDetails()];
   if ((satData.profiles || []).some(row => row.accessMethod === 'ciec')) satNodes.push(ciecPanel());
   target.replaceChildren(...satNodes);
 }
@@ -434,9 +852,9 @@ function satCriteriaBookDetails() {
     if (entry.state === 'agotado' || entry.state === 'rescatado')
       acts.append(action(entry.state === 'agotado' ? 'Preparar rescate' : 'Ver rescate', () => rescueDialog(entry)));
     if (entry.state !== 'disponible')
-      acts.append(action('Pedir con cierre +1 s', () => requestDialog({ rfc: entry.rfc, direction: entry.direction,
+      acts.append(action('Pedir con el cierre exacto', () => requestDialog({ rfc: entry.rfc, direction: entry.direction,
         start: entry.startAt.slice(0, 10), end: entry.endAt.slice(0, 10), type: entry.type, shiftEnd: true })));
-    return [cell(entry.rfc, (entry.type === 'metadata' ? 'Metadatos' : 'CFDI') + ' · ' + directions[entry.direction]),
+    return [cell(entry.rfc, (entry.type === 'metadata' ? 'Solo el listado' : 'CFDI') + ' · ' + directions[entry.direction]),
       stampLabel(entry.startAt) + ' → ' + stampLabel(entry.endAt),
       entry.sends.length ? entry.sends.length + ' · ' + (entry.presumed ? 'presunto enviado' : localDateTime(entry.lastSentAt)) : 'Sin envíos propios',
       cell(criteriaNotes[entry.state] || entry.state, entry.state === 'rescatado' ? 'Entraron ' + entry.rescuedCount + ' CFDI por la carpeta vigilada' :
@@ -619,7 +1037,7 @@ function efirmaDialog(prefillRfc) {
 function guardChoice(guard) {
   return new Promise(resolve => {
     const box = n('div');
-    const titles = { agotado: 'Criterio quemado ante el SAT (5002)', rescatado: 'Periodo ya rescatado por el portal',
+    const titles = { agotado: 'El SAT ya no acepta este criterio tal cual', rescatado: 'Periodo ya rescatado por el portal',
       ultima: 'Este criterio ya se pidió: no se repite' };
     box.append(n('h3', titles[guard.state] || titles.ultima),
       n('p', guard.message),
@@ -703,7 +1121,23 @@ function downloadSheet(rfc, preset = {}) {
   }
   for (const control of [start, end, direction]) control.addEventListener('change', refreshSummary);
   refreshSummary();
+  /* Sin firmante activo, la hoja lo dice ANTES de lanzar
+     (1.32.1, B3): el estado sale del perfil real del servidor
+     (unlocked = hay conector capaz de firmar ahora), no de una
+     foto vieja. El gesto es autorizar la e.firma, en su sitio. */
+  const perfilHoja = (typeof satData !== 'undefined' && satData?.profiles || []).find(p => p.id === chosenRfc || p.rfc === chosenRfc);
+  if (perfilHoja && !perfilHoja.unlocked && perfilHoja.accessMethod !== 'ciec') {
+    const aviso = n('div', undefined, 'dl-sin-firmante');
+    aviso.append(n('p', 'Este RFC no tiene firmante activo ahora mismo: su e.firma no está autorizada en el servidor, así que la descarga no puede firmar y ninguna solicitud llegaría al SAT.'),
+      n('p', 'Gesto único: autoriza la e.firma de ' + chosenRfc + ' y vuelve a esta hoja.'));
+    const irFirmas = n('button', 'Autorizar la e.firma', 'primary');
+    irFirmas.type = 'button';
+    irFirmas.onclick = () => { closeDialog(); showSatDownload(); };
+    aviso.append(irFirmas);
+    form.append(aviso);
+  }
   const send = n('button', 'Pedir y descargar', 'primary'); send.type = 'submit';
+  if (perfilHoja && !perfilHoja.unlocked && perfilHoja.accessMethod !== 'ciec') send.disabled = true;
   const cancel = n('button', 'Cerrar', 'soft'); cancel.type = 'button';
   cancel.onclick = () => closeDialog();
   const buttons = n('div', undefined, 'actions'); buttons.append(send, cancel);
@@ -772,7 +1206,7 @@ function requestDialog(preset) {
     if (preset.start) start.value = preset.start;
     if (preset.end) end.value = preset.end;
   }
-  const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Metadatos (registros ligeros, para reconciliar)']], 'cfdi');
+  const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Solo el listado (los datos de cada factura, sin bajar los XML)']], 'cfdi');
   if (preset?.type) type.value = preset.type;
   /* Periodos frecuentes en un clic (1.6.10): sin teclear fechas. */
   const quick = n('div', undefined, 'actions');
@@ -786,7 +1220,7 @@ function requestDialog(preset) {
     action('Últimos 30 días', () => setRange(new Date(nowDate.getTime() - 29 * 86400000), nowDate)));
   /* Planificador anti-5002: antes de gastar una solicitud, el servidor
      cruza el criterio exacto contra el libro y avisa aquí mismo. Si ya
-     se pidió, la vía es la variante de cierre +1 s (nunca el duplicado);
+     se pidió, la vía es la variante del cierre exacto (nunca el duplicado);
      si el rango CFDI es amplio y nuevo, propone explorar primero con
      Metadatos. Es una lectura: no envía nada por sí solo. */
   const planNote = n('p', 'Revisando el criterio en el libro…', 'plan-note');
@@ -814,7 +1248,7 @@ function requestDialog(preset) {
     field('Tipo de solicitud', type), field('Planificador 5002', planBox), field('Periodo frecuente', quick),
     field('Fecha inicial', start), field('Fecha final', end)], async () => {
     const payload = { rfc: person.value, direction: direction.value, start: start.value, end: end.value, type: type.value };
-    /* Desde el Libro, «Pedir con cierre +1 s» nace ya con la variante. */
+    /* Desde el Libro, «Pedir con el cierre exacto» nace ya con la variante. */
     if (preset?.shiftEnd) payload.shiftEnd = 1;
     for (;;) {
       try { satData = await satApi('request', payload); break; }

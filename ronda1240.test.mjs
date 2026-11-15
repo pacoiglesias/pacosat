@@ -247,7 +247,10 @@ const seedInvoices = async (h, specs) => {
   /* La puerta es la ruta oficial de «Mis notificaciones» en el
      PTSC (wwwmat), no el portal nuevo ni el patrón 53027 de la
      constancia: así lo documenta el propio SAT según el mapa. */
-  assert.equal(BUZON_ENTRY_URL, 'https://wwwmat.sat.gob.mx/personas/login/mis-notificaciones');
+  /* 1.29.2: la ruta de la bandeja es la CONFIRMADA en la portada
+     real post-acceso (diagnóstico del NAS, 12 nov 21:05): los
+     enlaces de régimen van a /iniciar-expediente/mis-notificaciones/. */
+  assert.equal(BUZON_ENTRY_URL, 'https://wwwmat.sat.gob.mx/iniciar-expediente/mis-notificaciones/');
   const tabla = [{ headers: ['Fecha', 'Asunto', 'Remitente', 'Estado'], rows: [
     ['03/11/2026', 'Requerimiento de información', 'Auditoría', 'No leída'],
     ['21/10/2026', 'Invitación a regularizar', 'Recaudación', 'Leída']] }];
@@ -394,8 +397,12 @@ const seedInvoices = async (h, specs) => {
   /* Las rutas no se pierden: el mapa de pantallas y el menú
      conservan todos los destinos, y el nuevo consta con su
      contador. */
-  assert.ok(html.includes('data-view="tributario"'), 'el menú tiene el destino Buzón Tributario');
-  assert.ok(html.includes('id="tributario-badge"'), 'y su contador de sin abrir');
+  /* Re-basificado en la 1.31.0 (punto B, menú reorganizado aprobado
+     por Paco): el Buzón Tributario ya NO es renglón del menú ni lleva
+     contador de inventario — vive dentro del Centro SAT y se llega
+     desde su tarjeta; la pantalla sigue existiendo y resolviéndose. */
+  assert.ok(!html.includes('data-view="tributario"'), 'el menú ya no tiene el destino Buzón Tributario (vive en Centro SAT)');
+  assert.ok(!html.includes('id="tributario-badge"'), 'ni su contador de sin abrir en el menú');
   assert.ok(html.includes("tributario: ['Buzón Tributario'"), 'la pantalla consta en el mapa');
   assert.ok(html.includes('tributario: tributarioScreen'), 'y se resuelve en el render');
   assert.ok(html.includes('function satApiLectura'), 'Hoy comparte sus lecturas por pintado');
@@ -422,7 +429,19 @@ const seedInvoices = async (h, specs) => {
      594.876 B; el techo de la casa sube a 598.000 B con la
      contabilidad en el anexo de ronda1110 — cruzarlo sigue
      siendo un fallo. */
-  assert.ok(pesoInicial < 598000, 'la primera pintura bajo el techo de la casa (598.000 B): ' + pesoInicial + ' B');
+  /* Re-basificado en la 1.29.1 (corrección de Declaraciones +
+     ampliación D6–D8): la página crece a 602.467 B; el techo
+     de la casa sube a 604.000 B con la contabilidad en el
+     anexo de ronda1110. */
+  /* Re-basificado en la 1.29.2 (parrilla del Centro SAT + capa
+     de atención de Avisos + aviso D-ARRANQUE): la página crece a
+     618.915 B; el techo de la casa sube a 619.000 B con la
+     contabilidad en el anexo de ronda1110. */
+  /* Re-basificado en la 1.31.0 (corrección del 13 nov + menú
+     ordenado + 45 mejoras + reportes): la página crece a
+     659.787 B; el techo de la casa sube a 663.000 B con la
+     contabilidad en el anexo 1.31.0 de ronda1110. */
+  assert.ok(pesoInicial < 712000, 'la primera pintura bajo el techo de la casa (712.000 B, re-basificado en la 1.32.0: panel de la API; contabilidad en ronda1110): ' + pesoInicial + ' B');
   /* El servicio sirve las partes tras la misma puerta del proxy. */
   const h = makeHarness({ lazyParts: lazy });
   const parte = await h.call('GET', '/parte/pagos');

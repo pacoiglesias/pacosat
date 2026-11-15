@@ -8,8 +8,44 @@
    el motor guardó la página del momento, el botón para verla —
    la misma evidencia de los diarios, sin cazarla pantalla a
    pantalla. Vive en una parte diferida: Hoy solo paga una línea. */
-let registroFiltro = { rfc: '', clase: '' };
+/* F9 (1.31.0): el filtro de la pantalla persiste en este
+   navegador y se restaura al entrar, como el de Avisos. */
+let registroFiltro = (() => {
+  try {
+    const guardado = JSON.parse(localStorage.getItem('pacosat-filtros-registro') || 'null');
+    if (guardado && typeof guardado === 'object')
+      return { rfc: String(guardado.rfc || ''), clase: String(guardado.clase || '') };
+  } catch { /* Sin almacenamiento local, el filtro dura la sesión. */ }
+  return { rfc: '', clase: '' };
+})();
+function registroGuardarFiltro1310() {
+  try { localStorage.setItem('pacosat-filtros-registro', JSON.stringify(registroFiltro)); }
+  catch { /* Sin almacenamiento local, el filtro dura la sesión. */ }
+}
 const REGISTRO_CLASE = { conexion: ['ok', 'Conexión'], accion: ['dim', 'Acción'], fallo: ['bad', 'Fallo'] };
+/* Compartir el Registro (1.32.1, A3 — petición de Paco del
+   14 nov): copiar lo visible como texto limpio y poder
+   limpiarlo sin miedo, con Deshacer. */
+let registroUltimoLote = null;
+const REGISTRO_ORIGEN = { paco: 'Paco', sistema: 'Sistema', ejecutor: 'Tu equipo' };
+function registroLineaTexto(item) {
+  const fecha = typeof fmtFechaHora === 'function' ? fmtFechaHora(item.at)
+    : new Date(item.at).toLocaleString('es-MX');
+  return fecha + ' · ' + (REGISTRO_ORIGEN[item.origen] || 'Sistema') + ' · ' + item.texto +
+    (item.rfc ? ' · ' + item.rfc : '');
+}
+async function registroCopiarTexto(texto, mensaje) {
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(texto);
+    else {
+      const area = document.createElement('textarea');
+      area.value = texto; area.style.position = 'fixed'; area.style.opacity = '0';
+      document.body.append(area); area.select();
+      document.execCommand('copy'); area.remove();
+    }
+    toast(mensaje, 'ok');
+  } catch { toast('No se pudo copiar: el navegador no lo permitió.', 'error'); }
+}
 function registroScreen() {
   const wrap = n('div');
   if (typeof satToken === 'undefined' || !satToken) {
@@ -34,15 +70,50 @@ function registroScreen() {
     const filtros = n('div', undefined, 'actions');
     const selRfc = select([['', 'Todos los contribuyentes'], ...people.map(person => [person.id, person.id])],
       registroFiltro.rfc, 'Contribuyente');
-    selRfc.onchange = () => { registroFiltro.rfc = selRfc.value; pintar(); };
+    selRfc.onchange = () => { registroFiltro.rfc = selRfc.value; registroGuardarFiltro1310(); pintar(); };
     const selClase = select([['', 'Todo: conexiones, acciones y fallos'], ['conexion', 'Solo conexiones'],
       ['accion', 'Solo acciones'], ['fallo', 'Solo fallos']], registroFiltro.clase, 'Clase');
-    selClase.onchange = () => { registroFiltro.clase = selClase.value; pintar(); };
+    selClase.onchange = () => { registroFiltro.clase = selClase.value; registroGuardarFiltro1310(); pintar(); };
     /* Sin botón de CSV aquí: la exportación es la acción
        principal de la pantalla (arriba a la derecha), como en
        el resto — el mismo gesto no se pinta dos veces. */
-    filtros.append(selRfc, selClase);
+    const copiarTodo = n('button', 'Copiar todo', 'soft');
+    copiarTodo.type = 'button';
+    copiarTodo.onclick = () => registroCopiarTexto(data.items.map(registroLineaTexto).join('\n'),
+      'Registro copiado: ' + data.items.length + ' entrada(s) con el filtro en curso.');
+    const borrarVisible = n('button', 'Borrar lo visible', 'soft');
+    borrarVisible.type = 'button';
+    borrarVisible.onclick = async () => {
+      const claves = data.items.map(item => item.clave).filter(Boolean);
+      if (!claves.length) { toast('Lo visible no trae claves que borrar.', 'error'); return; }
+      if (!confirm('¿Ocultar las ' + claves.length + ' entradas visibles del Registro? No se toca ningún diario de origen y se puede deshacer.')) return;
+      borrarVisible.disabled = true;
+      try {
+        const hecho = await satApi('registro/borrar', { claves });
+        registroUltimoLote = { lote: hecho.lote, cuantas: hecho.ocultadas };
+        toast('Ocultadas ' + hecho.ocultadas + ' entrada(s). Tienes «Deshacer» arriba del Registro.', 'ok');
+        pintar();
+      } catch (error) { toast(error.message, 'error'); borrarVisible.disabled = false; }
+    };
+    filtros.append(copiarTodo, borrarVisible);
     body.append(filtros);
+    if (registroUltimoLote) {
+      const tira = n('div', undefined, 'cp-row registro-deshacer');
+      tira.append(n('span', 'Ocultaste ' + registroUltimoLote.cuantas + ' entrada(s) del Registro en el último borrado.'));
+      const deshacer = n('button', 'Deshacer', 'primary');
+      deshacer.type = 'button';
+      deshacer.onclick = async () => {
+        deshacer.disabled = true;
+        try {
+          const hecho = await satApi('registro/deshacer', { lote: registroUltimoLote.lote });
+          registroUltimoLote = null;
+          toast('Borrado deshecho: ' + hecho.restauradas + ' entrada(s) de vuelta.', 'ok');
+          pintar();
+        } catch (error) { toast(error.message, 'error'); deshacer.disabled = false; }
+      };
+      tira.append(deshacer);
+      body.append(tira);
+    }
     body.append(n('p', number.format(data.total) + ' suceso(s)' +
       (registroFiltro.rfc ? ' de ' + registroFiltro.rfc : '') +
       (registroFiltro.clase ? ' · ' + (REGISTRO_CLASE[registroFiltro.clase]?.[1] || registroFiltro.clase) : '') +
@@ -73,9 +144,12 @@ function registroScreen() {
         n('span', item.texto +
           (item.rfc ? ' · ' + item.rfc : '') +
           (item.origen === 'paco' ? ' · lo lanzaste tú' : item.origen === 'sistema' ? ' · lo hizo el sistema solo' : '')));
-      if (item.evidencia && (item.evidencia.hasShot || item.evidencia.hasHtml)) {
+      if (item.evidencia && (item.evidencia.hasShot || item.evidencia.hasHtml ||
+          item.detalle?.hasDecisionShot || item.detalle?.hasDecisionHtml)) {
         const evidencia = evidenceButtons(item.evidencia.motor,
-          { id: item.evidencia.runId, hasShot: item.evidencia.hasShot, hasHtml: item.evidencia.hasHtml });
+          { id: item.evidencia.runId, hasShot: item.evidencia.hasShot, hasHtml: item.evidencia.hasHtml,
+            hasDecisionShot: Boolean(item.detalle?.hasDecisionShot),
+            hasDecisionHtml: Boolean(item.detalle?.hasDecisionHtml) });
         if (evidencia) linea.append(evidencia);
       }
       row.append(linea);
@@ -90,6 +164,16 @@ function registroScreen() {
         if (det.error) caja.append(n('p', 'Error literal: ' + det.error +
           (det.errorKind ? ' (clase: ' + det.errorKind + ')' : ''), 'error-text'));
         if ((det.attempts || 0) > 1) caja.append(n('p', 'Intentos de esta corrida: ' + det.attempts, 'muted'));
+        const copiarTraza = n('button', 'Copiar la traza', 'soft');
+        copiarTraza.type = 'button';
+        copiarTraza.onclick = () => {
+          const lineas = [registroLineaTexto(item), ...(det.steps || []).map(step =>
+            '  ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(step.at) : '') + ' · ' +
+            (step.paso || '') + (step.detalle ? ' — ' + step.detalle : ''))];
+          if (det.error) lineas.push('  Error literal: ' + det.error + (det.errorKind ? ' (clase: ' + det.errorKind + ')' : ''));
+          registroCopiarTexto(lineas.join('\n'), 'Traza copiada.');
+        };
+        caja.append(copiarTraza);
         details.append(caja);
         row.append(details);
       }

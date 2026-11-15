@@ -35,6 +35,13 @@ const DECL_ESTADO_TEXTO = { presentada: '✓ Presentada', pendiente: 'Pendiente'
   'no-toca': 'Aún no toca' };
 const DECL_ESTADO_PILL = { presentada: 'ok', pendiente: 'warn', 'sin-recuperar': 'bad',
   'pagada-sin-acuse': 'warn', 'no-toca': 'dim' };
+/* La pastilla DE LA CELDA es corta por diseño (1.29.1): la frase
+   entera («Sin recuperar · no consta en tu expediente») no cabe
+   en una tarjeta del mapa y la desbordaba; la frase completa
+   vive en DECL_ESTADO_TEXTO y se lee en el detalle del mes. */
+const DECL_ESTADO_PILL_TEXTO = { presentada: '✓ Presentada', pendiente: 'Pendiente',
+  'sin-recuperar': 'Sin recuperar', 'pagada-sin-acuse': 'Falta el acuse',
+  'no-toca': 'Aún no toca' };
 /* «2026-11-17» → «17 de noviembre de 2026»; lo que el portal no
    dio en ISO se enseña tal cual, como hace el resto de la sección. */
 function declFechaLarga(iso) {
@@ -64,7 +71,7 @@ function declRunsDetails(rfc) {
       details.hidden = false;
       details.append(n('summary', 'Diario de la última corrida · ' + localDateTime(run.started) +
         (run.tipo ? ' · ' + run.tipo : '') +
-        ' · ' + (run.ok ? 'Guardada' : 'Error' + (run.errorKind ? ' (' + run.errorKind + ')' : ''))));
+        ' · ' + (run.ok ? 'Guardada' : 'No se pudo')));
       const list = n('ol', undefined, 'sat-steps');
       for (const step of run.steps || []) {
         const item = n('li');
@@ -108,11 +115,9 @@ function declFallbackPanel(fill, hayError) {
     'Di aquí abajo de qué declaración es y suéltalo: el mapa la marca presentada al momento.'])
     pasos.append(n('li', paso));
   box.append(pasos);
-  /* La segunda ruta oficial (1.27.0): sin folio conocido también
-     sirve la app SAT Móvil — su «Mis declaraciones» lista por
-     ejercicio y periodo y deja bajar el PDF sin folio. El modo
-     asistido enseña las DOS rutas, como quedó adoptado. */
-  box.append(n('p', '¿No tienes el folio? En la app SAT Móvil, «Mis declaraciones» lista por ejercicio y periodo y deja bajar el PDF sin folio: bájalo ahí y suéltalo aquí igual.', 'muted'));
+  /* La nota de la segunda ruta oficial (SAT Móvil, 1.27.0) ya no
+     vive aquí como muro de texto (1.29.1, D4): se recogió en el
+     «Cómo funciona» plegado al final de la pantalla. */
   const tipo = n('select');
   for (const [value, label] of [['mensual', 'Mensual'], ['anual', 'Anual']]) {
     const option = n('option', label); option.value = value; tipo.append(option);
@@ -186,7 +191,7 @@ function declaracionesScreen() {
 }
 function declaracionesSection() {
   const section = panel('Declaraciones y acuses',
-    'El mapa de tu año: qué consta presentado, qué toca y qué falta por recuperar. Un mes solo se da por bueno con su PDF guardado y su número de operación verificado.');
+    'El mapa de tu año: qué consta presentado, qué toca y qué falta por recuperar.');
   /* Ancla fija (1.18.0): los saltos a esta sección van por id, no
      buscando el texto del encabezado. */
   section.id = 'declaraciones-section';
@@ -203,7 +208,7 @@ function declaracionesSection() {
       body.append(n('p', 'Elige arriba el RFC del que quieres ver y recuperar declaraciones.', 'empty'));
       return;
     }
-    declCache = view;
+    declCache = { rfc: scope, ejercicio: declEjercicio, view };
     const head = n('div', undefined, 'sat-card-head');
     head.append(n('strong', 'RFC ' + scope));
     const yearPicker = select(
@@ -212,18 +217,31 @@ function declaracionesSection() {
     yearPicker.id = 'declaraciones-year';
     yearPicker.onchange = () => { declEjercicio = Number(yearPicker.value); fill(); };
     head.append(yearPicker);
-    const runMensuales = n('button', 'Recuperar mensuales del ejercicio', 'primary small');
+    const runMensuales = n('button', 'Descargar declaraciones del SAT', 'primary decl-descargar');
     runMensuales.onclick = () => declRun('mensuales', fill, runMensuales);
-    const runAnual = n('button', 'Recuperar la anual', 'soft small');
+    const runAnual = n('button', 'Descargar la anual', 'soft');
     runAnual.onclick = () => declRun('anual', fill, runAnual);
     head.append(runMensuales, runAnual);
     body.append(head);
+    /* Guía de espera del ejecutor (1.29.1, D5): sin equipo en
+       línea, el primer pantallazo enseña su estado real y el
+       paso concreto, no una cola sin salida guiada. */
+    const guiaEjecutor = typeof executorGuiaCard === 'function'
+      ? executorGuiaCard(view.ejecutor, () => fill()) : null;
+    if (guiaEjecutor) body.append(guiaEjecutor);
     if (view.lastError) body.append(problemCard(problemSpec('decl',
       { kind: view.lastError.kind || '', error: view.lastError.error || '' })));
+    /* A5 en la propia pantalla (1.31.0): si el último resultado
+       real fue un fallo y no hay un lastError que ya lo cuente,
+       el progreso persistido con ok === false también se
+       enseña como problema en la cabecera — nunca un «al día»
+       mudo sobre una recuperación que no llegó. */
+    else if (view.progreso?.ok === false) body.append(problemCard(problemSpec('decl',
+      { error: view.progreso.step || 'La última recuperación no llegó.' })));
     /* Fallback asistido y diario de la última corrida (1.23.0):
        el panel guiado solo se enseña si la última corrida falló;
        el diario, siempre que haya corridas. */
-    body.append(declFallbackPanel(fill, Boolean(view.lastError)), declRunsDetails(scope));
+    body.append(declFallbackPanel(fill, Boolean(view.lastError) || view.progreso?.ok === false), declRunsDetails(scope));
     /* ===== El mapa del año (1.17.0): resumen, rejilla con
        semáforo y detalle del mes tocado. El servidor calcula los
        estados en view.mapa; aquí solo se pintan. ===== */
@@ -266,6 +284,27 @@ function declaracionesSection() {
     }
     const detalle = n('div');
     let seleccion = null;
+    /* Salidas de la pantalla en su cabecera (1.31.0, D/F2): el
+       mapa del ejercicio en PDF y en Excel y el ZIP del mes —
+       el mes tocado en el mapa si lo hay y, si no, el mes en
+       curso. Salen por el ayudante de las partes principales
+       (descargarSalida1310, en sat-ui.part) porque la parte de
+       salidas es diferida y esta pantalla no puede depender de
+       que ya se haya cargado. Se cuelgan de la cabecera ya
+       pintada (head) en cuanto la selección existe. */
+    const mesSalida1310 = () => (seleccion && seleccion.tipo === 'mensual' && seleccion.periodo)
+      ? seleccion.periodo
+      : (() => { const hoy = new Date(); return hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0'); })();
+    const pdfSalida = n('button', 'PDF del ejercicio', 'soft');
+    pdfSalida.type = 'button';
+    pdfSalida.onclick = () => descargarSalida1310('salidas/pdf', { kind: 'declaraciones', rfc: scope, year: declEjercicio }, pdfSalida);
+    const excelSalida = n('button', 'Excel del ejercicio', 'soft');
+    excelSalida.type = 'button';
+    excelSalida.onclick = () => descargarSalida1310('salidas/xlsx', { kind: 'declaraciones', rfc: scope, year: declEjercicio }, excelSalida);
+    const zipSalida = n('button', 'ZIP del mes', 'soft');
+    zipSalida.type = 'button';
+    zipSalida.onclick = () => descargarSalida1310('salidas/zip', { rfc: scope, month: mesSalida1310() }, zipSalida);
+    head.append(pdfSalida, excelSalida, zipSalida);
     const celdas = new Map();
     const pintarDetalle = () => {
       detalle.replaceChildren();
@@ -321,12 +360,18 @@ function declaracionesSection() {
               name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' })
           : navigate('docs');
         row.append(open);
+        if (doc.fileId) {
+          const bajar = n('button', 'Descargar', 'soft small');
+          bajar.onclick = () => downloadDocOnline({ id: doc.fileId,
+            name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' });
+          row.append(bajar);
+        }
         box.append(row);
       }
       if (celda.estado !== 'no-toca' && !(celda.estado === 'presentada' && celda.declaracion && celda.acuse)) {
         const recuperar = n('button', celda.estado === 'presentada'
-          ? (esAnual ? 'Recuperar lo que falta de la anual' : 'Recuperar lo que falta de este mes')
-          : (esAnual ? 'Recuperar la anual del SAT' : 'Recuperar este mes del SAT'), 'primary small');
+          ? (esAnual ? 'Descargar lo que falta de la anual' : 'Descargar lo que falta de este mes')
+          : (esAnual ? 'Descargar la anual del SAT' : 'Descargar este mes'), 'primary');
         recuperar.onclick = () => esAnual
           ? declRun('anual', fill, recuperar)
           : declRun('mensuales', fill, recuperar, seleccion.periodo);
@@ -389,7 +434,7 @@ function declaracionesSection() {
          estado arriba; la fecha que importa debajo. */
       const linea1 = n('span', undefined, 'decl-cell-top');
       linea1.append(n('strong', DECL_MESES[Number(mes.periodo.slice(5, 7)) - 1] || mes.periodo),
-        n('span', DECL_ESTADO_TEXTO[mes.estado] || mes.estado, 'decl-pill decl-pill-' + mes.estado));
+        n('span', DECL_ESTADO_PILL_TEXTO[mes.estado] || mes.estado, 'decl-pill decl-pill-' + mes.estado));
       cell.append(linea1,
         n('small', mes.estado === 'presentada' ? declFechaCorta(mes.fechaPresentacion)
           : mes.estado === 'no-toca' ? 'no toca'
@@ -403,7 +448,7 @@ function declaracionesSection() {
       cell.type = 'button';
       const linea1 = n('span', undefined, 'decl-cell-top');
       linea1.append(n('strong', 'Declaración anual ' + view.ejercicio),
-        n('span', DECL_ESTADO_TEXTO[mapa.anual.estado] || mapa.anual.estado, 'decl-pill decl-pill-' + mapa.anual.estado));
+        n('span', DECL_ESTADO_PILL_TEXTO[mapa.anual.estado] || mapa.anual.estado, 'decl-pill decl-pill-' + mapa.anual.estado));
       cell.append(linea1,
         n('small', mapa.anual.estado === 'presentada' ? declFechaCorta(mapa.anual.fechaPresentacion)
           : mapa.anual.estado === 'no-toca' ? 'no toca'
@@ -428,12 +473,12 @@ function declaracionesSection() {
        servicio oficial de acuses trabaja POR FOLIO — el panel de
        folios y la recuperación por año completo viven debajo del
        mapa, con su límite dicho en voz alta. */
-    body.append(declFoliosPanel(view, fill), declAniosPanel(view, fill));
+    body.append(declFoliosPanel(view, fill), declAniosPanel(view, fill), declComoFunciona());
     /* Documentos recuperados del ejercicio: declaración y acuse,
        distinguidos, como lista completa del archivo. */
     if (!view.documentos.length) {
-      body.append(empty('Nada recuperado todavía para este ejercicio',
-        'Pulsa «Recuperar mensuales del ejercicio» o «Recuperar la anual»: PacoSAT entra al portal con tu e.firma y archiva aquí lo que encuentre presentado.'));
+      body.append(empty('Nada descargado todavía para este ejercicio',
+        'Pulsa «Descargar declaraciones del SAT»: PacoSAT entra al portal con tu e.firma y archiva aquí lo que encuentre presentado.'));
       return;
     }
     const list = n('div');
@@ -453,11 +498,42 @@ function declaracionesSection() {
             name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' })
         : navigate('docs');
       row.append(open);
+      if (doc.fileId) {
+        const bajar = n('button', 'Descargar', 'soft small');
+        bajar.onclick = () => downloadDocOnline({ id: doc.fileId,
+          name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' });
+        row.append(bajar);
+      }
       list.append(row);
     }
     body.append(list);
   };
-  fill().catch(error => { body.replaceChildren(n('p', error.message, 'error-text')); });
+  /* Pintado al instante (1.31.1): la pantalla NUNCA espera en
+     blanco a que el servidor responda. Con mapa conocido de
+     este RFC y ejercicio, se pinta ESE al momento y el fresco
+     llega detrás y lo sustituye; sin mapa, el primer pintado
+     dice «Cargando…» en vez de un panel vacío (la 1.31.0 tardó
+     ~8 s en vivo con el panel en blanco: la espera se movió
+     detrás del primer pintado, no se disfrazó). */
+  const cacheHit = declCache && declCache.rfc === scope && declCache.ejercicio === declEjercicio
+    ? declCache.view : null;
+  if (cacheHit) {
+    fill(cacheHit)
+      .then(() => { if (section.isConnected) return fill(); })
+      .catch(() => {});
+  } else {
+    /* Esqueleto (1.31.1): sin mapa conocido, el primer pintado
+       enseña la FORMA que viene (el mismo esqueleto de Avisos),
+       no un panel vacío ni un texto suelto. */
+    if (satToken && scope) {
+      const skel = n('div', undefined, 'skel');
+      skel.setAttribute('aria-busy', 'true');
+      skel.setAttribute('aria-label', 'Cargando el mapa de declaraciones');
+      for (let i = 0; i < 2; i++) skel.append(n('div', undefined, 'skel-block'));
+      body.append(skel);
+    }
+    fill().catch(error => { body.replaceChildren(n('p', error.message, 'error-text')); });
+  }
   return section;
 }
 /* Panel de folios (1.25.0, mejora nº 1): el diseño honesto del
@@ -470,7 +546,9 @@ function declaracionesSection() {
 function declFoliosPanel(view, fill) {
   const box = n('div');
   box.append(n('h4', 'Folios de tus acuses'));
-  box.append(n('p', 'Así trabaja el SAT: su servicio de acuses no busca por ejercicio — reimprime UN acuse por su número de operación (folio). PacoSAT aprende el de cada documento que archiva, los demás se apuntan a mano, y «Descubrir los folios en el SAT» los busca en la Consulta de transacciones (el servicio que lista los números de operación de lo presentado), con su diario y su página guardada.', 'muted'));
+  /* El sermón de cómo trabaja el servicio de acuses ya no abre
+     el panel (1.29.1, D4): vive en el «Cómo funciona» plegado al
+     final de la pantalla; aquí quedan las acciones. */
   const descubrir = n('button', 'Descubrir los folios en el SAT', 'soft');
   descubrir.type = 'button';
   descubrir.onclick = async () => {
@@ -544,28 +622,56 @@ function declFoliosPanel(view, fill) {
    por cada ejercicio, cuántos meses tienen acuse, si la anual
    consta y qué folios faltan; el botón encadena las mensuales
    del año entero y la anual en una sola pasada. */
+/* La foto por ejercicio, normalizada en UN solo sitio (1.29.1,
+   D1/D2): el servidor manda «ejercicio» (número) — la 1.29.0
+   leía «anio», inexistente, y pintaba «Ejercicio undefined» en
+   dos bloques gemelos. Aquí el año se convierte, la lista se
+   deduplica por ejercicio y el rótulo queda garantizado: sin
+   año válido, «Ejercicio sin año» — «undefined» jamás se pinta. */
+function declAniosVista(view) {
+  const vistos = new Set();
+  const salida = [];
+  for (const bruto of (view && view.anios) || []) {
+    const numero = Number(bruto.ejercicio ?? bruto.anio);
+    const valido = Number.isInteger(numero) && numero >= 1900 && numero <= 2200;
+    const clave = valido ? numero : 0;
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    salida.push({
+      ejercicio: valido ? numero : null,
+      rotulo: valido ? 'Ejercicio ' + numero : 'Ejercicio sin año',
+      mesesConAcuse: Number(bruto.mesesConAcuse) || 0,
+      mesesConDecl: Number(bruto.mesesConDecl) || 0,
+      anual: Boolean(bruto.anual),
+      folios: Number(bruto.folios) || 0,
+      foliosPendientes: Number(bruto.foliosPendientes) || 0,
+      completo: Boolean(bruto.completo)
+    });
+  }
+  return salida;
+}
 function declAniosPanel(view, fill) {
   const box = n('div');
   box.append(n('h4', 'El histórico, año por año'));
-  const anios = view.anios || [];
+  const anios = declAniosVista(view);
   if (!anios.length) box.append(n('p', 'Sin ejercicios con declaraciones en el archivo.', 'empty'));
   for (const anio of anios) {
-    const row = n('div', undefined, 'cp-row');
-    row.append(n('strong', 'Ejercicio ' + anio.anio),
+    const row = n('div', undefined, 'cp-row decl-anio-row');
+    row.append(n('strong', anio.rotulo),
       n('span', anio.mesesConAcuse + ' de 12 meses con acuse' +
         (anio.mesesConDecl ? ' · ' + anio.mesesConDecl + ' con declaración' : '') +
         ' · anual ' + (anio.anual ? 'con acuse ✓' : 'sin acuse') +
         ' · ' + anio.folios + ' folio(s)' + (anio.foliosPendientes ? ' (' + anio.foliosPendientes + ' pendientes)' : '')),
       anio.completo ? statusPill('ok', 'Año completo') : statusPill('warn', 'Incompleto'));
-    if (!anio.completo) {
+    if (!anio.completo && anio.ejercicio) {
       const recuperar = n('button', 'Recuperar el año completo', 'soft small');
-      recuperar.onclick = () => dialog('Recuperar el ejercicio ' + anio.anio,
+      recuperar.onclick = () => dialog('Recuperar el ejercicio ' + anio.ejercicio,
         [n('p', 'PacoSAT entra al portal con tu e.firma y baja primero las mensuales del año entero y después la anual. Puede tardar: cada documento queda archivado en Expedientes con su folio aprendido.')],
         async () => {
           recuperar.disabled = true; recuperar.textContent = 'Recuperando el año…';
           try {
-            const data = await satApi('declaraciones/recover-year', { rfc: scope, ejercicio: anio.anio });
-            toast('Año ' + anio.anio + ': recuperación terminada (mensuales ' +
+            const data = await satApi('declaraciones/recover-year', { rfc: scope, ejercicio: anio.ejercicio });
+            toast('Año ' + anio.ejercicio + ': recuperación terminada (mensuales ' +
               (data.mensual?.ok ? 'bien' : 'con aviso') + ', anual ' +
               (data.anual?.ok ? 'bien' : 'con aviso') + ').', 'ok');
             fill(data.view);
@@ -577,6 +683,19 @@ function declAniosPanel(view, fill) {
     box.append(row);
   }
   return box;
+}
+/* «Cómo funciona» (1.29.1, D4): las explicaciones viven aquí,
+   plegadas y AL FINAL — el sermón de los folios, la regla del
+   mes por bueno y la nota de SAT Móvil, fuera del primer
+   pantallazo, que es estado y acciones. */
+function declComoFunciona() {
+  const details = n('details', undefined, 'sat-run decl-como-funciona');
+  details.append(n('summary', 'Cómo funciona'));
+  details.append(
+    n('p', 'Un mes solo se da por bueno con su PDF guardado y su número de operación verificado: una página de error del portal nunca cuenta como acuse.'),
+    n('p', 'Así trabaja el SAT: su servicio de acuses no busca por ejercicio — reimprime UN acuse por su número de operación (folio). PacoSAT aprende el de cada documento que archiva, los demás se apuntan a mano, y «Descubrir los folios en el SAT» los busca en la Consulta de transacciones (el servicio que lista los números de operación de lo presentado), con su diario y su página guardada.'),
+    n('p', '¿No tienes el folio? En la app SAT Móvil, «Mis declaraciones» lista por ejercicio y periodo y deja bajar el PDF sin folio: bájalo ahí y suéltalo en la recuperación a mano de esta misma pantalla.'));
+  return details;
 }
 async function declRun(kind, fill, button, periodo = '') {
   button.disabled = true;
@@ -597,7 +716,7 @@ async function declRun(kind, fill, button, periodo = '') {
          se dice en tono neutro y el Registro lo enseña como
          acción pendiente, no como error. */
       if (result.waitingExecutor) {
-        toast(result.error || 'Trabajo en cola: se hará desde tu equipo cuando el ejecutor esté en línea.', 'ok');
+        toast(result.error || 'El trabajo quedó en cola para tu equipo: la guía de esta pantalla te dice el paso que toca.', 'ok');
         fill(data.view);
         return;
       }
