@@ -53,10 +53,16 @@ try {
   const saved = JSON.parse(localStorage.getItem('pacosat-settings') || 'null');
   if (saved && typeof saved === 'object') appSettings = { ...appSettings, ...saved, hasLogo: Boolean(saved.logoData) };
 } catch { /* sin almacenamiento local: identidad por defecto */ }
-const SETTING_ACCENT_LABELS = { azul: 'Azul', teal: 'Turquesa', violeta: 'Violeta', burdeos: 'Burdeos', ambar: 'Ámbar', rosa: 'Rosa', grafito: 'Grafito' };
+/* Acento por defecto del producto (1.32.2): el azul de la casa.
+   El ajuste personal (appSettings.accent) manda sobre el defecto;
+   volver al verde como defecto es poner esta única variable a ''
+   — nada más que tocar. El verde queda como acento elegible. */
+const DEFAULT_ACCENT = 'azul';
+const SETTING_ACCENT_LABELS = { verde: 'Verde', azul: 'Azul', teal: 'Turquesa', violeta: 'Violeta', burdeos: 'Burdeos', ambar: 'Ámbar', rosa: 'Rosa', grafito: 'Grafito' };
 function applySettings() {
   const root = document.documentElement;
-  if (appSettings.accent) root.dataset.accent = appSettings.accent; else delete root.dataset.accent;
+  const acento = appSettings.accent || DEFAULT_ACCENT;
+  if (acento) root.dataset.accent = acento; else delete root.dataset.accent;
   $('brand-name').textContent = appSettings.installName || 'PacoSAT';
   const logoImg = $('brand-logo'), mark = $('brand-mark');
   if (appSettings.logoData) { logoImg.src = appSettings.logoData; logoImg.hidden = false; mark.style.display = 'none'; }
@@ -1847,7 +1853,9 @@ function home() {
      siguiente versión. Y «Tu lista de gestos»: todo lo que solo
      Paco puede hacer, junto tras las métricas. */
   const novedades1311 = typeof novedadesCard1311 === 'function' ? novedadesCard1311() : null;
-  if (novedades1311) blocks.unshift(novedades1311);
+  /* Tras la tarjeta del día (1.32.2): el estado del día y lo que
+     necesita a Paco mandan sobre la tarjeta informativa. */
+  if (novedades1311) blocks.splice(1, 0, novedades1311);
   blocks.splice(novedades1311 ? 4 : 3, 0, gestosPanel1311());
   if (lastImport) {
     /* Tarjeta persistente de la última importación (UX-13). */

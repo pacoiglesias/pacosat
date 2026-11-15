@@ -291,7 +291,7 @@ function harness(service, proxyKey = '') {
   assert.ok(printFn.includes('Estado en PacoSAT (no forma parte del documento fiscal)'), 'línea de estado separada del cuerpo fiscal');
   for (const pantalla of ['Copiar UUID', 'Sin PDF vinculado', 'Está en la cola', 'Imprimir comprobante'])
     assert.ok(!printFn.includes(pantalla), 'la plantilla no contiene el texto de pantalla «' + pantalla + '»');
-  assert.ok(html.includes('@page{size:A4 portrait'), 'papel en retrato A4');
+  assert.ok(html.includes('@page{size:letter portrait'), 'papel en retrato tamaño carta (re-basificado en la 1.32.2: de A4 a carta)');
   assert.ok(html.includes('dialog{display:none!important}'), 'el CSS de impresión oculta cualquier diálogo');
   console.log('ronda1131 C+D (superficie) ok — verbos exactos, cableado, botón por factura y plantilla de impresión limpia.');
 }

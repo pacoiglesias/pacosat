@@ -1116,7 +1116,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     setState('avisos:seed-calendario', '1');
   }
   const deleteSetting = key => db.prepare('DELETE FROM settings WHERE key=?').run(key);
-  const SETTING_ACCENTS = ['', 'azul', 'teal', 'violeta', 'burdeos', 'ambar', 'rosa', 'grafito'];
+  const SETTING_ACCENTS = ['', 'verde', 'azul', 'teal', 'violeta', 'burdeos', 'ambar', 'rosa', 'grafito'];
   const cleanSettingName = value => String(value ?? '').replace(/[<>"'\\\u0000-\u001f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
   const publicSettings = () => ({ installName: getSetting('installName'), senderName: getSetting('senderName'),
     accent: getSetting('accent'), hasLogo: Boolean(getSetting('logoMime')) });
@@ -5969,7 +5969,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
   /* ===== Capa de salidas (Ronda Salidas, 1.14.0) =====
      Los artefactos que salen de PacoSAT se DISEÑAN para su destino
-     (papel o Excel); no se vuelca la pantalla. PDF A4 con el FOLIO
+     (papel o Excel); no se vuelca la pantalla. PDF tamaño carta con el FOLIO
      visible y totales correctos, .xlsx reales con tipos y fórmulas,
      ZIP ordenados RFC → emitidos/recibidos → año → mes con los
      cancelados en carpeta aparte e índice + manifiesto dentro, y la
@@ -10328,7 +10328,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       if (req.method === 'GET' && url.pathname === '/icon.svg') {
         res.writeHead(200, { 'Content-Type': 'image/svg+xml; charset=utf-8' });
-        return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="18" fill="#0e2a47"/><path d="M50 14 80 24v26c0 18-12 30-30 36C32 80 20 68 20 50V24Z" fill="#f4b942"/><text x="50" y="62" font-size="34" font-family="sans-serif" font-weight="bold" text-anchor="middle" fill="#0e2a47">P</text></svg>');
+        return res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="18" fill="#0e2a47"/><g transform="translate(14 14) scale(3)" fill="none" stroke="#f4b942" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.6v1.5M11 4.1h2l.9 4.3M10.1 8.4 11 4.1M6.9 6.2 3.8 4.6M17.1 6.2l3.1-1.6M8.6 20.6 10.1 8.4h3.8l1.5 12.2M10.4 14.6h3.2M6.4 20.6h11.2"/></g></svg>');
       }
       if (req.method === 'GET' && url.pathname === '/sw.js') {
         res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Service-Worker-Allowed': '/' });

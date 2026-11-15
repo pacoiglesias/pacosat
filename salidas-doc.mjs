@@ -6,7 +6,7 @@
    - buildXlsx: .xlsx REAL (hojas con tipos: texto, número con
      formato de moneda, fecha como serial de Excel; totales con
      fórmula SUM y su valor calculado; filtros y fila fijada).
-   - buildPdf: PDF A4 diseñado para papel, multi-página, con
+   - buildPdf: PDF tamaño carta diseñado para papel, multi-página, con
      cabecera, tablas, pie «página X de Y» y folio cuando aplica.
    - folioLabel / amountInWords: el folio del CFDI y el total en
      letra que pide el diseño de la pieza 1 (auditoría 2026-11-10). */
@@ -182,7 +182,7 @@ export function buildXlsx({ sheets }) {
 }
 
 /* ================= PDF diseñado para papel ================= */
-const PAGE = { w: 595.28, h: 841.89, ml: 42, mr: 42, mt: 46, mb: 52 };
+const PAGE = { w: 612, h: 792, ml: 42, mr: 42, mt: 46, mb: 52 };
 /* WinAnsi trae los guiones y las comillas tipográficas en los
    códigos 0x85–0x97: se mapean ahí en vez de perderlos como «?». */
 const pdfText = value => String(value ?? '')

@@ -441,7 +441,7 @@ const seedInvoices = async (h, specs) => {
      ordenado + 45 mejoras + reportes): la página crece a
      659.787 B; el techo de la casa sube a 663.000 B con la
      contabilidad en el anexo 1.31.0 de ronda1110. */
-  assert.ok(pesoInicial < 712000, 'la primera pintura bajo el techo de la casa (712.000 B, re-basificado en la 1.32.0: panel de la API; contabilidad en ronda1110): ' + pesoInicial + ' B');
+  assert.ok(pesoInicial < 718000, 'la primera pintura bajo el techo de la casa (718.000 B, re-basificado en la 1.32.2: marca propia y acento verde; contabilidad en ronda1110): ' + pesoInicial + ' B');
   /* El servicio sirve las partes tras la misma puerta del proxy. */
   const h = makeHarness({ lazyParts: lazy });
   const parte = await h.call('GET', '/parte/pagos');

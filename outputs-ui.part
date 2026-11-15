@@ -127,7 +127,7 @@ async function salidaDescargar(ruta, payload, boton) {
    con un botón por salida y su última generación al lado, leída
    del registro que el servidor lleva de cada artefacto. */
 function salidasDisenadasPanel() {
-  const panelEl = panel('Salidas por destino', 'Artefactos pensados para quien los recibe, no volcados de pantalla: PDF A4 con folio y totales para imprimir o enviar, Excel real con importes como números, filtros y sumas, y ZIP ordenados por carpetas con su índice. Todo sale del mes y el RFC elegidos arriba.');
+  const panelEl = panel('Salidas por destino', 'Artefactos pensados para quien los recibe, no volcados de pantalla: PDF tamaño carta con folio y totales para imprimir o enviar, Excel real con importes como números, filtros y sumas, y ZIP ordenados por carpetas con su índice. Todo sale del mes y el RFC elegidos arriba.');
   const rfc = () => scope || people[0]?.id || '';
   const destinos = [
     ['Para tu contadora', [
