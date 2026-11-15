@@ -240,12 +240,24 @@ const unlock = async (h, rfc) => {
   /* El ejecutor canjeado late: su llave vale. */
   const late = await h.exec('POST', '/api/executor/heartbeat', {}, canje.json.token);
   assert.equal(late.status, 200, 'la llave del canje funciona para el ejecutor');
-  /* Versión sin paquete publicado: vacía, y el paquete no existe. */
+  /* Versión y paquete del ejecutor: el manifiesto ejecutor-bundle.json
+     vive en el árbol desde la 1.32.2 (viaja en el snapshot de GitHub);
+     donde está presente, la versión publicada es la suya y se verifica
+     contra él. Donde no está (el paquete es artefacto de empaquetado),
+     la versión va vacía: nadie se actualiza a ciegas. El .zip no viaja
+     al repositorio: sin paquete guardado, /bundle es 404. */
   const version = await h.exec('POST', '/api/executor/version', {}, tokenEjecutor);
   assert.equal(version.status, 200);
-  assert.equal(version.json.version, '', 'sin manifiesto en el servidor, la versión va vacía: nadie se actualiza a ciegas');
+  if (existsSync(join(ROOT, 'ejecutor-bundle.json'))) {
+    const manifiesto = JSON.parse(read('ejecutor-bundle.json'));
+    assert.equal(version.json.version, manifiesto.version,
+      'con manifiesto en el servidor, la versión publicada es la del manifiesto');
+  } else {
+    assert.equal(version.json.version, '', 'sin manifiesto en el servidor, la versión va vacía: nadie se actualiza a ciegas');
+  }
   const bundle = await h.exec('POST', '/api/executor/bundle', {}, tokenEjecutor);
-  assert.equal(bundle.status, 404, 'sin paquete guardado, /bundle es 404');
+  if (!existsSync(join(ROOT, 'ejecutor-bundle.zip')))
+    assert.equal(bundle.status, 404, 'sin paquete guardado, /bundle es 404');
   /* La puerta: encolar, reclamar, «abre» → veredicto en el estado. */
   const enc = await h.call('POST', '/api/executor/jobs', { rfc: OWN, kind: 'puerta-probar', payload: {} });
   assert.equal(enc.status, 200, 'la puerta-probar se encola para un RFC con perfil');
