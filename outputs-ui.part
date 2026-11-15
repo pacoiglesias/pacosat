@@ -38,35 +38,21 @@ function salidasScreen() {
       '$' + centsLabel(row.issuedIva), '$' + centsLabel(row.receivedIva),
       (row.balance >= 0n ? 'A pagar ≈ $' : 'A favor ≈ $') + centsLabel(row.balance < 0n ? -row.balance : row.balance),
       row.missing ? row.missing + ' (reprocesa)' : '—'])));
-  const reparseBtn = n('button', 'Reprocesar XML guardados (completar desglose)', 'soft');
-  reparseBtn.onclick = async () => {
-    reparseBtn.disabled = true; reparseBtn.textContent = 'Reprocesando…';
-    try {
-      if (satToken) {
-        const result = await satApi('reparse', {});
-        toast('Re-parseo: ' + result.updated + ' completados, ' + result.skipped + ' ya tenían desglose, ' + result.failed + ' sin XML guardado.', 'ok');
-        await refresh();
-      } else {
-        let updated = 0;
-        const files = await readStore('files');
-        const byId = new Map(files.map(file => [file.id, file]));
-        const changed = [];
-        for (const row of invoices) {
-          if (row.fiscal && (row.kind !== 'P' || row.fiscal.payments !== undefined)) continue;
-          const file = byId.get('xml:' + row.id);
-          if (!file?.blob) continue;
-          const before = row.fiscal;
-          withFiscal(row, new Uint8Array(await file.blob.arrayBuffer()));
-          if (row.fiscal !== before && row.fiscal) { changed.push(row); updated++; }
-        }
-        if (changed.length) await writeBatch({ invoices: changed });
-        toast('Re-parseo local: ' + updated + ' CFDI completados con su desglose.', 'ok');
-        await refresh();
-      }
-      render();
-    } catch (error) { toast(error.message, 'error'); reparseBtn.disabled = false; reparseBtn.textContent = 'Reprocesar XML guardados (completar desglose)'; }
-  };
-  ivaPanel.append(reparseBtn);
+  /* El reproceso NO vive aquí (1.32.1, C3): su casa es Centro
+     SAT › Estado de mis CFDI. Cuando faltan desgloses, este
+     panel lo dice y enlaza allí — un solo sitio para la
+     herramienta, sin duplicarla en cada pantalla que la echa
+     de menos. */
+  const faltanDesglose = rows.reduce((acc, row) => acc + (row.missing || 0), 0);
+  if (faltanDesglose) {
+    const aviso = n('div', undefined, 'cp-row');
+    aviso.append(n('span', number.format(faltanDesglose) + ' CFDI sin desglose de IVA: su reproceso vive en Centro SAT › Estado de mis CFDI.'));
+    const ir = n('button', 'Ir a Estado de mis CFDI', 'soft');
+    ir.type = 'button';
+    ir.onclick = () => { satTab = 'monitor'; navigate('sat'); };
+    aviso.append(ir);
+    ivaPanel.append(aviso);
+  }
   wrap.append(ivaPanel);
   /* Reporte del periodo */
   const reportPanel = panel('Reporte del periodo', 'Totales del mes por sentido y por contraparte, con su IVA. Se puede imprimir, bajar en CSV o enviar por correo desde aquí.');
@@ -117,20 +103,10 @@ function salidasScreen() {
   const cierrePointer = panel('Cierre del mes', 'La lista de pasos del cierre, con su estado y el camino a resolver cada uno, vive en su pestaña.');
   cierrePointer.append(action('Abrir el cierre guiado', () => { cierreSection = 'cierre'; render(); }, 'primary', 'check'));
   wrap.append(cierrePointer);
-  /* Correo e informes automáticos (servidor) */
-  if (satToken) { wrap.append(mailPanel()); wrap.append(autoReportsPanel()); }
-  else wrap.append(panel('Correo e informes automáticos', 'En modo local sin servidor, el correo automático no está disponible: conecta PacoSAT en modo servidor (NAS) para enviar informes y correos desde la app.'));
-  /* Exportación completa */
-  const exportPanel = panel('Exportación completa legible', 'Todos tus XML y PDF en carpetas por RFC y año, con su índice CSV. Independiente del respaldo cifrado: tus datos salen enteros cuando quieras.');
-  const exportActions = n('div', undefined, 'sat-actions');
-  const exportAll = n('button', 'Exportar todo', 'soft');
-  exportAll.onclick = () => exportFull('');
-  const yearNow = new Date().getFullYear();
-  const exportYear = n('button', 'Exportar ' + yearNow, 'soft');
-  exportYear.onclick = () => exportFull(String(yearNow));
-  exportActions.append(exportAll, exportYear);
-  exportPanel.append(exportActions);
-  wrap.append(exportPanel);
+  /* Correo e informes automáticos viven en Ajustes › Correo y
+     la exportación completa en Ajustes › Respaldos (1.32.1,
+     C1): esta pantalla se queda con el cierre del mes — IVA,
+     reportes del periodo y salidas por destino. */
   return [wrap];
 }
 /* Pide un artefacto de la capa de salidas y lo descarga con su
@@ -169,19 +145,46 @@ function salidasDisenadasPanel() {
       ['PDF del mapa anual de declaraciones', 'salidas/pdf', () => ({ kind: 'declaraciones', rfc: rfc(), year: OUT.month.slice(0, 4) }), 'pdf:declaraciones'],
       ['Excel de complementos de pago', 'salidas/xlsx', () => ({ kind: 'complementos', rfc: rfc() }), 'xlsx:complementos'],
       ['Excel de listados del SAT', 'salidas/xlsx', { kind: 'listados' }, 'xlsx:listados'],
-      ['ZIP de todo el RFC', 'salidas/zip', () => ({ scope: 'rfc', rfc: rfc(), year: OUT.month.slice(0, 4) }), 'zip:rfc']]]
+      ['ZIP de todo el RFC', 'salidas/zip', () => ({ scope: 'rfc', rfc: rfc(), year: OUT.month.slice(0, 4) }), 'zip:rfc']]],
+    /* Reportes nuevos (1.31.0): los de pantalla — Totales,
+       Declaraciones, Avisos y Dinero — con el mismo patrón de
+       filas (ruta + payload { kind, rfc } y el año donde
+       aplica). El PDF de declaraciones es el que ya vivía en
+       «Para ti»: se enlaza también aquí, en su tarjeta. */
+    ['Reportes de pantalla', [
+      ['PDF de Totales', 'salidas/pdf', () => ({ kind: 'totales', rfc: rfc(), year: OUT.month.slice(0, 4) }), 'pdf:totales'],
+      ['Excel de Totales', 'salidas/xlsx', () => ({ kind: 'totales', rfc: rfc(), year: OUT.month.slice(0, 4) }), 'xlsx:totales'],
+      ['PDF de Declaraciones', 'salidas/pdf', () => ({ kind: 'declaraciones', rfc: rfc(), year: OUT.month.slice(0, 4) }), 'pdf:declaraciones'],
+      ['Excel de Declaraciones', 'salidas/xlsx', () => ({ kind: 'declaraciones', rfc: rfc(), year: OUT.month.slice(0, 4) }), 'xlsx:declaraciones'],
+      ['PDF de Avisos', 'salidas/pdf', () => ({ kind: 'avisos', rfc: rfc() }), 'pdf:avisos'],
+      ['Excel de Avisos', 'salidas/xlsx', () => ({ kind: 'avisos', rfc: rfc() }), 'xlsx:avisos'],
+      ['Excel de Dinero', 'salidas/xlsx', () => ({ kind: 'dinero', rfc: rfc() }), 'xlsx:dinero']]]
   ];
   for (const [titulo, salidas] of destinos) {
     const card = n('div', undefined, 'kpi');
     card.append(n('strong', titulo));
-    for (const [label, ruta, payload, clave] of salidas) {
+    /* Una salida principal por destino (1.32.1, C2): la que se
+       usa; el resto vive en el ⋯ de la tarjeta, con su nombre
+       completo. La cara dejó de ser un muro de 20 botones
+       idénticos donde nada mandaba. */
+    salidas.forEach(([label, ruta, payload, clave], indice) => {
+      if (indice > 0) return;
       const fila = n('div', undefined, 'cp-row');
-      const btn = n('button', label, 'soft');
+      const btn = n('button', label, 'primary');
       btn.onclick = () => salidaDescargar(ruta, typeof payload === 'function' ? payload() : payload, btn);
       const ultima = n('span', 'Sin generar todavía', 'muted');
       ultima.dataset.salidaUltima = clave;
       fila.append(btn, ultima);
       card.append(fila);
+    });
+    const resto = salidas.slice(1);
+    if (resto.length && typeof cardMenu1312 === 'function') {
+      const menu = cardMenu1312(resto.map(([label, ruta, payload]) => [label,
+        (boton) => salidaDescargar(ruta, typeof payload === 'function' ? payload() : payload, boton)]));
+      menu.classList.add('salidas-mas');
+      const filaMenu = n('div', undefined, 'cp-row');
+      filaMenu.append(n('span', 'Más salidas de este destino', 'muted'), menu);
+      card.append(filaMenu);
     }
     panelEl.append(card);
   }
@@ -412,6 +415,20 @@ function autoReportsPanel() {
   };
   fill();
   return panelEl;
+}
+/* La exportación completa, como panel (1.32.1, C1): su casa
+   es Ajustes › Respaldos, junto al respaldo cifrado. */
+function salidasExportPanel() {
+  const exportPanel = panel('Exportación completa legible', 'Todos tus XML y PDF en carpetas por RFC y año, con su índice CSV. Independiente del respaldo cifrado: tus datos salen enteros cuando quieras.');
+  const exportActions = n('div', undefined, 'sat-actions');
+  const exportAll = n('button', 'Exportar todo', 'soft');
+  exportAll.onclick = () => exportFull('');
+  const yearNow = new Date().getFullYear();
+  const exportYear = n('button', 'Exportar ' + yearNow, 'soft');
+  exportYear.onclick = () => exportFull(String(yearNow));
+  exportActions.append(exportAll, exportYear);
+  exportPanel.append(exportActions);
+  return exportPanel;
 }
 async function exportFull(year) {
   try {

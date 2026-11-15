@@ -5,7 +5,7 @@ import { createHash, randomBytes, randomUUID, X509Certificate, scryptSync, timin
 import { DatabaseSync } from 'node:sqlite';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, statfsSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createSatConnector, advanceSatJob } from './sat-direct.mjs';
 import { parseXml, parseCfdiFull, fiscalSummary, crc32, zipXml, zipText, validateRfc } from './xml-core.mjs';
@@ -28,7 +28,7 @@ import { createSatDocBrowserFetch, createSatDocPipelineFetch, createPlaywrightDr
 import { createSatDeclFetch } from './sat-declaraciones.mjs';
 import { createSatTribFetch, buzonPlazo } from './sat-tributario.mjs';
 import { SAT_EXECUTOR_PROTOCOL_VERSION, buildExecutorJob, validateExecutorResult,
-  classifyBuzonRow } from './sat-executor.mjs';
+  classifyBuzonRow, sanitizeExecutorSteps } from './sat-executor.mjs';
 import { createSatCiecFetch, createCiecCredentialResolver } from './sat-ciec.mjs';
 import { composeNewsMail, NEWS_MAIL_LIMIT } from './news-mail.mjs';
 import { encryptIndexSecrets, decryptIndexSecrets, isEncryptedSecret } from './secret-box.mjs';
@@ -361,6 +361,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     CREATE TABLE IF NOT EXISTS trib_tombstones (rfc TEXT NOT NULL, clave TEXT NOT NULL,
       creado INTEGER NOT NULL DEFAULT 0, motivo TEXT NOT NULL DEFAULT '',
       asunto TEXT NOT NULL DEFAULT '', PRIMARY KEY(rfc, clave));
+    /* Lápidas del Registro (1.32.1, A3): el Registro es una
+       proyección sobre muchos diarios — «borrar» una entrada no
+       toca su diario de origen; la oculta aquí con su clave
+       estable, agrupada por lote para poder deshacer el lote
+       entero. El diario de origen queda intacto: esto es una
+       vista limpia, no una destrucción de evidencia. */
+    CREATE TABLE IF NOT EXISTS registro_ocultos (clave TEXT PRIMARY KEY,
+      lote TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0);
     /* Ejecutor local del SAT (1.29.0): PacoSAT ordena, registra y
        archiva; el ejecutor del equipo de Paco navega el portal.
        sat_executors guarda SOLO la huella SHA-256 de su token de
@@ -374,6 +382,21 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     CREATE TABLE IF NOT EXISTS sat_executors (id TEXT PRIMARY KEY, nombre TEXT NOT NULL DEFAULT '',
       tokenHash TEXT NOT NULL DEFAULT '', creado INTEGER NOT NULL DEFAULT 0,
       ultimoVisto INTEGER NOT NULL DEFAULT 0, revocado INTEGER NOT NULL DEFAULT 0);
+    /* API vendible (1.32.0): la puerta /api/v1 de SOLO LECTURA
+       sobre el mismo cálculo reconciliado de las pantallas. Las
+       llaves heredan el patrón del ejecutor: en el servidor vive
+       SOLO su huella SHA-256; la llave en claro se enseña una vez
+       al crearla. api_calls es el libro de llamadas: alimenta los
+       contadores del panel y nace a la par que el evento del
+       Registro (audit_events, clase «api»), así los dos cuadran
+       siempre. Ninguna de las dos tablas guarda la llave. */
+    CREATE TABLE IF NOT EXISTS api_keys (id TEXT PRIMARY KEY, nombre TEXT NOT NULL DEFAULT '',
+      alcance TEXT NOT NULL DEFAULT 'lectura', rfc TEXT NOT NULL DEFAULT '',
+      huella TEXT NOT NULL DEFAULT '', creada INTEGER NOT NULL DEFAULT 0,
+      ultimoUso INTEGER NOT NULL DEFAULT 0, estado TEXT NOT NULL DEFAULT 'activa');
+    CREATE TABLE IF NOT EXISTS api_calls (id INTEGER PRIMARY KEY, at INTEGER NOT NULL DEFAULT 0,
+      keyId TEXT NOT NULL DEFAULT '', recurso TEXT NOT NULL DEFAULT '', rfc TEXT NOT NULL DEFAULT '',
+      estado INTEGER NOT NULL DEFAULT 0, registros INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS sat_executor_jobs (id TEXT PRIMARY KEY, dedupeKey TEXT NOT NULL DEFAULT '',
       rfc TEXT NOT NULL DEFAULT '', kind TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL DEFAULT '{}',
       plan TEXT NOT NULL DEFAULT '[]', estado TEXT NOT NULL DEFAULT 'en-cola',
@@ -387,6 +410,22 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       executorId TEXT NOT NULL DEFAULT '', started INTEGER NOT NULL DEFAULT 0, finished INTEGER NOT NULL DEFAULT 0,
       ok INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT '', errorKind TEXT NOT NULL DEFAULT '',
       steps TEXT NOT NULL DEFAULT '[]', shotId TEXT NOT NULL DEFAULT '', htmlId TEXT NOT NULL DEFAULT '');
+    /* Puerta auto-probada (1.30.0): el último resultado de la
+       prueba de acceso por RFC — la puerta se comprueba sola
+       cada semana para avisar ANTES de que se necesite un papel,
+       no el día que hace falta. Solo guarda el veredicto y su
+       fecha; la traza vive en sat_executor_attempts. */
+    CREATE TABLE IF NOT EXISTS sat_puerta (rfc TEXT PRIMARY KEY,
+      ok INTEGER NOT NULL DEFAULT 0, probada INTEGER NOT NULL DEFAULT 0,
+      error TEXT NOT NULL DEFAULT '', errorKind TEXT NOT NULL DEFAULT '');
+    /* Códigos cortos de emparejamiento (1.30.0): el código que la
+       app enseña UNA vez y el instalador del equipo teclea; aquí
+       solo vive su huella SHA-256. Un solo uso, caducidad corta:
+       canjearlo crea el ejecutor y entrega su token, como el
+       emparejamiento largo de siempre. */
+    CREATE TABLE IF NOT EXISTS sat_pair_codes (codigoHash TEXT PRIMARY KEY,
+      creado INTEGER NOT NULL DEFAULT 0, expira INTEGER NOT NULL DEFAULT 0,
+      usado INTEGER NOT NULL DEFAULT 0);
     /* Altas preparadas sin credenciales (1.24.0, punto 7): el RFC
        consta como contribuyente «faltan credenciales» hasta que su
        CIEC o su e.firma se guarden desde el Centro SAT. */
@@ -403,6 +442,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       periodo TEXT NOT NULL DEFAULT '', folio TEXT NOT NULL DEFAULT '',
       estado TEXT NOT NULL DEFAULT 'pendiente', nota TEXT NOT NULL DEFAULT '',
       creado INTEGER NOT NULL DEFAULT 0, actualizado INTEGER NOT NULL DEFAULT 0);
+    /* Notas pegadas a un CFDI (1.31.0, F12): texto libre de Paco
+       sobre UN comprobante («esto es la renta de diciembre»), por
+       su UUID. Vive fuera del registro del CFDI — el XML no se
+       toca jamás — y viaja en el Excel de facturas. */
+    CREATE TABLE IF NOT EXISTS cfdi_notas (uuid TEXT PRIMARY KEY,
+      nota TEXT NOT NULL DEFAULT '', at INTEGER NOT NULL DEFAULT 0);
     /* Recordatorios de cobro (AGREGAR 5): BORRADORES que solo
        salen con el toque de Paco; nacen de un aviso de saldo por
        cobrar y guardan su texto editable y su destino. */
@@ -943,6 +988,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   if (!avisosCols.includes('responsable')) db.exec("ALTER TABLE avisos ADD COLUMN responsable TEXT NOT NULL DEFAULT ''");
   if (!avisosCols.includes('vence')) db.exec('ALTER TABLE avisos ADD COLUMN vence INTEGER');
   if (!avisosCols.includes('accion')) db.exec("ALTER TABLE avisos ADD COLUMN accion TEXT NOT NULL DEFAULT ''");
+  /* Capa de atención (1.29.2, pieza de Alertas): lo que Paco
+     gobierna sobre cada aviso sin tocar el hecho que lo respalda —
+     activa / pospuesta hasta una fecha / archivada —, si su
+     nacimiento ya se notificó fuera de la app, la huella del hecho
+     que lo originó (si el hecho cambia, el aviso renace) y cuántas
+     notificaciones de nacimiento/vuelta lleva. Las filas que ya
+     existen nacen «ya notificadas» (notificada=1 por defecto):
+     el panel histórico no dispara ninguna avalancha retroactiva. */
+  if (!avisosCols.includes('atencion')) db.exec("ALTER TABLE avisos ADD COLUMN atencion TEXT NOT NULL DEFAULT 'activa'");
+  if (!avisosCols.includes('pospuesta_hasta')) db.exec('ALTER TABLE avisos ADD COLUMN pospuesta_hasta INTEGER');
+  if (!avisosCols.includes('notificada')) db.exec('ALTER TABLE avisos ADD COLUMN notificada INTEGER NOT NULL DEFAULT 1');
+  if (!avisosCols.includes('hecho')) db.exec("ALTER TABLE avisos ADD COLUMN hecho TEXT NOT NULL DEFAULT ''");
+  if (!avisosCols.includes('notif_count')) db.exec('ALTER TABLE avisos ADD COLUMN notif_count INTEGER NOT NULL DEFAULT 0');
   const counterpartCols = db.prepare('PRAGMA table_info(counterparts)').all();
   if (!counterpartCols.some(row => row.name === 'payDay'))
     db.exec('ALTER TABLE counterparts ADD COLUMN payDay INTEGER');
@@ -1492,27 +1550,17 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
 
   async function bootstrap(config) {
-    for (const row of config.profiles || []) {
-      try {
-        need(validateRfc(row.rfc || '').level !== 'structure' && typeof row.name === 'string' && row.name.length > 0 && row.name.length <= 120 &&
-          Number.isInteger(row.minutes) && row.minutes >= 60 && row.minutes <= 1440 && Number.isInteger(row.days) && row.days >= 1 && row.days <= 31 &&
-          ['received','issued','both'].includes(row.direction), 'Perfil inicial inválido.');
-        const certificate = readFileSync(row.certificatePath), privateKey = readFileSync(row.keyPath);
-        const expires = certExpiryMs(certificate);
-        let active;
-        try { active = await makeConnector({ rfc: row.rfc, certificate, privateKey, password: row.password }); }
-        finally { certificate.fill(0); privateKey.fill(0); }
-        db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,0,'') ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error='' ")
-          .run(row.rfc, row.minutes, row.days, row.direction);
-        if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, row.rfc);
-        putMetadata('people', { id: row.rfc, name: row.name });
-        unlocked.set(row.rfc, active);
-      } catch { console.error('PacoSAT: un perfil de e.firma del archivo de arranque no pudo activarse.'); }
-    }
-    /* Perfiles guardados desde la app (1.6.12): se activan igual que los
-       del archivo de arranque, desde la carpeta protegida de e.firma.
-       Si un RFC está en ambos sitios, manda el de la app (es el más
-       reciente: lo subió Paco desde la pantalla). */
+    /* Orden de activación (1.32.1, B3): manda el perfil guardado
+       por la app en el almacén de e.firma — es el más reciente,
+       lo subió Paco desde la pantalla — y el archivo de arranque
+       solo rellena los RFC que el almacén no activó. Hasta la
+       1.32.0 el arranque iba primero y, cuando su par era el
+       VIEJO CADUCADO de pacosat-secrets, su activación moría y
+       el servidor podía quedarse sin perfil firmante activo:
+       sin firma no nace ninguna solicitud de descarga (el NAS
+       verificó el 14 nov: 0 solicitudes en toda la historia con
+       el par bueno guardado en el almacén desde el 9 nov). */
+    const activadosAlmacen = new Set();
     for (const [rfc, meta] of Object.entries(readEfirmaIndex())) {
       if (meta?.access === 'ciec') {
         /* Método CIEC (1.12.0): no hay e.firma que activar. El
@@ -1530,11 +1578,92 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         let active;
         try { active = await makeConnector({ rfc, certificate, privateKey, password: meta.password }); }
         finally { certificate.fill(0); privateKey.fill(0); }
+        /* La agenda del índice puede venir escueta (solo la
+           contraseña, como en el ejecutor): los defectos de la
+           casa la completan — un undefined aquí mataba la
+           activación entera en el INSERT. */
         db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,0,'') ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error='' ")
-          .run(rfc, meta.minutes, meta.days, meta.direction);
+          .run(rfc, meta.minutes || 360, meta.days || 7, meta.direction || 'received');
         if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, rfc);
         unlocked.set(rfc, active);
-      } catch { console.error('PacoSAT: un perfil de e.firma guardado desde la app no pudo activarse.'); }
+        activadosAlmacen.add(rfc);
+      } catch (error) {
+        const causa = message(error);
+        auditEvent('fallo', 'Arranque: el perfil guardado de ' + rfc + ' no se activó: ' + causa, rfc, 0);
+        /* El motivo queda TAMBIÉN en la fila del perfil: Firmas
+           lo enseña en la tarjeta en vez de un «bloqueado» mudo. */
+        try { db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,0,?) ON CONFLICT(rfc) DO UPDATE SET error=excluded.error")
+          .run(rfc, meta.minutes || 360, meta.days || 7, meta.direction || 'received', causa); } catch { /* la fila nunca tumba el arranque */ }
+        console.error('PacoSAT: el perfil guardado de ' + rfc + ' no pudo activarse: ' + causa);
+      }
+    }
+    for (const row of config.profiles || []) {
+      /* Fuera del try: la causa registrada en el catch necesita
+         la caducidad leída y la comparación con el almacén. */
+      let expires = 0, distintoAlmacen = 0;
+      try {
+        need(validateRfc(row.rfc || '').level !== 'structure' && typeof row.name === 'string' && row.name.length > 0 && row.name.length <= 120 &&
+          Number.isInteger(row.minutes) && row.minutes >= 60 && row.minutes <= 1440 && Number.isInteger(row.days) && row.days >= 1 && row.days <= 31 &&
+          ['received','issued','both'].includes(row.direction), 'Perfil inicial inválido.');
+        const certificate = readFileSync(row.certificatePath), privateKey = readFileSync(row.keyPath);
+        expires = certExpiryMs(certificate);
+        /* ¿Trae OTRA e.firma distinta de la guardada en el
+           almacén? (D-ARRANQUE, 1.29.2): la comparación es de
+           bytes contra el .cer del almacén — sin parsear ni
+           tocar secretos — y es la señal exacta de «el arranque
+           apunta a la vieja» cuando además su activación falla. */
+        try { distintoAlmacen = existsSync(efirmaPath(row.rfc, '.cer')) &&
+          !readFileSync(efirmaPath(row.rfc, '.cer')).equals(certificate) ? 1 : 0; } catch { distintoAlmacen = 0; }
+        if (activadosAlmacen.has(row.rfc)) {
+          /* El almacén ya activó este RFC: el par de arranque NO
+             se instala NUNCA sobre el bueno (1.32.1, B3). Si
+             además no serviría — caducado u otra e.firma cuya
+             activación muere — queda IGNORADO con su causa
+             específica nombrada en el diario, cerrando el
+             desvío genérico declarado en la 1.29.2. Si es el
+             mismo certificado, no hay nada que contar. */
+          let causaIgnorado = '';
+          if (expires && expires <= now()) { causaIgnorado = 'su certificado caducó el ' + day(expires); certificate.fill(0); privateKey.fill(0); }
+          else if (distintoAlmacen) {
+            try { await makeConnector({ rfc: row.rfc, certificate, privateKey, password: row.password }); causaIgnorado = 'es otra e.firma, distinta de la guardada en el almacén'; }
+            catch (error) { causaIgnorado = message(error); }
+            finally { certificate.fill(0); privateKey.fill(0); }
+          }
+          if (causaIgnorado) {
+            auditEvent('fallo', 'Arranque: el perfil ' + row.rfc + ' del archivo de arranque quedó ignorado (' +
+              basename(String(row.certificatePath || '')) + '): ' + causaIgnorado +
+              '. Manda el perfil guardado en la app, que es el activo.', row.rfc, 0);
+            try { setState('arranque:fallo', JSON.stringify({ rfc: row.rfc,
+              archivo: basename(String(row.certificatePath || '')), vence: expires || 0,
+              distinto: distintoAlmacen, causa: causaIgnorado, ignorado: 1, at: now() })); } catch { /* el estado nunca tumba el arranque */ }
+            console.error('PacoSAT: el perfil ' + row.rfc + ' del archivo de arranque quedó ignorado: ' + causaIgnorado);
+          }
+          continue;
+        }
+        let active;
+        try { active = await makeConnector({ rfc: row.rfc, certificate, privateKey, password: row.password }); }
+        finally { certificate.fill(0); privateKey.fill(0); }
+        db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,0,'') ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error='' ")
+          .run(row.rfc, row.minutes, row.days, row.direction);
+        if (expires) db.prepare('UPDATE profiles SET certExpires=? WHERE rfc=?').run(expires, row.rfc);
+        putMetadata('people', { id: row.rfc, name: row.name });
+        unlocked.set(row.rfc, active);
+      } catch (error) {
+        /* D-ARRANQUE (1.29.2): la causa REAL queda registrada —
+           qué perfil, qué archivo y por qué (sin secretos: la
+           causa es el error del conector, que habla del
+           certificado, nunca de la contraseña) — en el Registro
+           y en el estado que Firmas enseña. Antes esto era una
+           línea genérica que se tiraba y la pantalla quedaba
+           vacía sin explicación (lo que Paco vio el 12 nov). */
+        const causa = message(error);
+        auditEvent('fallo', 'Arranque: el perfil ' + row.rfc + ' del archivo de arranque no se activó (' +
+          basename(String(row.certificatePath || '')) + '): ' + causa, row.rfc, 0);
+        try { setState('arranque:fallo', JSON.stringify({ rfc: row.rfc,
+          archivo: basename(String(row.certificatePath || '')), vence: expires || 0,
+          distinto: distintoAlmacen, causa, at: now() })); } catch { /* el estado nunca tumba el arranque */ }
+        console.error('PacoSAT: el perfil ' + row.rfc + ' del archivo de arranque no pudo activarse: ' + causa);
+      }
     }
     if (config.watchFolder?.path) inbox.dir = String(config.watchFolder.path);
     /* «Presunto enviado» (1.6.15, mejora nº 1): filas del libro en
@@ -1721,7 +1850,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     efos: { deQuien: 'Del listado oficial del SAT (artículo 69-B).',
       gesto: 'Qué hacer: entra en PacoSAT, en Vigilancia, y revisa los comprobantes de ese RFC antes de deducirlos.' },
     'satdoc-fail': { deQuien: 'Del portal del SAT o de la conexión con él; tu e.firma firmó bien.',
-      gesto: 'Qué hacer: entra en PacoSAT, en Documentos, y mira el problema en la tarjeta del RFC; desde el Centro de mando puedes reintentar la descarga.' }
+      gesto: 'Qué hacer: entra en PacoSAT, en Documentos, y mira el problema en la tarjeta del RFC; desde el Centro de mando puedes reintentar la descarga.' },
+    aviso: { deQuien: 'El propio aviso lo dice en su texto: cada alerta nace diciendo de quién es el gesto (tuyo, del SAT o del sistema).',
+      gesto: 'Qué hacer: entra en PacoSAT, en Avisos, y actúa sobre su tarjeta: resolverla, archivarla o reprogramarla.' }
   };
   async function sendEventAlerts(time) {
     if (!mail || !mailAlertsOn()) return;
@@ -1733,15 +1864,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     let budget = Math.max(0, EVENT_MAIL_CAP_PER_HOUR - sentThisHour);
     /* Los primeros descubrimientos (ref «cancel-first:») quedan
        fuera SIEMPRE: su único correo posible es el resumen. */
-    const items = db.prepare("SELECT * FROM alerts WHERE kind IN ('cancellation','efos','satdoc-fail') AND sent IS NULL AND due<=? AND ref NOT LIKE 'cancel-first:%' ORDER BY due LIMIT 10").all(time);
-    for (const item of items) {
-      if (!budget) {
+    const enviarOagrupar = async (item, conTope) => {
+      if (conTope && !budget) {
         db.prepare('INSERT INTO event_digest(at,subject,body,rfc) VALUES (?,?,?,?)').run(time, item.subject, item.body, item.rfc || '');
         db.prepare('UPDATE alerts SET sent=?,error=? WHERE id=?').run(time,
           'Agrupada en el resumen del día: tope horario de correos alcanzado.', item.id);
-        continue;
+        return;
       }
-      budget--;
+      if (conTope) budget--;
       db.prepare('UPDATE alerts SET due=? WHERE id=?').run(time + 15 * MIN, item.id);
       const framing = EVENT_MAIL_KIND[item.kind];
       const text = ['Qué pasó: ' + item.body, '',
@@ -1756,7 +1886,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         db.prepare("INSERT INTO mail_sends(at,recipients,subject,kind,ok,error,rfc) VALUES (?,?,?,'alerta-evento',1,'',?)")
           .run(now(), active.recipient, item.subject, String(item.rfc || '').toUpperCase());
       } catch { db.prepare('UPDATE alerts SET error=? WHERE id=?').run('El servidor SMTP no aceptó el envío. Revisa la configuración y las credenciales.', item.id); }
-    }
+    };
+    const items = db.prepare("SELECT * FROM alerts WHERE kind IN ('cancellation','efos','satdoc-fail') AND sent IS NULL AND due<=? AND ref NOT LIKE 'cancel-first:%' ORDER BY due LIMIT 10").all(time);
+    for (const item of items) await enviarOagrupar(item, true);
+    /* Los nacimientos de avisos (1.29.2) se despachan ENTEROS en
+       la misma pasada: los que caben en el presupuesto salen
+       individuales y TODOS los demás se agrupan en el resumen de
+       este mismo ciclo. Ningún nacimiento queda pendiente para
+       gotear 5 por hora en ciclos siguientes (la avalancha en
+       cámara lenta sería el mismo fallo con otro ritmo). El
+       presupuesto es compartido y los sucesos operativos van
+       primero: son los que no pueden esperar ni un ciclo. */
+    const nacimientos = db.prepare("SELECT * FROM alerts WHERE kind='aviso' AND sent IS NULL AND due<=? ORDER BY due LIMIT 1000").all(time);
+    for (const item of nacimientos) await enviarOagrupar(item, true);
   }
   /* El resumen único de sucesos (1.13.1, pieza G): como mucho UN
      correo al día con (a) los comprobantes que ya constaban
@@ -2070,6 +2212,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return nuevas;
   }
   function tribOverview(rfc, { incluirArchivadas = false, incluirPapelera = false } = {}) {
+    reconcileOnRead(now());
     const todas = db.prepare('SELECT * FROM trib_notifications WHERE rfc=? ORDER BY fecha DESC, primeraVez DESC').all(rfc);
     /* Vista principal = solo lo que requiere atención (1.29.0):
        las archivadas en local (opiniones de cumplimiento y
@@ -2084,7 +2227,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       .map(row => ({ id: row.id, started: row.started, finished: row.finished, ok: Boolean(row.ok),
         error: row.error, errorKind: row.errorKind, attempts: row.attempts,
         encontradas: row.encontradas, sinAbrir: row.sinAbrir, origen: row.origen || '',
-        hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId),
+        hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId), ...decisionArtefactos(row.id),
         steps: (() => { try { return JSON.parse(row.steps || '[]'); } catch { return []; } })() }));
     const lastOk = runs.find(run => run.ok);
     const atencion = vivas.filter(row => !row.archivada);
@@ -2172,6 +2315,168 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       catch { /* el trabajo no nació: la siguiente vuelta lo intenta */ }
     }
   }
+  /* Puerta auto-probada (1.30.0): veredicto por RFC para las
+     tarjetas del Centro SAT — cuándo se probó la puerta por
+     última vez y si abrió. Sin fila, la puerta aún no se ha
+     probado sola y la tarjeta no finge lo contrario. */
+  function puertaPorRfc() {
+    const out = {};
+    try {
+      for (const row of db.prepare('SELECT * FROM sat_puerta').all())
+        out[row.rfc] = { ok: Boolean(row.ok), probada: row.probada || null,
+          error: row.error || '', errorKind: row.errorKind || '' };
+    } catch { /* sin pruebas todavía */ }
+    return out;
+  }
+  /* Cadencia de la puerta (1.30.0): una prueba por semana y RFC,
+     encolada al ejecutor como cualquier trabajo — sin ejecutor,
+     espera en cola sin fingir fallo. Se ancla en la última
+     prueba registrada o en el último trabajo de esa clase. */
+  const PUERTA_CADENCE_MS = 7 * DAY;
+  async function puertaAutoTick(time) {
+    if (!remoteExecutor) return;
+    const index = readEfirmaIndex();
+    for (const profile of db.prepare('SELECT * FROM profiles ORDER BY rfc').all()) {
+      const rfc = profile.rfc;
+      if (profilePaused(profile, time)) continue;
+      if (index[rfc]?.access === 'ciec') continue;
+      if (!existsSync(efirmaPath(rfc, '.cer'))) continue;
+      const probada = db.prepare('SELECT probada FROM sat_puerta WHERE rfc=?').get(rfc)?.probada || 0;
+      const lastJob = db.prepare("SELECT MAX(creado) AS t FROM sat_executor_jobs WHERE rfc=? AND kind='puerta-probar'").get(rfc)?.t || 0;
+      const last = Math.max(probada, lastJob);
+      if (last && time - last < PUERTA_CADENCE_MS) continue;
+      try { enqueueExecutorJob({ rfc, kind: 'puerta-probar', payload: {}, origen: 'sistema' }); }
+      catch { /* el trabajo no nació: la siguiente vuelta lo intenta */ }
+    }
+  }
+  /* Cuenta atrás del Buzón (1.31.0, P8): una notificación sin
+     abrir cuya «tenida por notificada» cae en menos de 24 h levanta
+     su aviso una sola vez (la clave de la notificación es la
+     referencia: el INSERT OR IGNORE de queueAlert lo deduplica
+     para siempre). La regla dura no cambia: PacoSAT avisa del
+     plazo, jamás abre la notificación. */
+  function buzonUrgenteTick(time) {
+    try {
+      for (const row of db.prepare("SELECT rfc, clave, fecha, asunto FROM trib_notifications WHERE abierta=0 AND archivada=0 AND enPapelera=0 AND fecha<>''").all()) {
+        const plazo = buzonPlazo(row.fecha);
+        if (!plazo?.tenida) continue;
+        const tenidaMs = new Date(String(plazo.tenida).slice(0, 10) + 'T23:59:59').getTime();
+        if (!Number.isFinite(tenidaMs)) continue;
+        if (tenidaMs - time > DAY || tenidaMs - time < -DAY) continue;
+        queueAlert('buzon-urgente', 'buzon-t24:' + row.clave,
+          'PacoSAT · Una notificación del Buzón se tiene por notificada en menos de 24 h (' + row.rfc + ')',
+          '«' + String(row.asunto || 'Sin asunto') + '» (recibida el ' + row.fecha + ') se tendrá por notificada el ' +
+          plazo.tenida + ' aunque no se abra, y sus efectos corren desde el ' + plazo.efectos +
+          '. Qué significa: el plazo legal empieza a correr lo abras o no. Gesto tuyo: consúltala en el Buzón ' +
+          'Tributario (y con tu despacho si hace falta); PacoSAT no abre notificaciones por ti.', time, row.rfc);
+      }
+    } catch { /* sin buzón listado todavía: nada que avisar */ }
+  }
+  /* Emisor nuevo e importe fuera de patrón (1.31.0, P9): cada CFDI
+     recibido con fecha reciente se cruza con el historial de su
+     emisor para ESE receptor. Primera factura en más de 30 días (o
+     la primera de la historia) ⇒ aviso de emisor nuevo; importe
+     mayor que el triple de su mayor factura anterior, con al menos
+     tres de historial ⇒ aviso de importe inusual. La referencia es
+     el UUID: cada comprobante avisa una sola vez en la vida. */
+  function emisorNuevoTick(time) {
+    try {
+      /* Freno de la casa: el ciclo principal pasa cada 30 s y
+         este cruce lee el expediente entero; con una pasada por
+         hora basta — un CFDI nuevo espera como mucho eso a su
+         aviso, y la referencia por UUID impide duplicados. */
+      if (time - (Number(getState('tick:emisor-nuevo') || 0)) < 60 * MIN) return;
+      setState('tick:emisor-nuevo', String(time));
+      const invoices = [];
+      for (const row of db.prepare("SELECT value FROM records WHERE store='invoices'").all()) {
+        try { const inv = JSON.parse(row.value);
+          if (inv?.from?.rfc && inv?.to?.rfc && inv?.date) invoices.push(inv); } catch { /* fila ilegible */ }
+      }
+      for (const inv of invoices) {
+        const fechaMs = Date.parse(inv.date);
+        if (!Number.isFinite(fechaMs) || time - fechaMs > 2 * DAY || time - fechaMs < -DAY) continue;
+        const previas = invoices.filter(o => o.uuid !== inv.uuid && o.from.rfc === inv.from.rfc &&
+          o.to.rfc === inv.to.rfc && Number.isFinite(Date.parse(o.date)) && Date.parse(o.date) < time - 30 * DAY);
+        const quien = (inv.from.name || inv.from.rfc) + ' (' + inv.from.rfc + ')';
+        if (!previas.length) {
+          queueAlert('emisor-nuevo', 'emisor-nuevo:' + inv.uuid,
+            'PacoSAT · Primera factura de un emisor nuevo (' + inv.to.rfc + ')',
+            'Llegó la primera factura de ' + quien + ' para ' + inv.to.rfc + ': $' +
+            importeShow(Number(inv.total) || 0) + ' del ' + String(inv.date).slice(0, 10) +
+            ' (folio ' + (inv.folio || 'sin folio') + ', UUID ' + inv.uuid + '). Qué significa: un emisor que no ' +
+            'había facturado a este RFC en los últimos 30 días. Si no lo reconoces, mírala antes de pagarla; ' +
+            'si es normal, este aviso no vuelve por este comprobante.', time, inv.to.rfc);
+          continue;
+        }
+        const maxPrevio = Math.max(...previas.map(o => Number(o.total) || 0));
+        if (previas.length >= 3 && maxPrevio > 0 && (Number(inv.total) || 0) > 3 * maxPrevio)
+          queueAlert('importe-inusual', 'importe-inusual:' + inv.uuid,
+            'PacoSAT · Importe fuera de patrón de ' + quien,
+            'La factura de ' + quien + ' para ' + inv.to.rfc + ' es de $' + importeShow(Number(inv.total) || 0) +
+            ': más del triple de su mayor factura anterior registrada ($' + importeShow(maxPrevio) + '). Folio ' +
+            (inv.folio || 'sin folio') + ', UUID ' + inv.uuid + '. Qué significa: puede ser legítimo (un pedido ' +
+            'grande) o un error del emisor; conviene mirarla antes de pagarla.', time, inv.to.rfc);
+      }
+    } catch { /* sin expedientes todavía: el tick no rompe el ciclo */ }
+  }
+  /* Ejecutor en silencio (1.31.0, P14): emparejado pero sin latido
+     en más de dos días, Hoy lo dice y aquí queda su alerta, como
+     mucho una por semana (la referencia lleva la semana). Sin
+     ejecutor emparejado no hay silencio que contar. */
+  function ejecutorSilencioTick(time) {
+    try {
+      const estado = executorEstado();
+      if (!estado.emparejado || !estado.ultimoVisto) return;
+      const dias = Math.floor((time - estado.ultimoVisto) / DAY);
+      if (dias < 2) return;
+      queueAlert('ejecutor-silencio', 'ejecutor-silencio:' + Math.floor(time / (7 * DAY)),
+        'PacoSAT · Tu ejecutor del SAT lleva ' + dias + ' días sin dar señales',
+        'El ejecutor local' + (estado.nombre ? ' («' + estado.nombre + '»)' : '') + ' no se conecta desde hace ' +
+        dias + ' días. Qué significa: los trabajos del SAT que necesitan tu equipo (Buzón, Declaraciones por el ' +
+        'ejecutor) se quedan en cola esperando. Gesto tuyo: abre el ejecutor en tu PC cuando puedas; recoge la ' +
+        'cola solo.', time);
+    } catch { /* sin ejecutores: nada */ }
+  }
+  /* Cierre del mes, solo el día 1 (1.31.0, P15): un aviso por RFC
+     que dice si el mes anterior quedó COMPLETO — CFDI recibidos y
+     emitidos del mes, el acuse de su declaración mensual y el
+     estado de cuenta — o nombra lo que falta. Las cifras salen de
+     los conteos reales de cada tabla; si algo no consta, se dice
+     que no consta, no se supone. */
+  function cierreMesTick(time) {
+    try {
+      const hoy = new Date(time);
+      if (hoy.getDate() !== 1) return;
+      const prev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+      const mes = prev.getFullYear() + '-' + String(prev.getMonth() + 1).padStart(2, '0');
+      const ejercicio = prev.getFullYear();
+      const hayBancos = (db.prepare('SELECT COUNT(*) AS n FROM bank_statements').get()?.n || 0) > 0;
+      const estadosMes = db.prepare('SELECT COUNT(*) AS n FROM bank_statements WHERE month=?').get(mes)?.n || 0;
+      const invoices = [];
+      for (const row of db.prepare("SELECT value FROM records WHERE store='invoices'").all()) {
+        try { const inv = JSON.parse(row.value);
+          if (inv?.date && String(inv.date).slice(0, 7) === mes) invoices.push(inv); } catch { /* fila ilegible */ }
+      }
+      for (const profile of db.prepare('SELECT rfc FROM profiles ORDER BY rfc').all()) {
+        const rfc = profile.rfc;
+        const recibidos = invoices.filter(inv => inv.to?.rfc === rfc).length;
+        const emitidos = invoices.filter(inv => inv.from?.rfc === rfc).length;
+        const acuses = db.prepare("SELECT COUNT(*) AS n FROM declaraciones WHERE rfc=? AND tipo='mensual' AND periodo=? AND fileId<>''").get(rfc, mes)?.n || 0;
+        const faltas = [];
+        if (!recibidos && !emitidos) faltas.push('no consta ningún CFDI de ' + mes + ' en el expediente');
+        if (!acuses) faltas.push('no consta el acuse de la declaración mensual de ' + mes);
+        if (hayBancos && !estadosMes) faltas.push('no consta ningún estado de cuenta de ' + mes);
+        queueAlert('cierre-mes', 'cierre:' + rfc + ':' + mes,
+          'PacoSAT · Cierre de ' + mes + ' (' + rfc + '): ' + (faltas.length ? 'falta por cerrar' : 'completo'),
+          'El mes ' + mes + ' de ' + rfc + ' cerró con ' + recibidos + ' CFDI recibidos y ' + emitidos +
+          ' emitidos en el expediente' + (acuses ? ', con su acuse de declaración mensual' : '') +
+          (hayBancos && estadosMes ? ' y ' + estadosMes + ' estado(s) de cuenta' : '') + '. ' +
+          (faltas.length ? 'Lo que falta: ' + faltas.join('; ') + '. Gesto tuyo: recupéralo desde su pantalla ' +
+            '(Declaraciones, Bancos o Recibir CFDI) y el cierre queda completo.'
+            : 'Qué significa: el mes quedó completo en PacoSAT; no te toca nada.'), time, rfc);
+      }
+    } catch { /* el cierre no rompe el ciclo */ }
+  }
   function tribSummaryPorRfc() {
     const out = {};
     try {
@@ -2197,6 +2502,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      es lo que el Registro enseña desde la 1.28.0. */
   const EXECUTOR_LEASE_MS = 10 * MIN;
   const EXECUTOR_ONLINE_MS = 3 * MIN;
+  /* Fallos de canje del código corto (1.30.0): marcas en memoria
+     para el tope anti-martillo del /api/executor/exchange. */
+  let pairExchangeFails = [];
   const executorTokenHash = token => createHash('sha256').update(String(token || '')).digest('hex');
   function executorByToken(token) {
     if (!token || String(token).length < 32) return null;
@@ -2208,6 +2516,125 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const row = db.prepare('SELECT MAX(ultimoVisto) AS visto FROM sat_executors WHERE revocado=0').get();
     return Boolean(row?.visto && time - row.visto < EXECUTOR_ONLINE_MS);
   }
+  /* Estado del ejecutor para las pantallas (1.29.1, D5): si hay
+     algún equipo emparejado (no revocado), si está en línea y
+     cuándo dio su última señal. Es lo que la guía de espera
+     enseña en Declaraciones y en el Buzón en vez del mensaje
+     genérico «esperando tu equipo». */
+  function executorEstado() {
+    const row = db.prepare('SELECT nombre, ultimoVisto FROM sat_executors WHERE revocado=0 ORDER BY ultimoVisto DESC, creado DESC LIMIT 1').get();
+    if (!row) return { emparejado: false, enLinea: false, ultimoVisto: null, nombre: '' };
+    const visto = Number(row.ultimoVisto) || 0;
+    return { emparejado: true, enLinea: executorOnline(), ultimoVisto: visto || null, nombre: row.nombre || '' };
+  }
+  /* ===== API vendible /api/v1 (1.32.0) =====
+     SOLO LECTURA sobre el cálculo reconciliado único: las mismas
+     cifras que las pantallas, al centavo, porque salen de las
+     mismas fuentes (records, cfdi_watch, avisos, tribOverview,
+     registroOverview). La lista de lo que JAMÁS sale (cimientos
+     §2.5) se respeta por AUSENCIA: no existe recurso que devuelva
+     e.firma, CIEC, contraseñas, tokens del ejecutor ni contenido
+     de notificaciones del Buzón — el resumen del Buzón son conteos
+     y plazos, como en la pantalla. */
+  const API_V1_LIMITE_MIN = 60;
+  const apiRate = new Map();
+  const apiKeyHash = llave => createHash('sha256').update(String(llave || '')).digest('hex');
+  function apiKeyBySecret(secreto) {
+    if (!secreto || String(secreto).length < 32) return null;
+    return db.prepare('SELECT * FROM api_keys WHERE huella=?').get(apiKeyHash(secreto)) || null;
+  }
+  function apiAudit(llave, recurso, rfc, estadoHttp, registros) {
+    try {
+      db.prepare('INSERT INTO api_calls(at,keyId,recurso,rfc,estado,registros) VALUES (?,?,?,?,?,?)')
+        .run(now(), llave.id, recurso, rfc || '', estadoHttp, registros || 0);
+      db.prepare('UPDATE api_keys SET ultimoUso=? WHERE id=?').run(now(), llave.id);
+    } catch { /* el libro nunca tumba la llamada */ }
+    auditEvent('api', 'API · ' + llave.nombre + ' · GET ' + recurso + ' · ' + estadoHttp +
+      (registros ? ' · ' + registros + ' registros' : ''), rfc || '', estadoHttp < 400);
+  }
+  function apiKeysOverview() {
+    const inicioHoy = new Date(now()); inicioHoy.setHours(0, 0, 0, 0);
+    const llaves = db.prepare('SELECT * FROM api_keys ORDER BY creada DESC').all().map(row => {
+      const total = db.prepare('SELECT COUNT(*) AS n FROM api_calls WHERE keyId=?').get(row.id)?.n || 0;
+      const hoy = db.prepare('SELECT COUNT(*) AS n FROM api_calls WHERE keyId=? AND at>=?')
+        .get(row.id, inicioHoy.getTime())?.n || 0;
+      return { id: row.id, nombre: row.nombre, alcance: row.alcance, rfc: row.rfc || '',
+        creada: row.creada, ultimoUso: row.ultimoUso || null, estado: row.estado,
+        llamadasHoy: hoy, llamadasTotal: total };
+    });
+    const llamadas = db.prepare('SELECT c.at, c.recurso, c.rfc, c.estado, c.registros, k.nombre AS llave ' +
+      'FROM api_calls c LEFT JOIN api_keys k ON k.id=c.keyId ORDER BY c.at DESC, c.id DESC LIMIT 30').all()
+      .map(row => ({ at: row.at, llave: row.llave || '—', recurso: row.recurso, rfc: row.rfc || '',
+        estado: row.estado, registros: row.registros }));
+    return { llaves, llamadas };
+  }
+  function apiInvoices(rfc) {
+    const archivadas = archivedInvoiceIds();
+    const out = [];
+    for (const row of db.prepare("SELECT value FROM records WHERE store='invoices'").all()) {
+      try {
+        const inv = JSON.parse(row.value);
+        if (!inv?.date || !inv?.from?.rfc || !inv?.to?.rfc) continue;
+        if (inv.from.rfc !== rfc && inv.to.rfc !== rfc) continue;
+        out.push({ inv, archivada: archivadas.has(inv.id) });
+      } catch { /* fila ilegible */ }
+    }
+    return out;
+  }
+  /* El criterio de Totales, el de la pantalla (monthlyTotals):
+     canceladas aparte y sin sumar, complementos (P) y nómina (N)
+     aparte, divisa verdadera por su código y jamás sumada a los
+     pesos, archivados fuera de la vista de trabajo. */
+  function apiTotales(rfc, desde, hasta) {
+    const meses = new Map();
+    for (const { inv, archivada } of apiInvoices(rfc)) {
+      if (archivada) continue;
+      const mes = String(inv.date).slice(0, 7);
+      if (desde && mes < desde) continue;
+      if (hasta && mes > hasta) continue;
+      if (!meses.has(mes)) meses.set(mes, { mes, recibidas: 0, recibidasImporte: 0n,
+        emitidas: 0, emitidasImporte: 0n, complementos: 0, nomina: 0, canceladas: 0, otrasDivisas: {} });
+      const g = meses.get(mes);
+      const recibida = inv.to.rfc === rfc, emitida = inv.from.rfc === rfc;
+      if (salidaCancelado(inv)) { g.canceladas++; continue; }
+      if (inv.kind === 'P') { g.complementos++; continue; }
+      if (inv.kind === 'N') { g.nomina++; continue; }
+      const divisa = String(inv.currency || 'MXN').toUpperCase();
+      if (divisa !== 'MXN') {
+        const slot = g.otrasDivisas[divisa] || (g.otrasDivisas[divisa] = { recibidas: 0, emitidas: 0 });
+        if (recibida) slot.recibidas++;
+        if (emitida) slot.emitidas++;
+        continue;
+      }
+      if (recibida) { g.recibidas++; g.recibidasImporte += centsOf(inv.total); }
+      if (emitida) { g.emitidas++; g.emitidasImporte += centsOf(inv.total); }
+    }
+    const lista = [...meses.values()].sort((a, b) => b.mes.localeCompare(a.mes)).map(g => ({
+      mes: g.mes, recibidas: g.recibidas, recibidasImporte: moneyText(g.recibidasImporte),
+      emitidas: g.emitidas, emitidasImporte: moneyText(g.emitidasImporte),
+      complementos: g.complementos, nomina: g.nomina, canceladas: g.canceladas,
+      otrasDivisas: g.otrasDivisas }));
+    const suma = (campo, importe) => lista.reduce((acc, g) => acc + g[campo], 0);
+    const sumaImp = campo => lista.reduce((acc, g) => acc + centsOf(g[campo]), 0n);
+    return { meses: lista, totales: { recibidas: suma('recibidas'), recibidasImporte: moneyText(sumaImp('recibidasImporte')),
+      emitidas: suma('emitidas'), emitidasImporte: moneyText(sumaImp('emitidasImporte')),
+      complementos: suma('complementos'), nomina: suma('nomina'), canceladas: suma('canceladas') } };
+  }
+  function apiCfdiVista(inv, archivada, rfc) {
+    return { uuid: inv.id, folio: inv.folio || '', fecha: inv.date, tipo: inv.kind || '',
+      direccion: inv.to?.rfc === rfc ? 'recibida' : 'emitida',
+      emisor: { rfc: inv.from?.rfc || '', nombre: inv.from?.name || '' },
+      receptor: { rfc: inv.to?.rfc || '', nombre: inv.to?.name || '' },
+      moneda: String(inv.currency || 'MXN').toUpperCase(), total: moneyText(centsOf(inv.total)),
+      estado: salidaCancelado(inv) ? 'Cancelado' : 'Vigente', archivada: Boolean(archivada) };
+  }
+  /* Nombres de trabajo para las caras (1.32.1): la clase
+     interna (buzon-listar…) no se enseña nunca; cada trabajo se
+     nombra como lo pide la persona. */
+  const TRABAJO_HUMANO = { 'buzon-listar': 'Consultar el Buzón', 'declaraciones-recuperar': 'Descargar declaraciones',
+    'declaracion-folio': 'Reimprimir un acuse por folio', 'puerta-probar': 'Probar la puerta del SAT',
+    'documento-sat': 'Descargar un documento del SAT' };
+  const trabajoHumano = kind => TRABAJO_HUMANO[kind] || 'Trabajo del SAT';
   function executorJobView(row) {
     if (!row) return null;
     let payload = {}, plan = [], steps = [], resumen = {};
@@ -2264,7 +2691,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      con la evidencia persistida por saveRunDiag (verificado). */
   function mirrorExecutorDiary(job, attemptId, ok, validated, errorText, errorKind, time) {
     const steps = (validated?.steps || []).map(step => ({ at: step.at || time, intento: 1, paso: step.paso, detalle: step.detalle || '' }));
-    const guardado = !ok && validated?.diag ? saveRunDiag(attemptId, validated.diag) : { shotId: '', htmlId: '', faltas: [] };
+    const guardado = !ok && (validated?.diag || validated?.diagDecision) ? saveRunDiag(attemptId, validated.diag, validated.diagDecision) : { shotId: '', htmlId: '', faltas: [] };
     if (!ok && validated?.diag)
       steps.push(...diagCierreSteps(validated.diag, guardado).map(paso => ({ at: paso.at, intento: 1, paso: paso.text, detalle: '' })));
     if (job.kind === 'buzon-listar') {
@@ -2283,8 +2710,48 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
     return guardado;
   }
+  /* Cancelar un trabajo del ejecutor (1.31.0, punto A3): el gesto
+     de Paco manda sobre la cola y sobre la corrida. En cola, el
+     trabajo sale de la cola y ningún ejecutor lo reclamará. En
+     curso, queda marcado «cancelado» conservando quién lo corría:
+     el ejecutor se entera por su latido (el heartbeat devuelve los
+     ids cancelados) y detiene su trabajo; si aun así devuelve un
+     resultado, completeExecutorJob lo DESCARTA entero — no archiva
+     documentos, no lista el buzón, no escribe espejo — y el
+     intento queda registrado como cancelado. Lo parcial no se
+     aplica jamás. */
+  function cancelExecutorJob(jobId, time) {
+    const row = db.prepare('SELECT * FROM sat_executor_jobs WHERE id=?').get(String(jobId || ''));
+    if (!row) return { ok: false, motivo: 'Ese trabajo ya no existe.' };
+    if (row.estado === 'en-cola') {
+      db.prepare("UPDATE sat_executor_jobs SET estado='cancelado', actualizado=? WHERE id=?").run(time, row.id);
+      auditEvent('accion', 'Cancelaste el trabajo ' + row.kind + ' de ' + row.rfc +
+        ' antes de que tu equipo lo recogiera.', row.rfc, 1);
+      return { ok: true, estado: 'cancelado', enCola: true };
+    }
+    if (row.estado === 'en-curso' || row.estado === 'reclamado') {
+      db.prepare("UPDATE sat_executor_jobs SET estado='cancelado', actualizado=? WHERE id=?").run(time, row.id);
+      auditEvent('accion', 'Cancelaste el trabajo ' + row.kind + ' de ' + row.rfc +
+        ' mientras tu equipo lo corría: su resultado se descartará al llegar.', row.rfc, 1);
+      return { ok: true, estado: 'cancelado', enCurso: true };
+    }
+    return { ok: false, motivo: 'Ese trabajo ya terminó (' + row.estado + '): no hay nada que cancelar.' };
+  }
   function completeExecutorJob(jobRow, executor, body) {
     const time = now();
+    /* Trabajo cancelado por Paco mientras corría (1.31.0, A3): el
+       resultado se descarta ENTERO y el intento queda como
+       cancelado — la única entrada que el Registro enseña de este
+       evento (sin espejo en los diarios, punto A2). */
+    if (jobRow.estado === 'cancelado' && jobRow.reclamadoPor === executor.id) {
+      const attemptId = randomUUID();
+      db.prepare('INSERT INTO sat_executor_attempts(id,jobId,executorId,started,finished,ok,error,errorKind,steps) VALUES (?,?,?,?,?,?,?,?,?)')
+        .run(attemptId, jobRow.id, executor.id, time, time, 0,
+          'Cancelado por ti desde PacoSAT: el resultado que llegó se descartó y no se archivó nada.', 'cancelada',
+          JSON.stringify(sanitizeExecutorSteps(body?.result?.steps || [])));
+      db.prepare('UPDATE sat_executor_jobs SET actualizado=? WHERE id=?').run(time, jobRow.id);
+      return { ok: false, cancelado: true };
+    }
     need(jobRow.estado === 'en-curso' && jobRow.reclamadoPor === executor.id,
       'Ese trabajo no está reclamado por este ejecutor (o su concesión venció).', 409);
     const job = { rfc: jobRow.rfc, kind: jobRow.kind, payload: JSON.parse(jobRow.payload || '{}') };
@@ -2340,6 +2807,89 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
     const okFinal = !fallo && !validated.error;
     const errorText = validated.error || (fallo ? 'El ejecutor informó un fallo sin detalle.' : '');
+    /* Puerta veraz (1.31.0, punto A4): el veredicto ya no depende
+       solo del trabajo puerta-probar semanal. Cualquier acceso REAL
+       con éxito — un trabajo completado, o uno que declara
+       accesoOk (su satBrowserLogin terminó aunque el trámite
+       posterior cayera: el Buzón del 13 nov entró y lo que falló
+       fue el pasillo) — refresca sat_puerta a «abre» con su hora.
+       La fila falsa de «sin-efirma» de las 08:54 del 13 nov
+       sobrevivió un día entero porque ningún acceso verdadero la
+       pisaba; ahora el primer acceso bueno la sustituye. Solo
+       puerta-probar puede escribir «no abre»: es el único trabajo
+       que entra en frío sin hacer nada más. */
+    const accesoRealOk = okFinal || validated.accesoOk === true;
+    if (accesoRealOk && job.kind !== 'puerta-probar') {
+      const previaPuerta = db.prepare('SELECT * FROM sat_puerta WHERE rfc=?').get(job.rfc);
+      db.prepare('INSERT INTO sat_puerta(rfc,ok,probada,error,errorKind) VALUES (?,?,?,?,?) ' +
+        'ON CONFLICT(rfc) DO UPDATE SET ok=excluded.ok, probada=excluded.probada, error=excluded.error, errorKind=excluded.errorKind')
+        .run(job.rfc, 1, time, '', '');
+      resumen.puerta = 'abre';
+      if (previaPuerta && !previaPuerta.ok)
+        auditEvent('sistema', 'La puerta del SAT de ' + job.rfc +
+          ' volvió a abrir: un acceso real del ejecutor entró con la e.firma.', job.rfc, 1);
+    }
+    /* La puerta también dice «no abre» con el motivo real
+       (1.32.1, A2 completa): hasta la 1.32.0, un trabajo cuyo
+       login CAÍA EN LA ENTRADA (accesoFallo: portal-rechaza,
+       credencial-invalida o sin-efirma, declarados por el
+       ejecutor) no tocaba la fila — solo puerta-probar podía
+       escribir un «no abre» — y la tarjeta seguía enseñando el
+       veredicto de una foto vieja (el 14 nov enseñaba el
+       sin-efirma del 13 nov aunque la puerta se había abierto
+       a las 09:26). Ahora la entrada rechazada escribe su
+       veredicto fresco con su motivo literal. No se escribe
+       nada cuando el trabajo no llegó a la entrada ni cuando
+       su fallo fue de corredor: esos no dicen nada de la puerta. */
+    else if (validated.accesoFallo && job.kind !== 'puerta-probar') {
+      const previaPuerta = db.prepare('SELECT * FROM sat_puerta WHERE rfc=?').get(job.rfc);
+      db.prepare('INSERT INTO sat_puerta(rfc,ok,probada,error,errorKind) VALUES (?,?,?,?,?) ' +
+        'ON CONFLICT(rfc) DO UPDATE SET ok=excluded.ok, probada=excluded.probada, error=excluded.error, errorKind=excluded.errorKind')
+        .run(job.rfc, 0, time, errorText || '', validated.accesoFallo);
+      resumen.puerta = 'no-abre';
+      if (!previaPuerta || previaPuerta.ok || previaPuerta.errorKind !== validated.accesoFallo)
+        auditEvent('sistema', 'La puerta del SAT de ' + job.rfc +
+          ' no abrió en un trabajo real: ' + (errorText || validated.accesoFallo) + '.', job.rfc, 1);
+    }
+    /* La entrada cambió (1.31.0, P2): dos trabajos SEGUIDOS que
+       caen en la entrada del portal (sin accesoOk: el acceso no se
+       completó) levantan el aviso el mismo día — «el SAT cambió su
+       entrada» — en vez de descubrirlo el día que urge un papel.
+       Cualquier acceso bueno reinicia la cuenta. */
+    const ENTRADA_KEY = 'entrada-fallos:' + job.rfc;
+    if (accesoRealOk) { if (getState(ENTRADA_KEY)) setState(ENTRADA_KEY, ''); }
+    else if (['portal-rechaza', 'respuesta-inesperada', 'credencial-invalida', 'ruta-muerta'].includes(validated.errorKind || '')) {
+      const seguidos = Number(getState(ENTRADA_KEY) || 0) + 1;
+      setState(ENTRADA_KEY, String(seguidos));
+      if (seguidos === 2) queueAlert('puerta-cambio', 'puerta-cambio:' + job.rfc + ':' + day(time),
+        'PacoSAT · El SAT parece haber cambiado su entrada (' + job.rfc + ')',
+        'Dos trabajos seguidos del ejecutor local para ' + job.rfc + ' cayeron en la ENTRADA del portal del SAT ' +
+        '(el último motivo: ' + (errorText || 'sin detalle') + '). Qué significa: la pantalla de acceso del portal ' +
+        'probablemente cambió y la navegación hay que ajustarla a la nueva con la evidencia guardada. ' +
+        'Gesto tuyo: ninguno por ahora; queda registrado en el Registro con su traza.', time, job.rfc);
+    }
+    if (job.kind === 'puerta-probar') {
+      /* La puerta auto-probada (1.30.0): el veredicto queda por
+         RFC y SOLO el cambio a «no abre» levanta alerta — la
+         prueba corre cada semana y no debe llorar en bucle; la
+         vuelta a «abre» tras un fallo queda en el Registro. */
+      const previa = db.prepare('SELECT * FROM sat_puerta WHERE rfc=?').get(job.rfc);
+      db.prepare('INSERT INTO sat_puerta(rfc,ok,probada,error,errorKind) VALUES (?,?,?,?,?) ' +
+        'ON CONFLICT(rfc) DO UPDATE SET ok=excluded.ok, probada=excluded.probada, error=excluded.error, errorKind=excluded.errorKind')
+        .run(job.rfc, okFinal ? 1 : 0, time, okFinal ? '' : errorText, okFinal ? '' : (validated.errorKind || ''));
+      resumen.puerta = okFinal ? 'abre' : 'no-abre';
+      auditEvent('sistema', 'Prueba automática de la puerta del SAT de ' + job.rfc + ': ' +
+        (okFinal ? 'abre — la e.firma entra y el portal deja sesión abierta.' : 'NO abre — ' + errorText), job.rfc, okFinal ? 0 : 1);
+      if (!okFinal && (!previa || previa.ok)) {
+        queueAlert('puerta-sat', 'puerta:' + job.rfc,
+          'PacoSAT · La puerta del SAT de ' + job.rfc + ' no abrió en su prueba automática',
+          'La prueba semanal de acceso de PacoSAT para ' + job.rfc + ' (solo entrar con la e.firma, sin tocar ningún trámite) ' +
+          'falló el ' + new Date(time).toLocaleString('es-MX') + ' con este motivo literal: ' + errorText + '. ' +
+          'Qué significa: el día que necesites un papel de este RFC, su descarga puede fallar por la misma causa. ' +
+          'Gesto tuyo: ninguno por ahora — la prueba se repite sola la próxima semana; si el aviso se repite, revisamos la e.firma de este RFC juntos.',
+          time, job.rfc);
+      }
+    }
     const guardado = mirrorExecutorDiary(jobRow, attemptId, okFinal, validated, errorText, validated.errorKind || '', time);
     db.prepare('INSERT INTO sat_executor_attempts(id,jobId,executorId,started,finished,ok,error,errorKind,steps,shotId,htmlId) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
       .run(attemptId, jobRow.id, executor.id, time, time, okFinal ? 1 : 0, errorText, validated.errorKind || '',
@@ -2373,10 +2923,19 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      el portal desde el NAS y sin fingir un fallo del SAT. */
   function queueRemoteRun(rfc, kind, payload, origen = 'paco') {
     const { job, repetido } = enqueueExecutorJob({ rfc, kind, payload, origen });
-    return { ok: false, waitingExecutor: true, repetido, jobId: job.id,
-      error: executorOnline()
+    /* El mensaje de espera dice el estado REAL y el paso que
+       toca (1.29.1, D5): sin ningún equipo emparejado no es lo
+       mismo que con el equipo emparejado pero sin responder, y
+       ninguno de los dos es un «esperando tu equipo» sin salida. */
+    const estado = executorEstado();
+    const error = !estado.emparejado
+      ? 'Esperando tu equipo: todavía no has emparejado ningún equipo, así que el trabajo se queda en cola. Empareja tu PC desde el panel «Ejecutor local del SAT» (pantalla del Buzón Tributario) y saldrá solo; no es un fallo del SAT.'
+      : estado.enLinea
         ? 'Trabajo en cola para el ejecutor de tu equipo: en cuanto lo reclame, su resultado y su traza quedan aquí.'
-        : 'Esperando tu equipo: el trabajo quedó en cola para el ejecutor local. No es un fallo del SAT — en cuanto tu equipo esté en línea, el ejecutor lo recoge.' };
+        : 'Esperando tu equipo: tu equipo no responde' +
+          (estado.ultimoVisto ? ' (última señal el ' + new Date(estado.ultimoVisto).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) + ')' : '') +
+          '. Abre el ejecutor en tu PC y recogerá este trabajo; no es un fallo del SAT.';
+    return { ok: false, waitingExecutor: true, repetido, jobId: job.id, ejecutor: estado, error };
   }
 
   async function runTributarioAttemptOnce(rfc, time, ctx = {}) {
@@ -2393,7 +2952,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     } catch (error) {
       /* La página del fallo viaja con el error (1.27.0): el
          cierre de la corrida la archiva en el diario. */
-      return { ok: false, error: message(error), errorKind: error?.code || '', diag: error?.diag || null };
+      return { ok: false, error: message(error), errorKind: error?.code || '', diag: error?.diag || null,
+        diagDecision: error?.diagDecision || null };
     }
   }
   async function runTributarioAttempt(rfc, time, origen = 'paco') {
@@ -2422,8 +2982,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            hubo, la falta de guardado: nunca una referencia colgada
            en silencio. La poda es la común (fallos de 90 días con
            su página se quedan). */
-        if (extra.diag && !diagFiles.shotId && !diagFiles.htmlId)
-          diagFiles = saveRunDiag(runId, extra.diag);
+        if ((extra.diag || extra.diagDecision) && !diagFiles.shotId && !diagFiles.htmlId)
+          diagFiles = saveRunDiag(runId, extra.diag, extra.diagDecision);
         if (!ok && extra.diag) steps.push(...diagCierreSteps(extra.diag, diagFiles)
           .map(paso => ({ at: paso.at, intento: attempt, paso: paso.text, detalle: '' })));
         db.prepare('UPDATE trib_runs SET finished=?,ok=?,error=?,errorKind=?,steps=?,attempts=?,encontradas=?,sinAbrir=?,shotId=?,htmlId=? WHERE id=?')
@@ -2478,7 +3038,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           closeRun(false, result.error || 'Consulta cancelada por ti.', result.errorKind || '');
           return result;
         }
-        failures.push({ error: result.error, errorKind: result.errorKind || '', at: now(), diag: result.diag || null });
+        failures.push({ error: result.error, errorKind: result.errorKind || '', at: now(), diag: result.diag || null, diagDecision: result.diagDecision || null });
         if (attempt === 1 && SATDOC_PORTAL_KINDS.includes(result.errorKind) && !token.cancelled) {
           const waitMs = satDocRetryWait();
           writeTribProgress(rfc, { running: true,
@@ -2501,12 +3061,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         'La consulta falló: ' + failures[failures.length - 1].error +
         ' No se abrió ninguna notificación. Gesto único: reinténtalo desde la pantalla Buzón Tributario; el diario de la consulta guarda los pasos y la página del momento del fallo.', now(), rfc);
       closeRun(false, failures[failures.length - 1].error, failures[failures.length - 1].errorKind || '',
-        { diag: failures[failures.length - 1].diag || null });
+        { diag: failures[failures.length - 1].diag || null, diagDecision: failures[failures.length - 1].diagDecision || null });
       return { ok: false, error: failures[failures.length - 1].error, errorKind: failures[failures.length - 1].errorKind || '' };
     } finally {
       closeRun(false, failures[failures.length - 1]?.error || 'Consulta cancelada por ti.',
         failures[failures.length - 1]?.errorKind || '',
-        { diag: failures[failures.length - 1]?.diag || null });
+        { diag: failures[failures.length - 1]?.diag || null, diagDecision: failures[failures.length - 1]?.diagDecision || null });
       tribLive.delete(rfc);
     }
   }
@@ -2521,13 +3081,38 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       buildModified: servedBuildModified,
       cloudRevision: cloud ? storageRevision + ':' + db.prepare('SELECT COALESCE(MAX(rowid),0) AS value FROM records').get().value : null,
       profiles: (() => { const credentialIndex = readEfirmaIndex();
-        return db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc),
+        const reales = db.prepare('SELECT * FROM profiles ORDER BY rfc').all().map(row => ({ ...row, unlocked: unlocked.has(row.rfc),
           efirmaStored: existsSync(efirmaPath(row.rfc, '.cer')),
           /* Método de acceso al SAT (1.12.0): «efirma» o «ciec», y si
              la contraseña CIEC está guardada — el valor jamás sale. */
           accessMethod: credentialIndex[row.rfc]?.access === 'ciec' ? 'ciec' : 'efirma',
           ciecStored: Boolean(credentialIndex[row.rfc]?.ciec),
-          lastSatSuccess: db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(row.rfc)?.last || null })); })(),
+          lastSatSuccess: db.prepare("SELECT MAX(created) AS last FROM jobs WHERE rfc=? AND status='finished'").get(row.rfc)?.last || null }));
+        /* Los demás RFC en la parrilla (1.30.0): un alta preparada
+           sin credenciales también es un contribuyente visible —
+           viaja en la misma lista con su marca «pending», para
+           que el Centro SAT lo enseñe con su estado verdadero
+           («falta su e.firma») en vez de no existir hasta que
+           tenga credenciales. No desbloquea nada: unlocked=false
+           y ningún motor lo toca (las cadencias leen la tabla
+           profiles, no esta proyección). */
+        const pendientes = pendingProfileRfcs()
+          .filter(rfc => !reales.some(row => row.rfc === rfc))
+          .map(rfc => ({ rfc, name: '', unlocked: false, efirmaStored: false,
+            accessMethod: 'efirma', ciecStored: false, lastSatSuccess: null,
+            certExpires: null, pending: true }));
+        return [...reales, ...pendientes]; })(),
+      /* D-ARRANQUE (1.29.2): el último fallo de activación del
+         archivo de arranque, con su causa, y si apunta a otra
+         e.firma existiendo la buena en el almacén — Firmas lo
+         cuenta con su aviso en vez de callarlo. */
+      arranque: (() => { let fallo = null;
+        try { fallo = JSON.parse(getState('arranque:fallo') || 'null'); } catch { fallo = null; }
+        if (!fallo || !fallo.rfc) return { fallo: null, apuntaVieja: false };
+        const perfil = db.prepare('SELECT certExpires FROM profiles WHERE rfc=?').get(fallo.rfc);
+        const almacenVivo = Boolean(perfil) && existsSync(efirmaPath(fallo.rfc, '.cer'));
+        const vigente = !perfil?.certExpires || perfil.certExpires > now();
+        return { fallo, apuntaVieja: Boolean(fallo.distinto && almacenVivo && vigente) }; })(),
       jobs: db.prepare('SELECT id,rfc,direction,kind,periodStart,periodEnd,startAt,endAt,status,due,created,error,checks,note FROM jobs ORDER BY id DESC LIMIT 35').all()
         .map(row => { const info = criteriaInfo(criteriaFromJob(row));
           return { ...row, criteriaState: info.state, criteriaCount: info.count }; }),
@@ -2579,8 +3164,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       coverage: computeCoverage(),
       criteriaBook: criteriaBook(),
       avisos: (() => { try {
-        const row = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN estado='por-confirmar' THEN 1 ELSE 0 END) AS porConfirmar FROM avisos WHERE estado NOT IN ('solventado','descartado')").get();
-        return { total: row?.total || 0, porConfirmar: row?.porConfirmar || 0 };
+        const row = db.prepare("SELECT COUNT(*) AS total, SUM(CASE WHEN estado='por-confirmar' THEN 1 ELSE 0 END) AS porConfirmar FROM avisos WHERE estado NOT IN ('solventado','descartado') AND atencion='activa'").get();
+        return { total: row?.total || 0, porConfirmar: row?.porConfirmar || 0, canales: avisoCanales() };
       } catch { return { total: 0, porConfirmar: 0 }; } })(),
       /* Buzón sin leer por RFC (1.23.0, frente B): el contador que
          Hoy enseña; sale de buzonItems con su tope, igual que la
@@ -2597,6 +3182,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       /* Buzón Tributario por RFC (1.24.0, punto 1): totales y sin
          abrir de lo ya listado; Hoy lo enseña con su «Ver». */
       tributario: tribSummaryPorRfc(),
+      puerta: puertaPorRfc(),
+      /* Ejecutor local (1.29.0; en el estado desde la 1.31.0 para
+         P14): emparejado, en línea y su último latido — Hoy cuenta
+         su silencio sin inventarlo. */
+      ejecutor: executorEstado(),
       /* Altas preparadas (1.24.0, punto 7): RFC en «faltan
          credenciales», para que el directorio las marque. */
       pendingProfiles: pendingProfileRfcs(),
@@ -3204,6 +3794,24 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       try { verified = verifyLatestBackup(time, 'automática tras el respaldo'); }
       catch (error) { queueAlert('backup-verify-fail', 'backupverify:' + stamp, 'PacoSAT · La prueba de restauración falló',
         'El respaldo se escribió, pero su prueba de restauración automática no pasó: ' + message(error), time); }
+      /* Ensayo COMPLETO en silencio (1.31.0, P7): además de
+         descifrar y validar la estructura, la copia recién escrita
+         se RESUCITA en una base aislada (restoreTestLatest la
+         vuelca, la reabre y pasa su integridad) tras cada respaldo
+         programado. No dice nada cuando pasa; solo habla si falla,
+         que es cuando importa. */
+      if (verified?.ok) {
+        try {
+          const ensayo = restoreTestLatest(time);
+          if (ensayo?.hayConjunto && !ensayo.ok)
+            queueAlert('backup-verify-fail', 'backupensayo:' + stamp, 'PacoSAT · El ensayo de restauración falló',
+              'El respaldo de ' + stamp + ' se escribió y descifra bien, pero su ensayo completo de restauración ' +
+              'no pasó: ' + (ensayo.detail || 'sin detalle') + ' Revisa Ajustes › Respaldos.', time);
+        } catch (error) {
+          queueAlert('backup-verify-fail', 'backupensayo:' + stamp, 'PacoSAT · El ensayo de restauración falló',
+            'El ensayo completo tras el respaldo de ' + stamp + ' no pudo correr: ' + message(error), time);
+        }
+      }
       /* B4: la poda SOLO corre con la verificación buena de TODOS
          los destinos en este mismo ciclo — la primera poda llega
          tras comprobar que hay copias buenas dentro y fuera. */
@@ -3216,6 +3824,23 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             date: new Date(time).toISOString(), added: 0, duplicates: 0, review: 0, issues: [],
             event: 'Retención aplicada tras verificar copias buenas en todos los destinos: ' + pruned +
               ' archivo(s) antiguos borrados (diarios 14 días · semanal 8 semanas · mensual 12 meses).' });
+        }
+        /* Compactación tras el respaldo bueno (1.31.1): con la
+           copia verificada ya a salvo, la base viva devuelve al
+           disco las páginas que los borrados dejaron libres
+           (artefactos de diagnóstico, diarios podados, papelera
+           purgada). Solo corre si hay más de ~4 MB libres; un
+           fallo aquí no toca el respaldo ni tumba el ciclo: se
+           anota y el siguiente respaldo lo reintenta. */
+        try {
+          const libres = Number(db.prepare('PRAGMA freelist_count').get()?.freelist_count || 0);
+          if (libres > 1024) {
+            db.exec('VACUUM');
+            auditEvent('accion', 'Base compactada tras el respaldo verificado (' +
+              libres + ' páginas libres devueltas al disco).', '', 1, time);
+          }
+        } catch (error) {
+          auditEvent('fallo', 'La compactación tras el respaldo no pudo correr: ' + message(error), '', 0, time);
         }
       }
     } catch (error) {
@@ -3913,10 +4538,17 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (perfilesConocidos.has(m[0])) vistos.add(m[0]);
       return vistos.size === 1 ? [...vistos][0] : '';
     };
-    const push = (at, claseItem, rfcItem, texto, ok, evidencia = null, origen = '', detalle = null) => {
+    const ocultos = new Set(db.prepare('SELECT clave FROM registro_ocultos').all().map(row => row.clave));
+    const push = (at, claseItem, rfcItem, texto, ok, evidencia = null, origen = '', detalle = null, clave = '') => {
       if (!at) return;
+      /* La clave estable de la entrada (1.32.1, A3): fuente +
+         id de su diario. Sin clave no se puede ocultar ni
+         copiar su traza con nombre propio. Las ocultas no
+         entran: ni en la lista ni en el resumen de Hoy, que se
+         deriva de esta misma vista. */
+      if (clave && ocultos.has(clave)) return;
       items.push({ at, clase: claseItem, rfc: rfcItem || '', texto, ok: Boolean(ok),
-        evidencia, origen: origen || '', detalle, seq: seq++ });
+        evidencia, origen: origen || '', detalle, clave: clave || '', seq: seq++ });
     };
     /* Detalle abrible de una corrida (1.29.0, punto 4): la traza
        ENTERA de ese intento — pasos con su hora, error literal y
@@ -3926,6 +4558,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       let steps = [];
       try { steps = JSON.parse(row.steps || '[]'); } catch { steps = []; }
       return { steps, error: row.error || '', errorKind: row.errorKind || '',
+        ...decisionArtefactos(row.id),
         attempts: row.attempts || 0, started: row.started || 0, finished: row.finished || 0 };
     };
     /* Los cuatro diarios de motor: éxito = conexión; fallo =
@@ -3933,26 +4566,26 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
        evidencia abrible. Las corridas sin cerrar no son suceso. */
     for (const row of db.prepare("SELECT * FROM sat_doc_runs WHERE finished>0 ORDER BY started DESC LIMIT 400").all()) {
       const label = DOC_KIND_LABEL[row.kind] || row.kind;
-      if (row.ok) push(row.finished, 'conexion', row.rfc, 'Descargó «' + label + '» de ' + row.rfc, true, null, row.origen);
+      if (row.ok) push(row.finished, 'conexion', row.rfc, 'Descargó «' + label + '» de ' + row.rfc, true, null, row.origen, null, 'satdoc:' + row.id);
       else push(row.finished, 'fallo', row.rfc, 'No se pudo descargar «' + label + '» de ' + row.rfc + (row.error ? ': ' + row.error : ''), false,
-        { motor: 'satdoc', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row));
+        { motor: 'satdoc', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row), 'satdoc:' + row.id);
     }
     for (const row of db.prepare("SELECT * FROM ciec_runs WHERE finished>0 ORDER BY started DESC LIMIT 400").all()) {
-      if (row.ok) push(row.finished, 'conexion', row.rfc, 'Descarga por CIEC de ' + row.rfc + ': ' + (row.added || 0) + ' facturas nuevas', true, null, row.origen);
+      if (row.ok) push(row.finished, 'conexion', row.rfc, 'Descarga por CIEC de ' + row.rfc + ': ' + (row.added || 0) + ' facturas nuevas', true, null, row.origen, null, 'ciec:' + row.id);
       else push(row.finished, 'fallo', row.rfc, 'La descarga por CIEC de ' + row.rfc + ' no terminó' + (row.error ? ': ' + row.error : ''), false,
-        { motor: 'ciec', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row));
+        { motor: 'ciec', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row), 'ciec:' + row.id);
     }
     for (const row of db.prepare("SELECT * FROM decl_runs WHERE finished>0 ORDER BY started DESC LIMIT 400").all()) {
       const que = row.tipo === 'anual' ? 'la declaración anual ' + row.ejercicio : 'declaraciones ' + (row.periodo || row.ejercicio || '');
-      if (row.ok) push(row.finished, 'conexion', row.rfc, 'Recuperó ' + que + ' de ' + row.rfc, true, null, row.origen);
+      if (row.ok) push(row.finished, 'conexion', row.rfc, 'Recuperó ' + que + ' de ' + row.rfc, true, null, row.origen, null, 'decl:' + row.id);
       else push(row.finished, 'fallo', row.rfc, 'No se pudieron recuperar ' + que + ' de ' + row.rfc + (row.error ? ': ' + row.error : ''), false,
-        { motor: 'declaraciones', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row));
+        { motor: 'declaraciones', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row), 'decl:' + row.id);
     }
     for (const row of db.prepare("SELECT * FROM trib_runs WHERE finished>0 ORDER BY started DESC LIMIT 400").all()) {
       if (row.ok) push(row.finished, 'conexion', row.rfc, 'Consultó el Buzón Tributario de ' + row.rfc + ': ' +
-        (row.encontradas || 0) + ' en la bandeja, ' + (row.sinAbrir || 0) + ' sin abrir', true, null, row.origen);
+        (row.encontradas || 0) + ' en la bandeja, ' + (row.sinAbrir || 0) + ' sin abrir', true, null, row.origen, null, 'trib:' + row.id);
       else push(row.finished, 'fallo', row.rfc, 'No se pudo consultar el Buzón Tributario de ' + row.rfc + (row.error ? ': ' + row.error : ''), false,
-        { motor: 'tributario', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row));
+        { motor: 'tributario', runId: row.id, hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) }, row.origen, detalleRun(row), 'trib:' + row.id);
     }
     /* Trabajos e intentos del ejecutor local (1.29.0): el trabajo
        en cola NO es un fallo — es una acción «esperando tu equipo» —;
@@ -3962,20 +4595,36 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const row of db.prepare("SELECT * FROM sat_executor_jobs ORDER BY creado DESC LIMIT 200").all()) {
       const view = executorJobView(row);
       if (row.estado === 'en-cola')
-        push(row.creado, 'accion', row.rfc, 'Trabajo del SAT esperando tu equipo: ' + row.kind + ' de ' + row.rfc +
+        push(row.creado, 'accion', row.rfc, 'Trabajo del SAT esperando tu equipo: ' + trabajoHumano(row.kind) + ' de ' + row.rfc +
           ' — el ejecutor local aún no lo ha recogido (no es un fallo del SAT).', true, null, row.origen || '',
-          { steps: [], estado: row.estado, jobId: row.id, payload: view.payload });
+          { steps: [], estado: row.estado, jobId: row.id, payload: view.payload }, 'job:' + row.id);
       else if (row.estado === 'en-curso' || row.estado === 'reclamado')
-        push(row.actualizado, 'accion', row.rfc, 'El ejecutor de tu equipo está trabajando: ' + row.kind + ' de ' + row.rfc + '.', true, null, row.origen || '',
-          { steps: view.steps, estado: row.estado, jobId: row.id, payload: view.payload });
+        push(row.actualizado, 'accion', row.rfc, 'El ejecutor de tu equipo está trabajando: ' + trabajoHumano(row.kind) + ' de ' + row.rfc + '.', true, null, row.origen || '',
+          { steps: view.steps, estado: row.estado, jobId: row.id, payload: view.payload }, 'job:' + row.id);
     }
+    /* Sin gemelos (1.31.0, punto A2): el intento de un trabajo del
+       Buzón o de Declaraciones se refleja TAMBIÉN en el diario de su
+       motor (trib_runs / decl_runs) con el MISMO id de intento — es
+       el espejo que completeExecutorJob escribe —, y hasta la 1.30
+       el Registro enseñaba las dos líneas (la del ejecutor y la del
+       servicio, cada una con su traza entera): Paco lo vio dos veces
+       por fallo el 13 nov. Un evento = una entrada: si el intento
+       tiene espejo, manda la entrada del diario del motor (titular
+       del trámite: «No se pudo consultar el Buzón Tributario de…»)
+       y la del intento no se pinta. Los intentos sin espejo
+       (puerta-probar, documento-sat, los rechazados por protocolo y
+       los cancelados) conservan su propia entrada. */
+    const intentosConEspejo = new Set();
+    for (const row of db.prepare('SELECT id FROM trib_runs').all()) intentosConEspejo.add(row.id);
+    for (const row of db.prepare('SELECT id FROM decl_runs').all()) intentosConEspejo.add(row.id);
     for (const row of db.prepare("SELECT a.*, j.rfc, j.kind FROM sat_executor_attempts a JOIN sat_executor_jobs j ON j.id=a.jobId ORDER BY a.finished DESC LIMIT 400").all()) {
+      if (intentosConEspejo.has(row.id)) continue;
       const evidencia = { motor: row.kind === 'buzon-listar' ? 'tributario' : 'declaraciones', runId: row.id,
         hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId) };
       if (row.ok) push(row.finished, 'conexion', row.rfc, 'El ejecutor local completó «' + row.kind + '» de ' + row.rfc, true, null, 'ejecutor',
-        detalleRun({ ...row, attempts: 1 }));
+        detalleRun({ ...row, attempts: 1 }), 'intento:' + row.id);
       else push(row.finished, 'fallo', row.rfc, 'El ejecutor local no pudo con «' + row.kind + '» de ' + row.rfc + (row.error ? ': ' + row.error : ''), false,
-        evidencia, 'ejecutor', detalleRun({ ...row, attempts: 1 }));
+        evidencia, 'ejecutor', detalleRun({ ...row, attempts: 1 }), 'intento:' + row.id);
     }
     /* Accesos a la instalación (la lectura del invitado, 'guest',
        es ruido por lectura: no entra). El detalle ya viene en
@@ -3992,28 +4641,30 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (row.kind === 'guest') continue;
       const claseItem = ACCESS_CLASE[row.kind] || 'accion';
       const texto = String(row.detail || '').trim() || ACCESS_TEXT[row.kind] || row.kind;
-      push(row.at, claseItem, rfcEnTexto(texto), texto, claseItem !== 'fallo');
+      push(row.at, claseItem, rfcEnTexto(texto), texto, claseItem !== 'fallo', null, '', null,
+        'access:' + (row.id ?? (row.at + ':' + row.kind)));
     }
     /* Actividad que la propia app fue anotando (importaciones,
        descargas hechas a mano, envíos…). */
-    for (const row of db.prepare("SELECT value FROM records WHERE store='activity' ORDER BY rowid DESC LIMIT 300").all()) {
+    for (const row of db.prepare("SELECT rowid AS rid, value FROM records WHERE store='activity' ORDER BY rowid DESC LIMIT 300").all()) {
       let entry = null;
       try { entry = JSON.parse(row.value || 'null'); } catch { entry = null; }
       if (!entry) continue;
       const texto = String(entry.name || entry.title || entry.event || '').trim();
       if (!texto) continue;
       push(Number(entry.at || entry.time || entry.created || 0), 'accion',
-        String(entry.rfc || '').toUpperCase() || rfcEnTexto(texto), texto, entry.ok !== false);
+        String(entry.rfc || '').toUpperCase() || rfcEnTexto(texto), texto, entry.ok !== false, null, '', null,
+        'activity:' + row.rid);
     }
     /* Correos: el envío que consta, con su RFC cuando lo lleva. */
     for (const row of db.prepare("SELECT * FROM mail_sends ORDER BY at DESC LIMIT 300").all()) {
-      if (row.ok) push(row.at, 'accion', row.rfc || '', 'Correo enviado: ' + (row.subject || ''), true);
-      else push(row.at, 'fallo', row.rfc || '', 'Correo no enviado: ' + (row.subject || '') + (row.error ? ' — ' + row.error : ''), false);
+      if (row.ok) push(row.at, 'accion', row.rfc || '', 'Correo enviado: ' + (row.subject || ''), true, null, '', null, 'mail:' + row.id);
+      else push(row.at, 'fallo', row.rfc || '', 'Correo no enviado: ' + (row.subject || '') + (row.error ? ' — ' + row.error : ''), false, null, '', null, 'mail:' + row.id);
     }
     /* Lo que solo guarda audit_events: acciones del administrador
        y corridas de respaldo. */
     for (const row of db.prepare("SELECT * FROM audit_events ORDER BY at DESC LIMIT 400").all())
-      push(row.at, row.clase, row.rfc || '', row.texto, Boolean(row.ok));
+      push(row.at, row.clase, row.rfc || '', row.texto, Boolean(row.ok), null, '', null, 'audit:' + row.id);
     items.sort((a, b) => (b.at - a.at) || (b.seq - a.seq));
     const filtrados = items.filter(item =>
       (!filtroRfc || item.rfc === filtroRfc) && (!clase || item.clase === clase));
@@ -4110,6 +4761,46 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         }
         if (deClase.length > 15) lines.push('· …y ' + (deClase.length - 15) + ' más en el panel.');
         lines.push('');
+      }
+      /* Tu parte de la mañana (1.30.0): el resumen que ya sale
+         lleva además el resto de lo que SIGUE VIVO de este
+         contribuyente — lo resumido otros días y aún abierto,
+         con su vencimiento y su gesto — sin crear ningún correo
+         nuevo ni duplicar los nacimientos: la foto completa de
+         la mañana dentro del correo de siempre. La línea base
+         no entra (nunca genera correo) y las archivadas o
+         pospuestas tampoco: no están en tu atención. */
+      const incluidosIds = new Set(incluir.map(aviso => aviso.id));
+      const sigueVivo = db.prepare("SELECT * FROM avisos WHERE estado NOT IN ('solventado','descartado') AND baseline=0 AND correo=1 ORDER BY creado").all()
+        .filter(aviso => String(aviso.rfc || '') === rfc && !incluidosIds.has(aviso.id) &&
+          aviso.atencion !== 'archivada' &&
+          !(aviso.atencion === 'pospuesta' && aviso.pospuesta_hasta && aviso.pospuesta_hasta > time));
+      if (sigueVivo.length) {
+        /* El parte aprende (1.31.0, P6): lo que lleva TRES días o
+           más abierto sube de tono y va PRIMERO, con su edad a la
+           vista; lo demás sigue en su orden. La cadencia y el
+           sobre del correo no cambian: es el mismo resumen. */
+        const edadDias = aviso => Math.max(0, Math.floor((time - (Number(aviso.creado) || time)) / DAY));
+        const viejos = sigueVivo.filter(aviso => edadDias(aviso) >= 3);
+        const resto = sigueVivo.filter(aviso => edadDias(aviso) < 3);
+        const lineaAviso = aviso => {
+          lines.push('· ' + aviso.titulo + (aviso.importe ? ' — $' + importeShow(aviso.importe) : '') +
+            (aviso.vence ? ' · vence ' + new Date(aviso.vence).toLocaleDateString('es-MX') : '') +
+            (aviso.responsable ? ' · gesto: ' + aviso.responsable : '') +
+            (edadDias(aviso) >= 1 ? ' · lleva ' + edadDias(aviso) + (edadDias(aviso) === 1 ? ' día' : ' días') : ''));
+          if (aviso.detalle) lines.push('  ' + String(aviso.detalle).slice(0, 200));
+        };
+        if (viejos.length) {
+          lines.push('TU PARTE DE LA MAÑANA — LLEVA DÍAS ESPERANDO (' + viejos.length + '):');
+          for (const aviso of viejos.slice(0, 10)) lineaAviso(aviso);
+          lines.push('');
+        }
+        if (resto.length) {
+          lines.push('TU PARTE DE LA MAÑANA — Y SIGUE VIVO (' + resto.length + '):');
+          for (const aviso of resto.slice(0, 10)) lineaAviso(aviso);
+          if (resto.length > 10) lines.push('· …y ' + (resto.length - 10) + ' más en el panel.');
+          lines.push('');
+        }
       }
       lines.push('Todo se ve y se solventa dentro de PacoSAT, en la pantalla Avisos. Este correo es solo el resumen de ' +
         (rfc || 'la instalación') + '.');
@@ -4262,6 +4953,28 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           note: 'Su Cancelar (en la tarjeta del documento o aquí) la detiene en el servidor y descarta lo parcial.' });
     } catch { /* sin estado de documentos */ }
     try {
+      /* Declaraciones y Buzón en Actividad (1.31.0, A3): sus
+         corridas del servidor también son trabajos vivos con su
+         Cancelar aquí — hasta la 1.30 solo vivían en su tarjeta,
+         y un trabajo que Actividad no ve es un trabajo que el
+         menú no puede contar. */
+      const dState = declState();
+      for (const [rfc, progress] of Object.entries(dState))
+        if (progress?.running) running.push({ kind: 'declaraciones', key: 'declaraciones:' + rfc, rfc,
+          label: 'Recuperación de declaraciones · ' + rfc, detail: progress.step || 'Recuperando…',
+          done: 0, total: 0, since: progress.at || time, state: 'curso',
+          canPause: false, canResume: false, canStop: true,
+          note: 'Su Cancelar la detiene en el servidor y descarta lo parcial.' });
+    } catch { /* sin estado de declaraciones */ }
+    try {
+      for (const [rfc, progress] of Object.entries(tribState()))
+        if (progress?.running) running.push({ kind: 'tributario', key: 'tributario:' + rfc, rfc,
+          label: 'Consulta del Buzón Tributario · ' + rfc, detail: progress.step || 'Consultando…',
+          done: 0, total: 0, since: progress.at || time, state: 'curso',
+          canPause: false, canResume: false, canStop: true,
+          note: 'Su Cancelar la detiene en el servidor.' });
+    } catch { /* sin estado del buzón */ }
+    try {
       const cState = ciecState();
       for (const [rfc, item] of Object.entries(cState)) {
         if (item?.captcha) paused.push({ kind: 'ciec', key: 'ciec:' + rfc, label: 'Descarga por CIEC · ' + rfc,
@@ -4294,6 +5007,42 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           done: 0, total: 0, since: run.startedAt, state: run.held ? 'pausado' : 'curso',
           canPause: !run.held, canResume: Boolean(run.held), canStop: false, month: run.month });
     } catch { /* sin corridas mensuales */ }
+    /* Trabajos del ejecutor esperando equipo (1.29.1, D8): la
+       cola del ejecutor local ES actividad — con trabajos en
+       cola y el equipo sin responder, la barra de actividad no
+       puede decir «Sin trabajos en curso». Entra como espera
+       (el mismo molde que el captcha de la CIEC): es tu gesto
+       el que la desbloquea. Presentación, no protocolo: se lee
+       la cola y el estado, no se toca nada del ejecutor. */
+    try {
+      /* Trabajos del ejecutor, uno a uno (1.31.0, A3): en curso =
+         trabajo vivo con su Cancelar (la reconciliación de estados
+         empieza aquí: si Actividad no lo ve, ninguna tarjeta puede
+         decir «Trabajando» por su cuenta); en cola = espera con su
+         Cancelar también — salir de la cola es un gesto legítimo.
+         Hasta la 1.30 la cola era un agregado sin gesto y una
+         corrida en curso ni siquiera aparecía: el panel podía
+         decir «Sin trabajos en curso» con una tarjeta en
+         «Trabajando» (el zombi del 13 nov). */
+      const estadoEjecutor = executorEstado();
+      for (const job of db.prepare("SELECT * FROM sat_executor_jobs WHERE estado IN ('en-curso','reclamado') ORDER BY creado").all())
+        running.push({ kind: 'ejecutor', key: 'ejecutor:' + job.id, jobId: job.id,
+          label: 'Trabajo del SAT en tu equipo · ' + trabajoHumano(job.kind) + ' de ' + job.rfc,
+          detail: 'Tu ejecutor lo está corriendo ahora', done: 0, total: 0,
+          since: job.reclamadoEn || job.actualizado || time, state: 'curso',
+          canPause: false, canResume: false, canStop: true,
+          note: 'Su Cancelar lo detiene en tu equipo y descarta lo parcial.' });
+      for (const job of db.prepare("SELECT * FROM sat_executor_jobs WHERE estado='en-cola' ORDER BY creado LIMIT 10").all())
+        paused.push({ kind: 'ejecutor', key: 'ejecutor:' + job.id, jobId: job.id,
+          label: 'Trabajo del SAT esperando tu equipo · ' + trabajoHumano(job.kind) + ' de ' + job.rfc,
+          detail: estadoEjecutor.emparejado
+            ? (estadoEjecutor.enLinea ? 'En cola: tu ejecutor lo recogerá en su siguiente vuelta'
+              : 'Tu equipo no responde: abre el ejecutor y saldrá solo')
+            : 'Todavía no has emparejado ningún equipo',
+          done: 0, total: 0, since: job.creado || time, state: 'esperando',
+          canPause: false, canResume: false, canStop: true,
+          note: 'El ejecutor corre en tu PC, junto a tu Chrome: en cuanto esté en línea, recoge los trabajos solo. Su Cancelar lo saca de la cola.' });
+    } catch { /* sin cola del ejecutor: la actividad sigue */ }
     let recent = [];
     try {
       recent = db.prepare("SELECT value FROM records WHERE store='activity' ORDER BY rowid DESC LIMIT 40").all()
@@ -4501,6 +5250,29 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       if (changed) saveDeclState(dState);
     } catch { /* idem */ }
+    try {
+      /* El Buzón Tributario también (1.31.0): su progreso es el
+         estado directo del RFC y su token vivo vive en tribLive. */
+      for (const [rfc, progress] of Object.entries(tribState())) {
+        if (!progress?.running || tribLive.has(rfc)) continue;
+        writeTribProgress(rfc, { ...progress, running: false, done: true, ok: false, finished: time,
+          error: 'La consulta quedó interrumpida (el servicio se reinició).' });
+      }
+    } catch { /* idem */ }
+  }
+  /* Reconciliación AL LEER (1.31.0, punto A3): el barrido de
+     huérfanos solo corría en el arranque, así que un progreso
+     «corriendo» sin proceso vivo sobrevivía horas en pantalla — el
+     zombi del 13 nov: la Opinión en «Trabajando» con el panel de
+     Actividad vacío. Ahora toda lectura de los resúmenes pasa
+     primero por aquí (con freno de 20 s para no pagarla en cada
+     petición): ninguna tarjeta puede decir «Trabajando» sin un
+     trabajo vivo detrás, tampoco tras recargar la página. */
+  let lastReconcileOnRead = 0;
+  function reconcileOnRead(time) {
+    if (time - lastReconcileOnRead < 20 * 1000) return;
+    lastReconcileOnRead = time;
+    reconcileOrphanRuns(time);
   }
   const listMeta = listId => db.prepare('SELECT * FROM blacklist_meta WHERE listId=?').get(listId) ||
     { listId, fetched: null, next: 0, count: 0, declared: '', error: '' };
@@ -5263,10 +6035,17 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   };
   const salidaCancelado = invoice => salidaEstadoSat(invoice.id) === 'Cancelado' ||
     String(invoice.state || '').toLowerCase().startsWith('cancel');
-  const salidaDelRfc = (rfc, monthKey = '') => recordInvoices()
+  const salidaDelRfc = (rfc, monthKey = '') => {
+    /* Los archivados quedan fuera también del papel (1.31.1):
+       el reporte dice lo mismo que la pantalla de trabajo; el
+       CFDI archivado sigue en el expediente y en el Archivo. */
+    const archivados = archivedInvoiceIds();
+    return recordInvoices()
     .filter(invoice => invoice.from?.rfc === rfc || invoice.to?.rfc === rfc)
+    .filter(invoice => !archivados.has(invoice.id))
     .filter(invoice => !monthKey || String(invoice.date || '').startsWith(monthKey))
     .sort((a, b) => String(a.date).localeCompare(String(b.date)) || String(a.id).localeCompare(String(b.id)));
+  };
   const salidaContraparte = (invoice, rfc) => invoice.from?.rfc === rfc ? invoice.to : invoice.from;
   const salidaNombreArchivo = (invoice, rfc) => {
     const cp = salidaContraparte(invoice, rfc);
@@ -5632,6 +6411,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
   function salidaXlsxFacturas(rfc, monthKey) {
     const balances = salidaMapaSaldos();
+    /* Notas pegadas (1.31.0, F12): la nota de Paco sobre el
+       comprobante viaja como su última columna. */
+    const notasCfdi = new Map(db.prepare('SELECT uuid, nota FROM cfdi_notas').all().map(row => [row.uuid, row.nota]));
     const columns = [
       { title: 'Fecha', type: 'date', width: 12 }, { title: 'Folio', width: 12 },
       { title: 'Contraparte', width: 38 }, { title: 'RFC contraparte', width: 15 },
@@ -5639,7 +6421,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       { title: 'Subtotal', type: 'money', width: 15, total: true },
       { title: 'IVA trasladado', type: 'money', width: 15, total: true },
       { title: 'Total', type: 'money', width: 15, total: true },
-      { title: 'Estado SAT', width: 13 }, { title: 'Estado de pago', width: 13 }, { title: 'UUID', width: 38 }];
+      { title: 'Estado SAT', width: 13 }, { title: 'Estado de pago', width: 13 }, { title: 'UUID', width: 38 },
+      { title: 'Nota', width: 32 }];
     const fila = invoice => {
       const cp = salidaContraparte(invoice, rfc);
       const iva = (invoice.fiscal?.transferred || []).filter(t => t.tax === '002')
@@ -5647,7 +6430,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       return [String(invoice.date || '').slice(0, 10), folioLabel(invoice), cp?.name || '', cp?.rfc || '',
         invoice.kind || '', invoice.fiscal?.paymentMethod || '', invoice.currency || 'MXN',
         invoice.fiscal ? Number(centsOf(invoice.fiscal.subTotal || '0')) : null, Number(iva),
-        Number(centsOf(invoice.total)), salidaEstadoSat(invoice.id), salidaEstadoPago(invoice, balances), invoice.id];
+        Number(centsOf(invoice.total)), salidaEstadoSat(invoice.id), salidaEstadoPago(invoice, balances), invoice.id,
+        notasCfdi.get(invoice.id) || ''];
     };
     const rows = salidaDelRfc(rfc, monthKey);
     const perfil = salidaPerfil(rfc);
@@ -5759,6 +6543,194 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const [key, name] of [['bbva', 'Grupo BBVA'], ['interbancario', 'Grupo interbancario'], ['speiIndividual', 'SPEI individual']])
       if (prep[key]?.lines?.length) sheets.push({ name, columns, rows: prep[key].lines.map(fila), totals: { label: 'Total ' + name } });
     return buildXlsx({ sheets });
+  }
+
+  /* ===== Reportes imprimibles 1.31.0 (punto D) =====
+     Totales, Declaraciones, Avisos y Dinero con su Excel real y su
+     PDF de imprenta, montados sobre los MISMOS datos que enseñan
+     sus pantallas (salidaDelRfc, declaracionesOverview, la tabla
+     de avisos, los movimientos del banco): ninguna cifra nace
+     aquí — sale del cálculo reconciliado único de siempre — y las
+     canceladas quedan fuera de todo total, contadas aparte. */
+  const SALIDA_MESES_LARGOS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  function salidaTotalesData(rfc, ejercicio) {
+    /* Espejo de la pantalla Totales (1.31.1): los complementos
+       de pago (P) y la nómina (N) NO son emitidas ni recibidas
+       del año — la pantalla los aparta (rep/nomina) y el papel
+       decía otra cosa hasta hoy: un complemento emitido sumaba
+       como factura emitida. La corrección la cazó la evidencia
+       de la ronda (un P de $58,000 dentro de «Emitidas»). */
+    const rows = salidaDelRfc(rfc)
+      .filter(inv => inv.kind !== 'P' && inv.kind !== 'N')
+      .filter(inv => String(inv.date || '').slice(0, 4) === String(ejercicio));
+    const meses = [];
+    for (let m = 1; m <= 12; m++) {
+      const clave = String(ejercicio) + '-' + String(m).padStart(2, '0');
+      const delMes = rows.filter(inv => String(inv.date || '').slice(0, 7) === clave);
+      const emitidas = delMes.filter(inv => inv.from?.rfc === rfc);
+      const recibidas = delMes.filter(inv => inv.to?.rfc === rfc);
+      const sumaVivas = lista => lista.filter(inv => !salidaCancelado(inv))
+        .reduce((s, inv) => s + centsOf(inv.total), 0n);
+      meses.push({ clave, nombre: SALIDA_MESES_LARGOS[m - 1],
+        emitidas: emitidas.filter(inv => !salidaCancelado(inv)).length, emitidasTotal: sumaVivas(emitidas),
+        recibidas: recibidas.filter(inv => !salidaCancelado(inv)).length, recibidasTotal: sumaVivas(recibidas),
+        canceladas: emitidas.filter(inv => salidaCancelado(inv)).length +
+          recibidas.filter(inv => salidaCancelado(inv)).length });
+    }
+    return meses;
+  }
+  function salidaXlsxTotales(rfc, ejercicio) {
+    const meses = salidaTotalesData(rfc, ejercicio);
+    const perfil = salidaPerfil(rfc);
+    const totE = meses.reduce((s, m) => s + m.emitidasTotal, 0n);
+    const totR = meses.reduce((s, m) => s + m.recibidasTotal, 0n);
+    const nE = meses.reduce((s, m) => s + m.emitidas, 0);
+    const nR = meses.reduce((s, m) => s + m.recibidas, 0);
+    const nC = meses.reduce((s, m) => s + m.canceladas, 0);
+    const columns = [
+      { title: 'Mes', width: 16 }, { title: 'Emitidas', type: 'int', width: 10 },
+      { title: 'Total emitidas', type: 'money', width: 17, total: true },
+      { title: 'Recibidas', type: 'int', width: 10 },
+      { title: 'Total recibidas', type: 'money', width: 17, total: true },
+      { title: 'Canceladas (fuera de totales)', type: 'int', width: 18 }];
+    return buildXlsx({ sheets: [
+      { name: 'Resumen', columns: [{ title: 'Concepto', width: 26 }, { title: 'Valor', width: 62 }], rows: [
+        ['Qué es este archivo', 'Totales de ' + ejercicio + ' de ' + rfc + (perfil?.name ? ' · ' + perfil.name : '') +
+          ' — los mismos números de la pantalla Totales'],
+        ['Emitidas en el año', nE + ' por ' + salidaPesos(totE) + ' (sin canceladas)'],
+        ['Recibidas en el año', nR + ' por ' + salidaPesos(totR) + ' (sin canceladas)'],
+        ...(nC ? [['Canceladas en el año', String(nC) + ' — constan contadas por mes y no suman en ningún total']] : []),
+        ['Generado', salidaGenerado()]] },
+      { name: 'Totales ' + ejercicio, columns,
+        rows: meses.map(m => [m.nombre, m.emitidas, Number(m.emitidasTotal), m.recibidas, Number(m.recibidasTotal), m.canceladas]),
+        totals: { label: 'Total del año (sin canceladas)' } }] });
+  }
+  function salidaPdfTotales(rfc, ejercicio) {
+    const meses = salidaTotalesData(rfc, ejercicio);
+    const totE = meses.reduce((s, m) => s + m.emitidasTotal, 0n);
+    const totR = meses.reduce((s, m) => s + m.recibidasTotal, 0n);
+    const nE = meses.reduce((s, m) => s + m.emitidas, 0);
+    const nR = meses.reduce((s, m) => s + m.recibidas, 0);
+    const nC = meses.reduce((s, m) => s + m.canceladas, 0);
+    return buildPdf({ title: 'Totales · ' + ejercicio, subtitle: salidaSubtitulo(rfc), generated: salidaGenerado(), sections: [
+      { heading: 'Resumen', lines: [
+        'Emitidas en ' + ejercicio + ': ' + nE + ' por ' + salidaPesos(totE) + '. Recibidas: ' + nR + ' por ' +
+        salidaPesos(totR) + '. Las canceladas (' + nC + ') no suman en ningún total: constan contadas por mes.',
+        'Son los mismos números de la pantalla Totales de PacoSAT, del cálculo reconciliado único.'] },
+      { heading: 'Mes a mes', table: { columns: [
+        { title: 'Mes', width: 0.20 }, { title: 'Emitidas', width: 0.12, align: 'right' },
+        { title: 'Total emitidas', width: 0.22, align: 'right' }, { title: 'Recibidas', width: 0.12, align: 'right' },
+        { title: 'Total recibidas', width: 0.22, align: 'right' }, { title: 'Canceladas', width: 0.12, align: 'right' }],
+        rows: meses.map(m => [m.nombre, String(m.emitidas), salidaPesos(m.emitidasTotal),
+          String(m.recibidas), salidaPesos(m.recibidasTotal), String(m.canceladas)]),
+        totals: [['TOTAL ' + ejercicio, String(nE), salidaPesos(totE), String(nR), salidaPesos(totR), String(nC)]] } }] });
+  }
+  function salidaXlsxDeclaraciones(rfc, ejercicio) {
+    const view = declaracionesOverview(rfc, Number(ejercicio), now());
+    const estadoPorPeriodo = new Map((view.mapa?.meses || []).map(m => [m.periodo, m.estado]));
+    const columns = [
+      { title: 'Periodo', width: 12 }, { title: 'Tipo', width: 10 }, { title: 'Clase', width: 12 },
+      { title: 'Estado del mes', width: 18 }, { title: 'Presentada el', type: 'date', width: 14 },
+      { title: 'Nº de operación', width: 20 }, { title: 'Verificada', width: 11 }];
+    const rows = (view.documentos || []).map(doc => [doc.periodo || '', doc.tipo || '', doc.clase || '',
+      estadoPorPeriodo.get(doc.periodo) || '', String(doc.fechaPresentacion || '').slice(0, 10) || null,
+      doc.operacion || '', doc.verificada ? 'Sí' : 'No']);
+    const folios = db.prepare('SELECT * FROM decl_folios WHERE rfc=? AND ejercicio=? ORDER BY periodo, folio')
+      .all(rfc, Number(ejercicio));
+    const resumen = view.mapa?.resumen || {};
+    const sheets = [
+      { name: 'Resumen', columns: [{ title: 'Concepto', width: 26 }, { title: 'Valor', width: 62 }], rows: [
+        ['Qué es este archivo', 'Declaraciones de ' + ejercicio + ' de ' + rfc + ' — el mismo mapa de su pantalla'],
+        ['Presentadas', String(resumen.presentadas ?? 0) + ' de 12 meses'],
+        ['Pendientes en plazo', String(resumen.pendientes ?? 0)],
+        ['Sin recuperar (no constan)', String(resumen.sinRecuperar ?? 0)],
+        ['Pagadas sin acuse', String(resumen.pagadasSinAcuse ?? 0)],
+        ['Generado', salidaGenerado()]] },
+      { name: 'Documentos', columns, rows }];
+    if (folios.length) sheets.push({ name: 'Folios', columns: [
+      { title: 'Periodo', width: 12 }, { title: 'Tipo', width: 10 }, { title: 'Folio', width: 22 },
+      { title: 'Estado', width: 14 }, { title: 'Nota', width: 44 }],
+      rows: folios.map(f => [f.periodo || '', f.tipo || '', f.folio || '', f.estado || '', f.nota || '']) });
+    return buildXlsx({ sheets });
+  }
+  const salidaAvisosAbiertos = rfc => db.prepare(
+    "SELECT * FROM avisos WHERE rfc=? AND estado NOT IN ('solventado','descartado') AND atencion='activa' ORDER BY creado").all(rfc);
+  /* El vencimiento de un aviso se guarda como instante (epoch
+     ms): en papel y en Excel sale como FECHA, nunca como el
+     número crudo — defecto cazado abriendo los archivos de la
+     1.31.0, donde la columna «Vence» del PDF imprimía
+     «1796774400» y la del Excel quedaba vacía en silencio. */
+  const salidaVenceIso = av => {
+    const v = Number(av?.vence);
+    return Number.isFinite(v) && v > 0 ? new Date(v).toISOString().slice(0, 10) : '';
+  };
+  /* Subtítulo de los PDF (1.31.1): RFC y nombre del contribuyente
+     cuando consta en su perfil — el papel se lee sin la app. */
+  const salidaSubtitulo = rfc => {
+    const perfil = salidaPerfil(rfc);
+    return perfil?.name ? rfc + ' · ' + perfil.name : rfc;
+  };
+  function salidaXlsxAvisos(rfc) {
+    const rows = salidaAvisosAbiertos(rfc);
+    const columns = [
+      { title: 'Desde', type: 'date', width: 12 }, { title: 'Clase', width: 14 },
+      { title: 'Severidad', width: 11 }, { title: 'Aviso', width: 52 },
+      { title: 'Importe', type: 'money', width: 15, total: true },
+      { title: 'Vence', type: 'date', width: 12 }, { title: 'Gesto', width: 26 }, { title: 'Contraparte', width: 30 }];
+    return buildXlsx({ sheets: [
+      { name: 'Resumen', columns: [{ title: 'Concepto', width: 26 }, { title: 'Valor', width: 62 }], rows: [
+        ['Qué es este archivo', 'Avisos abiertos de ' + rfc + ' — los mismos de su pantalla Avisos'],
+        ['Avisos abiertos', String(rows.length)],
+        ['Generado', salidaGenerado()]] },
+      { name: 'Avisos abiertos', columns, totals: { label: 'Importe abierto (solo avisos con importe)' },
+        rows: rows.map(av => [new Date(Number(av.creado) || 0).toISOString().slice(0, 10),
+          av.clase || av.kind || '', av.severidad || '', av.titulo || '',
+          av.importe === '' || av.importe == null ? null : Number(centsOf(av.importe)),
+          salidaVenceIso(av) || null, av.responsable || '', av.nombre || av.contraparte || '']) }] });
+  }
+  function salidaPdfAvisos(rfc) {
+    const rows = salidaAvisosAbiertos(rfc);
+    const conImporte = rows.filter(av => av.importe !== '' && av.importe != null);
+    const totalImporte = conImporte.reduce((s, av) => s + centsOf(av.importe), 0n);
+    return buildPdf({ title: 'Avisos abiertos', subtitle: salidaSubtitulo(rfc), generated: salidaGenerado(), sections: [
+      { heading: 'Resumen', lines: [
+        rows.length + ' avisos abiertos de ' + rfc + '.' +
+        (conImporte.length ? ' Con importe: ' + conImporte.length + ' por ' + salidaPesos(totalImporte) + ' en total.' : ''),
+        'Son los mismos avisos de la pantalla Avisos, con su gesto y su vencimiento.'] },
+      { heading: 'Avisos', table: { columns: [
+        { title: 'Aviso', width: 0.44 }, { title: 'Importe', width: 0.16, align: 'right' },
+        { title: 'Vence', width: 0.14 }, { title: 'Gesto', width: 0.26 }],
+        rows: rows.slice(0, 60).map(av => [String(av.titulo || ''),
+          av.importe === '' || av.importe == null ? '—' : salidaPesos(centsOf(av.importe)),
+          salidaVenceIso(av) ? salidaFechaCorta(salidaVenceIso(av)) : '—', String(av.responsable || '')]) } },
+      ...(rows.length > 60 ? [{ heading: 'Nota', lines: [
+        'Se imprimen los primeros 60 avisos; el resto consta en la pantalla Avisos y en su Excel.'] }] : [])] });
+  }
+  function salidaXlsxDinero(rfc, monthKey) {
+    const cuentas = new Map(db.prepare('SELECT * FROM bank_accounts').all().map(a => [a.id, a]));
+    const etiquetaCuenta = id => { const a = cuentas.get(id);
+      return a ? [a.bank, a.name, a.last4 ? '···' + a.last4 : ''].filter(Boolean).join(' · ') : 'Cuenta sin registrar'; };
+    const rowsDb = monthKey
+      ? db.prepare('SELECT m.*, s.accountId FROM bank_movements m JOIN bank_statements s ON s.id=m.statementId WHERE s.month=? ORDER BY m.date, m.id').all(monthKey)
+      : db.prepare('SELECT m.*, s.accountId FROM bank_movements m JOIN bank_statements s ON s.id=m.statementId ORDER BY m.date, m.id').all();
+    const columns = [
+      { title: 'Fecha', type: 'date', width: 12 }, { title: 'Cuenta', width: 30 },
+      { title: 'Concepto', width: 52 }, { title: 'Cargo', type: 'money', width: 15, total: true },
+      { title: 'Abono', type: 'money', width: 15, total: true }];
+    const cargos = rowsDb.filter(m => Number(m.amountCents) < 0).reduce((s, m) => s - BigInt(m.amountCents), 0n);
+    const abonos = rowsDb.filter(m => Number(m.amountCents) > 0).reduce((s, m) => s + BigInt(m.amountCents), 0n);
+    return buildXlsx({ sheets: [
+      { name: 'Resumen', columns: [{ title: 'Concepto', width: 26 }, { title: 'Valor', width: 62 }], rows: [
+        ['Qué es este archivo', 'Movimientos bancarios ' + (monthKey ? 'de ' + monthKey : 'registrados') +
+          ' — los mismos de la pantalla Dinero/Bancos'],
+        ['Alcance', 'Las cuentas bancarias del negocio; Dinero no separa por RFC (' + rfc + ' es el RFC en pantalla)'],
+        ['Movimientos', String(rowsDb.length)],
+        ['Cargos', salidaPesos(cargos)], ['Abonos', salidaPesos(abonos)],
+        ['Generado', salidaGenerado()]] },
+      { name: 'Movimientos', columns, totals: { label: 'Totales del periodo' },
+        rows: rowsDb.map(m => [String(m.date || '').slice(0, 10) || null, etiquetaCuenta(m.accountId),
+          String(m.concept || ''), Number(m.amountCents) < 0 ? -Number(m.amountCents) : null,
+          Number(m.amountCents) > 0 ? Number(m.amountCents) : null]) }] });
   }
 
   /* ===== Reporte Mano Fil (1.16.0, propuesta P12 de la auditoría) =====
@@ -6328,6 +7300,116 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     db.prepare('INSERT INTO avisos_acciones(aviso,at,accion,nota) VALUES (?,?,?,?)')
       .run(avisoId, time, accion, String(nota || '').slice(0, 500));
   }
+  /* Huella del hecho que origina un aviso (1.29.2): si el recálculo
+     encuentra el mismo aviso con OTRA huella, el hecho cambió —
+     un importe distinto, otra contraparte, otro vencimiento — y
+     la decisión de atención de Paco (archivar/posponer) deja de
+     valer: el aviso renace como nuevo. Si la huella es la misma,
+     su decisión se respeta en silencio. */
+  function avisoHecho(row) {
+    const base = [row.titulo || '', row.detalle || '', row.importe || '',
+      row.contraparte || '', row.vence || ''].join('|');
+    let h = 5381;
+    for (let i = 0; i < base.length; i++) h = ((h * 33) ^ base.charCodeAt(i)) >>> 0;
+    return 'h' + h.toString(36) + ':' + base.length;
+  }
+  /* De quién es el gesto, con el vocabulario de la casa: el
+     sistema (avisos del propio PacoSAT), el SAT (lo que está mal
+     viene del portal o de sus listados) o la casa (Paco o la
+     contadora, según quién lo lleve). */
+  function avisoGesto(row) {
+    if (row.kind === 'sistema') return { de: 'sistema', texto: 'del sistema' };
+    if (row.clase === 'mal') return { de: 'sat', texto: 'del SAT' };
+    if (row.responsable === 'Contadora') return { de: 'contadora', texto: 'de la contadora' };
+    return { de: 'paco', texto: 'tuyo' };
+  }
+  /* Las vías fuera de la app REALMENTE conectadas: correo si hay
+     correo configurado y su cadencia no es «no»; push si hay
+     alguna suscripción viva. Sin ninguna vía, Hoy y Avisos lo
+     dicen con su gesto en vez de callarlo. */
+  function avisoCanales() {
+    let push = 0;
+    try { push = db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions').get().n; } catch { push = 0; }
+    return { correo: Boolean(mail) && avisosConfig().correo !== 'no', push: push > 0 };
+  }
+  async function avisoPush(aviso, volvio) {
+    const subs = db.prepare('SELECT * FROM push_subscriptions').all();
+    if (!subs.length) return 0;
+    /* Freno anti-avalancha del push (1.29.2): como mucho 5
+       nacimientos por hora suenan en el móvil; el resto de la
+       oleada ya viaja agrupado en el resumen de correo de este
+       mismo ciclo. La ventana vive en el estado del servicio. */
+    let ventana = {};
+    try { ventana = JSON.parse(getState('avisos:push-ventana') || '{}'); } catch { ventana = {}; }
+    const ahora = now();
+    if (!ventana.desde || ahora - ventana.desde >= 3600000) ventana = { desde: ahora, n: 0 };
+    if (ventana.n >= 5) return 0;
+    ventana.n++;
+    setState('avisos:push-ventana', JSON.stringify(ventana));
+    const gesto = avisoGesto(aviso);
+    let sent = 0;
+    for (const sub of subs) {
+      const subscription = { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } };
+      try {
+        const result = await pushSender(subscription, {
+          title: 'PacoSAT · ' + (volvio ? 'Volvió tu alerta' : 'Nueva alerta'),
+          body: String(aviso.titulo || '').slice(0, 110) + ' — gesto ' + gesto.texto +
+            (aviso.rfc ? ' · ' + aviso.rfc : ''), url: '/' });
+        if (result?.status === 404 || result?.status === 410)
+          db.prepare('DELETE FROM push_subscriptions WHERE endpoint=?').run(sub.endpoint);
+        else sent++;
+      } catch { /* una suscripción caída no frena a las demás */ }
+    }
+    return sent;
+  }
+  /* Notificación de nacimiento (o de vuelta) de UN aviso (1.29.2):
+     UNA sola por episodio — la guarda es el flag notificada, que
+     el recálculo no toca; solo un renacimiento (el hecho cambió)
+     o el vencimiento de una reprogramación lo rearma. El correo
+     lleva los datos del aviso (qué, qué significa, RFC,
+     contraparte, importe, vencimiento, siguiente paso y de quién
+     es el gesto) y viaja por la tubería de sucesos de siempre,
+     con su ref única por episodio como segunda cerradura. El
+     push lleva el titular y el gesto. Si no hay vía conectada,
+     el episodio se cierra igual (sin tormenta de reintentos) y
+     el aviso de «sin vías» lo enseñan Hoy y Avisos. */
+  /* Canales del episodio (1.29.2): correo y push por defecto.
+     Los avisos ESPEJO de una alerta que ya tiene su propio correo
+     de suceso (cancelación, 69-B, fallo de documento) nacen con
+     correo:false — su alerta gemela ya avisa por esa vía y dos
+     correos del mismo hecho serían un duplicado — pero conservan
+     el push, que es su canal en tiempo real. */
+  const AVISO_ESPEJO_CON_CORREO_PROPIO = ['cancellation', 'efos', 'satdoc-fail'];
+  function avisoNotificar(aviso, volvio = false, canalesElegidos = {}) {
+    if (!aviso || aviso.notificada) return;
+    const canales = avisoCanales();
+    const config = avisosConfig();
+    const correoEste = canalesElegidos.correo !== false && canales.correo &&
+      (config.correo !== 'graves' || aviso.severidad === 'alta');
+    const gesto = avisoGesto(aviso);
+    if (correoEste) {
+      const count = (Number(aviso.notif_count) || 0) + 1;
+      db.prepare('UPDATE avisos SET notif_count=? WHERE id=?').run(count, aviso.id);
+      const lineas = [(volvio ? 'Volvió tu alerta: ' : 'Nueva alerta: ') + aviso.titulo, '',
+        'Qué significa: ' + (aviso.detalle || '—')];
+      if (aviso.rfc) lineas.push('RFC: ' + aviso.rfc);
+      if (aviso.nombre || aviso.contraparte)
+        lineas.push('Contraparte: ' + (aviso.nombre || aviso.contraparte) +
+          (aviso.contraparte && aviso.nombre ? ' (' + aviso.contraparte + ')' : ''));
+      if (aviso.importe) lineas.push('Importe: $' + importeShow(aviso.importe));
+      if (aviso.vence) lineas.push('Vence: ' + day(aviso.vence));
+      if (aviso.accion) lineas.push('Siguiente paso: ' + aviso.accion);
+      lineas.push('De quién es el gesto: ' + gesto.texto + '.', '',
+        'Ábrela en PacoSAT › Avisos para actuar sobre ella: resolverla, archivarla o reprogramarla.');
+      queueAlert('aviso', 'aviso:' + aviso.id + ':' + count,
+        'PacoSAT · ' + (volvio ? 'Volvió tu alerta: ' : 'Nueva alerta: ') + aviso.titulo,
+        lineas.join('\n'), now(), aviso.rfc || '');
+    }
+    if (canalesElegidos.push !== false && canales.push) avisoPush(aviso, volvio).catch(() => { /* el push nunca tumba el aviso */ });
+    db.prepare('UPDATE avisos SET notificada=1 WHERE id=?').run(aviso.id);
+    avisoLog(aviso.id, volvio ? 'notificada-vuelve' : 'notificada',
+      (correoEste ? 'correo' : 'sin correo') + ' · ' + (canales.push ? 'push' : 'sin push'), now());
+  }
   function avisoEnsure(row, time, baseline) {
     const existing = db.prepare('SELECT * FROM avisos WHERE ref=?').get(row.ref);
     /* Durabilidad del cierre de línea base (1.23.0, frente E): un
@@ -6339,29 +7421,48 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (existing && existing.baseline === 1 && existing.estado === 'descartado' &&
       String(existing.resolucion || '').startsWith('Cierre de línea base')) return existing;
     if (existing) {
-      if (existing.estado !== 'solventado')
+      if (existing.estado !== 'solventado') {
         db.prepare('UPDATE avisos SET titulo=?,detalle=?,importe=?,actualizado=?,rfc=?,vence=?,accion=? WHERE id=?')
           .run(row.titulo, row.detalle, row.importe || '', time,
             row.rfc || existing.rfc || '', row.vence ?? existing.vence ?? null,
             row.accion || existing.accion || '', existing.id);
+        /* Renacimiento (1.29.2): archivada o pospuesta con el
+           hecho CAMBIADO (otra huella) → vuelve a activa y se
+           notifica como nueva. Con el hecho intacto, la decisión
+           de Paco manda y aquí no pasa nada. La primera huella
+           tras la migración (hecho='') solo se anota, sin renacer. */
+        const hechoNuevo = avisoHecho(row);
+        if (existing.atencion && existing.atencion !== 'activa' && existing.hecho && existing.hecho !== hechoNuevo) {
+          db.prepare("UPDATE avisos SET atencion='activa',pospuesta_hasta=NULL,notificada=0,hecho=? WHERE id=?")
+            .run(hechoNuevo, existing.id);
+          avisoLog(existing.id, 'renace', 'El hecho que lo causó cambió: vuelve como aviso nuevo.', time);
+          avisoNotificar({ ...existing, titulo: row.titulo, detalle: row.detalle,
+            importe: row.importe || '', contraparte: row.contraparte || existing.contraparte || '',
+            vence: row.vence ?? existing.vence ?? null, atencion: 'activa',
+            pospuesta_hasta: null, notificada: 0, hecho: hechoNuevo }, true,
+            { correo: !AVISO_ESPEJO_CON_CORREO_PROPIO.includes(row.datos?.alertaKind || avisoDatos(existing).alertaKind || '') });
+        } else if (existing.hecho !== hechoNuevo) {
+          db.prepare('UPDATE avisos SET hecho=? WHERE id=?').run(hechoNuevo, existing.id);
+        }
+      }
       return existing;
     }
-    db.prepare('INSERT INTO avisos(ref,kind,clase,estado,severidad,titulo,detalle,contraparte,nombre,importe,enlace,datos,baseline,creado,actualizado,correo,rfc,responsable,vence,accion) ' +
-      'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    db.prepare('INSERT INTO avisos(ref,kind,clase,estado,severidad,titulo,detalle,contraparte,nombre,importe,enlace,datos,baseline,creado,actualizado,correo,rfc,responsable,vence,accion,hecho,notificada) ' +
+      'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
       .run(row.ref, row.kind, row.clase, row.estado, row.severidad, row.titulo, row.detalle,
         row.contraparte || '', row.nombre || '', row.importe || '', row.enlace || '',
         JSON.stringify(row.datos || {}), baseline ? 1 : 0, time, time, row.correo ? 1 : 0,
-        row.rfc || '', row.responsable || 'Paco', row.vence ?? null, row.accion || '');
+        row.rfc || '', row.responsable || 'Paco', row.vence ?? null, row.accion || '',
+        avisoHecho(row), baseline ? 1 : 0);
     const created = db.prepare('SELECT * FROM avisos WHERE ref=?').get(row.ref);
     avisoLog(created.id, 'creado', row.titulo, time);
-    /* Push PWA para lo crítico (1.25.0, AGREGAR 9): un aviso
-       NUEVO de clase «mal» y severidad alta (una factura cobrada
-       que se cancela, una contraparte en 69-B definitivo, un
-       expediente de materialidad) sale también como push genérico
-       a los navegadores suscritos — sin datos fiscales en el
-       cuerpo: el detalle se lee dentro de la app. */
-    if (created.clase === 'mal' && created.severidad === 'alta')
-      pushCritico().catch(() => { /* el push nunca tumba el aviso */ });
+    /* Notificación al nacer (1.29.2): todo aviso NUEVO de la vida
+       real (no los de línea base, que son la foto histórica) sale
+       una vez por las vías conectadas, con sus datos — sustituye
+       al push genérico de críticos de la 1.25.0, que queda solo
+       para la prueba de push y avisos que no nacen por esta vía. */
+    if (!baseline) avisoNotificar(created, false,
+      { correo: !AVISO_ESPEJO_CON_CORREO_PROPIO.includes(row.datos?.alertaKind || '') });
     return created;
   }
   function avisoSolve(ref, resolucion, time) {
@@ -6410,7 +7511,20 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
     return day(Date.parse(fecha + 'T12:00:00Z') + (balance.payable ? 30 : 60) * DAY);
   }
+  function avisosDespertar(time) {
+    const vencidas = db.prepare("SELECT * FROM avisos WHERE atencion='pospuesta' AND pospuesta_hasta IS NOT NULL AND pospuesta_hasta<=? AND estado NOT IN ('solventado','descartado')").all(time);
+    for (const aviso of vencidas) {
+      db.prepare("UPDATE avisos SET atencion='activa',pospuesta_hasta=NULL,actualizado=? WHERE id=?").run(time, aviso.id);
+      avisoLog(aviso.id, 'vuelve', 'La reprogramación venció: el aviso vuelve a la vista activa.', time);
+      avisoNotificar({ ...aviso, atencion: 'activa', pospuesta_hasta: null }, true);
+    }
+    return vencidas.length;
+  }
   function avisosSync(time) {
+    /* Las reprogramadas cuya fecha llegó vuelven ANTES de contar
+       y de recalcular: su sitio es la vista activa y su vuelta se
+       notifica como una llegada nueva («volvió tu alerta»). */
+    avisosDespertar(time);
     /* Línea base silenciosa (criterio 4): la primera evaluación de la
        vida de la base, o cualquier salto de ≥50 facturas entre dos
        evaluaciones (una importación de histórico), marca lo creado
@@ -6673,8 +7787,17 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return { ok: true, resolucion: 'Marcado como corregido por ti; queda registrado en el historial.' };
   }
   function avisosOverview() {
-    const open = db.prepare("SELECT * FROM avisos WHERE estado NOT IN ('solventado','descartado') ORDER BY baseline ASC, creado ASC").all();
+    const todas = db.prepare("SELECT * FROM avisos WHERE estado NOT IN ('solventado','descartado') ORDER BY baseline ASC, creado ASC").all();
     const history = db.prepare("SELECT * FROM avisos WHERE estado='solventado' ORDER BY resuelto DESC LIMIT 50").all();
+    /* Capa de atención (1.29.2): los conteos, los grupos y la
+       lista principal son SOLO de las activas. Las pospuestas con
+       fecha futura y las archivadas van en sus propias listas:
+       existen, se ven en su sitio, y no cuentan ni notifican. */
+    const ahora = now();
+    const esPospuesta = row => row.atencion === 'pospuesta' && row.pospuesta_hasta && row.pospuesta_hasta > ahora;
+    const open = todas.filter(row => row.atencion !== 'archivada' && !esPospuesta(row));
+    const pospuestasRows = todas.filter(esPospuesta);
+    const archivadasRows = todas.filter(row => row.atencion === 'archivada');
     const serialize = row => { const datos = avisoDatos(row); return { id: row.id, ref: row.ref, kind: row.kind, clase: row.clase,
       estado: row.estado, severidad: row.severidad, titulo: row.titulo, detalle: row.detalle, contraparte: row.contraparte,
       nombre: row.nombre, importe: row.importe, enlace: row.enlace, baseline: Boolean(row.baseline), creado: row.creado,
@@ -6682,6 +7805,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       fileId: datos.fileId || '',
       rfc: row.rfc || '', responsable: row.responsable || 'Paco', vence: row.vence || null,
       accion: row.accion || '', actualizado: row.actualizado,
+      atencion: esPospuesta(row) ? 'pospuesta' : (row.atencion || 'activa'),
+      pospuestaHasta: row.pospuesta_hasta || null, gesto: avisoGesto(row),
       solicitud: row.kind === 'solicitud-estado' ? { banco: datos.banco || '', mes: datos.mes || '' } : null }; };
     const counts = { total: open.length, mal: 0, falta: 0, necesita: 0, porConfirmar: 0 };
     const porRfc = {};
@@ -6714,7 +7839,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
     const avisosOut = open.map(row => ({ ...serialize(row), grupo: conGrupo.has(row.id) ?
       row.kind + '|' + (row.contraparte || '') + '|' + (row.rfc || '') : null }));
-    return { avisos: avisosOut, grupos, historial: history.map(serialize), counts, porRfc, config: avisosConfig() };
+    return { avisos: avisosOut, grupos, historial: history.map(serialize), counts, porRfc, config: avisosConfig(),
+      pospuestas: pospuestasRows.map(serialize), archivadas: archivadasRows.map(serialize),
+      canales: avisoCanales() };
   }
 
   /* ===== Dinero (1.6.17) =====
@@ -7343,7 +8470,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           declFailBody(rfc, query, [{ error: message(error), at: time }]), time, rfc);
       /* La página del fallo viaja con el error (1.27.0): el
          cierre de la corrida la archiva en el diario. */
-      return { ok: false, error: message(error), errorKind: error?.code || '', diag: error?.diag || null };
+      return { ok: false, error: message(error), errorKind: error?.code || '', diag: error?.diag || null,
+        diagDecision: error?.diagDecision || null };
     }
   }
   async function runDeclaracionesAttempt(rfc, query, time, origen = 'paco') {
@@ -7379,7 +8507,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     let declAttempt = 0;
     let declRunClosed = false;
     let declDiagFiles = { shotId: '', htmlId: '' };
-    const closeDeclRun = (ok, errorText = '', errorKind = '', diag = null) => {
+    const closeDeclRun = (ok, errorText = '', errorKind = '', diag = null, diagDecision = null) => {
       if (declRunClosed) return;
       declRunClosed = true;
       try {
@@ -7389,8 +8517,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            perdido (la corrida viva del 11 nov murió sin ella).
            1.28.0: guardado verificado + inventario de la página
            en el propio diario + poda común (ver saveRunDiag). */
-        if (diag && !declDiagFiles.shotId && !declDiagFiles.htmlId)
-          declDiagFiles = saveRunDiag(declRunId, diag);
+        if ((diag || diagDecision) && !declDiagFiles.shotId && !declDiagFiles.htmlId)
+          declDiagFiles = saveRunDiag(declRunId, diag, diagDecision);
         if (!ok && diag) declSteps.push(...diagCierreSteps(diag, declDiagFiles)
           .map(paso => ({ at: paso.at, intento: declAttempt, paso: paso.text, detalle: '' })));
         db.prepare('UPDATE decl_runs SET finished=?,ok=?,error=?,errorKind=?,steps=?,attempts=?,shotId=?,htmlId=? WHERE id=?')
@@ -7426,7 +8554,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           closeDeclRun(false, result.error || 'Recuperación cancelada por ti.', result.errorKind || '');
           return result;
         }
-        failures.push({ error: result.error, errorKind: result.errorKind || '', at: now(), diag: result.diag || null });
+        failures.push({ error: result.error, errorKind: result.errorKind || '', at: now(), diag: result.diag || null, diagDecision: result.diagDecision || null });
         if (attempt === 1 && SATDOC_PORTAL_KINDS.includes(result.errorKind) && !token.cancelled) {
           const waitMs = satDocRetryWait();
           writeDeclProgress(rfc, { tipo: query.tipo, ejercicio: query.ejercicio, running: true,
@@ -7449,9 +8577,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         'PacoSAT · No se pudieron recuperar declaraciones de ' + rfc + (failures.length > 1 ? ' (dos intentos)' : ''),
         declFailBody(rfc, query, failures), time, rfc);
       closeDeclRun(false, failures[failures.length - 1].error, failures[failures.length - 1].errorKind || '',
-        failures[failures.length - 1].diag || null);
+        failures[failures.length - 1].diag || null, failures[failures.length - 1].diagDecision || null);
       return { ok: false, error: failures[failures.length - 1].error };
-    } finally { closeDeclRun(false, failures[failures.length - 1]?.error || 'Recuperación cancelada por ti.', failures[failures.length - 1]?.errorKind || '', failures[failures.length - 1]?.diag || null); declLive.delete(key); }
+    } finally { closeDeclRun(false, failures[failures.length - 1]?.error || 'Recuperación cancelada por ti.', failures[failures.length - 1]?.errorKind || '', failures[failures.length - 1]?.diag || null, failures[failures.length - 1]?.diagDecision || null); declLive.delete(key); }
   }
   function cancelDeclRun(rfc) {
     let found = false;
@@ -7459,6 +8587,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return found;
   }
   function declaracionesOverview(rfc, ejercicio, time) {
+    reconcileOnRead(time);
     const rows = db.prepare("SELECT * FROM declaraciones WHERE rfc=? AND fileId<>'' ORDER BY created DESC").all(rfc);
     const mine = rows.filter(row => row.ejercicio === ejercicio);
     const monthOf = time => new Date(time).toISOString().slice(0, 7);
@@ -7572,18 +8701,29 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       folios: db.prepare('SELECT * FROM decl_folios WHERE rfc=? AND ejercicio=? ORDER BY periodo, folio').all(rfc, ejercicio)
         .map(row => ({ id: row.id, tipo: row.tipo, ejercicio: row.ejercicio, periodo: row.periodo,
           folio: row.folio, estado: row.estado, nota: row.nota, creado: row.creado })),
-      anios: declAnios(rfc, time) };
+      anios: declAnios(rfc, time),
+      /* Estado del ejecutor (1.29.1, D5): la pantalla guía la
+         espera con el estado real del equipo de Paco, no con un
+         mensaje genérico de cola. */
+      ejecutor: executorEstado() };
   }
   /* Foto por ejercicio (AGREGAR 8): para cada año con algo
      archivado o con folios, cuántos meses tienen su acuse, si la
      anual consta y cuántos folios se conocen — la base de la
      recuperación histórica por año completo. */
   function declAnios(rfc, time) {
+    /* Contrato de la vista (1.29.1): el ejercicio viaja SIEMPRE
+       como número y sin duplicados — la normalización vive aquí,
+       en la fuente, para que ningún consumidor pinte dos veces
+       el mismo ejercicio ni lea el año de un campo que no es
+       (el cliente leía «anio» y el servidor manda «ejercicio»:
+       así nació el «Ejercicio undefined» de producción). */
     const years = new Set();
-    for (const row of db.prepare("SELECT DISTINCT ejercicio FROM declaraciones WHERE rfc=? AND fileId<>''").all(rfc)) years.add(row.ejercicio);
-    for (const row of db.prepare('SELECT DISTINCT ejercicio FROM decl_folios WHERE rfc=?').all(rfc)) years.add(row.ejercicio);
+    const addYear = value => { const year = Number(value); if (Number.isInteger(year) && year > 0) years.add(year); };
+    for (const row of db.prepare("SELECT DISTINCT ejercicio FROM declaraciones WHERE rfc=? AND fileId<>''").all(rfc)) addYear(row.ejercicio);
+    for (const row of db.prepare('SELECT DISTINCT ejercicio FROM decl_folios WHERE rfc=?').all(rfc)) addYear(row.ejercicio);
     const currentYear = Number(new Date(time).toISOString().slice(0, 4));
-    years.add(currentYear); years.add(currentYear - 1);
+    addYear(currentYear); addYear(currentYear - 1);
     return [...years].filter(year => year >= 2015).sort((a, b) => b - a).map(ejercicio => {
       const docs = db.prepare("SELECT * FROM declaraciones WHERE rfc=? AND ejercicio=? AND fileId<>''").all(rfc, ejercicio);
       const mesesConAcuse = new Set(docs.filter(row => row.tipo === 'mensual' && row.clase === 'acuse').map(row => row.periodo)).size;
@@ -7905,6 +9045,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      anota qué enlaces y textos SÍ enseñaba la página, para que el
      arreglo se haga contra la pantalla real. Se extrae del HTML
      guardado, sin navegador y sin coste. */
+  /* ¿La corrida guardó su página de DECISIÓN? (1.32.1): los
+     artefactos de decisión no tienen columna: su id se deriva
+     del id de la corrida, la convención de saveRunDiag. */
+  function decisionArtefactos(runId) {
+    try {
+      const shot = db.prepare("SELECT 1 FROM records WHERE store='files' AND id=?").get('diag:' + runId + ':decision-shot');
+      const html = db.prepare("SELECT 1 FROM records WHERE store='files' AND id=?").get('diag:' + runId + ':decision-html');
+      return { hasDecisionShot: Boolean(shot), hasDecisionHtml: Boolean(html) };
+    } catch { return { hasDecisionShot: false, hasDecisionHtml: false }; }
+  }
   function diagLinkInventory(html) {
     if (!html) return [];
     /* Un diagnóstico corrupto jamás tumba el cierre del diario:
@@ -7932,25 +9082,44 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      con su marca dentro y su aviso en el diario — nunca entera
      y nunca perdida en silencio. */
   const DIAG_HTML_MAX_BYTES = 2 * 1024 * 1024;
-  function saveRunDiag(runId, diag) {
-    let shotId = '', htmlId = '';
+  /* Tope de artefactos guardados (1.31.1): la página y la foto
+     de cada fallo se conservan para diagnosticar, pero sin un
+     techo la carpeta de artefactos crece para siempre (cada
+     HTML puede pesar 2 MB). Se conservan los 40 artefactos más
+     recientes (≈20 fallos con su foto y su página); la poda es
+     solo de ids 'diag:' del almacén files — ningún documento
+     ni CFDI vive bajo ese prefijo. */
+  const DIAG_KEEP = 40;
+  function pruneDiagArtefacts() {
+    try {
+      db.prepare(`DELETE FROM records WHERE store='files' AND id LIKE 'diag:%' AND rowid NOT IN
+        (SELECT rowid FROM records WHERE store='files' AND id LIKE 'diag:%' ORDER BY rowid DESC LIMIT ?)`).run(DIAG_KEEP);
+    } catch { /* la poda de artefactos nunca rompe una corrida */ }
+  }
+  function saveRunDiag(runId, diag, diagDecision = null) {
+    let shotId = '', htmlId = '', decisionShotId = '', decisionHtmlId = '';
     const faltas = [];
     const avisos = [];
-    if (diag) {
-      if (diag.screenshot && diag.screenshot.length) {
-        const id = 'diag:' + runId + ':shot';
+    /* Un artefacto (final o de decisión) se guarda con la misma
+       verificación: el id solo queda si la relectura cuadra al
+       byte; si no, la falta se anota y el diario lo dice. */
+    const guardarUno = (diagX, sufijo, etiqueta) => {
+      const ids = { shotId: '', htmlId: '' };
+      if (!diagX) return ids;
+      if (diagX.screenshot && diagX.screenshot.length) {
+        const id = 'diag:' + runId + ':' + sufijo + 'shot';
         try {
-          const data = Buffer.isBuffer(diag.screenshot) ? diag.screenshot : Buffer.from(diag.screenshot);
+          const data = Buffer.isBuffer(diagX.screenshot) ? diagX.screenshot : Buffer.from(diagX.screenshot);
           db.prepare("INSERT OR REPLACE INTO records(store,id,value,data,mime) VALUES ('files',?,NULL,?,'image/png')").run(id, data);
           const back = db.prepare("SELECT data FROM records WHERE store='files' AND id=?").get(id);
-          if (back?.data && back.data.length === data.length) shotId = id;
-          else faltas.push('la captura de pantalla (no se pudo guardar)');
-        } catch (error) { faltas.push('la captura de pantalla (no se pudo guardar: ' + (error?.message || error) + ')'); }
+          if (back?.data && back.data.length === data.length) ids.shotId = id;
+          else faltas.push('la captura de pantalla ' + etiqueta + ' (no se pudo guardar)');
+        } catch (error) { faltas.push('la captura de pantalla ' + etiqueta + ' (no se pudo guardar: ' + (error?.message || error) + ')'); }
       }
-      if (diag.html) {
-        const id = 'diag:' + runId + ':html';
+      if (diagX.html) {
+        const id = 'diag:' + runId + ':' + sufijo + 'html';
         try {
-          let data = Buffer.from(String(diag.html), 'utf8');
+          let data = Buffer.from(String(diagX.html), 'utf8');
           let recortada = false;
           if (data.length > DIAG_HTML_MAX_BYTES) {
             const marca = Buffer.from('\n<!-- PacoSAT: página recortada a 2 MB por tamaño -->\n', 'utf8');
@@ -7960,14 +9129,25 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           db.prepare("INSERT OR REPLACE INTO records(store,id,value,data,mime) VALUES ('files',?,NULL,?,'text/html; charset=utf-8')").run(id, data);
           const back = db.prepare("SELECT data FROM records WHERE store='files' AND id=?").get(id);
           if (back?.data && back.data.length === data.length) {
-            htmlId = id;
-            if (recortada) avisos.push('la página HTML era mayor de 2 MB y quedó guardada recortada a 2 MB');
+            ids.htmlId = id;
+            if (recortada) avisos.push('la página HTML ' + etiqueta + ' era mayor de 2 MB y quedó guardada recortada a 2 MB');
           }
-          else faltas.push('la página HTML (no se pudo guardar)');
-        } catch (error) { faltas.push('la página HTML (no se pudo guardar: ' + (error?.message || error) + ')'); }
+          else faltas.push('la página HTML ' + etiqueta + ' (no se pudo guardar)');
+        } catch (error) { faltas.push('la página HTML ' + etiqueta + ' (no se pudo guardar: ' + (error?.message || error) + ')'); }
       }
-    }
-    return { shotId, htmlId, faltas, avisos };
+      return ids;
+    };
+    const finalIds = guardarUno(diag, '', 'del fallo');
+    shotId = finalIds.shotId; htmlId = finalIds.htmlId;
+    /* La página de DECISIÓN (1.32.1): la portada desde la que se
+       navegó al destino que falló, con ids derivados del mismo
+       runId ('diag:<runId>:decision-shot' / ':decision-html').
+       Viaja ADEMÁS de la final: con solo la 404 guardada (el
+       fallo del 14 nov) no se puede saber desde dónde se saltó. */
+    const decisionIds = guardarUno(diagDecision, 'decision-', 'de decisión');
+    decisionShotId = decisionIds.shotId; decisionHtmlId = decisionIds.htmlId;
+    if (shotId || htmlId || decisionShotId || decisionHtmlId) pruneDiagArtefacts();
+    return { shotId, htmlId, decisionShotId, decisionHtmlId, faltas, avisos };
   }
   /* Pasos que el cierre de un diario añade solo cuando la corrida
      FALLÓ con página guardada: el inventario de lo que la página
@@ -7977,10 +9157,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (!diag) return steps;
     const inventario = diagLinkInventory(diag.html);
     if (inventario.length) steps.push({ at: now(), text: 'La página del momento enseñaba: ' + inventario.join(' · ') });
+    /* La dirección final literal (1.32.1): el intento nombra la
+       URL donde la corrida acabó — en una ruta muerta, es la
+       dirección que devolvió «Página no encontrada». */
+    if (diag.url) steps.push({ at: now(), text: 'Dirección final de la corrida: ' + String(diag.url).slice(0, 300) });
     for (const aviso of guardado?.avisos || [])
       steps.push({ at: now(), text: 'Página del fallo: ' + aviso + '.' });
     if (guardado?.faltas?.length) steps.push({ at: now(), text: 'Página del fallo: no se pudo guardar ' + guardado.faltas.join(' ni ') + '.' });
     else if (guardado && (guardado.shotId || guardado.htmlId)) steps.push({ at: now(), text: 'Página del fallo guardada: puedes verla con «Ver la página del fallo».' });
+    if (guardado && (guardado.decisionShotId || guardado.decisionHtmlId))
+      steps.push({ at: now(), text: 'Página de decisión guardada: la portada desde la que se navegó, con «Ver la página de decisión».' });
     return steps;
   }
   /* Diario de una corrida (1.10.1): guarda los pasos y, si el
@@ -8245,6 +9431,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
   }
   function satDocsOverview(time) {
+    reconcileOnRead(time);
     const config = satDocsConfig(), state = satDocsState();
     return db.prepare('SELECT rfc FROM profiles ORDER BY rfc').all().map(profile => {
       const view = { rfc: profile.rfc, config: config[profile.rfc] ||
@@ -9041,6 +10228,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            espera sola si el perfil descansa o no toca aún. */
         await tribAutoTick(time);
         await declAutoTick(time);
+        await puertaAutoTick(time);
+        buzonUrgenteTick(time);
+        emisorNuevoTick(time);
+        ejecutorSilencioTick(time);
+        cierreMesTick(time);
         await monthlyDownloadTick(time);
         await reportsTick(time);
         moneyTick(time);
@@ -9261,6 +10453,205 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
          trabajos) exigen la sesión de administrador de siempre; la
          puerta del invitado no cambia: un token de invitado no
          empareja ni ve la cola. */
+      /* API vendible /api/v1 (1.32.0): puerta PROPIA, como la del
+         ejecutor — la llave viaja en Authorization: Bearer (la
+         oficial) o en X-API-Key, y NO es una sesión: no hereda
+         ningún poder de administrador ni de invitado, no abre
+         rutas de administración ni del ejecutor, y solo lee los
+         recursos de lectura con su alcance y su RFC. Cada llamada
+         con llave reconocida queda en el libro (api_calls) y en
+         el Registro (audit_events, clase «api»), sin la llave. */
+      if (url.pathname === '/api/v1' || url.pathname.startsWith('/api/v1/')) {
+        const falla = (status, codigo, mensaje) => {
+          res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: { codigo, mensaje } }));
+        };
+        if (req.method !== 'GET')
+          return falla(405, 'metodo-no-permitido', 'La API de PacoSAT es de solo lectura: solo acepta llamadas GET.');
+        const cabecera = String(req.headers.authorization || '');
+        const secreto = cabecera.toLowerCase().startsWith('bearer ')
+          ? cabecera.slice(7).trim() : String(req.headers['x-api-key'] || '');
+        const llave = apiKeyBySecret(secreto);
+        if (!llave) {
+          logAccess('api-sin-llave', url.pathname);
+          return falla(401, 'llave-invalida', 'Falta la llave de API o no es válida. ' +
+            'Se manda en la cabecera Authorization: Bearer <tu llave>.');
+        }
+        const recurso = url.pathname;
+        if (llave.estado === 'revocada') {
+          apiAudit(llave, recurso, '', 403, 0);
+          return falla(403, 'llave-revocada', 'Esta llave está revocada. Crea una nueva en Ajustes → API de PacoSAT.');
+        }
+        if (llave.estado === 'en-pausa') {
+          apiAudit(llave, recurso, '', 403, 0);
+          return falla(403, 'llave-en-pausa', 'Esta llave está en pausa. Reactívala en Ajustes → API de PacoSAT.');
+        }
+        const ahoraMs = now();
+        const ventana = (apiRate.get(llave.id) || []).filter(t => ahoraMs - t < 60000);
+        if (ventana.length >= API_V1_LIMITE_MIN) {
+          apiRate.set(llave.id, ventana);
+          apiAudit(llave, recurso, '', 429, 0);
+          return falla(429, 'limite-excedido', 'Demasiadas llamadas seguidas: el límite de esta llave es de ' +
+            API_V1_LIMITE_MIN + ' por minuto. Espera unos segundos y reintenta.');
+        }
+        ventana.push(ahoraMs);
+        apiRate.set(llave.id, ventana);
+        const esResumen = llave.alcance === 'lectura-resumen';
+        if (esResumen && (recurso === '/api/v1/cfdi' || recurso.startsWith('/api/v1/cfdi/') || recurso === '/api/v1/registro')) {
+          apiAudit(llave, recurso, '', 403, 0);
+          return falla(403, 'alcance-insuficiente', 'Esta llave es de solo resúmenes: no lee comprobantes ni el ' +
+            'Registro en detalle. Para eso hace falta una llave de lectura completa.');
+        }
+        const rfcConocido = rfc => Boolean(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc) ||
+          db.prepare("SELECT 1 FROM records WHERE store='people' AND id=?").get(rfc));
+        const pideRfc = () => {
+          const pedido = String(url.searchParams.get('rfc') || '').toUpperCase();
+          if (llave.rfc) {
+            if (pedido && pedido !== llave.rfc) {
+              apiAudit(llave, recurso, pedido, 403, 0);
+              return { error: [403, 'fuera-de-su-rfc', 'Esta llave solo puede leer el RFC ' + llave.rfc + '.'] };
+            }
+            return { rfc: llave.rfc };
+          }
+          if (!pedido) {
+            apiAudit(llave, recurso, '', 400, 0);
+            return { error: [400, 'falta-rfc', 'Di de qué RFC es la lectura: añade ?rfc=XXXXXXXXXXXXX ' +
+              'a la llamada. La API nunca mezcla contribuyentes.'] };
+          }
+          if (!rfcConocido(pedido)) {
+            apiAudit(llave, recurso, pedido, 404, 0);
+            return { error: [404, 'rfc-no-encontrado',
+              'Ese RFC no tiene perfil en esta instalación de PacoSAT.'] };
+          }
+          return { rfc: pedido };
+        };
+        const paginar = items => {
+          const pagina = Math.max(1, Number(url.searchParams.get('pagina') || 1) || 1);
+          const porPagina = Math.min(200, Math.max(1, Number(url.searchParams.get('porPagina') || 50) || 50));
+          const total = items.length;
+          return { corte: items.slice((pagina - 1) * porPagina, pagina * porPagina),
+            meta: { pagina, porPagina, total, paginas: Math.max(1, Math.ceil(total / porPagina)) } };
+        };
+        const responde = (rfcAudit, registros, payload) => {
+          apiAudit(llave, recurso, rfcAudit || '', 200, registros);
+          return json(res, payload);
+        };
+        if (recurso === '/api/v1/estado') {
+          const vivos = (db.prepare("SELECT COUNT(*) AS n FROM sat_executor_jobs WHERE estado IN ('en-cola','reclamado','en-curso')").get()?.n || 0) +
+            (db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE status='running'").get()?.n || 0);
+          const datos = { version: APP_VERSION, horaServidor: new Date(now()).toISOString(),
+            contribuyentes: db.prepare('SELECT COUNT(*) AS n FROM profiles').get()?.n || 0,
+            trabajosVivos: vivos, ultimoRespaldo: Number(getState('backup:last') || 0) || null };
+          if (llave.rfc) datos.rfc = llave.rfc;
+          return responde(llave.rfc || '', 1, { datos });
+        }
+        if (recurso === '/api/v1/totales') {
+          const { rfc, error } = pideRfc(); if (error) return falla(...error);
+          const desde = String(url.searchParams.get('desde') || ''), hasta = String(url.searchParams.get('hasta') || '');
+          if ((desde && !/^\d{4}-\d{2}$/.test(desde)) || (hasta && !/^\d{4}-\d{2}$/.test(hasta))) {
+            apiAudit(llave, recurso, rfc, 400, 0);
+            return falla(400, 'periodo-invalido', 'Los periodos van como AAAA-MM: ?desde=2026-01&hasta=2026-12.');
+          }
+          const datos = { rfc, ...apiTotales(rfc, desde, hasta) };
+          return responde(rfc, datos.meses.length, { datos });
+        }
+        if (recurso === '/api/v1/cfdi') {
+          const { rfc, error } = pideRfc(); if (error) return falla(...error);
+          const desde = String(url.searchParams.get('desde') || '').slice(0, 10);
+          const hasta = String(url.searchParams.get('hasta') || '').slice(0, 10);
+          const tipo = String(url.searchParams.get('tipo') || '').toUpperCase();
+          const conArchivadas = url.searchParams.get('archivadas') === '1';
+          const filas = apiInvoices(rfc)
+            .filter(({ inv, archivada }) => (conArchivadas || !archivada) &&
+              (!desde || String(inv.date).slice(0, 10) >= desde) &&
+              (!hasta || String(inv.date).slice(0, 10) <= hasta) &&
+              (!tipo || String(inv.kind || '').toUpperCase() === tipo))
+            .sort((a, b) => String(b.inv.date).localeCompare(String(a.inv.date)));
+          const { corte, meta } = paginar(filas);
+          return responde(rfc, corte.length, { datos: corte.map(({ inv, archivada }) => apiCfdiVista(inv, archivada, rfc)), meta });
+        }
+        if (recurso.startsWith('/api/v1/cfdi/')) {
+          const { rfc, error } = pideRfc(); if (error) return falla(...error);
+          const uuid = decodeURIComponent(recurso.slice('/api/v1/cfdi/'.length)).toUpperCase();
+          const hallada = apiInvoices(rfc).find(({ inv }) => String(inv.id).toUpperCase() === uuid);
+          if (!hallada) {
+            apiAudit(llave, recurso, rfc, 404, 0);
+            return falla(404, 'cfdi-no-encontrado', 'Ese comprobante no consta en el expediente de ' + rfc + '.');
+          }
+          const { inv, archivada } = hallada;
+          const datos = { ...apiCfdiVista(inv, archivada, rfc) };
+          if (inv.serie) datos.serie = String(inv.serie);
+          if (inv.paymentMethod || inv.metodoPago) datos.metodoPago = String(inv.paymentMethod || inv.metodoPago);
+          if (inv.paymentForm || inv.formaPago) datos.formaPago = String(inv.paymentForm || inv.formaPago);
+          if (inv.cfdiUse || inv.usoCfdi) datos.usoCfdi = String(inv.cfdiUse || inv.usoCfdi);
+          if (Array.isArray(inv.items)) datos.conceptos = inv.items.map(item => ({
+            descripcion: String(item?.description || item?.descripcion || ''),
+            cantidad: String(item?.quantity ?? item?.cantidad ?? ''),
+            importe: moneyText(centsOf(item?.amount ?? item?.importe ?? 0)) }));
+          return responde(rfc, 1, { datos });
+        }
+        if (recurso === '/api/v1/avisos') {
+          const { rfc, error } = pideRfc(); if (error) return falla(...error);
+          const propios = avisosOverview().avisos.filter(aviso => aviso.rfc === rfc);
+          if (esResumen) {
+            const porClase = {};
+            for (const aviso of propios) porClase[aviso.clase] = (porClase[aviso.clase] || 0) + 1;
+            const datos = { rfc, total: propios.length, porClase,
+              avisos: propios.map(aviso => ({ id: aviso.id, titulo: aviso.titulo, clase: aviso.clase,
+                estado: aviso.estado, vence: aviso.vence || null, creado: aviso.creado })) };
+            return responde(rfc, propios.length, { datos });
+          }
+          const { corte, meta } = paginar(propios);
+          return responde(rfc, corte.length, { datos: corte.map(aviso => ({
+            id: aviso.id, tipo: aviso.kind, clase: aviso.clase, estado: aviso.estado,
+            titulo: aviso.titulo, detalle: aviso.detalle, contraparte: aviso.contraparte || '',
+            nombre: aviso.nombre || '', importe: aviso.importe || null, creado: aviso.creado,
+            vence: aviso.vence || null, responsable: aviso.responsable || '',
+            gestoDe: aviso.gesto?.de || '' })), meta });
+        }
+        if (recurso === '/api/v1/documentos') {
+          const { rfc, error } = pideRfc(); if (error) return falla(...error);
+          const filas = [];
+          for (const row of db.prepare("SELECT value FROM records WHERE store='documents'").all()) {
+            try {
+              const doc = JSON.parse(row.value);
+              if (doc?.rfc !== rfc) continue;
+              filas.push({ id: doc.id, clase: doc.kind || '', nombre: doc.name || '',
+                fecha: doc.date || '', tieneArchivo: Boolean(doc.fileId) });
+            } catch { /* fila ilegible */ }
+          }
+          filas.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+          const { corte, meta } = paginar(filas);
+          return responde(rfc, corte.length, { datos: corte, meta });
+        }
+        if (recurso === '/api/v1/buzon/resumen') {
+          const { rfc, error } = pideRfc(); if (error) return falla(...error);
+          const vista = tribOverview(rfc);
+          const datos = { rfc, sinAbrir: vista.sinAbrir, total: vista.total,
+            archivadas: vista.archivadas, enPapelera: vista.papeleraTotal,
+            proximaTenidaPorNotificada: tribProximaTenida(rfc) };
+          return responde(rfc, 1, { datos });
+        }
+        if (recurso === '/api/v1/registro') {
+          const forzado = llave.rfc || '';
+          const pedido = String(url.searchParams.get('rfc') || '').toUpperCase();
+          if (forzado && pedido && pedido !== forzado) {
+            apiAudit(llave, recurso, pedido, 403, 0);
+            return falla(403, 'fuera-de-su-rfc', 'Esta llave solo puede leer el RFC ' + forzado + '.');
+          }
+          const rfcFiltro = forzado || (pedido && rfcConocido(pedido) ? pedido : '');
+          const desde = Number(url.searchParams.get('desde') || 0) || 0;
+          const hasta = Number(url.searchParams.get('hasta') || 0) || 0;
+          const { items } = registroOverview({ rfc: rfcFiltro, limit: 2000 });
+          const enVentana = items.filter(item => (!desde || item.at >= desde) && (!hasta || item.at <= hasta));
+          const { corte, meta } = paginar(enVentana);
+          return responde(rfcFiltro, corte.length, { datos: corte.map(item => ({
+            at: item.at, clase: item.clase, rfc: item.rfc || '', texto: item.texto, ok: Boolean(item.ok) })), meta });
+        }
+        apiAudit(llave, recurso, '', 404, 0);
+        return falla(404, 'recurso-no-encontrado', 'Ese recurso no existe en la API v1. Los recursos son: ' +
+          'estado, totales, cfdi, avisos, documentos, buzon/resumen y registro.');
+      }
       if (url.pathname.startsWith('/api/executor/')) {
         const adminOk = req.headers['x-pacosat-token'] === token ||
           adminSessionValid(req.headers['x-pacosat-token']) || adminSessionValid(adminCookie(req));
@@ -9315,12 +10706,91 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             (devueltos ? '; ' + devueltos + ' trabajo(s) en curso volvieron a la cola' : ''));
           return json(res, { ok: true, id: row.id, revocado: true, devueltos });
         }
+        if (req.method === 'POST' && url.pathname === '/api/executor/pair-code') {
+          /* Código corto de emparejamiento (1.30.0): la app enseña
+             un código de 8 caracteres UNA vez y el instalador del
+             equipo lo teclea; aquí solo vive su huella. Diez
+             minutos de vida y un solo uso: canjearlo crea el
+             ejecutor y quema el código. */
+          need(adminOk, 'Solo el administrador crea un código de emparejamiento.', 403);
+          need(req.headers.origin === origin, 'Origen inválido.', 403);
+          const ALFABETO = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+          const bytes = randomBytes(8);
+          let crudo = '';
+          for (let i = 0; i < 8; i++) crudo += ALFABETO[bytes[i] % ALFABETO.length];
+          const codigo = crudo.slice(0, 4) + '-' + crudo.slice(4);
+          const expira = now() + 10 * MIN;
+          db.prepare('DELETE FROM sat_pair_codes WHERE expira<? OR usado=1').run(now());
+          db.prepare('INSERT INTO sat_pair_codes(codigoHash,creado,expira,usado) VALUES (?,?,?,0)')
+            .run(executorTokenHash(crudo), now(), expira);
+          auditAdmin('Código corto de emparejamiento del ejecutor creado (caduca en 10 minutos, un solo uso)');
+          return json(res, { codigo, expira, protocol: SAT_EXECUTOR_PROTOCOL_VERSION });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/executor/exchange') {
+          /* Canje del código corto (1.30.0): NO pide token — el
+             código ES la credencial, de un solo uso y con
+             caducidad corta. Los fallos se cuentan en memoria y
+             con ocho en diez minutos la puerta se cierra un rato:
+             un código de 8 caracteres no se adivina a martillazos
+             sin que se note. El error no distingue «no existe» de
+             «caducó» ni de «ya usado»: sin oráculo. */
+          const x = await body(req);
+          const ahoraMs = now();
+          pairExchangeFails = pairExchangeFails.filter(t => ahoraMs - t < 10 * MIN);
+          need(pairExchangeFails.length < 8, 'Demasiados intentos de canje: espera unos minutos.', 429);
+          const crudo = String(x.codigo || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          const row = crudo.length === 8
+            ? db.prepare('SELECT * FROM sat_pair_codes WHERE codigoHash=?').get(executorTokenHash(crudo))
+            : null;
+          if (!row || row.usado || row.expira < ahoraMs) {
+            pairExchangeFails.push(ahoraMs);
+            auditEvent('seguridad', 'Intento de canje de código corto rechazado (inválido, caducado o ya usado).', '', 1);
+            need(false, 'Código inválido o caducado.', 403);
+          }
+          db.prepare('UPDATE sat_pair_codes SET usado=1 WHERE codigoHash=?').run(row.codigoHash);
+          const rawToken = randomBytes(32).toString('hex');
+          const id = randomUUID();
+          const nombre = String(x.nombre || 'Equipo de Paco').slice(0, 80);
+          db.prepare('INSERT INTO sat_executors(id,nombre,tokenHash,creado,ultimoVisto) VALUES (?,?,?,?,?)')
+            .run(id, nombre, executorTokenHash(rawToken), ahoraMs, 0);
+          auditAdmin('Ejecutor local del SAT emparejado con código corto: ' + nombre);
+          return json(res, { id, token: rawToken, protocol: SAT_EXECUTOR_PROTOCOL_VERSION });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/executor/version') {
+          /* Auto-actualización del ejecutor (1.30.0): la versión y
+             la huella del paquete que ESTE servidor guarda; el
+             ejecutor compara, baja el paquete por /bundle y solo
+             se sustituye si la huella coincide. Sin paquete
+             guardado, version va vacía y nadie se actualiza. */
+          need(executor, 'Token de ejecutor inválido.', 403);
+          let manifest = null;
+          try { manifest = JSON.parse(readFileSync(new URL('./ejecutor-bundle.json', import.meta.url), 'utf8')); }
+          catch { /* sin paquete publicado en este servidor */ }
+          return json(res, { version: String(manifest?.version || ''),
+            sha256: String(manifest?.sha256 || '') });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/executor/bundle') {
+          need(executor, 'Token de ejecutor inválido.', 403);
+          const bundlePath = new URL('./ejecutor-bundle.zip', import.meta.url);
+          need(existsSync(bundlePath), 'Este servidor no guarda ningún paquete del ejecutor.', 404);
+          const buf = readFileSync(bundlePath);
+          res.writeHead(200, { 'Content-Type': 'application/zip', 'Content-Length': buf.length,
+            'Cache-Control': 'no-store' });
+          res.end(buf);
+          return;
+        }
         if (req.method === 'POST' && url.pathname === '/api/executor/heartbeat') {
           need(executor, 'Token de ejecutor inválido.', 403);
           db.prepare('UPDATE sat_executors SET ultimoVisto=? WHERE id=?').run(now(), executor.id);
           expireExecutorLeases(now());
           const pendientes = db.prepare("SELECT COUNT(*) AS n FROM sat_executor_jobs WHERE estado='en-cola'").get()?.n || 0;
-          return json(res, { ok: true, pendientes });
+          /* Cancelaciones en vuelo (1.31.0, A3): los trabajos que
+             Paco canceló mientras ESTE ejecutor los corría — el
+             ejecutor los detiene en su siguiente paso y su
+             resultado, si llega, se descarta en el servidor. */
+          const cancelados = db.prepare("SELECT id FROM sat_executor_jobs WHERE estado='cancelado' AND reclamadoPor=?")
+            .all(executor.id).map(row => row.id);
+          return json(res, { ok: true, pendientes, cancelados });
         }
         if (req.method === 'POST' && url.pathname === '/api/executor/claim') {
           need(executor, 'Token de ejecutor inválido.', 403);
@@ -9336,6 +10806,21 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             const outcome = completeExecutorJob(jobRow, executor, x);
             return json(res, { ...outcome, job: executorJobView(db.prepare('SELECT * FROM sat_executor_jobs WHERE id=?').get(jobRow.id)) });
           } catch (error) { need(false, message(error), error.status || 422); }
+        }
+        if (req.method === 'POST' && url.pathname === '/api/executor/cancel') {
+          /* Cancelar un trabajo del ejecutor (1.31.0, A3): gesto
+             del ADMINISTRADOR (vive en este bloque, con su guarda,
+             porque el prefijo /api/executor/ se despacha aquí
+             entero) — el ejecutor no puede cancelarse trabajos.
+             El efecto es el de cancelExecutorJob: en cola sale de
+             la cola; en curso queda cancelado, el latido le lleva
+             la orden y su resultado, si llega, se descarta. */
+          need(adminOk, 'Solo el administrador cancela un trabajo del ejecutor.', 403);
+          need(req.headers.origin === origin, 'Origen inválido.', 403);
+          const x = await body(req);
+          const resultado = cancelExecutorJob(String(x.jobId || ''), now());
+          need(resultado.ok, resultado.motivo || 'No se pudo cancelar ese trabajo.', 409);
+          return json(res, { ok: true, estado: resultado.estado, overview: executorOverview() });
         }
         need(false, 'Ruta del ejecutor no encontrada.', 404);
       }
@@ -9366,6 +10851,45 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (url.pathname !== '/api/status') logAccess('guest', req.method + ' ' + url.pathname);
       }
       if (req.method === 'POST') need(req.headers.origin === origin, 'Origen inválido.', 403);
+      /* Gestión de llaves de la API (1.32.0): SOLO el administrador
+         (la guarda del invitado ya lo deja fuera por su lista de
+         lecturas permitidas; aquí se repite a propósito). La llave
+         en claro viaja UNA vez, en la respuesta de su creación;
+         después solo existe su huella. */
+      if (url.pathname === '/api/apikeys' || url.pathname === '/api/apikeys/estado') {
+        need(!guest, 'Solo el administrador gestiona las llaves de la API.', 403);
+        if (req.method === 'GET' && url.pathname === '/api/apikeys') return json(res, apiKeysOverview());
+        if (req.method === 'POST' && url.pathname === '/api/apikeys') {
+          const x = await body(req);
+          const nombre = String(x.nombre || '').trim().slice(0, 60);
+          need(nombre, 'Ponle un nombre a la llave: para quién o para qué es.');
+          const alcance = String(x.alcance || 'lectura');
+          need(['lectura', 'lectura-resumen'].includes(alcance),
+            'El alcance es «lectura» (completa) o «lectura-resumen» (solo resúmenes).');
+          const rfc = String(x.rfc || '').toUpperCase();
+          if (rfc) need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc) ||
+            db.prepare("SELECT 1 FROM records WHERE store='people' AND id=?").get(rfc),
+            'Ese RFC no tiene perfil en PacoSAT.', 404);
+          const secreto = 'psat_' + randomBytes(24).toString('hex');
+          const id = randomUUID();
+          db.prepare('INSERT INTO api_keys(id,nombre,alcance,rfc,huella,creada,estado) VALUES (?,?,?,?,?,?,?)')
+            .run(id, nombre, alcance, rfc, apiKeyHash(secreto), now(), 'activa');
+          auditAdmin('Llave de API creada: «' + nombre + '» (' + alcance + (rfc ? ', solo ' + rfc : ', todos los RFC') + ')');
+          return json(res, { id, llave: secreto, nombre, alcance, rfc });
+        }
+        if (req.method === 'POST' && url.pathname === '/api/apikeys/estado') {
+          const x = await body(req);
+          const fila = db.prepare('SELECT * FROM api_keys WHERE id=?').get(String(x.id || ''));
+          need(fila, 'Esa llave no existe.', 404);
+          const estado = String(x.estado || '');
+          need(['activa', 'en-pausa', 'revocada'].includes(estado), 'Estado no válido para una llave.');
+          db.prepare('UPDATE api_keys SET estado=? WHERE id=?').run(estado, fila.id);
+          auditAdmin('Llave de API «' + fila.nombre + '»: ' +
+            (estado === 'activa' ? 'reactivada' : estado === 'en-pausa' ? 'puesta en pausa' : 'REVOCADA'));
+          return json(res, apiKeysOverview());
+        }
+        need(false, 'Ruta de llaves no encontrada.', 404);
+      }
       /* Documento de capacidades bajo demanda (1.11.0): los 37,9 KB
          del documento «Qué incluye PacoSAT» ya no viajan dentro del
          HTML en cada carga; se piden solo al abrir Acerca de. El
@@ -9389,6 +10913,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
               .filter(([rfc]) => gScope.has(String(rfc).toUpperCase())));
           if (data.tributario && typeof data.tributario === 'object')
             data.tributario = Object.fromEntries(Object.entries(data.tributario)
+              .filter(([rfc]) => gScope.has(String(rfc).toUpperCase())));
+          /* Puerta auto-probada (1.30.0): el invitado solo ve el
+             veredicto de SU alcance por RFC, como el Buzón. */
+          if (data.puerta && typeof data.puerta === 'object')
+            data.puerta = Object.fromEntries(Object.entries(data.puerta)
               .filter(([rfc]) => gScope.has(String(rfc).toUpperCase())));
         }
         return json(res, data);
@@ -9549,7 +11078,20 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         }
         const avisosNuevos = db.prepare('SELECT COUNT(*) AS n FROM avisos WHERE creado>=?').get(desde).n;
         const criticos = db.prepare("SELECT COUNT(*) AS n FROM avisos WHERE creado>=? AND clase='mal' AND severidad='alta' AND estado NOT IN ('solventado','descartado')").get(desde).n;
-        return json(res, { desde, eventos, cfdiNuevos, avisosNuevos, criticos,
+        /* «Desde que no estabas» completo (1.31.1): también los
+           avisos CERRADOS desde la marca (solventados, por su
+           fecha de actualización) y los documentos que entraron
+           al expediente (por la fecha del propio documento: en
+           los que baja el SAT, emisión y llegada son la misma). */
+        const avisosCerrados = db.prepare("SELECT COUNT(*) AS n FROM avisos WHERE estado='solventado' AND actualizado>=?").get(desde).n;
+        let documentosRecibidos = 0;
+        for (const row of db.prepare("SELECT value FROM records WHERE store='documents'").all()) {
+          let doc; try { doc = JSON.parse(row.value || '{}'); } catch { continue; }
+          if (doc.archived) continue;
+          const at = Date.parse(doc.issuedAt || doc.date || '') || 0;
+          if (at >= desde && at <= time) documentosRecibidos++;
+        }
+        return json(res, { desde, eventos, cfdiNuevos, avisosNuevos, criticos, avisosCerrados, documentosRecibidos,
           hechos: [...porNombre.entries()].map(([nombre, n]) => ({ nombre, n }))
             .sort((a, b) => b.n - a.n).slice(0, 6) });
       }
@@ -9606,6 +11148,32 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           const rfc = String(x.key || '').split(':').slice(1).join(':');
           const stopped = cancelSatDocRun(rfc, x.stopKind ? String(x.stopKind) : null);
           need(stopped, 'Esa descarga ya no está en curso.', 404);
+          return json(res, activityOverview(now()));
+        }
+        if (x.kind === 'ejecutor') {
+          /* Cancelar un trabajo del ejecutor desde Actividad
+             (1.31.0, A3): el mismo efecto que el botón de su
+             tarjeta — cancelExecutorJob manda. */
+          need(action === 'stop', 'Un trabajo del ejecutor solo admite cancelar.', 422);
+          const resultado = cancelExecutorJob(String(x.jobId || ''), now());
+          need(resultado.ok, resultado.motivo || 'Ese trabajo ya no está en curso.', 404);
+          return json(res, activityOverview(now()));
+        }
+        if (x.kind === 'declaraciones') {
+          /* El RFC viaja en la clave («declaraciones:<rfc>»), como
+             en documentos; x.rfc manda si viene. */
+          need(action === 'stop', 'La recuperación de declaraciones solo admite cancelar.', 422);
+          const rfc = String(x.rfc || String(x.key || '').split(':').slice(1).join(':') || '');
+          const stopped = cancelDeclRun(rfc);
+          need(stopped, 'Esa recuperación ya no está en curso.', 404);
+          return json(res, activityOverview(now()));
+        }
+        if (x.kind === 'tributario') {
+          need(action === 'stop', 'La consulta del Buzón solo admite cancelar.', 422);
+          const rfc = String(x.rfc || String(x.key || '').split(':').slice(1).join(':') || '');
+          const token = tribLive.get(rfc);
+          need(token, 'Esa consulta ya no está en curso.', 404);
+          token.cancelled = true;
           return json(res, activityOverview(now()));
         }
         need(false, 'Esa operación no admite pausa: termina su paso actual y se detiene sola.', 422);
@@ -9936,13 +11504,18 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(run, 'Esa corrida del diario ya no existe.', 404);
         need(!gScope || gScope.has(String(run.rfc || '').toUpperCase()), 'Esa corrida del diario ya no existe.', 404);
         const part = String(url.searchParams.get('part') || '');
-        need(part === 'shot' || part === 'html', 'Parte del diario inválida.');
-        const fileId = part === 'shot' ? run.shotId : run.htmlId;
+        need(['shot', 'html', 'decision-shot', 'decision-html'].includes(part), 'Parte del diario inválida.');
+        /* La página de decisión (1.32.1) no tiene columna propia:
+           su id se deriva del id de la corrida, la convención con
+           la que saveRunDiag la archivó. */
+        const fileId = part === 'shot' ? run.shotId : part === 'html' ? run.htmlId
+          : 'diag:' + run.id + ':' + part;
         need(fileId, 'Esa corrida no guardó esa parte del diario.', 404);
         const file = readFileRecord(fileId);
         need(file, 'Ese archivo del diario ya no existe.', 404);
         const stamp = new Date(run.started).toISOString().slice(0, 10);
-        const name = 'diario-' + run.rfc + '-' + (table === 'decl_runs' ? 'declaraciones' : 'buzon') + '-' + stamp + (part === 'shot' ? '-captura.png' : '-pagina.html');
+        const name = 'diario-' + run.rfc + '-' + (table === 'decl_runs' ? 'declaraciones' : 'buzon') + '-' + stamp +
+          (part.endsWith('shot') ? '-captura.png' : '-pagina.html');
         res.writeHead(200, { 'content-type': file.mime, 'content-disposition': 'attachment; filename="' + name + '"' });
         return res.end(file.buffer);
       }
@@ -10611,6 +12184,53 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(/^\d{4}-\d{2}$/.test(month), 'Mes inválido.');
         return json(res, monthForecast(month, now()));
       }
+      if (req.method === 'GET' && url.pathname === '/api/cfdi/notas') {
+        /* Notas de los CFDI (1.31.0, F12): el mapa UUID → nota
+           para que el detalle de un comprobante enseñe la suya. */
+        const out = {};
+        for (const row of db.prepare('SELECT uuid, nota FROM cfdi_notas').all()) out[row.uuid] = row.nota;
+        return json(res, { notas: out });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/cfdi/nota') {
+        /* Guardar la nota de un CFDI (1.31.0, F12): texto libre
+           sobre el comprobante; vacía la borra. El XML jamás se
+           toca: la nota vive en su tabla y viaja en el Excel. */
+        const x = await body(req);
+        const uuid = String(x.uuid || '').toUpperCase();
+        need(uuid, 'Falta el UUID del comprobante.', 422);
+        const nota = String(x.nota || '').trim().slice(0, 500);
+        if (nota) db.prepare('INSERT INTO cfdi_notas(uuid,nota,at) VALUES (?,?,?) ' +
+          'ON CONFLICT(uuid) DO UPDATE SET nota=excluded.nota, at=excluded.at').run(uuid, nota, now());
+        else db.prepare('DELETE FROM cfdi_notas WHERE uuid=?').run(uuid);
+        auditEvent('accion', nota
+          ? 'Nota guardada en el comprobante ' + uuid + ': «' + nota.slice(0, 80) + '»'
+          : 'Nota retirada del comprobante ' + uuid + '.', '', 1);
+        return json(res, { ok: true, uuid, nota });
+      }
+      if (req.method === 'GET' && url.pathname === '/api/cfdi/archivados') {
+        /* CFDI archivados (1.31.1): los UUID fuera de las vistas
+           de trabajo — la misma columna que llena el cierre de
+           línea base — para que el cliente los separe al entrar
+           y la pantalla diga lo mismo que el servidor cuenta. */
+        return json(res, { ids: [...archivedInvoiceIds()] });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/cfdi/archivar') {
+        /* Archivar / restaurar un CFDI (1.31.1): el gesto guarda
+           el comprobante fuera de las vistas de trabajo, NUNCA lo
+           borra — un comprobante fiscal no se elimina desde la
+           app; la marca vive en records.archived y es reversible
+           con su Deshacer. Sin fila en records, 404 honesto. */
+        const x = await body(req);
+        const uuid = String(x.uuid || '').toUpperCase();
+        need(uuid, 'Falta el UUID del comprobante.', 422);
+        const archivar = x.archivar !== false;
+        const info = db.prepare("UPDATE records SET archived=? WHERE store='invoices' AND upper(id)=?")
+          .run(archivar ? 1 : 0, uuid);
+        need(info.changes > 0, 'Ese comprobante no está en el expediente.', 404);
+        auditEvent('accion', (archivar ? 'Comprobante archivado (fuera de las vistas de trabajo): '
+          : 'Comprobante restaurado desde el Archivo: ') + uuid + '.', '', 1);
+        return json(res, { ok: true, uuid, archivado: archivar });
+      }
       if (req.method === 'POST' && url.pathname === '/api/money/mark-paid') {
         /* «Marcar como pagado» directo (1.9.0, visor de comprobantes):
            registra el pago manual por el saldo vivo, igual que el
@@ -10650,6 +12270,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           const inScope = aviso => !aviso.rfc || gScope.has(String(aviso.rfc).toUpperCase());
           data.avisos = data.avisos.filter(inScope);
           data.historial = data.historial.filter(inScope);
+          if (data.pospuestas) data.pospuestas = data.pospuestas.filter(inScope);
+          if (data.archivadas) data.archivadas = data.archivadas.filter(inScope);
           data.counts = { total: data.avisos.length, mal: 0, falta: 0, necesita: 0, porConfirmar: 0 };
           for (const aviso of data.avisos) { data.counts[aviso.clase] = (data.counts[aviso.clase] || 0) + 1;
             if (aviso.estado === 'por-confirmar') data.counts.porConfirmar++; }
@@ -10695,6 +12317,49 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (!check.ok) return json(res, { ok: false, falta: check.falta });
         avisoSolve(aviso.ref, check.resolucion, now());
         return json(res, { ok: true, ...avisosOverview() });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/notices/atencion') {
+        /* Archivar / restaurar (1.29.2): gobierna la capa de
+           atención del aviso — el hecho y su documento de origen
+           no se tocan. Archivar tiene deshacer (restaurar) y todo
+           queda en la bitácora del aviso y en el Registro. */
+        const x = await body(req);
+        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado NOT IN ('solventado','descartado')").get(Number(x.id));
+        need(aviso, 'Ese aviso ya no está abierto.');
+        if (x.accion === 'archivar') {
+          db.prepare("UPDATE avisos SET atencion='archivada',pospuesta_hasta=NULL,actualizado=? WHERE id=?").run(now(), aviso.id);
+          avisoLog(aviso.id, 'archivada', 'Archivada por ti: sale de la vista activa y de los conteos; el hecho que la respalda no se borra.', now());
+          auditEvent('accion', 'Aviso archivado: ' + aviso.titulo, aviso.rfc || '', 1);
+        } else if (x.accion === 'restaurar') {
+          db.prepare("UPDATE avisos SET atencion='activa',pospuesta_hasta=NULL,actualizado=? WHERE id=?").run(now(), aviso.id);
+          avisoLog(aviso.id, 'restaurada', 'Restaurada por ti: vuelve a la vista activa.', now());
+          auditEvent('accion', 'Aviso restaurado a la vista activa: ' + aviso.titulo, aviso.rfc || '', 1);
+        } else return json(res, { error: 'Acción de atención no reconocida.' }, 400);
+        return json(res, avisosOverview());
+      }
+      if (req.method === 'POST' && url.pathname === '/api/notices/posponer') {
+        /* Reprogramar (1.29.2): mañana, en 3 días, la semana que
+           viene o una fecha elegida — siempre a las 09:00. Mientras
+           tanto no cuenta ni notifica; al vencer, vuelve y avisa. */
+        const x = await body(req);
+        const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado NOT IN ('solventado','descartado')").get(Number(x.id));
+        need(aviso, 'Ese aviso ya no está abierto.');
+        const base = new Date(now()); base.setHours(9, 0, 0, 0);
+        let hasta = null;
+        if (x.cuando === 'manana') { base.setDate(base.getDate() + 1); hasta = base.getTime(); }
+        else if (x.cuando === 'tres-dias') { base.setDate(base.getDate() + 3); hasta = base.getTime(); }
+        else if (x.cuando === 'semana') { base.setDate(base.getDate() + 7); hasta = base.getTime(); }
+        else if (x.cuando === 'fecha') {
+          const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(x.fecha || ''));
+          need(m, 'Elige la fecha a la que reprogramar.');
+          hasta = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 9, 0, 0, 0).getTime();
+          if (!(hasta > now())) return json(res, { error: 'Esa fecha ya pasó: elige una de mañana en adelante.' }, 400);
+        } else return json(res, { error: 'Plazo de reprogramación no reconocido.' }, 400);
+        db.prepare("UPDATE avisos SET atencion='pospuesta',pospuesta_hasta=?,notificada=0,actualizado=? WHERE id=?")
+          .run(hasta, now(), aviso.id);
+        avisoLog(aviso.id, 'reprogramada', 'Reprogramada por ti hasta el ' + day(hasta) + ': no cuenta ni notifica mientras tanto.', now());
+        auditEvent('accion', 'Aviso reprogramado hasta el ' + day(hasta) + ': ' + aviso.titulo, aviso.rfc || '', 1);
+        return json(res, avisosOverview());
       }
       if (req.method === 'POST' && url.pathname === '/api/notices/reopen') {
         /* Deshacer un cierre (1.18.0, Ronda Facilidad): «me
@@ -10865,7 +12530,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         return json(res, { runs: rows.map(row => ({ id: row.id, rfc: row.rfc, tipo: row.tipo,
           ejercicio: row.ejercicio, periodo: row.periodo, started: row.started, finished: row.finished,
           ok: Boolean(row.ok), error: row.error, errorKind: row.errorKind || '', origen: row.origen || '',
-          hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId),
+          hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId), ...decisionArtefactos(row.id),
           steps: (() => { try { return JSON.parse(row.steps || '[]'); } catch { return []; } })(),
           attempts: row.attempts })) });
       }
@@ -10901,6 +12566,41 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8',
           'Content-Disposition': 'attachment; filename="registro-pacosat.csv"' });
         return res.end('﻿' + lines.join('\r\n'));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/registro/borrar') {
+        /* Borrar lo visible del Registro (1.32.1, A3): oculta
+           las entradas por su clave estable, en un lote con
+           nombre para deshacerlo entero. Solo el administrador;
+           el invitado ni lo ve (el Registro ya le es ajeno).
+           Nada se borra en silencio: el gesto queda en
+           audit_events y en el propio Registro. */
+        const adminOk = req.headers['x-pacosat-token'] === token ||
+          adminSessionValid(req.headers['x-pacosat-token']) || adminSessionValid(adminCookie(req));
+        need(adminOk, 'Solo el administrador limpia el Registro.', 403);
+        const x = await body(req);
+        const claves = [...new Set((Array.isArray(x.claves) ? x.claves : [])
+          .map(clave => String(clave || '')).filter(clave => clave && clave.length <= 200))].slice(0, 2000);
+        need(claves.length, 'No llegó ninguna entrada que borrar.');
+        const lote = 'lote-' + randomUUID().slice(0, 8);
+        const insertar = db.prepare('INSERT OR IGNORE INTO registro_ocultos(clave,lote,at) VALUES (?,?,?)');
+        let ocultadas = 0;
+        for (const clave of claves) ocultadas += insertar.run(clave, lote, now()).changes;
+        auditEvent('accion', 'Registro: se ocultaron ' + ocultadas + ' entrada(s) con «Borrar lo visible» (lote ' + lote + '; se puede deshacer).', '', true, now());
+        return json(res, { lote, ocultadas });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/registro/deshacer') {
+        /* Deshacer el borrado (1.32.1, A3): levanta las lápidas
+           del lote y las entradas vuelven tal cual estaban —
+           nunca salieron de sus diarios. */
+        const adminOk2 = req.headers['x-pacosat-token'] === token ||
+          adminSessionValid(req.headers['x-pacosat-token']) || adminSessionValid(adminCookie(req));
+        need(adminOk2, 'Solo el administrador deshace en el Registro.', 403);
+        const x = await body(req);
+        const lote = String(x.lote || '');
+        need(lote, 'Falta el lote que deshacer.');
+        const quitadas = db.prepare('DELETE FROM registro_ocultos WHERE lote=?').run(lote).changes;
+        auditEvent('accion', 'Registro: se deshizo el borrado del lote ' + lote + ' (' + quitadas + ' entrada(s) de vuelta).', '', true, now());
+        return json(res, { restauradas: quitadas });
       }
       if (req.method === 'GET' && url.pathname === '/api/buzon') {
         /* Buzón (1.23.0, frente B): bandeja del RFC con leído/no
@@ -11839,6 +13539,18 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             return enviar(`declaraciones-${ejercicio}-${rfc}.pdf`,
               salidaPdfDeclaraciones(rfc, ejercicio), 'application/pdf');
           }
+          if (kind === 'totales') {
+            /* Totales imprimible (1.31.0, D): el año en papel,
+               mes a mes, del cálculo reconciliado único. */
+            const ejercicio = /^\d{4}$/.test(String(x.year || '')) ? String(x.year) : String(now()).slice(0, 4);
+            salidaMark('pdf:totales');
+            return enviar(`totales-${ejercicio}-${rfc}.pdf`,
+              salidaPdfTotales(rfc, ejercicio), 'application/pdf');
+          }
+          if (kind === 'avisos') {
+            salidaMark('pdf:avisos');
+            return enviar(`avisos-${rfc}.pdf`, salidaPdfAvisos(rfc), 'application/pdf');
+          }
           need(false, 'No conozco ese tipo de PDF.', 422);
         }
         if (url.pathname === '/api/salidas/reporte-manofil') {
@@ -11870,6 +13582,25 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             need(libro, 'Todavía no hay ninguna preparación de pagos guardada para este RFC.', 404);
             salidaMark('xlsx:pagos');
             return enviar(`pagos-al-banco-${rfc}.xlsx`, libro, XLSX);
+          }
+          /* Reportes 1.31.0 (punto D): Totales, Declaraciones,
+             Avisos y Dinero en Excel real, de los mismos datos de
+             sus pantallas. */
+          if (kind === 'totales') {
+            const ejercicio = /^\d{4}$/.test(String(x.year || '')) ? String(x.year) : String(now()).slice(0, 4);
+            salidaMark('xlsx:totales');
+            return enviar(`totales-${ejercicio}-${rfc}.xlsx`, salidaXlsxTotales(rfc, ejercicio), XLSX);
+          }
+          if (kind === 'declaraciones') {
+            const ejercicio = /^\d{4}$/.test(String(x.year || '')) ? String(x.year) : String(now()).slice(0, 4);
+            salidaMark('xlsx:declaraciones');
+            return enviar(`declaraciones-${ejercicio}-${rfc}.xlsx`, salidaXlsxDeclaraciones(rfc, ejercicio), XLSX);
+          }
+          if (kind === 'avisos') { salidaMark('xlsx:avisos'); return enviar(`avisos-${rfc}.xlsx`, salidaXlsxAvisos(rfc), XLSX); }
+          if (kind === 'dinero') {
+            const mk = mesValido(x.month) ? String(x.month) : '';
+            salidaMark('xlsx:dinero');
+            return enviar(`dinero${mk ? '-' + mk : ''}-${rfc}.xlsx`, salidaXlsxDinero(rfc, mk), XLSX);
           }
           const monthKey = mesValido(x.month) ? String(x.month) : '';
           salidaMark('xlsx:facturas');

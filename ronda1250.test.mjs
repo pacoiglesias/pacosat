@@ -513,14 +513,16 @@ class FixtureParser {
   /* Anexo 1.26.0: el sello sube con la Ronda Visual, como en
      cada ronda (el pin de la 1.17.0 en ronda1170 y este se
      mueven con la versión vigente). */
-  assert.ok(html.includes('"version":"1.29.0"'), 'el artefacto se sella con la versión vigente (1.29.0)');
+  assert.ok(html.includes('"version":"1.32.1"'), 'el artefacto se sella con la versión vigente (1.32.1)');
   assert.ok(html.includes('--accent:var(--green)'), '--accent es token de raíz');
   assert.ok(!html.includes('#2563eb'), 'el azul de emergencia desapareció');
   assert.ok(!html.includes('#d9534f'), 'la insignia ya no lleva el rojo crudo');
   assert.ok(html.includes('.soft{'), '.soft está definida por fin');
   assert.ok(html.includes('.clickable{'), '.clickable está definida por fin');
   assert.ok(html.includes('.inline-form{'), '.inline-form está definida por fin');
-  for (const texto of ['Mientras no estabas', 'Marcar como visto', 'Generar todo el cierre',
+  for (const texto of ['Desde que no estabas', 'Marcar como visto', 'Generar todo el cierre',
+    /* «Mientras no estabas» se llama «Desde que no estabas»
+       desde la 1.31.1 (la palabra de Paco al pedirla). */
     'Reimprimir el acuse', 'Recuperar el año completo', 'Recordatorio de cobro',
     'Puente a Paperless', 'Avisos push en este dispositivo', 'Vista de la contadora',
     'Expediente legal', 'Previsión del mes', 'Añadir a Google Calendar',

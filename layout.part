@@ -37,34 +37,56 @@
 <symbol id="i-mail" viewBox="0 0 24 24"><rect x="3" y="5.5" width="18" height="13" rx="2"/><path d="m3.5 7 8.5 6 8.5-6"/></symbol>
 <symbol id="i-code" viewBox="0 0 24 24"><path d="m8.5 8-4 4 4 4m7-8 4 4-4 4M13.5 5.5l-3 13"/></symbol>
 <symbol id="i-pdf" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4"/><path d="M6.5 15.5h11"/></symbol>
+<!-- Iconos propios por trámite (V14, 1.31.0): cada trámite del
+     Centro SAT se reconoce por su dibujo, no por un genérico
+     reutilizado — la constancia lleva su sello, la opinión su
+     escudo con el visto, el buzón su banderita levantada y
+     declaraciones su tabla con su total. Mismo trazo que el
+     resto del sprite (viewBox 24, stroke por CSS). -->
+<symbol id="i-constancia" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4M9 10h5M9 13.5h3"/><circle cx="16.8" cy="17.2" r="3"/><path d="m15.6 17.2.9.9 1.6-1.9"/></symbol>
+<symbol id="i-opinion" viewBox="0 0 24 24"><path d="M12 3l7 2.8V11c0 4.8-2.9 7.9-7 9.5C7.9 18.9 5 15.8 5 11V5.8z"/><path d="m8.3 11.7 2.5 2.5 4.9-5.4"/></symbol>
+<symbol id="i-buzontrib" viewBox="0 0 24 24"><path d="M3 20.5h18M4.5 20.5v-5.2a7 7 0 0 1 14 0v5.2M4.5 15.3h14M8 15.3h.01"/><path d="M15.8 8.3V3.6h4.4l-1.5 1.9 1.5 1.9h-4.4"/></symbol>
+<symbol id="i-decl" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4"/><path d="M9 12h6M9 15h6M12 12v6M9 18h6"/></symbol>
 </svg>
 <div class="frame">
 <aside class="sidebar">
   <div class="brand"><span class="logo"><svg id="brand-mark"><use href="#i-logo"/></svg><img id="brand-logo" alt="" hidden src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></span><span><span id="brand-name">PacoSAT</span><small>ESPACIO DE TRABAJO</small></span></div>
-  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button></div>
+  <button id="side-search" class="side-search" type="button" title="Buscador global (Ctrl+K)"><svg><use href="#i-search"/></svg> <span>Buscar en todo PacoSAT</span></button>
+  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button><div class="puerta-line"><span id="puerta-dot" class="puerta-dot" data-state="sin-dato" aria-hidden="true"></span><span id="puerta-txt">Puerta del SAT: sin probar todavía</span></div></div>
   <!-- Menú por tarea (1.18.0): lo de cada día arriba —Hoy, Dinero,
        Facturas, Documentos—, el trabajo en medio y lo técnico
        agrupado como Sistema. Documentos tiene entrada propia y
        visible; ningún destino lleva a otra pantalla disfrazado. -->
   <nav aria-label="Navegación principal">
     <span class="nav-caption">LA MAÑANA</span>
-    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span></button>
+    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span><span id="gestos-badge" class="news-badge gestos-badge" hidden></span></button>
     <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
-    <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Buzón <span id="buzon-badge" class="news-badge" hidden></span></button>
-    <button data-view="tributario"><svg><use href="#i-mail"/></svg> Buzón Tributario <span id="tributario-badge" class="news-badge" hidden></span></button>
+    <!-- Trabajos en curso (1.31.0): renglón SOLO visible cuando
+         hay un trabajo vivo (lo pinta paintActivity en
+         monitor-ui.part); su Cancelar aparece cuando hay
+         exactamente uno cancelable. El Buzón Tributario ya no
+         es renglón: vive dentro del Centro SAT y se llega desde
+         su tarjeta (la vista 'tributario' sigue existiendo).
+         Fuera los distintivos-inventario (Buzón, Tributario y
+         Dinero contaban existencias, no pendientes): se quedan
+         Hoy y Avisos, que cuentan lo que te necesita. -->
+    <div id="nav-jobs" class="nav-jobs nav-jobs-vacio" aria-hidden="true"><button data-view="home" class="nav-jobs-main" tabindex="-1"><svg><use href="#i-sync"/></svg> Trabajos en curso <span id="nav-jobs-count" class="news-badge"></span></button><span id="nav-jobs-cancel"></span></div>
+    <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Recibidos <span class="nav-dot" data-nav-dot="buzon" hidden></span></button>
     <span class="nav-caption nav-divider">EL DINERO</span>
-    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero <span id="dinero-badge" class="news-badge" hidden></span></button>
+    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
     <button data-view="pagos"><svg><use href="#i-bank"/></svg> Pagos al banco</button>
     <button data-view="salidas"><svg><use href="#i-check"/></svg> Cierre y reportes</button>
     <span class="nav-caption nav-divider">EL SAT Y LOS PAPELES</span>
-    <button data-view="sat"><svg><use href="#i-shield"/></svg> Centro SAT</button>
+    <button data-view="sat"><svg><use href="#i-shield"/></svg> Centro SAT <span class="nav-dot" data-nav-dot="sat" hidden></span></button>
     <button data-view="declaraciones"><svg><use href="#i-pdf"/></svg> Declaraciones</button>
     <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
     <button data-view="docs"><svg><use href="#i-folder"/></svg> Documentos</button>
     <span class="nav-caption nav-divider">LA CASA</span>
     <button data-view="registro"><svg><use href="#i-clock"/></svg> Registro</button>
+    <button data-view="archivo"><svg><use href="#i-box"/></svg> Archivo</button>
     <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
   </nav>
+  <button id="side-collapse" class="side-collapse" type="button" aria-label="Plegar la barra lateral"><svg><use href="#i-arrow"/></svg> <span>Plegar barra</span></button>
   <!-- Actividad del sistema en el propio menú (1.18.0): el punto y
        la línea los pinta el pulso de actividad; sin trabajos dice
        cuándo es la próxima revisión automática. -->
@@ -97,7 +119,7 @@
 <nav class="bottombar" aria-label="Navegación rápida">
   <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy</button>
   <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos</button>
-  <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Buzón</button>
+  <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Recibidos</button>
   <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
   <button id="more-button" type="button"><svg><use href="#i-dots"/></svg> Más</button>
 </nav>

@@ -386,7 +386,8 @@ const unlock = async (h, rfc) => {
   assert.ok(ui.includes('tot-anio') && ui.includes('totalesDetallePintar') && ui.includes('Suma del detalle'),
     'Totales por años, meses que se entran y suma del detalle que iguala el total');
   assert.ok(ui.includes('fmtFechaHora'), 'un formato humano único de fecha');
-  assert.equal(JSON.parse(read('package.json')).version, '1.29.0', 'la versión es 1.29.0');
+  // 1.29.1: el pineo de «versión actual» se re-apunta en cada ronda.
+  assert.equal(JSON.parse(read('package.json')).version, '1.32.1', 'la versión es 1.32.1 (re-basificado en la 1.32.1)');
   assert.ok(read('docs/CAPACIDADES.md').includes('1.29.0'), 'CAPACIDADES describe la 1.29.0');
   console.log('OK 1.29.0 · diseño — menú, barra móvil, papelera honesta, pagos y totales navegables.');
 }

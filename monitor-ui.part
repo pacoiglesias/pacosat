@@ -576,23 +576,15 @@ let monitorSig = '', monitorChanged = false;
    en vez de un botón falso) y los recientes en la «Actividad» de
    Hoy. Sin trabajos, el menú dice cuándo es la próxima revisión
    automática. Lo alimenta el mismo pulso de 30 s. */
-let activityView = null, activityMoneyAt = 0;
+let activityView = null;
 async function pollActivity() {
   if (!satToken) return;
   try { activityView = await satApi('activity'); } catch { return; }
   paintActivity();
-  /* El distintivo de Dinero cuenta los saldos ya vencidos según el
-     calendario de cada contraparte; se lee a lo sumo 1 vez/min. */
-  if (Date.now() - activityMoneyAt > 60000) {
-    activityMoneyAt = Date.now();
-    satApi('money').then(money => {
-      const hoyLocal = new Date();
-      const hoyKey = hoyLocal.getFullYear() + '-' + String(hoyLocal.getMonth() + 1).padStart(2, '0') + '-' + String(hoyLocal.getDate()).padStart(2, '0');
-      const vencidos = (money.balances || []).filter(b => Number(b.balance) > 0 && b.due && b.due < hoyKey).length;
-      const badge = $('dinero-badge');
-      if (badge) { badge.hidden = !vencidos; badge.textContent = vencidos ? number.format(vencidos) : ''; }
-    }).catch(() => {});
-  }
+  /* Hasta la 1.30 este pulso también pintaba el distintivo de
+     Dinero en el menú; la 1.31.0 retira los inventarios del menú
+     (punto B) y con ellos esa lectura: los vencidos se ven en
+     Dinero y en Avisos, que es donde se resuelven. */
 }
 function activityControlButton(entry, label, accion) {
   const button = n('button', label, 'soft small');
@@ -600,15 +592,48 @@ function activityControlButton(entry, label, accion) {
   button.onclick = async () => {
     button.disabled = true;
     try {
-      const data = await satApi('activity/control', { kind: entry.kind, action: accion, jobId: entry.jobId || undefined });
+      /* La clave y la clase de parada viajan SIEMPRE (1.31.0):
+         sin key el servidor no sabe QUÉ corrida de documentos
+         parar y sin stopKind no sabe cuál de las dos — el
+         detener de documentos nacía cojo sin ellas. */
+      const data = await satApi('activity/control', { kind: entry.kind, action: accion, jobId: entry.jobId || undefined,
+        key: entry.key || undefined, stopKind: entry.stopKind || undefined });
       toast(data.message || 'Hecho.', 'ok');
     } catch (error) { toast(error.message, 'error'); }
     pollActivity();
   };
   return button;
 }
+function activityDetailText(entry) {
+  const clean = value => String(value || '').replace(/\s+/g, ' ').trim()
+    .replace(/^·\s*/, '').replace(/\s*·$/, '');
+  const parts = [entry?.enPausa ? 'En pausa' : '', entry?.phase || '', entry?.detail || '', entry?.note || '']
+    .map(clean).filter(Boolean);
+  return [...new Set(parts)].join(' · ');
+}
+function activityEntryText(entry) {
+  const label = String(entry?.label || '').replace(/\s+/g, ' ').trim().replace(/\s*·$/, '');
+  return [label, activityDetailText(entry)].filter(Boolean).join(' · ');
+}
+/* Punto de salud del menú (1.31.2, cierra V12): una fila lleva
+   punto SOLO cuando un conteo veraz del estado global dice que
+   algo espera a Paco ahí — Recibidos con su sin leer, y el
+   Centro SAT con notificaciones sin abrir, una puerta que no
+   abre o un RFC pendiente de credenciales. Avisos conserva su
+   número y Hoy sus insignias: no se duplican señales. */
+function paintNavDots1312() {
+  const set = (view, on) => { const el = document.querySelector('[data-nav-dot="' + view + '"]'); if (el) el.hidden = !on; };
+  try {
+    const unread = Object.values(satData?.buzonUnread || {}).reduce((a, b) => a + (Number(b) || 0), 0);
+    set('buzon', unread > 0);
+    const sinAbrir = Object.values(satData?.tributario || {}).reduce((a, b) => a + (Number(b?.sinAbrir) || 0), 0);
+    const puertaMal = Object.values(satData?.puerta || {}).some(p => p && p.ok === false);
+    set('sat', sinAbrir > 0 || puertaMal || (satData?.pendingProfiles || []).length > 0);
+  } catch { /* sin estado global legible: ningún punto */ }
+}
 function paintActivity() {
   const view = activityView; if (!view) return;
+  paintNavDots1312();
   const running = view.running || [], paused = view.paused || [];
   const side = $('side-activity'), sideText = $('side-activity-text'), sideDot = $('side-activity-dot');
   if (side && sideText) {
@@ -622,6 +647,35 @@ function paintActivity() {
     } else {
       sideText.textContent = 'Sin trabajos en curso' + (view.nextAuto ? ' · próxima revisión: ' + localDateTime(view.nextAuto) : '');
       if (sideDot) sideDot.style.background = '';
+    }
+  }
+  /* Renglón «Trabajos en curso» del menú (1.31.0): espejo de
+     esta misma actividad en LA MAÑANA — oculto sin trabajos
+     vivos, con su conteo si los hay, y con UN Cancelar directo
+     solo cuando hay exactamente un trabajo cancelable (con
+     varios, el gesto vive en la franja de actividad, donde se
+     ve cuál se para; aquí no se adivina). */
+  const navJobs = $('nav-jobs'), navJobsCount = $('nav-jobs-count'), navJobsCancel = $('nav-jobs-cancel');
+  if (navJobs) {
+    /* «Vivo» incluye lo que ESPERA en cola o en pausa (corrección
+       de integración 1.31.0): un trabajo del ejecutor en cola es
+       un trabajo vivo — es justo el que Paco no veía el 13 nov —
+       y la fila cuenta lo mismo que la línea de actividad de aquí
+       arriba (en curso + en pausa), no solo lo que corre. */
+    const vivos = [...running, ...paused];
+    /* Sitio reservado (1.31.1): la fila ya NO entra y sale del
+       menú (el menú saltaba al aparecer un trabajo); conserva
+       su renglón siempre y sin trabajos se queda invisible e
+       inerte — el hueco es suyo, no un salto. */
+    navJobs.classList.toggle('nav-jobs-vacio', !vivos.length);
+    navJobs.setAttribute('aria-hidden', String(!vivos.length));
+    const navJobsMain = navJobs.querySelector('.nav-jobs-main');
+    if (navJobsMain) navJobsMain.tabIndex = vivos.length ? 0 : -1;
+    if (navJobsCount) navJobsCount.textContent = vivos.length ? number.format(vivos.length) : '';
+    if (navJobsCancel) {
+      navJobsCancel.replaceChildren();
+      const cancelables = vivos.filter(entry => entry.canStop);
+      if (cancelables.length === 1) navJobsCancel.append(activityControlButton(cancelables[0], 'Cancelar', 'detener'));
     }
   }
   let jobsBox = $('activity-jobs');
@@ -643,14 +697,24 @@ function paintActivity() {
         rowEl.style.display = 'flex'; rowEl.style.justifyContent = 'space-between';
         rowEl.style.gap = '10px'; rowEl.style.alignItems = 'center'; rowEl.style.padding = '6px 0';
         const body = n('div');
-        body.append(n('strong', entry.label),
-          n('small', (entry.enPausa ? 'En pausa · ' : '') + (entry.phase || '') + (entry.note ? ' · ' + entry.note : ''), 'activity-detail'));
+        const detail = activityDetailText(entry);
+        const label = String(entry.label || '').replace(/\s+/g, ' ').trim().replace(/\s*·$/, '');
+        body.append(n('strong', label + (detail ? ' · ' : '')),
+          n('small', detail, 'activity-detail'));
         rowEl.append(body);
         const acts = n('div', undefined, 'actions');
         if (entry.canPause) acts.append(activityControlButton(entry, entry.enPausa ? 'Reanudar' : 'Pausar', entry.enPausa ? 'reanudar' : 'pausar'));
-        if (entry.canStop) acts.append(activityControlButton(entry, 'Detener', 'detener'));
+        if (entry.canStop) acts.append(activityControlButton(entry, 'Cancelar', 'detener'));
         if (acts.childNodes.length) rowEl.append(acts);
         jobsBox.append(rowEl);
+        /* Barra universal (1.31.2): TODO trabajo vivo de la
+           app pasa por esta franja — su barra va aquí, con la
+           fase que la fila ya nombra, el conteo si el servidor
+           lo conoce (done/total) y el tiempo desde su inicio
+           real (since). Sin total: indeterminada, sin % falso.
+           El Cancelar queda en la fila, junto a la barra. */
+        jobsBox.append(jobProgress1312({ fase: entry.phase || '',
+          desde: entry.since || 0, done: entry.done, total: entry.total }));
       }
     }
   }

@@ -128,9 +128,14 @@ try {
   const log = await (await watchRequest('/api/storage?store=activity')).json();
   assert.ok(log.some(row => row.name === 'Carpeta vigilada' && row.added === 1 && row.duplicates === 1 && row.review === 1));
   await watchService.tick();
-  /* 1.7.4: el aviso de la carpeta vigilada vive en el Centro y se
-     nombra en el cuerpo del único correo-resumen del día. */
-  assert.equal(watchSent.filter(mail => /carpeta vigilada no se importó/.test(mail.text || '')).length, 1);
+  /* 1.7.4: el aviso de la carpeta vigilada se nombra en el cuerpo
+     del correo-resumen del día. 1.29.2: además nace con su
+     notificación propia — la frase vive en exactamente DOS
+     correos: el de nacimiento y el resumen. */
+  assert.equal(watchSent.filter(mail => /Resumen de avisos/.test(mail.subject) && /carpeta vigilada no se importó/.test(mail.text || '')).length, 1,
+    'el resumen lo nombra una vez');
+  assert.equal(watchSent.filter(mail => /Nueva alerta/.test(mail.subject) && /carpeta vigilada no se importó/.test(mail.text || '')).length, 1,
+    'y su nacimiento lo notifica una vez');
   writeFileSync(join(inboxDir, 'factura.pdf'), '%PDF-1.7 vinculado');
   writeFileSync(join(inboxDir, 'sin-vinculo.pdf'), '%PDF-1.7 sin-vinculo');
   await watchService.inboxTick(watchTime);
@@ -223,11 +228,14 @@ try {
   assert.equal(firstScan.review, 1);
   assert.ok(firstScan.issues.some(issue => issue.name === 'x/y/z/malo.xml'));
   await deepService.tick();
-  /* 1.7.4: el aviso vive en el Centro y se nombra, con su detalle
-     (el archivo que falló), en el cuerpo del único correo-resumen. */
-  const watchMails = deepSent.filter(mail => /carpeta vigilada no se importó/.test(mail.text || ''));
+  /* 1.7.4: el aviso se nombra, con su detalle (el archivo que
+     falló), en el cuerpo del correo-resumen. 1.29.2: su
+     nacimiento manda además su propio correo con los datos. */
+  const watchMails = deepSent.filter(mail => /Resumen de avisos/.test(mail.subject) && /carpeta vigilada no se importó/.test(mail.text || ''));
   assert.equal(watchMails.length, 1);
   assert.ok(watchMails[0].text.includes('x/y/z/malo.xml'));
+  assert.equal(deepSent.filter(mail => /Nueva alerta/.test(mail.subject) && /carpeta vigilada no se importó/.test(mail.text || '')).length, 1,
+    'el nacimiento del aviso de carpeta también notifica una vez');
   // Segundo ciclo sin novedades: nada se reimporta (sin bucles entre ciclos).
   await deepService.inboxTick(deepTime);
   assert.equal((await (await deepRequest('/api/storage?store=invoices')).json()).length, 1);
@@ -531,27 +539,41 @@ try {
   /* 1.7.4: los avisos de caducidad viven en el Centro y viajan en el
      correo-resumen diario: los umbrales que caen el mismo día (60 y
      30) comparten UN solo correo, no uno por umbral. */
-  const certMails = () => certSent.filter(mail => /e\.firma/.test(mail.text || ''));
+  /* 1.29.2: cada aviso de umbral nace además con su notificación
+     propia; el resumen diario sigue siendo el de siempre. Los dos
+     canales se cuentan por separado y ninguno duplica. */
+  const certMails = () => certSent.filter(mail => /Resumen de avisos/.test(mail.subject) && /e\.firma/.test(mail.text || ''));
+  const certBirths = () => certSent.filter(mail => /Nueva alerta/.test(mail.subject) && /e\.firma/.test(mail.text || ''));
   await certService.tick();
   assert.equal(certMails().length, 0);
+  assert.equal(certBirths().length, 0);
   certTime = certExpected - 89 * 86400000;
   await certService.tick();
   assert.equal(certMails().length, 1);
   assert.match(certMails()[0].text, /vence en 89 días/);
+  assert.equal(certBirths().length, 1, 'el aviso de umbral notifica al nacer');
   await certService.tick();
   assert.equal(certMails().length, 1);
+  assert.equal(certBirths().length, 1, 'sin duplicar al recalcular');
   certTime = certExpected - 29 * 86400000;
   await certService.tick();
   assert.equal(certMails().length, 2);
+  /* El salto de −89 a −29 días cruza DOS umbrales (60 y 30): el
+     resumen los agrupa en un correo; los nacimientos son por
+     aviso — uno por cada umbral nacido (90, 60 y 30 = 3). */
+  assert.equal(certBirths().length, 3);
   certTime = certExpected + 86400000;
   await certService.tick();
   /* 1.28.0: el aviso espejo de la alerta de caducidad nace ya
      con el RFC de su alerta (antes nacía sin RFC y viajaba en
      el resumen de la instalación); ahora viaja en el resumen
-     del propio RFC y el conteo de este escenario es 4 — el
-     contenido y la ausencia de duplicados no cambian. */
+     del propio RFC y el conteo de resúmenes de este escenario
+     es 4 — el contenido y la ausencia de duplicados no cambian.
+     1.29.2: los nacimientos de este último ciclo (el umbral 0 y
+     el espejo) añaden sus dos notificaciones propias. */
   assert.equal(certMails().length, 4);
-  assert.match(certMails()[2].text, /vencida o vence hoy/);
+  assert.ok(certMails().some(mail => /vencida o vence hoy/.test(mail.text || '')), 'el resumen trae la vencida');
+  assert.equal(certBirths().length, 5, 'cada aviso del escenario notificó al nacer, una vez (90, 60, 30, 0 y el espejo)');
   console.log('OK: caducidad de e.firma leída del certificado real, persistida y con avisos por umbral (90/60/30/0) sin duplicados, agrupados en el resumen diario.');
 } finally { certService.close(); }
 
@@ -679,15 +701,21 @@ const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_
     assert.equal((await fromApi.call('/api/monthly/config', { enabled: false, day: 5, hour: 9 })).status, 200);
     fromTime = certExpected - 89 * 86400000;
     await fromService.tick();
-    /* 1.7.4: el correo que nombra la e.firma es el resumen diario. */
+    /* 1.7.4: el correo que nombra la e.firma es el resumen diario.
+       1.29.2: el aviso de umbral nace además con su notificación
+       propia — dos correos nombran la e.firma, uno por canal. */
     const plain = fromSent.filter(mail => /e\.firma/.test(mail.text || ''));
-    assert.equal(plain.length, 1);
-    assert.equal(plain[0].from, 'from@example.com');
+    assert.equal(plain.length, 2);
+    assert.equal(plain.find(mail => /Resumen de avisos/.test(mail.subject)).from, 'from@example.com');
+    assert.equal(plain.find(mail => /Nueva alerta/.test(mail.subject)).from, 'from@example.com');
     await fromApi.call('/api/settings', { installName: '', senderName: 'Avisos PacoSAT', accent: '' });
     fromTime = certExpected - 29 * 86400000;
     await fromService.tick();
+    /* Tras el renombre: el resumen del día (1) + los nacimientos
+       de los umbrales cruzados al saltar a −29 días (60 y 30). */
     const named = fromSent.filter(mail => /e\.firma/.test(mail.text || '') && /Avisos PacoSAT/.test(mail.from));
-    assert.equal(named.length, 1);
+    assert.equal(named.length, 3);
+    assert.equal(named.filter(mail => /Resumen de avisos/.test(mail.subject)).length, 1);
     assert.equal(named[0].from, 'Avisos PacoSAT <from@example.com>');
     console.log('OK: sin nombre del remitente el From no cambia; con nombre, los avisos salen como «Nombre <correo>».');
   } finally { fromService.close(); }

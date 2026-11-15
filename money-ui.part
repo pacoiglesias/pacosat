@@ -33,9 +33,13 @@ let dineroRefresh = '';
 function dineroVenceTexto(due) {
   if (!due) return '';
   const dias = Math.round((Date.parse(due + 'T12:00:00') - Date.now()) / 86400000);
-  if (dias < 0) return ' · 🔴 vencido hace ' + (-dias) + (dias === -1 ? ' día' : ' días') + ' (venció el ' + due + ')';
-  if (dias === 0) return ' · vence hoy (' + due + ')';
-  return ' · vence el ' + due;
+  /* La fecha en humano (1.32.1, Di4): nada de ISO crudo en la
+     cara («venció el 2026-11-03» era tubería de formato). */
+  const humana = new Date(due + 'T12:00:00').toLocaleDateString('es-MX',
+    { day: 'numeric', month: 'long', year: 'numeric' });
+  if (dias < 0) return ' · 🔴 vencido hace ' + (-dias) + (dias === -1 ? ' día' : ' días') + ' (venció el ' + humana + ')';
+  if (dias === 0) return ' · vence hoy (' + humana + ')';
+  return ' · vence el ' + humana;
 }
 function paidByMap() {
   const paidBy = new Map();
@@ -108,16 +112,211 @@ function dineroScreen() {
     summary.append(n('p', 'Actualizando los saldos con el servidor…', 'muted'));
   else if (dineroRefresh === 'error')
     summary.append(n('p', 'No se pudo actualizar con el servidor: ves los saldos de la última copia guardada.', 'error-text'));
-  summary.append(dineroAgeChart(receivable, payable));
+  /* Una sola antigüedad y un solo sitio para el Excel
+     (1.32.1, Di2/Di3): la gráfica de edades del resumen contaba
+     la antigüedad por segunda vez y el botoncito «Excel» por
+     tercera vía — la antigüedad que manda es la del panel por
+     vencimiento y el Excel de saldos es la acción de cabecera
+     de la pantalla. */
   wrap.append(summary);
-  wrap.append(dineroMonthPanel(receivable, payable));
-  wrap.append(dineroForecastPanel());
+  /* El trabajo primero (Di1): cobrar y pagar tras el resumen;
+     antigüedad y gráficas, después y plegadas; 360 y
+     conciliación conservan su sitio al final. */
   wrap.append(balancePanel('Por cobrar', 'Lo que te deben: facturas emitidas a crédito (PPD) sin cobro completo.', receivable, 'to', 'Ya me pagaron'));
   wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. Cada fila dice cuándo vence según el calendario de la contraparte.', payable, 'from', 'Ya se pagó'));
+  const graficasFold = n('details', undefined, 'seal-details');
+  graficasFold.append(n('summary', 'Antigüedad y gráficas'),
+    dineroAntiguedadPanel1310(), dineroFlujoPanel1310(), dineroMonthPanel(receivable, payable));
+  wrap.append(graficasFold);
+  wrap.append(dineroForecastPanel());
   wrap.append(expectedPanel());
   wrap.append(counterpart360Panel(paidBy));
   wrap.append(reconcilePanel(paidBy));
   return [wrap];
+}
+/* F14 · Antigüedad de saldos por vencimiento (1.31.0): las
+   cubetas salen de los balances por contraparte que
+   satApi('money') ya devuelve y que esta pantalla ya carga en
+   dineroServerInfo (balance + due de cada factura): Al día es
+   lo que aún no vence; el resto, lo vencido hace 1–30, 31–60 o
+   más de 60 días. Sin fecha de vencimiento que conste, la
+   factura no entra en ninguna cubeta: se cuenta aparte y se
+   dice, no se le inventa una edad. Cada fila lleva a Facturas
+   filtrado por la contraparte más grande de su cubeta (el
+   filtro que la pantalla ya tiene: setInvoiceTerm); sin
+   contraparte, el gesto se queda en Dinero. */
+function dineroAntiguedadPanel1310() {
+  const panelEl = panel('Antigüedad de saldos',
+    'Por cobrar y por pagar según el vencimiento que consta de cada factura: al día, o vencido hace 1–30, 31–60 o más de 60 días.');
+  if (!(typeof satToken !== 'undefined' && satToken)) {
+    panelEl.append(n('p', 'La antigüedad vive en la copia del servidor (el NAS), donde están los saldos con su vencimiento.', 'empty'));
+    return panelEl;
+  }
+  const entries = [...dineroServerInfo.values()].filter(entry => Number(moneyCents(entry.balance || '0')) > 0);
+  if (!entries.length) {
+    panelEl.append(n('p', dineroRefresh === 'cargando'
+      ? 'Actualizando los saldos con el servidor…'
+      : 'Sin saldos abiertos con vencimiento que contar.', 'muted'));
+    return panelEl;
+  }
+  const hoyMs = new Date(new Date().toDateString()).getTime();
+  const vencidoDias = entry => {
+    if (!entry.due || !/^\d{4}-\d{2}-\d{2}$/.test(entry.due)) return null;
+    return Math.floor((hoyMs - Date.parse(entry.due + 'T12:00:00')) / 86400000);
+  };
+  const CUBETAS_1310 = [['Al día', dias => dias <= 0, 'ok'],
+    ['1–30 días', dias => dias >= 1 && dias <= 30, 'warn'],
+    ['31–60 días', dias => dias >= 31 && dias <= 60, 'warn'],
+    ['Más de 60 días', dias => dias > 60, 'bad']];
+  let alguna = false, sinVencimiento = 0n;
+  for (const entry of entries) if (vencidoDias(entry) === null) sinVencimiento += moneyCents(entry.balance || '0');
+  for (const [direccion, esDireccion, etiqueta] of [
+    ['cobrar', entry => scope ? entry.from?.rfc === scope : entry.receivable, 'Por cobrar'],
+    ['pagar', entry => scope ? entry.to?.rfc === scope : entry.payable, 'Por pagar']]) {
+    const deDireccion = entries.filter(esDireccion);
+    for (const [nombre, encaja, nivel] of CUBETAS_1310) {
+      const deCubeta = deDireccion.filter(entry => { const dias = vencidoDias(entry); return dias !== null && encaja(dias); });
+      if (!deCubeta.length) continue;
+      alguna = true;
+      const total = deCubeta.reduce((acc, entry) => acc + moneyCents(entry.balance || '0'), 0n);
+      /* La contraparte más grande de la cubeta manda el destino. */
+      const porContraparte = new Map();
+      for (const entry of deCubeta) {
+        const cp = entry.cpRfc || (direccion === 'cobrar' ? entry.to?.rfc : entry.from?.rfc) || '';
+        if (cp) porContraparte.set(cp, (porContraparte.get(cp) || 0n) + moneyCents(entry.balance || '0'));
+      }
+      const mayor = [...porContraparte.entries()].sort((a, b) => (b[1] > a[1] ? 1 : -1))[0]?.[0] || '';
+      const row = n('div', undefined, 'cp-row');
+      row.append(statusPill(nivel, etiqueta + ' · ' + nombre),
+        n('strong', '$' + centsLabel(total)));
+      const ver = n('button', 'Ver facturas', 'soft small');
+      ver.type = 'button';
+      ver.onclick = () => {
+        if (mayor) { setInvoiceTerm(mayor); navigate('invoices'); }
+        else navigate('dinero');
+      };
+      row.append(ver);
+      panelEl.append(row);
+    }
+  }
+  if (!alguna) panelEl.append(n('p', 'Ningún saldo abierto trae vencimiento calculado: las cubetas quedan vacías hasta que conste la fecha.', 'muted'));
+  if (sinVencimiento > 0n)
+    panelEl.append(n('p', 'Sin vencimiento que conste: $' + centsLabel(sinVencimiento) +
+      ' en saldos abiertos — no entra en las cubetas porque no consta su fecha de vencimiento.', 'muted'));
+  return panelEl;
+}
+/* V6 · Gráfica única de flujo (1.31.0): barras mensuales de
+   entradas contra salidas de los últimos 12 meses, desde los
+   movimientos bancarios de los estados archivados
+   (satApi('banks/movements')). Cada barra lleva a los
+   movimientos de su mes, listados en este mismo panel: la
+   gráfica y su detalle viven en la misma pantalla. */
+let dineroFlujoCache1310 = null;
+let dineroFlujoMes1310 = '';
+function dineroFlujoPanel1310() {
+  const panelEl = panel('Entradas y salidas por mes',
+    'Lo que entró y lo que salió según los movimientos de tus estados de cuenta en Bancos, mes a mes. Toca una barra para ver los movimientos de ese mes aquí mismo.');
+  const body = n('div');
+  panelEl.append(body);
+  if (!(typeof satToken !== 'undefined' && satToken)) {
+    body.append(n('p', 'Los movimientos del banco viven en la copia del servidor (el NAS).', 'empty'));
+    return panelEl;
+  }
+  body.append(n('p', 'Cargando los movimientos del banco…', 'muted'));
+  (async () => {
+    try {
+      if (!dineroFlujoCache1310 || Date.now() - dineroFlujoCache1310.at > 30000) {
+        const data = await satApi('banks/movements');
+        dineroFlujoCache1310 = { at: Date.now(), movements: data.movements || [] };
+      }
+      if (body.isConnected) dineroFlujoPintar1310(body, dineroFlujoCache1310.movements);
+    } catch (error) {
+      if (body.isConnected) body.replaceChildren(n('p', 'No se pudieron cargar los movimientos: ' + error.message, 'error-text'));
+    }
+  })();
+  return panelEl;
+}
+function dineroFlujoPintar1310(body, movements) {
+  const centsDe = mv => mv.amountCents !== undefined ? Number(mv.amountCents) : Number(moneyCents(mv.amount || '0'));
+  const porMes = new Map();
+  for (const mv of movements) {
+    const key = String(mv.date || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(key)) continue;
+    if (!porMes.has(key)) porMes.set(key, { entradas: 0, salidas: 0, lista: [] });
+    const grupo = porMes.get(key);
+    const cents = centsDe(mv);
+    if (cents >= 0) grupo.entradas += cents; else grupo.salidas += -cents;
+    grupo.lista.push(mv);
+  }
+  /* Los últimos 12 meses naturales, hasta el mes en curso. */
+  const ahora = new Date();
+  const keys = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(ahora.getFullYear(), ahora.getMonth() - i, 1);
+    keys.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+  }
+  const conDatos = keys.filter(key => porMes.has(key));
+  body.replaceChildren();
+  if (!conDatos.length) {
+    body.append(n('p', 'Sin movimientos del banco en los últimos 12 meses: cuando un estado de cuenta se archive en Bancos, su mes aparecerá aquí.', 'empty'));
+    return;
+  }
+  if (!dineroFlujoMes1310 || !conDatos.includes(dineroFlujoMes1310))
+    dineroFlujoMes1310 = conDatos[conDatos.length - 1];
+  const detalle = n('div');
+  const pintarDetalle = () => {
+    detalle.replaceChildren();
+    const grupo = porMes.get(dineroFlujoMes1310);
+    detalle.append(n('h3', 'Movimientos de ' + dineroFlujoMes1310 +
+      ' · entradas $' + centsLabel(BigInt(Math.round(grupo.entradas))) +
+      ' · salidas $' + centsLabel(BigInt(Math.round(grupo.salidas)))));
+    for (const mv of grupo.lista.slice(0, 60)) {
+      const row = n('div', undefined, 'cp-row');
+      const cents = centsDe(mv);
+      row.append(statusPill(cents >= 0 ? 'ok' : 'warn', cents >= 0 ? 'Entrada' : 'Salida'),
+        n('span', mv.date + ' · ' + (mv.concept || '')),
+        n('strong', '$' + centsLabel(BigInt(Math.round(Math.abs(cents))))));
+      detalle.append(row);
+    }
+    if (grupo.lista.length > 60)
+      detalle.append(n('p', 'Se muestran los primeros 60 movimientos del mes.', 'muted'));
+  };
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  let max = 0;
+  for (const key of conDatos) { const g = porMes.get(key); max = Math.max(max, g.entradas, g.salidas); }
+  const W = 640, base = 178, top = 24, plotH = base - top;
+  const svg = el('svg', { viewBox: '0 0 ' + W + ' 218', class: 'chart', role: 'img',
+    'aria-label': 'Entradas y salidas por mes de los últimos 12 meses, según los movimientos del banco' });
+  const slot = W / conDatos.length, barW = Math.min(34, slot / 4);
+  conDatos.forEach((key, i) => {
+    const g = porMes.get(key);
+    const cx = slot * i + slot / 2;
+    for (const [clase, cents, offset] of [['bar-issued', g.entradas, -barW - 3], ['bar-received', g.salidas, 3]]) {
+      if (!cents) continue;
+      const h = Math.max(2, cents / max * plotH);
+      const bar = el('rect', { x: cx + offset, y: base - h, width: barW, height: h, rx: 3, class: clase });
+      bar.style.cursor = 'pointer';
+      bar.append(el('title', {}, (clase === 'bar-issued' ? 'Entradas ' : 'Salidas ') + key + ': $' +
+        centsLabel(BigInt(Math.round(cents))) + ' · toca para ver los movimientos del mes'));
+      bar.addEventListener('click', () => { dineroFlujoMes1310 = key; pintarDetalle(); });
+      svg.append(bar);
+    }
+    svg.append(el('text', { x: cx, y: base + 18, 'text-anchor': 'middle' }, key.slice(5, 7) + '/' + key.slice(0, 4)));
+  });
+  svg.append(el('line', { x1: 6, y1: base, x2: W - 6, y2: base, class: 'grid-line' }));
+  const chartWrap = n('div', undefined, 'chart-wrap');
+  chartWrap.append(svg);
+  const legend = n('div', undefined, 'chart-legend');
+  const item = (cls, label) => { const span = n('span'); span.append(n('i', undefined, cls), document.createTextNode(label)); return span; };
+  legend.append(item('sw-issued', 'Entradas'), item('sw-received', 'Salidas'));
+  body.append(chartWrap, legend, detalle);
+  pintarDetalle();
 }
 /* La antigüedad, en barras (1.26.0, Ronda Visual): los mismos
    escalones de AGE_BUCKETS que cada panel resume en pastillas,
@@ -234,14 +433,9 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
      «Por cobrar» y «Por pagar» del vistazo bajan a su panel. */
   panelEl.id = title === 'Por cobrar' ? 'dinero-por-cobrar' : title === 'Por pagar' ? 'dinero-por-pagar' : '';
   if (!items.length) { panelEl.append(n('p', 'Sin saldos abiertos. Todo cobrado/pagado o sin facturas a crédito.', 'empty')); return panelEl; }
-  /* Antigüedad resumida */
-  const strip = n('div', undefined, 'traffic-strip');
-  for (const [min, max, label] of AGE_BUCKETS) {
-    const bucket = items.filter(item => { const age = ageDaysOf(item.row); return age >= min && age <= max; });
-    if (bucket.length) strip.append(statusPill(max <= 30 ? 'ok' : max <= 60 ? 'warn' : 'bad',
-      label + ': $' + centsLabel(bucket.reduce((acc, item) => acc + item.balance, 0n))));
-  }
-  panelEl.append(strip);
+  /* Sin franjas de edad por panel (1.32.1, Di2): la antigüedad
+     se cuenta UNA vez en la pantalla — en su panel por
+     vencimiento —; aquí dentro era la tercera copia. */
   const byParty = new Map();
   for (const item of items) {
     const party = item.row[partyField];
@@ -281,6 +475,16 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
       payBtn.title = payBtn.disabled ? 'Disponible en la copia del servidor (el NAS)' : 'Registrar el pago por el saldo vivo, con un toque';
       payBtn.onclick = event => { event.stopPropagation(); dineroMarkPaid(item, row, paidLabel); };
       row.append(payBtn);
+      /* Menú ⋯ universal (1.31.2): la fila entera ya abría la
+         factura al clic, sin decirlo; el menú lo hace visible
+         y añade el salto a la factura dentro de Facturas. */
+      const menuSaldo1312 = cardMenu1312('Más opciones de este saldo');
+      menuSaldo1312._setItems1312([
+        { label: 'Ver la factura', fn: () => invoiceDetail(item.row) },
+        { label: 'Verla en Facturas', fn: () => { term = item.row.id; invoicePage = 0; navigate('invoices'); } }
+      ]);
+      menuSaldo1312.addEventListener('click', event => event.stopPropagation());
+      row.append(menuSaldo1312);
       row.onclick = () => invoiceDetail(item.row);
       panelEl.append(row);
     }

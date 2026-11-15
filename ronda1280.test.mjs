@@ -436,9 +436,17 @@ const falloNavegacion = marcador => async () => {
   assert.ok(declaracionesUi.includes('f.periodo === seleccion.periodo'), 'P6: el folio se busca por el periodo del mes tocado');
   /* P7: Documentos filtrado por RFC. */
   assert.ok(satdocsUi.includes('filter(profile => profile.rfc === scope)'), 'P7: la sección filtra tarjetas y formularios por el RFC elegido');
-  /* P9: distintivos por RFC elegido. */
-  assert.ok(buzonUi.includes('buzonUnreadFor(scope)'), 'P9: el distintivo del Buzón cuenta el RFC elegido');
-  assert.ok(tribUi.includes('tribSinAbrirFor(scope)'), 'P9: el del Buzón Tributario, también');
+  /* P9: distintivos por RFC elegido.
+     Re-basificado en la 1.31.0 (punto B): los distintivos de
+     inventario salen del menú — Recibidos y Dinero ya no llevan
+     cifra y el Buzón Tributario ni siquiera es renglón —; solo
+     Avisos conserva su conteo, porque significa «esto te
+     necesita». Los contadores por RFC siguen vivos donde se
+     usan: en las líneas de Hoy. */
+  assert.ok(!html.includes('id="buzon-badge"') && !html.includes('id="tributario-badge"') &&
+    !html.includes('id="dinero-badge"'), 'P9: el menú ya no lleva distintivos de inventario');
+  assert.ok(ui.includes('buzonUnreadFor(scope)') && ui.includes('tribSinAbrirFor(scope)'),
+    'P9: los conteos por RFC elegido viven en Hoy');
   assert.ok(avisosUi.includes('avisosBadgeCount'), 'P9: el de Avisos sale del conteo por RFC del payload');
   /* P3 en pantalla: la fecha de la próxima consulta automática. */
   assert.ok(tribUi.includes('proximaAuto'), 'P3: la pantalla del buzón enseña su próxima consulta automática');
@@ -504,13 +512,13 @@ const falloNavegacion = marcador => async () => {
     'P8/D1: fuera el texto que daba por muerta la e.firma de la app');
   assert.ok(caps.includes('está VIVA y firmó las bajadas'), 'P8/D1: la e.firma de la app consta viva');
   assert.ok(!caps.includes('VERSIÓN ACTUAL: 1.10.3'), 'P8/D2: el pie ya no dice 1.10.3');
-  // 1.29.0: el pineo de «versión actual» se re-apunta en cada ronda.
-  assert.ok(caps.includes('VERSIÓN ACTUAL: 1.29.0'), 'P8/D2: el pie dice la versión actual');
+  // 1.29.1: el pineo de «versión actual» se re-apunta en cada ronda.
+  assert.ok(caps.includes('VERSIÓN ACTUAL: 1.32.0'), 'P8/D2: el pie dice la versión actual');
   assert.ok(!caps.includes('MENÚ DE 9 DESTINOS'), 'P8/D3: fuera el menú de 9');
   assert.ok(caps.includes('MENÚ DE 13 DESTINOS'), 'P8/D3: el menú dice sus 13 destinos reales');
   assert.ok(caps.includes('SEMANAL'), 'P8/D4: el buzón automático consta con su cadencia semanal real');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"1.29.0"'), 'el artefacto se sella con la versión vigente (1.29.0)');
+  assert.ok(html.includes('"version":"1.32.1"'), 'el artefacto se sella con la versión vigente (1.32.1)');
   console.log('OK 1.28.0 · P8 — CAPACIDADES veraz: e.firma viva, versión al pie, 13 destinos y cadencia semanal; copias idénticas.');
 }
 

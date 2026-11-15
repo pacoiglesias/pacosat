@@ -302,7 +302,14 @@ class DeclFakePage1270 {
   async submitFiel() { this.currentUrl = 'https://wwwmat.sat.gob.mx/inicio'; }
   async divError() { return this.errorText; }
   async clickText(text) {
-    if (this.enMarco) return ['Declaraciones mensuales', 'Declaración anual', 'Consulta de transacciones'].includes(text);
+    /* Re-baseline 1.32.1 (B1): el clickText REAL del envoltorio
+       busca en TODOS los marcos sin navegar a ellos (así lo
+       documenta sat-doc-browser) — el doble ahora modela ese
+       contrato: con marco del trámite presente, sus textos se
+       encuentran DENTRO, sin goto. Antes el doble solo los
+       encontraba tras navegar la URL del marco como página,
+       que es el salto sospechoso de la 404 del 14 nov. */
+    if (this.enMarco || this.marco) return ['Declaraciones mensuales', 'Declaración anual', 'Consulta de transacciones'].includes(text);
     return this.links.includes(text);
   }
   async tramiteFrameUrl() { return this.marco || undefined; }
@@ -332,7 +339,9 @@ const pdfOf = label => Buffer.concat([Buffer.from('%PDF-1.4 ' + label + '\n'), B
   const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
   const result = await fetchDecl({ rfc: 'MFI6212158B4' }, { tipo: 'mensual', ejercicio: 2026 });
   assert.equal(result.documents.length, 2, 'por el marco del trámite la bajada llega');
-  assert.ok(page.visitas.some(u => u.includes('sessionbroker')), 'el motor navegó al marco del trámite');
+  /* Re-baseline 1.32.1 (B1): la URL del marco ya NO se visita
+     como página — el enlace se encuentra dentro del marco. */
+  assert.ok(!page.visitas.some(u => u.includes('sessionbroker')), 'la URL del marco no se navega como página (B1)');
   console.log('OK 1.27.0 · C2b — aterrizaje en el Buzón: el motor entra por el marco del trámite (SessionBroker).');
 }
 {
@@ -384,7 +393,16 @@ class TribFakePage1270 {
   async submitFiel() { this.currentUrl = 'https://wwwmat.sat.gob.mx/inicio'; }
   async divError() { return this.errorText; }
   async clickText() { return false; }
-  async text() { return 'Buzón Tributario · Mis notificaciones · Asunto · No leídas'; }
+  /* Doble fiel a la página real (12 nov): tras el acceso se
+     aterriza en la PORTADA («Portal de trámites y servicios»,
+     sin lista alguna); la bandeja solo existe tras navegar a
+     su ruta, y «Notificados» es la segunda bandeja. */
+  async text() {
+    if (this.currentUrl.includes('notificados')) return 'Buzón Tributario · Notificados · Asunto';
+    if (this.currentUrl.includes('mis-notificaciones') || this.currentUrl.includes('iniciar-expediente'))
+      return 'Buzón Tributario · Mis notificaciones · Asunto · No leídas';
+    return 'Portal de trámites y servicios · Trámites y servicios';
+  }
   async evaluate(fn) {
     if (fn && fn.name === 'readLinksSource')
       return this.currentUrl.includes('notificados') ? [] :

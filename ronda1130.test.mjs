@@ -278,8 +278,13 @@ const waitFor = async (probe, label) => {
     assert.equal(runView.lastFailure.kind, 'paso-interactivo', 'la tarjeta conoce la clase del último fallo');
     await service.tick();
     const deDoc = sent.filter(mail => String(mail.subject).includes('No se pudo descargar'));
+    /* Un solo correo: el del evento de la descarga, con el modelo.
+       1.29.2: el aviso espejo de este fallo NO manda su propio
+       correo de nacimiento — su alerta gemela ya es este correo;
+       dos correos del mismo hecho serían un duplicado. */
     assert.equal(deDoc.length, 1, 'un correo por la descarga de documentos fallida');
     assert.ok(deDoc[0].text.includes('Qué hacer:'), 'también con el modelo');
+    assert.ok(!deDoc.some(mail => String(mail.subject).includes('Nueva alerta')), 'sin duplicado de nacimiento');
 
     /* Salud tras el fallo: el chequeo de documentos lo refleja. */
     status = await (await call('/api/status')).json();

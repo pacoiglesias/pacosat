@@ -33,7 +33,11 @@ const allParts = partNames.map(read).join('\n');
 try {
   const layout = read('layout.part');
   const nav = layout.match(/<nav aria-label="Navegación principal">([\s\S]*?)<\/nav>/)?.[1] || '';
-  const views = [...nav.matchAll(/data-view="([a-z]+)"/g)].map(match => match[1]);
+  /* La fila «Trabajos en curso» (1.31.0) vive dentro del nav con
+     su propio botón a Hoy: no es un destino del plan y se retira
+     antes de contar destinos. */
+  const navDestinos = nav.replace(/<div id="nav-jobs"[\s\S]*?<\/div>/, '');
+  const views = [...navDestinos.matchAll(/data-view="([a-z]+)"/g)].map(match => match[1]);
   /* Los destinos son los del plan; su ORDEN es el de la Ronda
      Facilidad (1.18.0, añadido de Paco del 10 nov 18:34): lo de
      cada día primero (Hoy, Dinero, Facturas, Documentos), el
@@ -50,8 +54,18 @@ try {
      inferior pasa a Hoy · Avisos · Buzón · Dinero · Más. Esta
      aserción sustituye a la del orden 1.18.0/1.28.0, superado
      por orden expresa de esa propuesta. */
-  assert.deepEqual(views, ['home', 'avisos', 'buzon', 'tributario', 'dinero', 'pagos', 'salidas', 'sat', 'declaraciones', 'invoices', 'docs', 'registro', 'settings'],
-    'el menú lateral tiene exactamente los 13 destinos del plan, reagrupados como piensa el dueño (1.29.0, peldaño 2)');
+  /* 1.31.0 (ordenamiento aprobado por Paco): el Buzón Tributario
+     deja de ser renglón — vive dentro del Centro SAT — y el menú
+     pasa a 12 destinos; el otro «Buzón» se llama «Recibidos»
+     (data-view buzon, como siempre). Esta aserción sustituye a
+     la de los 13 destinos de la 1.29.0 por orden expresa del
+     ordenamiento. */
+  /* 1.31.1 (archivar fácil): «Archivo» entra en La casa tras
+     Registro — el menú pasa a 13 destinos; esta aserción
+     sustituye a la de los 12 de la 1.31.0 por orden expresa de
+     la pasada de diseño y operación. */
+  assert.deepEqual(views, ['home', 'avisos', 'buzon', 'dinero', 'pagos', 'salidas', 'sat', 'declaraciones', 'invoices', 'docs', 'registro', 'archivo', 'settings'],
+    'el menú lateral tiene exactamente los 13 destinos del plan ordenado (1.31.1)');
   const bottomAt = layout.indexOf('bottombar');
   const bottom = layout.slice(bottomAt, bottomAt + 1200);
   for (const view of ['home', 'avisos', 'buzon', 'dinero']) assert.ok(bottom.includes('data-view="' + view + '"'), 'barra inferior: ' + view);
@@ -321,10 +335,70 @@ try {
      crece a 42.100 B (+2.500) por la gramática de la ronda
      (pastillas de mes, barra de plazo del Buzón, línea de
      tiempo del Registro, orden móvil de Hoy, años de Totales).
-     Los techos suben a 598.000 y 42.500 con la misma disciplina. */
-  assert.ok(htmlBytes <= 598000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 598.000)');
+     Los techos suben a 598.000 y 42.500 con la misma disciplina.
+     Anexo 1.29.1 (corrección de Declaraciones + ampliación
+     D6–D8, a código pelado — la construcción retira los
+     comentarios del artefacto, así que esto es código): la
+     página crece a 602.467 B (+7.591 sobre la 1.29.0) por la
+     normalización del histórico por años con su rótulo
+     garantizado, el «Cómo funciona» plegado, la guía de espera
+     del ejecutor con su estado real (compartida entre
+     Declaraciones y el Buzón), el botón de emparejar en un
+     solo sitio, la pestaña «Ejecutor local» de Centro SAT, el
+     recálculo veraz de Avisos con sus contadores de lo visible
+     y el protagonista de Hoy con la cola del ejecutor. El CSS
+     crece a 42.769 B de fuentes (+669) por las protecciones de
+     la rejilla de meses y la recogida de la cabecera en la
+     banda 861–1100 px; su techo sube a 43.000. El techo de la
+     página sube a 604.000 con la misma disciplina.
+     Anexo 1.29.2 (parrilla de trámites del Centro SAT + capa
+     de atención de Avisos, a código pelado): la página crece
+     a 618.915 B (+16.448 sobre la 1.29.1) por la parrilla de
+     seis tarjetas-trámite con su máquina de estados veraz
+     (sustituye al panel de acciones rápidas), el gesto y los
+     botones de atención en cada tarjeta de aviso, el diálogo
+     de reprogramación, las vistas Activas/Pospuestas/
+     Archivadas con sus tarjetas y la franja de «sin vías». El
+     CSS crece a 43.694 B de fuentes (+925) por la gramática
+     de la parrilla y la pastilla del gesto. Los techos suben
+     a 619.000 y 44.500 con la misma disciplina.
+     Anexo 1.30.0 (puerta auto-probada + código corto + demás
+     RFC en la parrilla): la página crece a 623.232 B (+4.317)
+     por el veredicto de la puerta en la tarjeta del Buzón, el
+     botón del código corto en el panel del ejecutor, el estado
+     «falta su e.firma» de las seis tarjetas para un alta
+     preparada, el selector que suma los RFC con perfil y la
+     tarjeta genérica de alta. El CSS no crece. El techo de la
+     página sube a 623.500 con la misma disciplina.
+     Anexo 1.31.0 (corrección del 13 nov + menú ordenado + las
+     45 mejoras + reportes, a código pelado): la página crece a
+     659.787 B (+36.555 sobre la 1.30.0) por lo que vive en el
+     artefacto principal: el menú ordenado con la fila «Trabajos
+     en curso» y los cuatro iconos nuevos de trámite, el Cancelar
+     y el último resultado real de las tarjetas con su foco
+     visual, el semáforo del día y la franja de la semana fiscal
+     de Hoy con el mapa de calor de Totales y su conciliación, el
+     dueño visible y los filtros con memoria de Avisos, la
+     gráfica mensual y la antigüedad de Dinero con la línea de
+     saldo de Bancos, la búsqueda global que también encuentra
+     documentos y avisos, el deshacer universal y el arrastrar y
+     soltar, la nota pegada al CFDI y los botones de los
+     reportes nuevos. Lo diferido (Salidas, Pagos, Bancos y
+     Registro en sus partes perezosas) no entra en esta cuenta.
+     El CSS de fuentes crece a 47.565 B (+3.871) por la
+     gramática de la ronda: fila de trabajos, foco de tarjetas,
+     urgencia de plazos, diana de pulgar de 48 px en móvil y la
+     jerarquía tipográfica de las tarjetas. Los techos suben a
+     663.000 y 48.000 con la misma disciplina: la próxima ronda
+     que recorte, que baje el techo. Ajuste final de la misma
+     ronda, ya con capturas: el CSS cierra en 48.138 B (+573)
+     porque la fila «Trabajos en curso» aprende a repartir su
+     ancho y a enseñar su Cancelar entero dentro del menú (en la
+     primera captura se le cortaba la última letra); el techo
+     CSS se re-basifica a 48.500 y el HTML queda en 663.000. */
+  assert.ok(htmlBytes <= 712000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 712.000, re-basificado en la 1.32.0: el panel de la API con su documentación; venía de 698.000 de la 1.31.2, componentes universales)');
   const cssBytes = ['style.part', 'design.part', 'polish.part'].reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-  assert.ok(cssBytes <= 42500, 'el CSS pesa ' + cssBytes + ' B (tope 42.500)');
+  assert.ok(cssBytes <= 63000, 'el CSS pesa ' + cssBytes + ' B (tope 63.000, re-basificado en la 1.32.0: el bloque del panel de la API; venía de 61.000 de la 1.31.2)');
 
   const defined = [...layout.matchAll(/<symbol id="(i-[a-z]+)"/g)].map(match => match[1]);
   assert.ok(defined.length >= 20, 'la hoja de símbolos existe');

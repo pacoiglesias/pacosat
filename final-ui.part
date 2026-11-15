@@ -515,3 +515,358 @@ async function splitBackupDialog() {
     soundCue('success');
   }, 'Crear respaldo partido');
 }
+/* F8 · Deshacer universal (1.31.0): ayudante global para los
+   gestos que mueven datos — ejecuta hacer(), enseña el toast
+   con botón «Deshacer» durante 10 segundos y, si se pulsa,
+   ejecuta deshacer() una sola vez. La tarjeta es la de
+   floatToast; su vida (15 s) se acorta aquí a 10 s retirando
+   la tarjeta al cumplirse el plazo, porque el contrato de este
+   gesto son 10 s y no los 15 del resto de avisos con deshacer. */
+async function conDeshacer1310(texto, hacer, deshacer) {
+  await hacer();
+  let deshecho = false;
+  const limpiar = floatToast(texto, 'ok', async () => {
+    if (deshecho) return;
+    deshecho = true;
+    await deshacer();
+  });
+  setTimeout(() => { if (!deshecho) limpiar?.(); }, 10000);
+}
+/* F13 · Arrastrar y soltar (1.31.0): al arrastrar archivos
+   sobre la ventana, un overlay a pantalla completa dice
+   «Suelta para importar»; al soltar, los .xml/.zip entran por
+   el flujo de importación de siempre (el input #incoming, el
+   mismo que usa el botón «Importar») y los .pdf por el de
+   «Factura PDF» (el input #invoice-pdf). Se reutilizan los
+   handlers existentes asignando los archivos al input y
+   despachando su change — ningún camino nuevo.
+   Los oyentes van en fase de CAPTURA: los de workflows.part
+   corren en burbuja y abrirían la pantalla XML además; aquí se
+   intercepta antes y el soltar no les llega (stopPropagation).
+   Si hay un diálogo abierto, no se intercepta nada: soltar
+   dentro de un diálogo es asunto del diálogo. */
+(function pacosatDrop1310() {
+  let cuentaDrag1310 = 0;
+  const traeArchivos1310 = event => Boolean(event.dataTransfer &&
+    [...(event.dataTransfer.types || [])].includes('Files'));
+  const overlay1310 = () => {
+    let capa = document.getElementById('drop-overlay-1310');
+    if (!capa) {
+      capa = n('div', 'Suelta para importar', 'drop-overlay');
+      capa.id = 'drop-overlay-1310';
+      capa.hidden = true;
+      document.body.append(capa);
+    }
+    return capa;
+  };
+  const ocultar1310 = () => {
+    cuentaDrag1310 = 0;
+    const capa = document.getElementById('drop-overlay-1310');
+    if (capa) capa.hidden = true;
+  };
+  const dialogoAbierto1310 = () => Boolean(document.querySelector('dialog[open]'));
+  window.addEventListener('dragenter', event => {
+    if (!traeArchivos1310(event) || dialogoAbierto1310()) return;
+    cuentaDrag1310++;
+    overlay1310().hidden = false;
+  }, true);
+  window.addEventListener('dragover', event => {
+    if (!traeArchivos1310(event) || dialogoAbierto1310()) return;
+    event.preventDefault();
+    overlay1310().hidden = false;
+  }, true);
+  window.addEventListener('dragleave', event => {
+    if (!traeArchivos1310(event)) return;
+    cuentaDrag1310 = Math.max(0, cuentaDrag1310 - 1);
+    if (cuentaDrag1310 === 0) ocultar1310();
+  }, true);
+  window.addEventListener('drop', event => {
+    if (!traeArchivos1310(event)) return;
+    const archivos = [...(event.dataTransfer.files || [])];
+    const habiaDialogo = dialogoAbierto1310();
+    ocultar1310();
+    if (!archivos.length || habiaDialogo) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const lote = new DataTransfer();
+    for (const archivo of archivos)
+      if (/\.(xml|zip)$/i.test(archivo.name)) lote.items.add(archivo);
+    let enrutados = 0;
+    /* Un lote solo puede vivir en un input: si vienen XML/ZIP y
+       un PDF juntos, el PDF se manda también en solitario. */
+    if (lote.files.length) {
+      const incoming = document.getElementById('incoming');
+      if (incoming) { incoming.files = lote.files; incoming.dispatchEvent(new Event('change')); enrutados++; }
+    }
+    const primerPdf = archivos.find(archivo => /\.pdf$/i.test(archivo.name));
+    if (primerPdf) {
+      const lotePdf = new DataTransfer();
+      lotePdf.items.add(primerPdf);
+      const pdfInput = document.getElementById('invoice-pdf');
+      if (pdfInput) { pdfInput.files = lotePdf.files; pdfInput.dispatchEvent(new Event('change')); enrutados++; }
+    }
+    if (!enrutados) toast('Ese tipo de archivo no se importa aquí: manda XML o ZIP (facturas) o un PDF (factura en PDF).', 'error');
+  }, true);
+})();
+
+/* ===== Tu lista de gestos (1.31.1) =====
+   Un solo sitio con TODO lo que solo Paco puede hacer y antes
+   vivía repartido (la contraseña del respaldo, la e.firma de un
+   RFC pendiente, el emparejamiento, la puerta que no abre, el
+   acceso con contraseña). Sale del estado REAL del servidor
+   (satData): cada gesto existe solo si su condición consta; lo
+   que no se puede constatar no se lista. Sin gestos, la tarjeta
+   dice «Nada espera tu mano» y no estorba. */
+function gestosLista1311() {
+  const lista = [];
+  if (typeof satToken === 'undefined' || !satToken ||
+    typeof satData === 'undefined' || !satData) return lista;
+  for (const rfc of satData.pendingProfiles || []) lista.push({
+    titulo: 'Sube la e.firma de ' + rfc,
+    detalle: 'Su alta está preparada: sin su e.firma (o su CIEC) PacoSAT no puede descargar nada de este RFC.',
+    boton: 'Dar sus credenciales', ir: () => navigate('sat') });
+  const ex = satData.ejecutor;
+  if (ex && !ex.emparejado) lista.push({
+    titulo: 'Empareja tu equipo',
+    detalle: 'Sin el ejecutor en tu PC, el Buzón Tributario y las Declaraciones no pueden entrar al portal del SAT.',
+    boton: 'Emparejar', ir: () => { satTab = 'ejecutor'; navigate('sat'); } });
+  const puerta = scope ? satData.puerta?.[scope] : null;
+  if (puerta && puerta.probada && puerta.ok === false) lista.push({
+    titulo: 'La puerta del SAT no abre',
+    detalle: 'La última prueba automática no pudo entrar con la e.firma de ' + scope +
+      (puerta.error ? ' (' + puerta.error + ')' : '') + ': el gesto es revisarla.',
+    boton: 'Revisar la e.firma', ir: () => navigate('sat') });
+  if (satData.adminLogin && !satData.adminLogin.configurado) lista.push({
+    titulo: 'Activa tu acceso con contraseña',
+    detalle: 'Sin él entras con el acceso de siempre del navegador; con tu contraseña, la app pide la suya y recuerda tu equipo de confianza.',
+    boton: 'Activarlo', ir: () => { ajustesSection = 'sistema'; navigate('settings'); } });
+  if (satData.scheduledBackup && !satData.scheduledBackup.enabled) lista.push({
+    titulo: 'Define la contraseña del respaldo',
+    detalle: 'Sin ella no hay respaldo programado ni su copia automática fuera del NAS. Se define una sola vez.',
+    boton: 'Ir a Respaldos', ir: () => { ajustesSection = 'respaldos'; navigate('settings'); } });
+  return lista;
+}
+function gestosPanel1311() {
+  const lista = gestosLista1311();
+  const wrap = panel('Tu lista de gestos', lista.length
+    ? 'Todo lo que solo tú puedes hacer: junto, con su botón. El sistema no puede hacerlo por ti.'
+    : '');
+  wrap.dataset.gestos1311 = '1';
+  if (!lista.length) {
+    wrap.append(n('p', 'Nada espera tu mano: el sistema no necesita ningún gesto tuyo ahora.', 'today-line'));
+    return wrap;
+  }
+  for (const g of lista) {
+    const row = n('div', undefined, 'gestos-row');
+    const txt = n('div', undefined, 'gestos-txt');
+    txt.append(n('strong', g.titulo), n('p', g.detalle));
+    const btn = n('button', g.boton, 'primary small');
+    btn.type = 'button';
+    btn.onclick = g.ir;
+    row.append(txt, btn);
+    wrap.append(row);
+  }
+  return wrap;
+}
+/* El gesto CIEC llega con los datos del mes (Hoy los carga
+   detrás): si la descarga automática quedó esperando a Paco,
+   su fila se suma a la lista sin repintar Hoy entero. */
+function gestosPintarCiec1311(monthly) {
+  const wrap = document.querySelector('[data-gestos1311]');
+  if (!wrap || wrap.dataset.ciec1311) return;
+  const run = (monthly?.runs || []).find(r =>
+    Object.values(r.perRfc || {}).some(e => e.status === 'esperando-gesto'));
+  if (!run) return;
+  wrap.dataset.ciec1311 = '1';
+  gestosCiecExtra1311 = 1;
+  if (typeof senalesBarra1311 === 'function') senalesBarra1311();
+  for (const p of wrap.querySelectorAll('p.today-line'))
+    if (p.textContent.startsWith('Nada espera tu mano')) p.remove();
+  const row = n('div', undefined, 'gestos-row');
+  const txt = n('div', undefined, 'gestos-txt');
+  txt.append(n('strong', 'Termina la descarga con CIEC'),
+    n('p', 'La descarga automática quedó esperando tu gesto: la CIEC y el captcha se teclean en su tarjeta, en tu equipo.'));
+  const btn = n('button', 'Ir a la descarga', 'primary small');
+  btn.type = 'button';
+  btn.onclick = () => { satTab = 'descargar'; navigate('sat'); };
+  row.append(txt, btn);
+  wrap.append(row);
+}
+
+/* ===== Novedades de la versión (1.31.1) =====
+   Tras un montaje, la primera apertura enseña «Esto es lo
+   nuevo» en palabras llanas: una nota por versión que viaja
+   con el build (se redacta desde el informe de la ronda). Se
+   cierra con un toque y no vuelve a salir hasta la siguiente
+   versión: la marca es la propia versión, en la memoria del
+   equipo. Si la versión de la app no es la de la nota, la
+   tarjeta no existe (nada de notas viejas recicladas). */
+const NOVEDADES_1311 = {
+  version: '1.32.1',
+  puntos: [
+    'Descargar, donde estás: Facturas ya tiene su botón «Descargar del SAT», Declaraciones su «Descargar declaraciones del SAT» en grande, y cada documento su «Descargar» en la propia fila — sin dar vueltas por tres pantallas para bajar un papel.',
+    'El botón grande del Buzón Tributario ahora consulta el Buzón de verdad (antes abría el importador de archivos), y cada botón de cabecera hace exactamente lo que su nombre promete.',
+    'La puerta del SAT dice la verdad: si tu equipo entró bien al portal, la puerta queda marcada como buena aunque el trámite falle después — y si el portal devuelve una página que ya no existe, el error nombra esa dirección en vez de un «no encontrado» genérico.',
+    'La descarga de CFDI despertó: al arrancar, el servidor activa tu e.firma desde la que guardaste en la app — ya no puede quedarse dormida por un archivo viejo de arranque — y cada solicitud que pidas queda registrada y contable.',
+    'El Registro se comparte: «Copiar todo» copia lo que ves, con tu filtro, como texto limpio; cada fallo lleva «Copiar la traza»; y lo visible se puede borrar con confirmación y Deshacer.',
+    'Orden en las pantallas: Hoy ya no repite la tabla de Totales, Dinero cuenta la antigüedad una sola vez, Cierre se queda con el cierre (el correo vive en Ajustes › Correo y la exportación completa en Ajustes › Respaldos) y los botones heredaron el tamaño que su trabajo merece.'
+  ]
+};
+function novedadesCard1311() {
+  if (typeof PACOSAT_META === 'undefined' || PACOSAT_META.version !== NOVEDADES_1311.version) return null;
+  let vista = '';
+  try { vista = localStorage.getItem('pacosat-novedades-vista') || ''; } catch { /* sin memoria local: se enseña */ }
+  if (vista === NOVEDADES_1311.version) return null;
+  const card = panel('Esto es lo nuevo', 'PacoSAT ' + NOVEDADES_1311.version + ', en palabras llanas.');
+  const lista = n('ul', undefined, 'novedades-list');
+  for (const punto of NOVEDADES_1311.puntos) lista.append(n('li', punto));
+  const acts = n('div', undefined, 'actions');
+  const cerrar = n('button', 'Entendido', 'primary small');
+  cerrar.type = 'button';
+  cerrar.onclick = () => {
+    try { localStorage.setItem('pacosat-novedades-vista', NOVEDADES_1311.version); } catch { /* sin memoria: se volverá a enseñar */ }
+    card.remove();
+  };
+  acts.append(cerrar);
+  card.append(lista, acts);
+  return card;
+}
+
+/* ===== Archivo (1.31.1): guardar fuera de las vistas de trabajo =====
+   El gesto que Paco pidió («no llenarme de basura»): cada CFDI
+   y cada documento salen de las pantallas de trabajo con
+   «Archivar» y su «Deshacer», y viven en la vista Archivo,
+   recuperables. Un CFDI NUNCA se borra desde la app: su marca
+   es records.archived en el servidor (la misma del cierre de
+   línea base) y el cliente la separa al entrar (refresh). El
+   documento lleva su marca en su propio registro y sale de
+   Documentos y de las tarjetas de vigencia. */
+async function cfdiArchivar1311(row, archivar = true) {
+  if (!archivar) {
+    await satApi('cfdi/archivar', { uuid: row.id, archivar: false });
+    await refresh();
+    toast('Comprobante restaurado: vuelve a Facturas y a los totales.', 'ok');
+    render();
+    return;
+  }
+  await conDeshacer1310('Comprobante archivado: sale de Facturas y de los totales; vive en Archivo.',
+    async () => { await satApi('cfdi/archivar', { uuid: row.id, archivar: true }); await refresh(); },
+    async () => { await satApi('cfdi/archivar', { uuid: row.id, archivar: false }); await refresh(); render(); });
+}
+async function docArchivar1311(doc, archivar = true) {
+  const aplicar = async poner => {
+    const copia = { ...doc };
+    if (poner) copia.archived = true; else delete copia.archived;
+    await writeBatch({ documents: [copia] });
+    documents = documents.map(d => d.id === doc.id ? copia : d);
+  };
+  if (!archivar) {
+    await aplicar(false);
+    toast('Documento restaurado: vuelve a Documentos.', 'ok');
+    render();
+    return;
+  }
+  await conDeshacer1310('Documento archivado: sale de Documentos; vive en Archivo.',
+    async () => { await aplicar(true); render(); },
+    async () => { await aplicar(false); render(); });
+}
+function archivoScreen1311() {
+  const blocks = [];
+  const delAlcance = invoicesArchivo.filter(row => row.from?.rfc === scope || row.to?.rfc === scope);
+  const cfdiPanel = panel('Comprobantes archivados',
+    'Fuera de Facturas, de Totales y de los reportes. Un CFDI nunca se borra desde la app: archivar es su único gesto, y es reversible.');
+  if (delAlcance.length) {
+    cfdiPanel.append(grid(['Comprobante', 'Fecha', 'Total', 'Acción'],
+      delAlcance.slice(0, 100).map(row => {
+        const cp = row.from?.rfc === scope ? row.to : row.from;
+        const acts = n('div', undefined, 'actions');
+        acts.append(action('Restaurar', () => cfdiArchivar1311(row, false)));
+        return [cell(folioLabel(row), (cp?.name || cp?.rfc || '') + ' · ' + String(row.id).slice(0, 8) + '…'),
+          dateLabel(row.date), amount(row), acts];
+      })));
+    if (delAlcance.length > 100) cfdiPanel.append(n('p', 'Se enseñan los 100 más recientes.', 'muted'));
+  } else cfdiPanel.append(empty('Nada archivado', 'Cuando archives un comprobante desde Facturas, aparecerá aquí.'));
+  blocks.push(cfdiPanel);
+  const docsArc = documents.filter(doc => doc.archived && (!scope || doc.rfc === scope));
+  const docPanel = panel('Documentos archivados',
+    'Fuera de Documentos. «Eliminar definitivo» borra el PDF del expediente y pide confirmación.');
+  if (docsArc.length) {
+    docPanel.append(grid(['Documento', 'RFC', 'Fecha', 'Acción'], docsArc.map(doc => {
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Ver', () => viewDocOnline(doc)),
+        action('Restaurar', () => docArchivar1311(doc, false)),
+        action('Eliminar definitivo', () => deleteDocument(doc)));
+      return [cell(doc.kind, doc.name), doc.rfc, dateLabel(doc.date), acts];
+    })));
+  } else docPanel.append(empty('Ningún documento archivado', 'El «Archivar» de Documentos guarda aquí lo que ya no quieres ver cada día.'));
+  blocks.push(docPanel);
+  const otros = panel('También vive archivado',
+    'Cada cosa conserva su casa: los avisos en su pestaña de Archivadas y las notificaciones del SAT en la papelera de su Buzón.');
+  const links = n('div', undefined, 'actions');
+  const aAvisos = n('button', 'Avisos archivadas', 'soft');
+  aAvisos.type = 'button';
+  aAvisos.onclick = () => {
+    avisosVista = 'archivadas';
+    if (typeof avisosGuardarFiltros1310 === 'function') avisosGuardarFiltros1310();
+    navigate('avisos');
+  };
+  const aBuzon = n('button', 'Buzón Tributario', 'soft');
+  aBuzon.type = 'button';
+  aBuzon.onclick = () => navigate('tributario');
+  links.append(aAvisos, aBuzon);
+  otros.append(links);
+  blocks.push(otros);
+  return blocks;
+}
+
+/* ===== Señales de la barra lateral (1.31.1) =====
+   Sin entrar a ningún sitio: el bloque del contribuyente lleva
+   el punto veraz de la puerta del SAT (el registro sat_puerta
+   del servidor) y el botón Hoy lleva la señal de los gestos que
+   esperan la mano de Paco (la misma lista de «Tu lista de
+   gestos»: lo que no consta no se señala). Se repinta en cada
+   render, con el estado ya cargado — ninguna llamada nueva. */
+let gestosCiecExtra1311 = 0;
+function senalesBarra1311() {
+  const dot = document.getElementById('puerta-dot');
+  const txt = document.getElementById('puerta-txt');
+  if (dot && txt) {
+    const puerta = (typeof satData !== 'undefined' && scope) ? satData?.puerta?.[scope] : null;
+    if (!puerta || !puerta.probada) {
+      dot.dataset.state = 'sin-dato';
+      txt.textContent = 'Puerta del SAT: sin probar todavía';
+    } else if (puerta.ok) {
+      dot.dataset.state = 'ok';
+      txt.textContent = 'Puerta del SAT: abre';
+    } else {
+      dot.dataset.state = 'mal';
+      txt.textContent = 'Puerta del SAT: no abre — revísala en Hoy';
+    }
+  }
+  const badge = document.getElementById('gestos-badge');
+  if (badge) {
+    const n = gestosLista1311().length + gestosCiecExtra1311;
+    badge.hidden = !n;
+    badge.textContent = n ? number.format(n) : '';
+    badge.title = n ? n + (n === 1 ? ' gesto espera tu mano (en Hoy)' : ' gestos esperan tu mano (en Hoy)') : '';
+  }
+}
+/* Cableado de la barra: la búsqueda de arriba ES la búsqueda
+   global de siempre (su puerta en la barra, no otro buscador)
+   y el plegado a iconos se recuerda en este equipo. */
+(function barraCableado1311() {
+  const buscar = document.getElementById('side-search');
+  if (buscar) buscar.addEventListener('click', () => {
+    const input = document.getElementById('global-search');
+    if (input) { input.scrollIntoView({ block: 'nearest' }); input.focus(); input.select?.(); }
+  });
+  const plegar = document.getElementById('side-collapse');
+  let plegada = false;
+  try { plegada = localStorage.getItem('pacosat-barra-plegada') === '1'; } catch { /* sin memoria: desplegada */ }
+  document.body.classList.toggle('barra-plegada', plegada);
+  if (plegar) plegar.addEventListener('click', () => {
+    const ahora = document.body.classList.toggle('barra-plegada');
+    try { localStorage.setItem('pacosat-barra-plegada', ahora ? '1' : '0'); } catch { /* sin memoria: vale por la sesión */ }
+    plegar.setAttribute('aria-label', ahora ? 'Expandir la barra lateral' : 'Plegar la barra lateral');
+  });
+})();

@@ -87,6 +87,38 @@ async function clickTramiteLink(page, candidates) {
   }
   return '';
 }
+/* Ruta muerta (1.32.1, evidencia del 14 nov 2026): la página
+   guardada del fallo de las 09:27 era la 404 genérica del SAT
+   (156 bytes, «Página no encontrada») — el corredor no estaba
+   ante una portada sin el enlace: había NAVEGADO hasta una
+   dirección muerta e informaba «enlace no encontrado» sobre
+   ella. Desde esta ronda, cuando la página actual ES la 404
+   del portal, el fallo se clasifica como ruta-muerta y el
+   mensaje NOMBRA la dirección que la devolvió. La detección
+   lee el diagnóstico o el texto visible, con guardas: una
+   doble sin diagnostics()/text() no clasifica nada. */
+async function paginaMuerta(page) {
+  try {
+    if (page && typeof page.diagnostics === 'function') {
+      const d = await page.diagnostics().catch(() => null);
+      const html = typeof d?.html === 'string' ? d.html : '';
+      if (html && /Página no encontrada/i.test(html)) return { muerta: true, url: String(d.url || '') };
+      if (d) return { muerta: false, url: String(d.url || '') };
+    }
+    if (page && typeof page.text === 'function') {
+      const t = await page.text().catch(() => '');
+      if (typeof t === 'string' && /Página no encontrada/i.test(t)) return { muerta: true, url: '' };
+    }
+  } catch { /* la detección nunca tumba la corrida */ }
+  return { muerta: false, url: '' };
+}
+function fallaRutaMuerta(url) {
+  return failure('ruta-muerta',
+    'El portal devolvió «Página no encontrada» en la dirección ' + (url || '(sin dirección legible)') +
+    ': esa ruta del portal ya no responde — no es que falte un enlace en una portada, es que la ' +
+    'dirección misma está muerta. La página desde la que se navegó (la de decisión) y la final ' +
+    'quedan guardadas en el diario de la corrida.');
+}
 /* Aterrizaje real del portal (1.27.0, bloque C — evidencia viva
    del 11 nov 2026): tras el acceso con e.firma el portal NO deja
    al contribuyente en el lanzador de trámites: aterriza primero
@@ -99,20 +131,73 @@ async function clickTramiteLink(page, candidates) {
    dirección y se busca otra vez ahí dentro. Si tampoco, el error
    sale con la página guardada (la fábrica adjunta el diagnóstico)
    y la primera corrida viva enseñará el aterrizaje real. */
-async function enterTramite(page, candidates, onStep) {
+async function enterTramite(page, candidates, onStep, opciones = {}) {
   const directo = await clickTramiteLink(page, candidates);
   if (directo) return directo;
+  /* Etapa de la portada NUEVA (1.31.0, evidencia viva del
+     13 nov 2026): el portal aterriza en la portada del Buzón
+     y allí el enlace del trámite NO está — está tras
+     «Servicios Disponibles», uno de los enlaces de esa
+     portada. Antes de rendirse al marco (que en la corrida
+     viva acabó en la 404 genérica), si el texto de la página
+     nombra «Servicios Disponibles» se pulsa ese enlace, se
+     espera a que pinte y se repite la búsqueda añadiendo los
+     textos genéricos «Declaraciones» y «Declaraciones y
+     pagos», que son los que esa sección enseña. El texto se
+     lee con guardas: una doble sin text() o un text() que
+     falle no tumba la etapa, solo la salta. */
+  let textoPortada = '';
+  try { textoPortada = typeof page.text === 'function' ? await page.text() : ''; } catch { textoPortada = ''; }
+  if (typeof textoPortada === 'string' && textoPortada.includes('Servicios Disponibles')) {
+    /* Antes de seguir ese enlace se refresca la página de
+       DECISIÓN (1.32.1): si su destino está muerto, el diario
+       conserva la portada desde la que se navegó. */
+    if (typeof opciones.marcaDecision === 'function') await opciones.marcaDecision().catch(() => {});
+    let abierto = false;
+    try { abierto = await page.clickText('Servicios Disponibles').catch(() => false); } catch { abierto = false; }
+    if (abierto) {
+      await sleep(1500);
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) {
+        notifyStep(onStep, 'Ruta muerta', '«Servicios Disponibles» llevó a «Página no encontrada»: ' + (muerta.url || ''));
+        throw fallaRutaMuerta(muerta.url);
+      }
+      const ampliados = [...candidates, 'Declaraciones', 'Declaraciones y pagos'];
+      const viaServicios = await clickTramiteLink(page, ampliados);
+      if (viaServicios) {
+        notifyStep(onStep, 'Enlace del trámite', 'encontrado tras «Servicios Disponibles»: «' + viaServicios + '»');
+        return viaServicios;
+      }
+      notifyStep(onStep, 'Servicios Disponibles', 'se abrió la sección, pero el enlace del trámite no apareció ni con los textos genéricos');
+    }
+  }
   notifyStep(onStep, 'Aterrizaje del portal', 'el enlace no estaba en la primera pantalla; se busca dentro del marco del trámite');
-  if (typeof page.tramiteFrameUrl === 'function' && typeof page.goto === 'function') {
+  /* El marco SIN sacarlo de su contexto (1.32.1): la versión
+     anterior navegaba la página principal a la URL del marco
+     (un SessionBroker → rfcampc/ConsultaTramite pensado para
+     vivir DENTRO del Buzón) y ese salto es el sospechoso
+     directo de la 404 guardada del 14 nov — la constancia,
+     el camino que sí funciona, jamás navega al src del marco:
+     espera a que el marco cargue y busca DENTRO de todos los
+     marcos (clickText ya los recorre). Eso hace ahora esta
+     etapa: si el portal tiene el marco del trámite, se espera
+     a que pinte y se repite la búsqueda; la URL del marco ya
+     no se visita como página. */
+  if (typeof page.tramiteFrameUrl === 'function') {
     const frameUrl = await page.tramiteFrameUrl().catch(() => '');
     if (frameUrl) {
-      await page.goto(frameUrl).catch(() => {});
+      await sleep(1500);
       const enMarco = await clickTramiteLink(page, candidates);
       if (enMarco) {
         notifyStep(onStep, 'Enlace del trámite', 'encontrado dentro del marco: «' + enMarco + '»');
         return enMarco;
       }
     }
+  }
+  const muertaFinal = await paginaMuerta(page);
+  if (muertaFinal.muerta) {
+    notifyStep(onStep, 'Ruta muerta', 'la página actual es la 404 del portal: ' + (muertaFinal.url || ''));
+    throw fallaRutaMuerta(muertaFinal.url);
   }
   return '';
 }
@@ -140,9 +225,13 @@ const notifyStep = (onStep, paso, detalle = '') => {
 };
 
 /* Conector (a): mensuales de un ejercicio (y periodo opcional). */
-export async function fetchMensuales({ page, ejercicio, periodo = '', selectors = DECL_DEFAULTS, onStep = null }) {
+export async function fetchMensuales({ page, ejercicio, periodo = '', selectors = DECL_DEFAULTS, onStep = null, opciones = {} }) {
   const linked = await enterTramite(page,
-    [selectors.linkMensuales, 'Mensuales', 'Declaraciones presentadas'], onStep);
+    [selectors.linkMensuales, 'Mensuales', 'Declaraciones presentadas'], onStep, opciones);
+  if (linked) {
+    const muerta = await paginaMuerta(page);
+    if (muerta.muerta) throw fallaRutaMuerta(muerta.url);
+  }
   if (!linked) {
     notifyStep(onStep, 'Enlace del trámite', 'no encontrado');
     throw failure('respuesta-inesperada',
@@ -178,9 +267,13 @@ export async function fetchMensuales({ page, ejercicio, periodo = '', selectors 
 }
 
 /* Conector (b): la anual de un ejercicio (PDF + acuse). */
-export async function fetchAnual({ page, ejercicio, selectors = DECL_DEFAULTS, onStep = null }) {
+export async function fetchAnual({ page, ejercicio, selectors = DECL_DEFAULTS, onStep = null, opciones = {} }) {
   const linked = await enterTramite(page,
-    [selectors.linkAnuales, 'Anual', 'Declaración anual presentada'], onStep);
+    [selectors.linkAnuales, 'Anual', 'Declaración anual presentada'], onStep, opciones);
+  if (linked) {
+    const muerta = await paginaMuerta(page);
+    if (muerta.muerta) throw fallaRutaMuerta(muerta.url);
+  }
   if (!linked) {
     notifyStep(onStep, 'Enlace del trámite', 'no encontrado');
     throw failure('respuesta-inesperada',
@@ -245,7 +338,7 @@ export const DECL_FOLIO_DEFAULTS = {
 };
 
 export async function fetchAcusePorFolio({ page, folio, tipoDeclaracion = '', ejercicio = 0, periodo = '',
-  selectors = DECL_DEFAULTS, folioSelectors = DECL_FOLIO_DEFAULTS, onStep = null }) {
+  selectors = DECL_DEFAULTS, folioSelectors = DECL_FOLIO_DEFAULTS, onStep = null, opciones = {} }) {
   const folioLimpio = String(folio || '').trim();
   if (!folioLimpio) throw failure('respuesta-inesperada', 'Falta el número de folio a reimprimir.');
   /* Entrada a la aplicación 77792: primero por los textos del
@@ -255,9 +348,24 @@ export async function fetchAcusePorFolio({ page, folio, tipoDeclaracion = '', ej
   for (const texto of folioSelectors.linkTextos) {
     if (await page.clickText(texto).catch(() => false)) { entrada = 'enlace «' + texto + '»'; break; }
   }
+  if (entrada) {
+    const muerta = await paginaMuerta(page);
+    if (muerta.muerta) throw fallaRutaMuerta(muerta.url);
+  }
   if (!entrada) {
+    /* Antes del salto directo se refresca la página de
+       DECISIÓN (1.32.1): si la dirección pública está muerta,
+       el diario conserva desde dónde se saltó. */
+    if (typeof opciones.marcaDecision === 'function') await opciones.marcaDecision().catch(() => {});
     try { await page.goto(folioSelectors.appUrl); entrada = 'la dirección pública del servicio (77792)'; }
     catch { entrada = ''; }
+    if (entrada) {
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) {
+        notifyStep(onStep, 'Ruta muerta', 'la dirección pública del servicio 77792 devolvió «Página no encontrada»');
+        throw fallaRutaMuerta(folioSelectors.appUrl);
+      }
+    }
   }
   if (!entrada) {
     notifyStep(onStep, 'Entrada al servicio de acuses', 'no encontrada');
@@ -343,7 +451,13 @@ export async function fetchAcusePorFolio({ page, folio, tipoDeclaracion = '', ej
    sin filas y el diseño degrada al modo asistido sin romperse.
    ================================================================ */
 export const DECL_TRANSACCIONES_DEFAULTS = {
-  linkTextos: ['Consulta de transacciones', 'Transacciones', 'Mis transacciones']
+  linkTextos: ['Consulta de transacciones', 'Transacciones', 'Mis transacciones'],
+  /* La dirección pública de la ficha 22513, tal como consta en
+     la ficha oficial leída en la investigación (S8): es el
+     respaldo de entrada cuando los textos no aparecen, como el
+     77792 en la reimpresión — una dirección de aplicación del
+     PTSC, no el src de un marco. */
+  appUrl: 'https://wwwmat.sat.gob.mx/aplicacion/22513/transacciones-de-declaraciones-y-pagos-que-haz-realizado-para-cubrir-tus-obligaciones-fiscales'
 };
 const MESES_TX = { enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
   julio: '07', agosto: '08', septiembre: '09', octubre: '10', noviembre: '11', diciembre: '12' };
@@ -372,8 +486,26 @@ function cleanTx(value) {
 }
 
 export async function fetchTransacciones({ page, ejercicio = 0, selectors = DECL_DEFAULTS,
-  transaccionesSelectors = DECL_TRANSACCIONES_DEFAULTS, onStep = null }) {
-  const linked = await enterTramite(page, transaccionesSelectors.linkTextos, onStep);
+  transaccionesSelectors = DECL_TRANSACCIONES_DEFAULTS, onStep = null, opciones = {} }) {
+  let linked = await enterTramite(page, transaccionesSelectors.linkTextos, onStep, opciones);
+  if (!linked && transaccionesSelectors.appUrl && typeof page.goto === 'function') {
+    /* Respaldo por la dirección de la ficha (1.32.1): como en
+       la reimpresión 77792, si los textos del portal no
+       enseñan la entrada, se entra por la dirección pública
+       que la ficha oficial del servicio publica — con su
+       página de decisión refrescada antes del salto y su
+       clasificación de ruta muerta si ya no responde. */
+    if (typeof opciones.marcaDecision === 'function') await opciones.marcaDecision().catch(() => {});
+    const fue = await page.goto(transaccionesSelectors.appUrl).then(() => true).catch(() => false);
+    if (fue) {
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) {
+        notifyStep(onStep, 'Ruta muerta', 'la dirección pública de la ficha 22513 devolvió «Página no encontrada»');
+        throw fallaRutaMuerta(transaccionesSelectors.appUrl);
+      }
+      linked = 'la dirección pública de la ficha (22513)';
+    }
+  }
   if (!linked) {
     notifyStep(onStep, 'Enlace del trámite', 'no encontrado (Consulta de transacciones)');
     throw failure('respuesta-inesperada',
@@ -450,22 +582,47 @@ export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () 
     }
     const creds = await resolveCredentials(profile); // valida ANTES de abrir el navegador
     notifyStep(step, 'Credenciales validadas', String(profile?.rfc || ''));
+    /* Sesión viva (1.30.0): como en el Buzón, el ejecutor puede
+       entregar la página YA abierta de este RFC y aquí no se
+       lanza navegador ni se vuelve a firmar; sin ella, el camino
+       de siempre queda intacto. */
+    const paginaViva = options?.sesionViva?.page || null;
     let driver = null;
-    try {
-      driver = await launchDriver();
-    } catch (error) {
-      if (error instanceof SatDocError) throw error;
-      throw failure('navegador-no-disponible', 'El navegador interno de PacoSAT no pudo arrancar ' +
-        'en el servidor (' + (error?.message || error) + ').');
+    if (!paginaViva) {
+      try {
+        driver = await launchDriver();
+      } catch (error) {
+        if (error instanceof SatDocError) throw error;
+        throw failure('navegador-no-disponible', 'El navegador interno de PacoSAT no pudo arrancar ' +
+          'en el servidor (' + (error?.message || error) + ').');
+      }
+      notifyStep(step, 'Navegador listo', '');
     }
-    notifyStep(step, 'Navegador listo', '');
     let page = null;
+    /* Diagnóstico DE DECISIÓN (1.31.0): la foto de la portada
+       tal como quedó tras el acceso — o tras reutilizar la
+       sesión —, ANTES de buscar el trámite. Si la búsqueda
+       muere en la 404 genérica del SAT, su página no dice
+       nada; el que viaja es este, con la URL de la portada
+       desde la que se intentó entrar al trámite. */
+    let diagDecision = null;
     try {
+      if (paginaViva) {
+        page = paginaViva;
+        notifyStep(step, 'Sesión reutilizada', 'la puerta ya estaba abierta para este RFC: no se vuelve a firmar');
+      } else {
       page = await driver.newPage();
       const keyMaterial = prepareKeyForPortal(creds.key, creds.password);
       await satBrowserLogin(page, { cer: creds.cer, key: keyMaterial.buffer,
-        password: creds.password, entryUrl });
+        password: creds.password, rfc: creds.rfc, entryUrl });
       notifyStep(step, 'Acceso al portal OK', '');
+      }
+      if (page && typeof page.diagnostics === 'function') {
+        try {
+          const diag = await page.diagnostics();
+          if (diag) diagDecision = diag;
+        } catch { /* el diagnóstico nunca tumba la corrida */ }
+      }
       const result = esFolio
         ? await fetchAcusePorFolio({ page, folio: String(query.folio), tipoDeclaracion: String(query.tipoDeclaracion || ''),
             ejercicio, periodo: String(query.periodo || ''), selectors, folioSelectors, onStep: step })
@@ -492,12 +649,26 @@ export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () 
          de la página tal como quedó — un fallo sin página guardada
          es un fallo perdido, y la corrida viva del 11 nov murió
          sin ella. El servidor la archiva en el diario (decl_runs). */
+      /* Doble artefacto (1.32.1): viajan las DOS páginas — la
+         final en `diag` (sea la 404 o la que sea) y la de
+         decisión en `diagDecision` (la portada desde la que se
+         navegó). La versión anterior SUSTITUÍA la final por la
+         de decisión cuando la final era la 404: se perdía una
+         de las dos y, si la captura de decisión había fallado
+         en silencio, lo único guardado era la 404 genérica
+         (el fallo del 14 nov se guardó así). */
       if (page && typeof page.diagnostics === 'function' && error && typeof error === 'object' && !error.diag) {
-        try { error.diag = await page.diagnostics(); } catch { /* el diagnóstico nunca tapa el error */ }
+        try {
+          const actual = await page.diagnostics();
+          if (actual) error.diag = actual;
+        } catch { /* sin diagnóstico final no se rompe nada: el error manda */ }
       }
+      if (error && typeof error === 'object' && diagDecision && !error.diagDecision)
+        error.diagDecision = diagDecision;
       throw error;
     } finally {
-      await driver.close().catch(() => {});
+      /* Con sesión viva la página es del ejecutor: no se cierra. */
+      if (!paginaViva && driver) await driver.close().catch(() => {});
     }
   };
   return (profile, query, options = {}) => {

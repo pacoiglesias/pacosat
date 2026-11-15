@@ -54,18 +54,32 @@ const moneyUi = read('money-ui.part');
 const buzonUi = read('buzon-ui.part');
 
 /* Sello y techos */
-assert.ok(html.includes('"version":"1.29.0"'), 'el artefacto se sella con la versión vigente (1.29.0)');
+assert.ok(html.includes('"version":"1.32.1"'), 'el artefacto se sella con la versión vigente (1.32.1)');
 const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
 /* Techo 598.000 desde la 1.29.0 (ejecutor local, papelera,
    peldaños 1 y 2 y Totales navegable): la página crece a
-   594.876 B, con la contabilidad en el anexo de ronda1110. */
-assert.ok(htmlBytes <= 598000, 'la página pesa ' + htmlBytes + ' B (tope 598.000, re-basificado en la 1.29.0)');
+   594.876 B, con la contabilidad en el anexo de ronda1110.
+   Re-basificado en la 1.29.1 (corrección de Declaraciones +
+   ampliación D6–D8): la página crece a 602.467 B y el techo
+   sube a 604.000 con la contabilidad en el anexo 1.29.1 de
+   ronda1110. Re-basificado en la 1.29.2 (parrilla de trámites
+   + capa de atención de Avisos): crece a 618.915 B y el techo
+   sube a 619.000, contabilidad en el anexo 1.29.2 de
+   ronda1110. Re-basificado en la 1.30.0 (puerta auto-probada,
+   código corto, demás RFC y parte de la mañana): crece a
+   623.232 B y el techo sube a 623.500. Re-basificado en la
+   1.31.0 (corrección del 13 nov + menú + 45 mejoras +
+   reportes): crece a 659.787 B y el techo sube a 663.000,
+   contabilidad en el anexo 1.31.0 de ronda1110. */
+assert.ok(htmlBytes <= 712000, 'la página pesa ' + htmlBytes + ' B (tope 712.000, re-basificado en la 1.32.0 en ronda1110)');
 const cssBytes = ['style.part', 'design.part', 'polish.part']
   .reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-assert.ok(cssBytes <= 42500, 'el CSS pesa ' + cssBytes + ' B (tope 42.500, anexo 1.29.0 en ronda1110)');
+assert.ok(cssBytes <= 63000, 'el CSS pesa ' + cssBytes + ' B (tope 63.000, re-basificado en la 1.32.0 en ronda1110)');
 
 /* Tokens cerrados */
-for (const token of ['--r-s:8px', '--r-m:12px', '--r-l:14px', '--r-pill:100px',
+for (const token of ['--r-s:8px', '--r-m:12px', '--r-l:16px', '--r-pill:100px',
+  /* --r-l sube de 14 a 16 px en la 1.31.1: la vara de diseño
+     pide radios amplios (13 nov, 21:54). */
   '--sp-1:4px', '--sp-5:24px', '--shadow-1:', '--shadow-2:', '--fs-xs:11px',
   '--accent-ink:var(--ok-ink)', '--nav-active-bg:', '--nav-active-ink:'])
   assert.ok(style.includes(token), 'token de :root presente: ' + token);
@@ -95,8 +109,11 @@ assert.ok(!polish.includes('var(--line,#bcccdc)'), 'fuera el respaldo #bcccdc de
 /* Iconografía sin gemelos */
 for (const sym of ['i-inbox', 'i-mail', 'i-code', 'i-pdf'])
   assert.ok(layout.includes('<symbol id="' + sym + '"'), 'símbolo presente: ' + sym);
-assert.ok(layout.includes('data-view="buzon"><svg><use href="#i-inbox"'), 'Buzón navega con su bandeja');
-assert.ok(layout.includes('data-view="tributario"><svg><use href="#i-mail"'), 'Buzón Tributario navega con su sobre');
+assert.ok(layout.includes('data-view="buzon"><svg><use href="#i-inbox"'), 'Recibidos navega con su bandeja');
+/* Re-basificado en la 1.31.0 (punto B): el Buzón Tributario ya no es
+   renglón del menú — vive dentro del Centro SAT; el sobre #i-mail
+   sigue existiendo como símbolo para su tarjeta. */
+assert.ok(!layout.includes('data-view="tributario"'), 'Buzón Tributario ya no navega desde el menú (vive en Centro SAT)');
 assert.ok(layout.includes('data-view="docs"><svg><use href="#i-folder"'), 'Documentos conserva la carpeta');
 assert.ok(layout.includes('data-view="avisos"><svg><use href="#i-bell"'), 'Avisos conserva la campana');
 assert.ok(layout.includes('id="inspect"><svg><use href="#i-code"'), '«Abrir XML» es código');
@@ -161,7 +178,10 @@ assert.ok(polish.includes('.hm text{fill:var(--muted);font-size:11px'), 'el mapa
 assert.ok(!polish.includes('12.5px') && !polish.includes('13.5px'), 'fuera los medios píxeles');
 assert.ok(design.includes('td button{font-size:13px;padding:7px 10px;white-space:nowrap;min-height:40px}'),
   'botones de tabla con 40 px de objetivo');
-assert.ok(polish.includes('button.decl-cell{font:inherit;color:inherit;text-align:left;cursor:pointer;border:1px solid var(--line);width:100%;min-height:48px}'),
+/* 1.29.1: la regla crece con min-width:0 y overflow:hidden —
+   la celda no se hincha con su contenido (D3, la rejilla no
+   desborda); el objetivo de 48 px se conserva. */
+assert.ok(polish.includes('button.decl-cell{font:inherit;color:inherit;text-align:left;cursor:pointer;border:1px solid var(--line);width:100%;min-height:48px;min-width:0;overflow:hidden}'),
   'celdas de declaraciones con 48 px de objetivo');
 assert.ok(polish.includes('tbody tr:hover{background:var(--surface-2)}'), 'las filas responden al paso');
 assert.ok(polish.includes('@keyframes dialog-in'), 'los diálogos entran con movimiento breve');

@@ -89,7 +89,7 @@ function runPhasesEl(phasesDef, steps, outcome) {
    que el motor guardó en el momento del fallo): a un clic desde el
    paso fallido. kind: 'satdoc' | 'ciec'. */
 function evidenceButtons(kind, run) {
-  if (!run?.hasShot && !run?.hasHtml) return null;
+  if (!run?.hasShot && !run?.hasHtml && !run?.hasDecisionShot && !run?.hasDecisionHtml) return null;
   const row = n('div', undefined, 'actions');
   if (kind === 'satdoc') {
     if (run.hasShot) row.append(action('Ver la captura del fallo', async () =>
@@ -99,12 +99,18 @@ function evidenceButtons(kind, run) {
   } else if (kind === 'declaraciones' || kind === 'tributario') {
     /* La página guardada de declaraciones y del buzón (1.27.0):
        mismo gesto que en documentos — ver la foto del momento o
-       bajar el HTML que el portal enseñó al fallar. */
+       bajar el HTML que el portal enseñó al fallar. La página de
+       decisión (1.32.1): la portada desde la que se navegó al
+       destino que falló, para ver el salto con los ojos. */
     const ruta = kind === 'declaraciones' ? 'declaraciones/artifact' : 'tributario/artifact';
     if (run.hasShot) row.append(action('Ver la captura del fallo', async () =>
       window.open(URL.createObjectURL(await satApiBlob(ruta + '?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
     if (run.hasHtml) row.append(action('Bajar el HTML de la página', async () =>
       download(await satApiBlob(ruta + '?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'), 'soft'));
+    if (run.hasDecisionShot) row.append(action('Ver la página de decisión', async () =>
+      window.open(URL.createObjectURL(await satApiBlob(ruta + '?run=' + run.id + '&part=decision-shot')), '_blank'), 'soft'));
+    if (run.hasDecisionHtml) row.append(action('Bajar el HTML de decisión', async () =>
+      download(await satApiBlob(ruta + '?run=' + run.id + '&part=decision-html'), 'pagina-de-decision.html'), 'soft'));
   } else {
     if (run.hasShot) row.append(action('Ver la foto del fallo', async () =>
       window.open(URL.createObjectURL(await satApiBlob('ciec/artifact?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
@@ -164,6 +170,13 @@ function docCmdCard(kind, profile) {
   renovar.type = 'button';
   renovar.onclick = event => { event.stopPropagation(); satQuickRunDoc(kind, profile.rfc, renovar, line); };
   acts.append(renovar, line);
+  /* Menú ⋯ universal (1.31.2) en la tarjeta del documento:
+     su secundaria real es ver las versiones guardadas en
+     Documentos (la sección de siempre, con su historial). */
+  const menuDoc1312 = cardMenu1312('Más opciones de ' + nombre);
+  menuDoc1312._setItems1312([{ label: 'Ver las versiones en Documentos', fn: () => { navigate('docs');
+    setTimeout(() => document.getElementById('satdocs-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 90); } }]);
+  acts.append(menuDoc1312);
   return cmdCard('satdocs', level, nombre + ' · ' + profile.rfc,
     profile.progress?.running ? 'Descargando ahora…' :
       doc ? 'Emitida el ' + localDate(doc.issuedAt) : 'Sin archivar todavía',
@@ -176,6 +189,36 @@ function commandCenter() {
     'Todo tu sistema de un vistazo: cada área con su semáforo, lo que tiene pendiente y su última actividad. La acción principal de cada área se hace desde aquí, sin entrar pantalla por pantalla.');
   const gridBox = n('div', undefined, 'cmd-grid');
   wrap.append(gridBox);
+  /* Orden por urgencia + filtro «Solo lo que me necesita»
+     (1.31.2): las tarjetas del Centro de mando se ordenan por
+     su semáforo real (rojo → ámbar → gris → verde) con
+     style.order sobre los hijos de la rejilla — la DOM no se
+     mueve — y el conmutador esconde las que están al día. Un
+     observador reaplica el orden cuando una tarjeta se
+     repinta con otro nivel al llegar su dato del servidor. */
+  const filtroHoyBtn = n('button', 'Solo lo que me necesita', 'soft small filtro-necesita-btn');
+  filtroHoyBtn.type = 'button';
+  filtroHoyBtn.setAttribute('aria-pressed', 'false');
+  filtroHoyBtn.onclick = () => {
+    const on = gridBox.classList.toggle('solo-necesita');
+    filtroHoyBtn.setAttribute('aria-pressed', String(on));
+  };
+  const filtroHoyRow = n('div', undefined, 'traffic-strip');
+  filtroHoyRow.append(filtroHoyBtn);
+  wrap.insertBefore(filtroHoyRow, gridBox);
+  const aplicarOrdenCmd1312 = () => {
+    for (const child of gridBox.children) {
+      const card = child.classList?.contains('cmd-card') ? child : child.querySelector?.('.cmd-card');
+      const rank = { rojo: 0, ambar: 1, gris: 2, ok: 3 }[card?.dataset.level] ?? 2;
+      child.style.order = String(rank);
+    }
+  };
+  /* El observador reaplica el orden al repintar una tarjeta;
+     donde el motor no lo traiga (reserva entre navegadores),
+     el orden inicial queda puesto igualmente. */
+  if (typeof MutationObserver !== 'undefined')
+    new MutationObserver(aplicarOrdenCmd1312).observe(gridBox, { childList: true, subtree: true });
+  aplicarOrdenCmd1312();
   const seleccion = invoices.filter(matches);
   /* --- Vigilancia (pieza 2, 1.22.0): pinta al instante con la
      caché de la sesión y MANDA el servidor al llegar su resumen
@@ -348,11 +391,17 @@ function commandCenter() {
         slot('ciec')?.remove(); slot('decl')?.remove(); slot('mensual')?.remove();
         return;
       }
-      if (!todayCache.data || Date.now() - todayCache.at > 30000) {
+      if (!todayCache.data || todayCache.data.length < 7 || Date.now() - todayCache.at > 30000) {
+        /* Forma completa de la caché compartida (1.31.1): los
+           MISMOS 7 datos que consume Hoy, en su orden — antes
+           este escritor guardaba solo 4 y dejaba a Hoy sin
+           digest, sin monthly y sin registro. Este centro solo
+           lee el [3] (satdocs); el resto viaja para Hoy. */
         todayCache = { at: Date.now(), data: await Promise.all([
           satApi('notices').catch(() => null), satApi('reconcile').catch(() => null),
           satApi('reports/checklist?month=' + new Date().toISOString().slice(0, 7)).catch(() => null),
-          satApi('satdocs').catch(() => null)]) };
+          satApi('satdocs').catch(() => null), satApi('monthly').catch(() => null),
+          satApi('activity/digest').catch(() => null), satApi('registro/resumen').catch(() => null)]) };
       }
       const satdocs = todayCache.data[3];
       /* Documentos del SAT (1.18.0): la tarjeta única se parte en

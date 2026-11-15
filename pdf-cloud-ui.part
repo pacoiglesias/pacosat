@@ -69,6 +69,16 @@ async function viewPdf(doc) {
    revisa el alcance por RFC del invitado en cada petición). Sin
    servidor —la copia local— se cae al visor de siempre, que lee la
    tienda de este equipo. */
+/* Descarga directa de un documento guardado (1.32.1, Do1/D5):
+   un toque desde la fila donde se ve el papel, sin pasar por el
+   visor. Sirve el mismo archivo por la ruta en línea y lo baja
+   con su nombre; el visor conserva su «Descargar original». */
+async function downloadDocOnline(doc) {
+  try {
+    const blob = await satApiBlob('files/view?id=' + encodeURIComponent(doc.id));
+    download(blob, doc.name || 'documento.pdf');
+  } catch (error) { toast(error.message, 'error'); }
+}
 async function viewDocOnline(doc) {
   if (cloudStorage) {
     try {

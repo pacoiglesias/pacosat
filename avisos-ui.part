@@ -75,7 +75,24 @@ let avisosFetchedAt = 0;
 /* Selección múltiple para acciones por lote (ronda de correcciones). */
 const avisosSeleccion = new Set();
 /* Filtro por RFC propio del Centro (1.9.0). */
-let avisosRfcFiltro = '';
+/* F9 (1.31.0): el filtro de la pantalla (RFC y vista) persiste
+   en este navegador y se restaura al entrar — volver a Avisos
+   no obliga a rehacer la misma selección cada vez. */
+const avisosFiltrosGuardados1310 = (() => {
+  try { return JSON.parse(localStorage.getItem('pacosat-filtros-avisos') || 'null') || {}; }
+  catch { return {}; }
+})();
+let avisosRfcFiltro = typeof avisosFiltrosGuardados1310.rfc === 'string' ? avisosFiltrosGuardados1310.rfc : '';
+/* Vista de la capa de atención (1.29.2): activas (las de siempre,
+   las únicas que cuentan), pospuestas y archivadas. */
+let avisosVista = ['activas', 'pospuestas', 'archivadas'].includes(avisosFiltrosGuardados1310.vista)
+  ? avisosFiltrosGuardados1310.vista : 'activas';
+function avisosGuardarFiltros1310() {
+  try {
+    localStorage.setItem('pacosat-filtros-avisos',
+      JSON.stringify({ rfc: avisosRfcFiltro, vista: avisosVista }));
+  } catch { /* Sin almacenamiento local, el filtro dura la sesión. */ }
+}
 let avisosVisibles = [];
 const AVISOS_CLASES = [
   ['necesita', 'Lo que el sistema necesita de ti', 'alert'],
@@ -83,11 +100,11 @@ const AVISOS_CLASES = [
   ['falta', 'Lo que falta', 'clock']
 ];
 const AVISOS_ENLACES = {
-  dinero: ['dinero', 'Ir a Dinero'], bancos: ['bancos', 'Ir a Bancos'],
-  lists: ['lists', 'Ir a Listas negras'], monitor: ['monitor', 'Ir a Vigilancia SAT'],
-  sat: ['sat', 'Ir al Centro SAT'], backup: ['backup', 'Ir a Respaldos'],
-  docs: ['docs', 'Ir a Expedientes'], operaciones: ['operations', 'Ir a Operaciones'],
-  cumplimiento: ['cumplimiento', 'Ir a Cumplimiento']
+  dinero: ['dinero', 'Ir a Dinero'], bancos: ['bancos', 'Ir a Dinero › Bancos'],
+  lists: ['lists', 'Ir a Centro SAT › Listas 69-B'], monitor: ['monitor', 'Ir a Centro SAT › Estado de mis CFDI'],
+  sat: ['sat', 'Ir al Centro SAT'], backup: ['backup', 'Ir a Ajustes › Respaldos'],
+  docs: ['docs', 'Ir a Documentos'], operaciones: ['operations', 'Ir a Ajustes › Sistema'],
+  cumplimiento: ['cumplimiento', 'Ir a Cierre y reportes › Calendario']
 };
 function avisosDisponibles() { return typeof satToken !== 'undefined' && Boolean(satToken); }
 async function refreshAvisos(force = false) {
@@ -123,6 +140,49 @@ function avisosBadgeCount(data) {
 function avisoFecha(ts) {
   return new Date(ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
 }
+/* «Recalcular avisos» (1.29.1, D7): el botón se llamaba
+   «Actualizar ahora» y parecía muerto — refreshAvisos solo
+   re-leía el servidor y su catch se tragaba cualquier error,
+   así que con el payload de siempre la pantalla no cambiaba
+   ni decía nada. Este es su comportamiento veraz, con nombre
+   veraz: el servidor RECALCULA los avisos desde los datos ya
+   guardados en PacoSAT (saldos, documentos que faltan,
+   listados) — no sale al SAT. Trabaja a la vista y al terminar
+   enseña la hora y el cambio concreto (n nuevos, n cerrados)
+   o el error literal: de esta ruta el catch silencioso
+   desaparece. */
+async function avisosRecalcular() {
+  const previos = new Set((avisosCache?.avisos || []).map(aviso => aviso.id));
+  const data = await satApi('notices');
+  avisosCache = data;
+  avisosFetchedAt = Date.now();
+  paintAvisosBadge(avisosBadgeCount(data));
+  const actuales = new Set((data.avisos || []).map(aviso => aviso.id));
+  const nuevos = [...actuales].filter(id => !previos.has(id)).length;
+  const cerrados = [...previos].filter(id => !actuales.has(id)).length;
+  const hora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  if (page === 'avisos') render();
+  toast('Avisos recalculados · ' + hora + (nuevos || cerrados
+    ? ' — ' + [nuevos ? nuevos + ' nuevo(s)' : '', cerrados ? cerrados + ' cerrado(s)' : '']
+        .filter(Boolean).join(', ') + '.'
+    : ' — sin cambios.'), 'ok');
+  return data;
+}
+function avisosRecalcularBoton() {
+  const boton = n('button', 'Revisar avisos ahora', 'soft');
+  boton.type = 'button';
+  boton.onclick = async () => {
+    boton.disabled = true;
+    boton.textContent = 'Recalculando…';
+    try { await avisosRecalcular(); }
+    catch (error) {
+      toast('No se pudieron recalcular los avisos: ' + error.message, 'error');
+      boton.disabled = false;
+      boton.textContent = 'Revisar avisos ahora';
+    }
+  };
+  return boton;
+}
 function avisoMeta(aviso) {
   const bits = [];
   if (aviso.nombre) bits.push(aviso.nombre + (aviso.contraparte ? ' · ' + aviso.contraparte : ''));
@@ -143,6 +203,51 @@ function avisoMeta(aviso) {
    'Paco' o 'Contadora' (el servidor solo acepta esos dos). */
 function avisoResponsableLabel(aviso) {
   return aviso.responsable === 'Contadora' ? 'la contadora' : (aviso.responsable || 'Paco');
+}
+/* V8 · Dueño visible del aviso (1.31.0): quién tiene el gesto,
+   en pastilla con su color — «Tú» cuando la clase es «necesita»
+   (el gesto es de Paco); «SAT» cuando el aviso nace de una
+   alerta del SAT y eso CONSTA en su tipo o su fuente (la alerta
+   espejada en datos.alertaKind, el kind «lista» de los listados
+   69-B o su ref); «Sistema» para el resto. Del texto no se
+   inventa ningún origen: si no consta, no se atribuye al SAT. */
+const AVISO_SAT_TIPOS_1310 = ['cancellation', 'efos', '69-b', '69b', 'satdoc-fail', 'list-transition', 'puerta-sat', 'lista', 'puerta'];
+function avisoDueno1310(aviso) {
+  if (aviso.clase === 'necesita') return 'tu';
+  const candidatos = [aviso.datos?.alertaKind, aviso.datos?.kind, aviso.kind, aviso.tipo, aviso.fuente,
+    aviso.ref, aviso.datos?.alerta].map(valor => String(valor || '').toLocaleLowerCase('es-MX'));
+  const esDelSat = candidatos.some(valor => valor &&
+    AVISO_SAT_TIPOS_1310.some(tipo => valor === tipo || valor.startsWith(tipo + ':') || valor.startsWith(tipo + '-')));
+  return esDelSat ? 'sat' : 'sistema';
+}
+function avisoDuenoPill1310(aviso) {
+  const dueno = avisoDueno1310(aviso);
+  const pill = n('span', dueno === 'tu' ? 'Tú' : dueno === 'sat' ? 'SAT' : 'Sistema', 'aviso-dueno');
+  pill.dataset.dueno = dueno;
+  pill.title = dueno === 'tu' ? 'El gesto es tuyo' : dueno === 'sat' ? 'Nace de una alerta del SAT' : 'Lo lleva el sistema';
+  return pill;
+}
+/* Descargas de la pantalla (1.31.0): PDF y Excel de avisos con
+   la función global de salidas — el servidor los construye con
+   las cifras de la pantalla, aquí solo se piden. */
+function avisosSalidasBotones1310() {
+  const box = n('div', undefined, 'actions');
+  const pdf = n('button', 'PDF', 'soft small');
+  pdf.type = 'button';
+  pdf.onclick = () => {
+    const btn = pdf;
+    if (typeof descargarSalida1310 === 'function') descargarSalida1310('salidas/pdf', { kind:'avisos', rfc: scope }, btn);
+    else toast('Las salidas no están disponibles en esta copia.', 'error');
+  };
+  const excel = n('button', 'Excel', 'soft small');
+  excel.type = 'button';
+  excel.onclick = () => {
+    const btn = excel;
+    if (typeof descargarSalida1310 === 'function') descargarSalida1310('salidas/xlsx', { kind:'avisos', rfc: scope }, btn);
+    else toast('Las salidas no están disponibles en esta copia.', 'error');
+  };
+  box.append(pdf, excel);
+  return box;
 }
 function avisoPill(aviso) {
   if (aviso.estado === 'por-confirmar') return statusPill('warn', 'Por confirmar');
@@ -171,6 +276,9 @@ function avisosScreen() {
     return [wrap];
   }
   const data = avisosCache;
+  /* El distintivo del menú se repinta con el alcance en curso:
+     enseña el conteo del RFC elegido, el mismo que la pantalla. */
+  paintAvisosBadge(avisosBadgeCount(data));
   /* Filtro por RFC propio (1.9.0): con varios RFC, cada quien ve
      solo lo suyo sin abrir cada tarjeta. */
   const rfcsConAvisos = Object.keys(data.porRfc || {});
@@ -183,49 +291,92 @@ function avisosScreen() {
   const visiblesPorRfc = aviso => !avisosRfcFiltro || aviso.rfc === avisosRfcFiltro;
   avisosVisibles = data.avisos.filter(visiblesPorRfc).map(aviso => aviso.id);
   for (const id of [...avisosSeleccion]) if (!avisosVisibles.includes(id)) avisosSeleccion.delete(id);
-  if (!data.counts.total) {
+  if (!data.counts.total && !(data.pospuestas || []).length && !(data.archivadas || []).length) {
     /* Estado vacío bueno en grande (sistema-visual §5): frase grande +
        píldora ok. Nada de tres contadores a cero que parecen botones.
        El panel del correo-resumen ya no vive aquí (va en Ajustes vía
        avisosMailSection()). */
     const resumen = panel('Tus avisos');
+    resumen.querySelector('.panel-head')?.append(avisosSalidasBotones1310());
     const bueno = n('div', undefined, 'empty');
     const buenoTitulo = n('h3', 'Todo en orden. No tienes avisos.');
     buenoTitulo.style.fontSize = '26px';
     bueno.append(statusPill('ok', 'Todo en orden'),
       buenoTitulo,
       n('p', 'Cuando algo necesite tu atención aparecerá aquí.'));
-    const update = n('button', 'Actualizar ahora', 'soft small');
-    update.onclick = () => refreshAvisos(true);
-    bueno.append(update);
+    bueno.append(avisosRecalcularBoton());
     resumen.append(bueno);
     wrap.append(resumen);
   } else {
     /* Resumen por clases: las tres categorías se conservan como
        agrupación cuando SÍ hay avisos. */
+    /* UNA sola semántica de conteo en la pantalla (1.29.1, D7):
+       pastillas, subtítulo y secciones cuentan la MISMA lista —
+       la visible con el filtro en curso. Antes la pastilla
+       anunciaba el total de todos los RFC («Lo que está mal:
+       80») y la sección enseñaba solo los del RFC en pantalla
+       («Lo que está mal (7)»), y una clase con avisos solo
+       fuera del filtro se anunciaba sin sección que la
+       enseñara: cifras que no se podían seguir hasta su lista. */
+    const visiblesLista = data.avisos.filter(visiblesPorRfc);
+    const conteoVisible = clase => visiblesLista.filter(aviso => aviso.clase === clase).length;
     const resumen = panel('Tus avisos', data.counts.total
-      ? number.format(data.counts.total) + ' abiertos. Los de «línea base» son la foto inicial de tu histórico: están en el panel, sin correos ni atrasos retroactivos.'
+      ? number.format(visiblesLista.length) + ' abiertos' + (avisosRfcFiltro ? ' de este RFC' : '') + '. Los de «línea base» son la foto inicial de tu histórico: están en el panel, sin correos ni atrasos retroactivos.'
       : 'Sin avisos abiertos. Todo en orden.');
+    resumen.querySelector('.panel-head')?.append(avisosSalidasBotones1310());
     if (rfcsConAvisos.length > 1) {
       const filtro = n('div', undefined, 'filters');
       const picker = select(rfcsConAvisos.map(rfc => [rfc, 'RFC ' + rfc + ' (' + data.porRfc[rfc] + ')']),
         avisosRfcFiltro, 'Filtrar avisos por RFC');
-      picker.onchange = () => { avisosRfcFiltro = picker.value; render(); };
+      picker.onchange = () => { avisosRfcFiltro = picker.value; avisosGuardarFiltros1310(); render(); };
       filtro.append(picker);
       resumen.append(filtro);
     }
     const strip = n('div', undefined, 'traffic-strip');
     for (const [clase, etiqueta] of AVISOS_CLASES)
-      strip.append(statusPill(data.counts[clase] ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
-        etiqueta + ': ' + number.format(data.counts[clase] || 0)));
-    const update = n('button', 'Actualizar ahora', 'soft small');
-    update.onclick = () => refreshAvisos(true);
-    strip.append(update);
+      strip.append(statusPill(conteoVisible(clase) ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
+        etiqueta + ': ' + number.format(conteoVisible(clase))));
+    strip.append(avisosRecalcularBoton());
     resumen.append(strip);
+    /* El texto de manual va plegado (1.32.1, A4): el primer
+       pantallazo de Avisos son los avisos, no la explicación. */
+    const comoAvisos = n('details', undefined, 'seal-details');
+    comoAvisos.append(n('summary', 'Cómo funciona'),
+      n('p', 'El recálculo revisa los datos ya guardados en PacoSAT — saldos, documentos que faltan y listados —; no sale al SAT.', 'muted'),
+      /* La regla del renacimiento, escrita como la enseña la app
+         (1.29.2): la capa de atención manda mientras el hecho no
+         cambie; si cambia, el aviso vuelve como nuevo. */
+      n('p', 'Si archivas o pospones un aviso y el hecho que lo causó cambia, vuelve como aviso nuevo y te llega la notificación; si el hecho sigue igual, tu decisión se respeta.', 'muted'));
+    resumen.append(comoAvisos);
+    /* Sin vías fuera de la app, se dice aquí y en Hoy (1.29.2):
+       una alerta que nace y no llega a ninguna parte es un
+       silencio, y el silencio está prohibido. */
+    if (data.canales && !data.canales.correo && !data.canales.push) {
+      const sinVias = n('div', undefined, 'traffic-strip');
+      sinVias.append(statusPill('warn', 'Sin aviso fuera de la app'),
+        n('span', 'Las alertas nuevas no te están llegando fuera de la app: ninguna vía está conectada.'));
+      const irAjustes = n('button', 'Conectar una vía', 'soft small');
+      irAjustes.type = 'button';
+      irAjustes.onclick = () => navigate('settings');
+      sinVias.append(irAjustes);
+      resumen.append(sinVias);
+    }
+    /* Vistas de la capa de atención: solo las activas cuentan. */
+    const vistas = n('div', undefined, 'traffic-strip');
+    for (const [vista, etiqueta, cuenta] of [['activas', 'Activas', data.counts.total],
+      ['pospuestas', 'Pospuestas', (data.pospuestas || []).length],
+      ['archivadas', 'Archivadas', (data.archivadas || []).length]]) {
+      const b = n('button', etiqueta + ' · ' + number.format(cuenta), avisosVista === vista ? 'primary small' : 'soft small');
+      b.type = 'button';
+      b.onclick = () => { avisosVista = vista; avisosGuardarFiltros1310(); render(); };
+      vistas.append(b);
+    }
+    resumen.append(vistas);
     /* Barra por lote: selección múltiple sobre los avisos visibles. */
-    resumen.append(avisosBatchBar());
+    if (avisosVista === 'activas') resumen.append(avisosBatchBar());
     wrap.append(resumen);
     let algunaSeccion = false;
+    const seccionesActivas = n('div');
     /* Agrupados por causa raíz (1.25.0, mejora nº 2): el servidor
        marca los avisos que comparten causa (grupo) y la sección
        enseña UNA tarjeta de grupo con el total y sus comprobantes
@@ -247,12 +398,28 @@ function avisosScreen() {
           section.append(avisoGrupoCard(grupo, grupo.miembros.map(id => porId.get(id)).filter(Boolean)));
         } else section.append(avisoCard(aviso));
       }
-      wrap.append(section);
+      seccionesActivas.append(section);
     }
     if (!algunaSeccion && avisosRfcFiltro) {
       const sinFiltro = panel('Tus avisos');
       sinFiltro.append(n('p', 'Con este filtro no hay avisos de ese RFC. Quita el filtro para verlos todos.', 'muted'));
-      wrap.append(sinFiltro);
+      seccionesActivas.append(sinFiltro);
+    }
+    if (avisosVista === 'activas') wrap.append(seccionesActivas);
+    else if (avisosVista === 'pospuestas') {
+      const section = panel('Pospuestas (' + number.format((data.pospuestas || []).length) + ')',
+        'No cuentan en los distintivos ni notifican. El día elegido vuelven solas a la vista activa y te llega la notificación de vuelta.');
+      const deVista = (data.pospuestas || []).filter(visiblesPorRfc);
+      if (!deVista.length) section.append(n('p', 'No tienes avisos pospuestos' + (avisosRfcFiltro ? ' de este RFC' : '') + '.', 'muted'));
+      for (const aviso of deVista) section.append(avisoAtencionCard(aviso, 'pospuesta'));
+      wrap.append(section);
+    } else {
+      const section = panel('Archivadas (' + number.format((data.archivadas || []).length) + ')',
+        'Archivar no borra el hecho ni su documento de origen: solo tu capa de atención. Todo lo archivado se puede restaurar.');
+      const deVista = (data.archivadas || []).filter(visiblesPorRfc);
+      if (!deVista.length) section.append(n('p', 'No tienes avisos archivados' + (avisosRfcFiltro ? ' de este RFC' : '') + '.', 'muted'));
+      for (const aviso of deVista) section.append(avisoAtencionCard(aviso, 'archivada'));
+      wrap.append(section);
     }
   }
   if (data.historial.length) {
@@ -456,10 +623,17 @@ function avisoCard(aviso) {
     if (check.checked) avisosSeleccion.add(aviso.id); else avisosSeleccion.delete(aviso.id);
     paintAvisosBatch();
   };
-  head.append(check, avisoPill(aviso), n('strong', aviso.titulo));
+  head.append(check, avisoPill(aviso), avisoDuenoPill1310(aviso), n('strong', aviso.titulo));
   card.append(head);
   if (aviso.detalle) card.append(n('p', aviso.detalle));
   card.append(n('p', avisoMeta(aviso), 'muted'));
+  /* Barra de plazo (1.31.2): con nacimiento y vencimiento
+     reales del aviso, la barra pinta cuánto del plazo ya
+     corrió y su tramo (verde/ámbar/rojo por días que quedan);
+     la fecha sigue en texto en la meta. Sin los dos datos,
+     no se pinta nada: la barra no inventa plazos. */
+  const plazoEl1312 = (aviso.vence && aviso.creado) ? plazoBar1312(aviso.creado, aviso.vence) : null;
+  if (plazoEl1312) card.append(plazoEl1312);
   /* Siguiente paso (1.9.0): la tarjeta dice qué toca hacer. Quién lo
      lleva se VE como texto en la línea de gestiones (1.11.0). */
   if (aviso.accion) card.append(n('p', 'Siguiente paso: ' + aviso.accion, 'aviso-next'));
@@ -471,10 +645,19 @@ function avisoCard(aviso) {
   /* Gestiones en segunda línea discreta: nunca compiten con la acción
      principal ni llevan selectores en la cara de la tarjeta. */
   const gestiones = n('div', undefined, 'traffic-strip');
-  gestiones.append(n('span', 'Lo lleva: ' + avisoResponsableLabel(aviso), 'muted'));
-  const cambiarResp = n('button', 'Cambiar', 'soft small');
-  cambiarResp.onclick = () => avisoCambiarResponsable(aviso);
-  gestiones.append(cambiarResp);
+  /* Una sola señal de dueño (1.32.1, A3): la pastilla de la
+     cabecera de la tarjeta. La línea «Lo lleva: …» salió de la
+     cara — era la tercera vez que la tarjeta decía lo mismo. */
+  /* Menú ⋯ universal (1.31.2): las gestiones secundarias de
+     la tarjeta (cambiar quién lo lleva, reprogramar y archivar
+     — la capa de atención de la 1.29.2) viven en el menú; la
+     cara conserva la acción principal y quién lo lleva. El
+     hecho que respalda el aviso no se toca. */
+  const menuItems1312 = [
+    { label: 'Cambiar quién lo lleva', fn: () => avisoCambiarResponsable(aviso) },
+    { label: 'Reprogramar', fn: () => avisoReprogramar(aviso) },
+    { label: 'Archivar', fn: () => avisoArchivar(aviso) }
+  ];
   if (aviso.kind === 'saldo') {
     const paid = n('button', 'Ya se pagó', 'primary');
     paid.onclick = () => avisoMarkPaid(aviso, card, paid);
@@ -482,36 +665,24 @@ function avisoCard(aviso) {
     /* Recordatorio de cobro como borrador (1.25.0, AGREGAR 5):
        solo en saldos POR COBRAR — es al cliente a quien se le
        recuerda, nunca a un proveedor. */
-    if (aviso.direccion === 'cobrar') {
-      const reminder = n('button', 'Recordatorio de cobro', 'soft small');
-      reminder.onclick = () => avisoRecordatorio(aviso);
-      gestiones.append(reminder);
-    }
-    if (aviso.estado === 'por-confirmar') {
-      const no = n('button', 'Aún no', 'soft small');
-      no.onclick = () => avisoConfirmNo(aviso);
-      gestiones.append(no);
-    } else {
-      const fixed = n('button', 'Ya lo corregí', 'soft small');
-      fixed.onclick = () => avisoResolve(aviso);
-      gestiones.append(fixed);
-    }
+    if (aviso.direccion === 'cobrar')
+      menuItems1312.push({ label: 'Recordatorio de cobro', fn: () => avisoRecordatorio(aviso) });
+    if (aviso.estado === 'por-confirmar')
+      menuItems1312.push({ label: 'Aún no', fn: () => avisoConfirmNo(aviso) });
+    else menuItems1312.push({ label: 'Ya lo corregí', fn: () => avisoResolve(aviso) });
   } else if (aviso.kind === 'solicitud-estado') {
     mainRow.append(avisoUploadButton(aviso));
-    const fixed = n('button', 'Ya lo corregí', 'soft small');
-    fixed.onclick = () => avisoResolve(aviso);
-    gestiones.append(fixed);
+    menuItems1312.push({ label: 'Ya lo corregí', fn: () => avisoResolve(aviso) });
   } else {
     const fixed = n('button', 'Ya lo corregí', 'primary');
     fixed.onclick = () => avisoResolve(aviso);
     mainRow.append(fixed);
   }
   const enlace = AVISOS_ENLACES[aviso.enlace];
-  if (enlace) {
-    const go = n('button', enlace[1], 'soft small');
-    go.onclick = () => navigate(enlace[0]);
-    gestiones.append(go);
-  }
+  if (enlace) menuItems1312.push({ label: enlace[1], fn: () => navigate(enlace[0]) });
+  const menuAviso1312 = cardMenu1312('Más opciones de este aviso');
+  menuAviso1312._setItems1312(menuItems1312);
+  head.append(menuAviso1312);
   if (mainRow.childNodes.length) card.append(mainRow);
   card.append(gestiones);
   return card;
@@ -530,6 +701,95 @@ function avisoCambiarResponsable(aviso) {
       toast('Ahora lo lleva: ' + (picker.value === 'Contadora' ? 'la contadora' : picker.value) + '.', 'ok');
       render();
     }, 'Guardar');
+}
+/* Archivar con deshacer (1.29.2): la tarjeta sale de la vista
+   activa y de los conteos en el acto; el toast trae «Deshacer»
+   unos segundos (la regla de la casa para lo que mueve datos) y
+   el aviso queda en la vista «Archivadas», restaurable siempre.
+   El documento o vencimiento que lo respalda NO se borra. */
+async function avisoArchivar(aviso) {
+  /* F8 (1.31.0): archivar pasa por el ayudante universal
+     conDeshacer1310 (definido en final-ui): hace el archivo,
+     enseña su toast con «Deshacer» y, si se pulsa, restaura.
+     Sin el ayudante a mano, queda el toastUndo de siempre. */
+  const aplicar = async accion => {
+    avisosCache = await satApi('notices/atencion', { id: aviso.id, accion });
+    avisosFetchedAt = Date.now();
+    paintAvisosBadge(avisosBadgeCount(avisosCache));
+    render();
+  };
+  const texto = 'Aviso archivado: «' + aviso.titulo + '». El hecho que lo respalda sigue en su pantalla.';
+  try {
+    if (typeof conDeshacer1310 === 'function')
+      await conDeshacer1310(texto, () => aplicar('archivar'), () => aplicar('restaurar'));
+    else {
+      await aplicar('archivar');
+      toastUndo(texto, () => aplicar('restaurar'));
+    }
+  } catch (error) { toast(error.message, 'error'); }
+}
+/* Reprogramar (1.29.2): mañana · en 3 días · la semana que viene
+   · una fecha elegida. Mientras está pospuesta no cuenta en los
+   distintivos ni notifica; al llegar su fecha vuelve a la vista
+   activa y avisa como una llegada nueva. */
+function avisoReprogramar(aviso) {
+  const plazo = select([['manana', 'Mañana'], ['tres-dias', 'En 3 días'],
+    ['semana', 'La semana que viene'], ['fecha', 'Elegir una fecha…']], 'manana', 'Hasta cuándo posponer');
+  const fecha = input('date', {});
+  fecha.hidden = true;
+  plazo.onchange = () => { fecha.hidden = plazo.value !== 'fecha'; };
+  dialog('Reprogramar este aviso',
+    [n('p', '«' + aviso.titulo + '» saldrá de la vista activa y de los conteos hasta la fecha elegida (a las 09:00). Ese día volverá solo y te llegará la notificación de vuelta.'),
+     field('Posponer hasta', plazo), field('Fecha elegida', fecha)],
+    async () => {
+      if (plazo.value === 'fecha' && !fecha.value) { toast('Elige la fecha a la que reprogramar.', 'error'); throw new Error('sin fecha'); }
+      avisosCache = await satApi('notices/posponer', { id: aviso.id, cuando: plazo.value, fecha: fecha.value || '' });
+      avisosFetchedAt = Date.now();
+      paintAvisosBadge(avisosBadgeCount(avisosCache));
+      render();
+      const vuelta = (avisosCache.pospuestas || []).find(item => item.id === aviso.id);
+      toast('Aviso reprogramado' + (vuelta?.pospuestaHasta ? ' hasta el ' + avisoFecha(vuelta.pospuestaHasta) : '') +
+        ': no cuenta ni notifica mientras tanto.', 'ok');
+    }, 'Reprogramar');
+}
+/* Tarjeta sencilla para las vistas Pospuestas y Archivadas: qué
+   es, cuándo vuelve (si está pospuesta) y su única acción. */
+function avisoAtencionCard(aviso, modo) {
+  const card = n('div', undefined, 'aviso-card');
+  const head = n('div', undefined, 'aviso-head');
+  head.append(avisoPill(aviso), avisoDuenoPill1310(aviso), n('strong', aviso.titulo));
+  card.append(head);
+  if (aviso.detalle) card.append(n('p', aviso.detalle));
+  card.append(n('p', avisoMeta(aviso), 'muted'));
+  const row = n('div', undefined, 'traffic-strip');
+  row.style.justifyContent = 'flex-end';
+  if (modo === 'pospuesta') {
+    card.append(n('p', 'Pospuesta: vuelve el ' + avisoFecha(aviso.pospuestaHasta) + ' a las 09:00.', 'aviso-next'));
+    const traer = n('button', 'Traerla ya', 'soft small');
+    traer.onclick = async () => {
+      avisosCache = await satApi('notices/atencion', { id: aviso.id, accion: 'restaurar' });
+      avisosFetchedAt = Date.now();
+      paintAvisosBadge(avisosBadgeCount(avisosCache));
+      avisosVista = 'activas'; render();
+      toast('Aviso de vuelta en la vista activa.', 'ok');
+    };
+    row.append(traer);
+  } else {
+    const restaurar = n('button', 'Restaurar', 'soft small');
+    restaurar.onclick = async () => {
+      avisosCache = await satApi('notices/atencion', { id: aviso.id, accion: 'restaurar' });
+      avisosFetchedAt = Date.now();
+      paintAvisosBadge(avisosBadgeCount(avisosCache));
+      render();
+      toast('Aviso restaurado a la vista activa.', 'ok');
+    };
+    row.append(restaurar);
+  }
+  const archivar = n('button', 'Archivar', 'soft small');
+  archivar.onclick = () => avisoArchivar(aviso);
+  if (modo === 'pospuesta') row.append(archivar);
+  card.append(row);
+  return card;
 }
 async function avisoAfterChange(message) {
   toast(message, 'ok');

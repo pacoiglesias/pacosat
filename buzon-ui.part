@@ -13,23 +13,14 @@ function buzonUnreadFor(rfc) {
   if (map) return Number(map[rfc] || 0);
   return buzonCache && buzonCache.rfc === rfc ? Number(buzonCache.unread || 0) : 0;
 }
-function paintBuzonBadge() {
-  const badge = $('buzon-badge');
-  if (!badge) return;
-  /* Distintivo = la pantalla (1.28.0, P9): con un contribuyente
-     elegido, el contador es el SUYO, no la suma de todos. */
-  if (scope) {
-    const own = buzonUnreadFor(scope);
-    badge.hidden = !own;
-    badge.textContent = own ? number.format(own) : '';
-    return;
-  }
-  const map = typeof satData !== 'undefined' && satData ? satData.buzonUnread : null;
-  const total = map ? Object.values(map).reduce((sum, value) => sum + Number(value || 0), 0) :
-    (buzonCache ? Number(buzonCache.unread || 0) : 0);
-  badge.hidden = !total;
-  badge.textContent = total ? number.format(total) : '';
-}
+/* El distintivo de esta pantalla ya no vive en el menú
+   (1.31.0, punto B: fuera los inventarios; los números del menú
+   solo cuentan lo que necesita a Paco). La función queda como
+   talón vacío deliberado porque Hoy, el pulso y los flujos la
+   siguen llamando: ya no hay elemento que pintar y no se finge
+   lo contrario. El conteo de sin abrir sigue viviendo en su
+   pantalla (Recibidos) y en el Centro SAT. */
+function paintBuzonBadge() { /* sin distintivo desde la 1.31.0 */ }
 function buzonCuando(at) {
   if (!at) return '';
   const ms = typeof at === 'number' ? at : Date.parse(at);
@@ -64,10 +55,10 @@ async function forwardDialog(rfc, ids, onSent) {
   if (cfg.sugerencia && !(cfg.dests || []).length)
     form.append(n('p', 'Sugerencia para este RFC: ' + cfg.sugerencia + ' — el buzón de recepción de tu facturador; consta en tus documentos y puedes cambiarla.', 'muted'));
   if (cfg.autoTo && cfg.autoTo !== inicial)
-    form.append(n('p', 'Ya hay una regla automática activa hacia ' + cfg.autoTo + ': se gestiona desde el Buzón de este RFC.', 'muted'));
+    form.append(n('p', 'Ya hay una regla automática activa hacia ' + cfg.autoTo + ': se gestiona desde Recibidos de este RFC.', 'muted'));
   const auto = input('checkbox', { checked: Boolean(cfg.autoTo) && cfg.autoTo === inicial });
   const autoLabel = n('label');
-  autoLabel.append(auto, n('span', ' Reenviar automáticamente todo lo que llegue a este Buzón a esta dirección'));
+  autoLabel.append(auto, n('span', ' Reenviar automáticamente todo lo que llegue a Recibidos a esta dirección'));
   form.append(autoLabel);
   const send = n('button', 'Reenviar ahora', 'primary');
   send.type = 'submit';
@@ -119,16 +110,16 @@ async function forwardDialog(rfc, ids, onSent) {
 function buzonScreen() {
   const wrap = n('div');
   if (typeof satToken === 'undefined' || !satToken) {
-    wrap.append(panel('Buzón', 'El Buzón vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver lo que llegó.'));
+    wrap.append(panel('Recibidos', 'Recibidos vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver lo que llegó.'));
     return [wrap];
   }
-  const head = panel('Buzón · ' + (scope || 'sin contribuyente'),
+  const head = panel('Recibidos · ' + (scope || 'sin contribuyente'),
     'Lo nuevo que llegó a este RFC: CFDI recibidos y documentos del SAT, lo más reciente primero y lo sin leer destacado. Abrir un CFDI lleva a su ficha; un documento se abre en el visor.');
   const body = n('div');
   head.append(body);
   wrap.append(head);
   if (!scope) {
-    body.append(empty('Elige un contribuyente', 'El Buzón es por RFC: elige arriba el contribuyente del que quieres ver lo que llegó.'));
+    body.append(empty('Elige un contribuyente', 'Recibidos va por RFC: elige arriba el contribuyente del que quieres ver lo que llegó.'));
     return [wrap];
   }
   const rfc = scope;
@@ -140,7 +131,7 @@ function buzonScreen() {
     const bar = n('div', undefined, 'traffic-strip');
     bar.append(statusPill(data.unread ? 'warn' : 'ok',
       data.unread ? number.format(data.unread) + ' sin leer' : 'Todo leído'));
-    const all = n('button', 'Marcar todo leído', 'soft small');
+    const all = n('button', 'Marcar todo leído', 'soft buzon-mark-all');
     all.type = 'button';
     all.disabled = !data.unread;
     all.onclick = async () => {
@@ -150,7 +141,7 @@ function buzonScreen() {
         for (const item of data.items || []) item.read = true;
         data.unread = result.unread;
         paint(data);
-        toast('Buzón al día: todo marcado como leído.', 'ok');
+        toast('Recibidos al día: todo marcado como leído.', 'ok');
       } catch (error) {
         /* Respuesta perdida: se re-lee el buzón antes de declarar
            el error (regla de verdad de las acciones). */
@@ -169,7 +160,7 @@ function buzonScreen() {
     if (buzonForwardCfg.autoTo) {
       const autoBar = n('div', undefined, 'traffic-strip');
       autoBar.append(statusPill('ok', 'Reenvío automático activo'),
-        n('span', 'Todo lo que llegue a este Buzón se reenvía a ' + buzonForwardCfg.autoTo + '.'));
+        n('span', 'Todo lo que llegue a Recibidos se reenvía a ' + buzonForwardCfg.autoTo + '.'));
       const quitar = n('button', 'Quitar la regla', 'soft small');
       quitar.type = 'button';
       quitar.onclick = async () => {
@@ -199,7 +190,11 @@ function buzonScreen() {
     }
     const items = data.items || [];
     if (!items.length) {
-      body.append(empty('Buzón vacío', 'Cuando llegue un CFDI o un documento nuevo de este RFC, aparecerá aquí.'));
+      /* El vacío enseña el gesto (1.32.1, A4): lo que llena
+         esta bandeja se descarga del SAT. */
+      body.append(empty('Recibidos vacío', 'Cuando llegue un CFDI o un documento nuevo de este RFC, aparecerá aquí. Lo que lo trae es la descarga del SAT.',
+        typeof downloadSheet === 'function'
+          ? action('Descargar del SAT', () => downloadSheet(rfc), 'primary', 'down') : undefined));
       return;
     }
     for (const item of items) {
@@ -235,7 +230,7 @@ function buzonScreen() {
         item.at ? buzonCuando(item.at) : ''].filter(Boolean).join(' · ');
       if (meta) main.append(n('span', meta, 'muted bz-meta'));
       row.append(main);
-      const open = n('button', item.kind === 'cfdi' ? 'Abrir ficha' : 'Ver documento', 'soft small');
+      const open = n('button', item.kind === 'cfdi' ? 'Abrir ficha' : 'Ver documento', 'soft');
       open.type = 'button';
       open.onclick = () => {
         if (item.kind === 'cfdi') {
@@ -252,37 +247,31 @@ function buzonScreen() {
           .catch(error => toast(error.message, 'error'));
       };
       row.append(open);
-      if (item.kind === 'cfdi' && item.uuid) {
-        const fwd = n('button', 'Reenviar', 'soft small');
-        fwd.type = 'button';
-        fwd.onclick = () => forwardDialog(rfc, [item.uuid]);
-        row.append(fwd);
-      }
-      if (!item.read) {
-        const read = n('button', 'Marcar leído', 'soft small');
-        read.type = 'button';
-        read.onclick = async () => {
-          read.disabled = true;
+      /* El resto de gestos, al ⋯ de la fila (1.32.1, R1): la
+         fila enseña su gesto principal — abrir — y nada más;
+         reenviar y marcar leído viven a un toque, no apilados. */
+      const filaMenu = [];
+      if (item.kind === 'cfdi' && item.uuid)
+        filaMenu.push(['Reenviar', () => forwardDialog(rfc, [item.uuid])]);
+      if (!item.read) filaMenu.push(['Marcar leído', async () => {
+        try {
+          const result = await satApi('buzon/read', { rfc, keys: [item.key] });
+          item.read = true;
+          data.unread = result.unread;
+          paint(data);
+        } catch (error) {
           try {
-            const result = await satApi('buzon/read', { rfc, keys: [item.key] });
-            item.read = true;
-            data.unread = result.unread;
-            paint(data);
-          } catch (error) {
-            try {
-              const fresh = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
-              if ((fresh.items || []).find(candidate => candidate.key === item.key)?.read) {
-                paint(fresh);
-                toast('Quedó marcado como leído.', 'ok');
-                return;
-              }
-            } catch { /* sin re-lectura: manda el error original */ }
-            toast(error.message, 'error');
-            read.disabled = false;
-          }
-        };
-        row.append(read);
-      }
+            const fresh = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
+            if ((fresh.items || []).find(candidate => candidate.key === item.key)?.read) {
+              paint(fresh);
+              toast('Quedó marcado como leído.', 'ok');
+              return;
+            }
+          } catch { /* sin re-lectura: manda el error original */ }
+          toast(error.message, 'error');
+        }
+      }]);
+      if (filaMenu.length && typeof cardMenu1312 === 'function') row.append(cardMenu1312(filaMenu));
       body.append(row);
     }
   };
@@ -291,7 +280,7 @@ function buzonScreen() {
      bandeja mientras llega, no un párrafo suelto. */
   const buzonSkel = n('div', undefined, 'skel');
   buzonSkel.setAttribute('aria-busy', 'true');
-  buzonSkel.setAttribute('aria-label', 'Cargando el buzón');
+  buzonSkel.setAttribute('aria-label', 'Cargando los recibidos');
   for (let i = 0; i < 3; i++) buzonSkel.append(n('div', undefined, 'skel-block'));
   body.append(buzonSkel);
   (async () => {
