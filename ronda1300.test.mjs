@@ -92,12 +92,12 @@ const unlock = async (h, rfc) => {
 /* ===== 5 · ESTÁTICAS ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '1.32.1', 'la versión de la ola es 1.32.1 (re-basificado: la 1.32.1 sustituye a la 1.32.0 como versión a montar)');
+  assert.equal(pkg.version, '1.32.2', 'la versión de la ola es 1.32.2 (re-basificado: la 1.32.2 sustituye a la 1.32.1 como versión a montar)');
   const ejecutor = read('ejecutor-local.mjs');
   /* Re-baseline 1.31.2 (bis): el sello del ejecutor sube con
      el paquete por la coherencia de la casa (ronda1310); en la
      1.31.2 es su ÚNICO cambio y su bundle se regenera por él. */
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '1.32.1'"), 'el ejecutor declara su versión (sello 1.32.1)');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '1.32.2'"), 'el ejecutor declara su versión (sello 1.32.2)');
   assert.ok(ejecutor.includes('sesionViva'), 'el ejecutor pasa la sesión viva a los motores');
   assert.ok(ejecutor.includes('puerta-probar'), 'el ejecutor sabe probar la puerta');
   assert.ok(ejecutor.includes('portal-rechaza') && ejecutor.includes('REINTENTO_PORTAL_MS'),
@@ -240,12 +240,24 @@ const unlock = async (h, rfc) => {
   /* El ejecutor canjeado late: su llave vale. */
   const late = await h.exec('POST', '/api/executor/heartbeat', {}, canje.json.token);
   assert.equal(late.status, 200, 'la llave del canje funciona para el ejecutor');
-  /* Versión sin paquete publicado: vacía, y el paquete no existe. */
+  /* Versión y paquete del ejecutor: el manifiesto ejecutor-bundle.json
+     vive en el árbol desde la 1.32.2 (viaja en el snapshot de GitHub);
+     donde está presente, la versión publicada es la suya y se verifica
+     contra él. Donde no está (el paquete es artefacto de empaquetado),
+     la versión va vacía: nadie se actualiza a ciegas. El .zip no viaja
+     al repositorio: sin paquete guardado, /bundle es 404. */
   const version = await h.exec('POST', '/api/executor/version', {}, tokenEjecutor);
   assert.equal(version.status, 200);
-  assert.equal(version.json.version, '', 'sin manifiesto en el servidor, la versión va vacía: nadie se actualiza a ciegas');
+  if (existsSync(join(ROOT, 'ejecutor-bundle.json'))) {
+    const manifiesto = JSON.parse(read('ejecutor-bundle.json'));
+    assert.equal(version.json.version, manifiesto.version,
+      'con manifiesto en el servidor, la versión publicada es la del manifiesto');
+  } else {
+    assert.equal(version.json.version, '', 'sin manifiesto en el servidor, la versión va vacía: nadie se actualiza a ciegas');
+  }
   const bundle = await h.exec('POST', '/api/executor/bundle', {}, tokenEjecutor);
-  assert.equal(bundle.status, 404, 'sin paquete guardado, /bundle es 404');
+  if (!existsSync(join(ROOT, 'ejecutor-bundle.zip')))
+    assert.equal(bundle.status, 404, 'sin paquete guardado, /bundle es 404');
   /* La puerta: encolar, reclamar, «abre» → veredicto en el estado. */
   const enc = await h.call('POST', '/api/executor/jobs', { rfc: OWN, kind: 'puerta-probar', payload: {} });
   assert.equal(enc.status, 200, 'la puerta-probar se encola para un RFC con perfil');

@@ -169,7 +169,7 @@ async function collect(stream) {
     .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
   const contrast = (a, b) => { const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
   const accentNames = [...polish.matchAll(/\[data-accent="([a-z]+)"\]\{--green:/g)].map(match => match[1]);
-  assert.deepEqual([...new Set(accentNames)].sort(), ['ambar', 'azul', 'burdeos', 'grafito', 'rosa', 'teal', 'violeta']);
+  assert.deepEqual([...new Set(accentNames)].sort(), ['ambar', 'azul', 'burdeos', 'grafito', 'rosa', 'teal', 'verde', 'violeta']);
   for (const name of new Set(accentNames)) {
     const block = selector => {
       const found = polish.match(new RegExp(selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\{([^}]*)\\}'));

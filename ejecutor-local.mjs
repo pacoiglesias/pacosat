@@ -85,7 +85,7 @@ import { createSatDeclFetch } from './sat-declaraciones.mjs';
 import { createSatTribFetch } from './sat-tributario.mjs';
 import { SAT_EXECUTOR_PROTOCOL_VERSION } from './sat-executor.mjs';
 
-export const EJECUTOR_VERSION = '1.32.1';
+export const EJECUTOR_VERSION = '1.32.2';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const URL_BASE = String(process.env.PACOSAT_URL || '').replace(/\/$/, '');

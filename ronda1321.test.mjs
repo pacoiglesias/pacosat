@@ -86,12 +86,12 @@ const unlock = async (h, rfc = OWN) => {
 /* ===== 1 · ESTÁTICAS + cabecera honesta (A1) ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '1.32.1', 'la ronda es la 1.32.1');
+  assert.equal(pkg.version, '1.32.2', 'la ronda es la 1.32.2');
   const ejecutor = read('ejecutor-local.mjs');
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '1.32.1'"), 'el ejecutor declara 1.32.1');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '1.32.2'"), 'el ejecutor declara 1.32.2');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"1.32.1"'), 'el artefacto se sella 1.32.1');
-  assert.ok(html.length <= 712000 || Buffer.byteLength(html) <= 712000, 'techo del artefacto');
+  assert.ok(html.includes('"version":"1.32.2"'), 'el artefacto se sella 1.32.2');
+  assert.ok(html.length <= 718000 || Buffer.byteLength(html) <= 718000, 'techo del artefacto (718.000, re-basificado en la 1.32.2)');
 
   /* Cabecera ↔ despacho: para cada pantalla tocada por la
      auditoría, la etiqueta que primaryLabel promete y el gesto

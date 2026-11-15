@@ -396,9 +396,9 @@ try {
      ancho y a enseñar su Cancelar entero dentro del menú (en la
      primera captura se le cortaba la última letra); el techo
      CSS se re-basifica a 48.500 y el HTML queda en 663.000. */
-  assert.ok(htmlBytes <= 712000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 712.000, re-basificado en la 1.32.0: el panel de la API con su documentación; venía de 698.000 de la 1.31.2, componentes universales)');
+  assert.ok(htmlBytes <= 718000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 718.000, re-basificado en la 1.32.2: la marca propia con su favicon y el acento verde elegible; venía de 712.000 de la 1.32.0, panel de la API)');
   const cssBytes = ['style.part', 'design.part', 'polish.part'].reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-  assert.ok(cssBytes <= 63000, 'el CSS pesa ' + cssBytes + ' B (tope 63.000, re-basificado en la 1.32.0: el bloque del panel de la API; venía de 61.000 de la 1.31.2)');
+  assert.ok(cssBytes <= 64000, 'el CSS pesa ' + cssBytes + ' B (tope 64.000, re-basificado en la 1.32.2: los bloques del acento verde elegible y las reglas de la marca y de la línea del Registro; venía de 63.000 de la 1.32.0)');
 
   const defined = [...layout.matchAll(/<symbol id="(i-[a-z]+)"/g)].map(match => match[1]);
   assert.ok(defined.length >= 20, 'la hoja de símbolos existe');

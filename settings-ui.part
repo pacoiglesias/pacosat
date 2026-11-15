@@ -3,7 +3,7 @@
    guardan vía API en el volumen de datos (sobreviven a reinicios y
    redespliegues y viajan en el respaldo completo); en modo local se
    guardan en este navegador. Nada de esto toca la carpeta de secretos del servidor. */
-const ACCENT_SWATCHES = { '': '#0e6b4f', azul: '#175c9e', teal: '#0f766e', violeta: '#6d28d9',
+const ACCENT_SWATCHES = { '': '#175c9e', verde: '#0e6b4f', azul: '#175c9e', teal: '#0f766e', violeta: '#6d28d9',
   burdeos: '#9f2436', ambar: '#9a5b00', rosa: '#b01854', grafito: '#3f5468' };
 let pendingLogo; // undefined = sin cambios · '' = quitar · dataURL = logo nuevo
 async function satApiDelete(route) {
@@ -67,7 +67,7 @@ function settingsScreen() {
     swatch.type = 'button';
     swatch.dataset.accentOption = value;
     swatch.setAttribute('aria-pressed', String(appSettings.accent === value));
-    swatch.title = value ? SETTING_ACCENT_LABELS[value] : 'Predeterminado (verde)';
+    swatch.title = value ? SETTING_ACCENT_LABELS[value] : 'Predeterminado (azul)';
     const dot = n('span', undefined, 'swatch-dot');
     dot.style.background = ACCENT_SWATCHES[value];
     swatch.append(dot, n('span', value ? SETTING_ACCENT_LABELS[value] : 'Predeterminado'));
@@ -80,7 +80,7 @@ function settingsScreen() {
     swatches.append(swatch);
   }
   body.append(field('Color de acento', swatches),
-    n('p', 'Paleta cerrada del sistema de diseño: cada color cumple contraste AA en tema claro y oscuro. «Predeterminado» restaura el verde original. El botón «Guardar ajustes» de la cabecera guarda todo.'));
+    n('p', 'Paleta cerrada del sistema de diseño: cada color cumple contraste AA en tema claro y oscuro. «Predeterminado» restaura el azul de la casa. El botón «Guardar ajustes» de la cabecera guarda todo.'));
   identity.append(body);
   panels.push(identity);
   const about = panel('Acerca de PacoSAT');

@@ -197,7 +197,7 @@ const vista = async ejercicio => {
   const html = readFileSync(join(import.meta.dirname, 'Faro-Fiscal.html'), 'utf8');
   /* Anexo 1.26.0: el sello sube con la Ronda Visual. */
   // 1.30.0: pineo de versión re-apuntado a la vigente, como en cada ronda.
-  assert.ok(html.includes('"version":"1.32.1"'), 'el artefacto se sella con la versión vigente (1.32.1)');
+  assert.ok(html.includes('"version":"1.32.2"'), 'el artefacto se sella con la versión vigente (1.32.2)');
   assert.ok(html.includes('Mapa de tu año fiscal') || html.includes('de 12 meses presentados'),
     'el mapa viaja dentro del artefacto construido');
   console.log('OK 1.17.0: la pantalla — resumen, alerta, semáforo, detalle y su gesto por periodo.');

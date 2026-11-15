@@ -702,14 +702,14 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '1.32.1',
+  version: '1.32.2',
   puntos: [
-    'Descargar, donde estás: Facturas ya tiene su botón «Descargar del SAT», Declaraciones su «Descargar declaraciones del SAT» en grande, y cada documento su «Descargar» en la propia fila — sin dar vueltas por tres pantallas para bajar un papel.',
-    'El botón grande del Buzón Tributario ahora consulta el Buzón de verdad (antes abría el importador de archivos), y cada botón de cabecera hace exactamente lo que su nombre promete.',
-    'La puerta del SAT dice la verdad: si tu equipo entró bien al portal, la puerta queda marcada como buena aunque el trámite falle después — y si el portal devuelve una página que ya no existe, el error nombra esa dirección en vez de un «no encontrado» genérico.',
-    'La descarga de CFDI despertó: al arrancar, el servidor activa tu e.firma desde la que guardaste en la app — ya no puede quedarse dormida por un archivo viejo de arranque — y cada solicitud que pidas queda registrada y contable.',
-    'El Registro se comparte: «Copiar todo» copia lo que ves, con tu filtro, como texto limpio; cada fallo lleva «Copiar la traza»; y lo visible se puede borrar con confirmación y Deshacer.',
-    'Orden en las pantallas: Hoy ya no repite la tabla de Totales, Dinero cuenta la antigüedad una sola vez, Cierre se queda con el cierre (el correo vive en Ajustes › Correo y la exportación completa en Ajustes › Respaldos) y los botones heredaron el tamaño que su trabajo merece.'
+    'El color de la casa ahora es el azul: botones, marcas y estados visten el azul en claro y en oscuro. El verde de antes sigue en Ajustes › Color de acento, como una muestra más, por si lo quieres de vuelta.',
+    'Modo oscuro pulido y medido: los rótulos de la barra lateral y la alerta de meses vencidos de Declaraciones ya cumplen el mismo contraste que el resto del sistema, en las doce pantallas.',
+    'Marca propia: PacoSAT estrena su faro — el mismo dibujo en la barra lateral, en el pie y en el icono de la app — y el medallón ya vira con el tema y el acento en vez de quedarse en su verde fijo de antes.',
+    'Los reportes imprimen en tamaño carta (antes A4): el PDF de las salidas y la representación impresa de los comprobantes salen en el papel que se usa aquí.',
+    'En Hoy manda el día: la tarjeta «Hoy en PacoSAT», con lo que te toca, va primero y «Esto es lo nuevo» queda debajo, sin taparla.',
+    'El Registro respira: la hora y el texto de cada suceso ya no van pegados.'
   ]
 };
 function novedadesCard1311() {

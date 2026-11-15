@@ -54,7 +54,7 @@ const moneyUi = read('money-ui.part');
 const buzonUi = read('buzon-ui.part');
 
 /* Sello y techos */
-assert.ok(html.includes('"version":"1.32.1"'), 'el artefacto se sella con la versión vigente (1.32.1)');
+assert.ok(html.includes('"version":"1.32.2"'), 'el artefacto se sella con la versión vigente (1.32.2)');
 const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
 /* Techo 598.000 desde la 1.29.0 (ejecutor local, papelera,
    peldaños 1 y 2 y Totales navegable): la página crece a
@@ -71,10 +71,10 @@ const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
    1.31.0 (corrección del 13 nov + menú + 45 mejoras +
    reportes): crece a 659.787 B y el techo sube a 663.000,
    contabilidad en el anexo 1.31.0 de ronda1110. */
-assert.ok(htmlBytes <= 712000, 'la página pesa ' + htmlBytes + ' B (tope 712.000, re-basificado en la 1.32.0 en ronda1110)');
+assert.ok(htmlBytes <= 718000, 'la página pesa ' + htmlBytes + ' B (tope 718.000, re-basificado en la 1.32.2 en ronda1110)');
 const cssBytes = ['style.part', 'design.part', 'polish.part']
   .reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-assert.ok(cssBytes <= 63000, 'el CSS pesa ' + cssBytes + ' B (tope 63.000, re-basificado en la 1.32.0 en ronda1110)');
+assert.ok(cssBytes <= 64000, 'el CSS pesa ' + cssBytes + ' B (tope 64.000, re-basificado en la 1.32.2 en ronda1110)');
 
 /* Tokens cerrados */
 for (const token of ['--r-s:8px', '--r-m:12px', '--r-l:16px', '--r-pill:100px',
@@ -88,8 +88,8 @@ assert.ok(style.includes('.sidebar nav button[aria-current]{background:var(--nav
 assert.ok(design.includes('border-radius:var(--r-l)'), 'paneles y diálogos ruedan sobre --r-l');
 
 /* Marca ≠ semáforo */
-assert.equal([...polish.matchAll(/--accent-ink:#[0-9a-f]{6}/g)].length, 14,
-  'los 14 bloques de acento (7 × claro/oscuro) definen --accent-ink');
+assert.equal([...polish.matchAll(/--accent-ink:#[0-9a-f]{6}/g)].length, 16,
+  'los 16 bloques de acento (8 × claro/oscuro) definen --accent-ink (re-basificado en la 1.32.2: el verde se suma como acento elegible)');
 assert.ok(!polish.includes('--ok-ink:#'), 'ningún acento redefine el verde del semáforo');
 assert.ok(polish.includes('.swatch[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--accent-ink)}'),
   'la muestra de acento pinta con tinta de marca');
