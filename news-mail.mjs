@@ -56,7 +56,8 @@ const subjectMonthOf = item => {
    notice: { kind, rfc, direction, label } · rows: las filas de
    detalle de news_items · total: la cuenta completa (puede ser
    mayor que rows.length cuando se compone solo una muestra). */
-export function composeNewsMail(notice, rows, total = rows.length) {
+import { mailLayout, mailCard, mailPill, mailButton, deepLink, escHtml } from './mail-layout.mjs';
+export function composeNewsMail(notice, rows, total = rows.length, opts = {}) {
   const list = [...rows].sort((a, b) => String(a.fecha || '').localeCompare(String(b.fecha || '')));
   const shown = list.slice(0, NEWS_MAIL_LIMIT);
   const sum = rows.reduce((acc, row) => acc + centsOf(row.total), 0n);
@@ -83,6 +84,13 @@ export function composeNewsMail(notice, rows, total = rows.length) {
     'Entraron ' + total + ' comprobante(s) nuevo(s) ' + lugar +
       (rfc ? ' para el RFC ' + rfc : '') + '. Ya están en tu expediente, con su XML guardado.',
     'Importe total de lo nuevo: $' + importeShow(moneyText(sum)) + '.', ''];
+  /* Tanda 5 (2.0, A4): la advertencia 69-B/EFOS va pegada a SU
+     comprobante — la situación sale de la marca del alta
+     ('Definitivo', 'Presunto'…); sin marca, no se afirma nada. */
+  const efosAviso = row => !row?.efos ? '' :
+    'Ojo: este emisor está en la lista 69-B del SAT como EFOS ' +
+    String(row.efos).toLowerCase() +
+    ' — no la deduzcas ni acredites su IVA sin revisar su materialidad.';
   for (const row of shown) {
     lines.push('· ' + (fechaLarga(row.fecha) || 'sin fecha') +
       ' · ' + (row.counterpartName || 'Sin nombre registrado') + ' (' + (row.counterpartRfc || '—') + ')' +
@@ -90,10 +98,35 @@ export function composeNewsMail(notice, rows, total = rows.length) {
       ' · $' + importeShow(row.total) +
       (row.estado ? ' · ' + row.estado : '') +
       ' · ' + claseWord(row));
+    const avisoEfos = efosAviso(row);
+    if (avisoEfos) lines.push('  ' + avisoEfos);
   }
   if (total > shown.length)
     lines.push('· …y ' + (total - shown.length) + ' más — el detalle completo está en PacoSAT, en Facturas.');
-  lines.push('', 'Ábrelos en PacoSAT, en Facturas, para ver cada comprobante completo (conceptos, impuestos y su PDF).',
-    '— PacoSAT (aviso automático de novedades).');
-  return { subject, text: lines.join('\n') };
+  lines.push('', 'Ábrelos en PacoSAT, en Facturas, para ver cada comprobante completo (conceptos, impuestos y su PDF).');
+  /* Enlace profundo (2.0 · M3): con URL pública configurada, el
+     correo enlaza a Facturas con el RFC y el periodo del aviso;
+     sin URL, queda la prosa de siempre y ningún enlace roto. */
+  const periodo = mes && /^\d{4}-\d{2}$/.test((list[0]?.fecha || '').slice(0, 7)) ? String(list[0].fecha).slice(0, 7) :
+    (subjectMonthOf({ ...notice, rows: list }), [...new Set(list.map(row => String(row.fecha || '').slice(0, 7)).filter(Boolean))].length === 1 ?
+      String(list[0].fecha).slice(0, 7) : '');
+  const href = deepLink(opts.baseUrl, 'facturas', { rfc, periodo });
+  if (href) lines.push('Abrir en Facturas: ' + href);
+  lines.push('— PacoSAT (aviso automático de novedades).');
+  const cardsHtml = shown.map(row => mailCard({
+    titulo: (row.counterpartName || 'Sin nombre registrado') + ' (' + (row.counterpartRfc || '—') + ')',
+    pill: row.estado ? mailPill(row.estado, /cancel/i.test(row.estado) ? 'bad' : 'ok') : '',
+    lineas: [(fechaLarga(row.fecha) || 'sin fecha') + ' · ' +
+      (row.folio ? 'folio ' + (row.serie ? row.serie + '-' : '') + row.folio : 'sin folio') +
+      ' · $' + importeShow(row.total) + ' · ' + claseWord(row),
+      ...(efosAviso(row) ? [efosAviso(row)] : []),
+      ...(row.uuid && /^[0-9A-Fa-f-]{36}$/.test(row.uuid) ? ['UUID: ' + row.uuid] : [])] })).join('') +
+    (total > shown.length ? mailCard({ titulo: '…y ' + (total - shown.length) + ' más',
+      lineas: ['El detalle completo está en PacoSAT, en Facturas.'] }) : '');
+  const html = mailLayout({
+    titulo: 'Nuevos CFDI' + (dirWord ? ' ' + dirWord : '') + ' · ' + total,
+    intro: [lines[0], lines[1]], cardsHtml, rfc, installName: opts.installName || '',
+    buttonHtml: href ? mailButton(href, 'Abrir en Facturas') : '',
+    pieNota: '— PacoSAT (aviso automático de novedades).' });
+  return { subject, text: lines.join('\n'), html };
 }

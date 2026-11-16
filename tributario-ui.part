@@ -127,6 +127,7 @@ function executorStatusLine() {
 function executorPanel() {
   const wrap = panel('Ejecutor local del SAT',
     'Las consultas del Buzón y de Declaraciones se navegan desde tu equipo, con tu sesión de e.firma por RFC. PacoSAT ordena, registra y archiva lo que vuelve verificado.');
+  wrap.dataset.destino200b = 'ejecutor';
   const body = n('div');
   wrap.append(body);
   const pintar = data => {
@@ -177,21 +178,30 @@ function executorPanel() {
       }
       body.append(row);
     }
-    for (const job of (data.trabajos || []).slice(0, 8)) {
+    /* Un trabajo, un sitio (2.0 · tanda 2, corrección 3): la
+       pestaña Ejecutor ya NO lista los trabajos como tercera
+       copia accionable — enseña la cola como CONTEO y enlaza
+       a las tarjetas, que son el sitio dueño de cada trabajo
+       (su estado, su progreso y su Cancelar viven allí). */
+    {
+      const vivos = (data.trabajos || []).filter(j => ['en-cola', 'reclamado', 'en-curso'].includes(j.estado));
       const row = n('div', undefined, 'cp-row');
-      row.append(statusPill(job.estado === 'hecho' ? 'ok' : job.estado === 'fallido' ? 'bad' : 'warn',
-        { 'en-cola': 'En cola', reclamado: 'Reclamado', 'en-curso': 'En curso', hecho: 'Hecho', fallido: 'Falló la verificación' }[job.estado] || job.estado));
-      row.append(n('span', (({ 'buzon-listar': 'Consultar el Buzón', 'declaraciones-recuperar': 'Descargar declaraciones',
-          'declaracion-folio': 'Reimprimir un acuse por folio', 'puerta-probar': 'Probar la puerta del SAT',
-          'documento-sat': 'Descargar un documento del SAT' })[job.kind] || 'Trabajo del SAT') + ' · ' + job.rfc +
-        (job.payload?.periodo ? ' · ' + job.payload.periodo : '') +
-        (job.payload?.folio ? ' · folio ' + job.payload.folio : '') +
-        ' · ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(job.creado) : '') +
-        (job.esperandoEquipo ? ' · esperando tu equipo' : '') +
-        (job.error ? ' · ' + job.error : '')));
+      row.append(n('span', 'Cola de trabajos: ' + number.format(vivos.length) +
+        (vivos.length === 1 ? ' trabajo vivo' : ' trabajos vivos') +
+        ' — cada uno vive en su tarjeta, arriba en esta misma pantalla.'));
+      if (vivos.length) {
+        const irTarjetas = n('button', 'Ver en su tarjeta', 'soft small');
+        irTarjetas.type = 'button';
+        irTarjetas.onclick = () => document.querySelector('.tramite-grid')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        row.append(irTarjetas);
+      }
       body.append(row);
     }
-    body.append(executorPairBoton(body));
+    /* Contextual (2.0, 2.6): con un equipo ya emparejado, el
+       emparejar pasa a ser la acción secundaria «Emparejar otro
+       equipo»; ofrecer «emparejar» a secas fingía que no hay
+       ninguno. Sin ninguno, la oferta principal es la de siempre. */
+    body.append(activos.length ? executorPairBoton(body, undefined, 'Emparejar otro equipo') : executorPairBoton(body));
     body.append(executorPairCodeBoton(body));
   };
   (async () => {
@@ -212,6 +222,7 @@ function tributarioScreen() {
   }
   const head = panel('Buzón Tributario · ' + (scope || 'sin contribuyente'),
     'Las notificaciones que el SAT deja en su buzón oficial para este RFC. PacoSAT solo las LISTA: no abre ninguna, porque abrirla puede darla por notificada e iniciar plazos. Abrirlas es tu gesto, en el portal oficial.');
+  head.dataset.destino200b = 'buzon';
   const body = n('div');
   head.append(body);
   wrap.append(head);

@@ -160,7 +160,7 @@ async function avisosRecalcular() {
   const actuales = new Set((data.avisos || []).map(aviso => aviso.id));
   const nuevos = [...actuales].filter(id => !previos.has(id)).length;
   const cerrados = [...previos].filter(id => !actuales.has(id)).length;
-  const hora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+  const hora = localTime(Date.now());
   if (page === 'avisos') render();
   toast('Avisos recalculados · ' + hora + (nuevos || cerrados
     ? ' — ' + [nuevos ? nuevos + ' nuevo(s)' : '', cerrados ? cerrados + ' cerrado(s)' : '']
@@ -614,6 +614,9 @@ function avisoRecordatorio(aviso) {
 }
 function avisoCard(aviso) {
   const card = n('div', undefined, 'aviso-card');
+  /* Destino exacto (2.0 · O5): los «Ver» de Hoy aterrizan en
+     ESTA tarjeta por su id (data-destino200b="aviso-<id>"). */
+  card.dataset.destino200b = 'aviso-' + aviso.id;
   const head = n('div', undefined, 'aviso-head');
   const check = input('checkbox', { 'aria-label': 'Seleccionar este aviso' });
   check.classList.add('aviso-check');

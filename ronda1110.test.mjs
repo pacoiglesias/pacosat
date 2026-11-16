@@ -396,9 +396,9 @@ try {
      ancho y a enseñar su Cancelar entero dentro del menú (en la
      primera captura se le cortaba la última letra); el techo
      CSS se re-basifica a 48.500 y el HTML queda en 663.000. */
-  assert.ok(htmlBytes <= 718000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 718.000, re-basificado en la 1.32.2: la marca propia con su favicon y el acento verde elegible; venía de 712.000 de la 1.32.0, panel de la API)');
+  assert.ok(htmlBytes <= 751000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 751.000, re-basificado en la 2.0 tanda 7B en AUDITORIA.md (anexo por pieza de la 7B; la 7A lo dejó en 743.000): +2.304 B: ganchos diferidos de Ajustes y ganchos mínimos de Documentos/Facturas (detalle por pieza en AUDITORIA.md); venía de 740.000 de la tanda 4)');
   const cssBytes = ['style.part', 'design.part', 'polish.part'].reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-  assert.ok(cssBytes <= 64000, 'el CSS pesa ' + cssBytes + ' B (tope 64.000, re-basificado en la 1.32.2: los bloques del acento verde elegible y las reglas de la marca y de la línea del Registro; venía de 63.000 de la 1.32.0)');
+  assert.ok(cssBytes <= 66500, 'el CSS pesa ' + cssBytes + ' B (tope 66.500, re-basificado en la 2.0 tanda 7B en AUDITORIA.md: +342 B del realce de foco V3 de las tarjetas que piden el gesto; venía de 66.000 de la tanda 2)');
 
   const defined = [...layout.matchAll(/<symbol id="(i-[a-z]+)"/g)].map(match => match[1]);
   assert.ok(defined.length >= 20, 'la hoja de símbolos existe');

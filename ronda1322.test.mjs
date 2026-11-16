@@ -44,9 +44,9 @@ const corpus = html + '\n' + read('lazy.json');
 /* ===== 1 · Versión y sellos ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '1.32.2', 'la ronda es la 1.32.2');
-  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '1.32.2'"), 'el ejecutor declara 1.32.2 (solo el sello)');
-  assert.ok(html.includes('"version":"1.32.2"'), 'el artefacto se sella 1.32.2');
+  assert.equal(pkg.version, '2.0.0', 'la ronda es la 2.0.0');
+  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.0.0'"), 'el ejecutor declara 2.0.0 (solo el sello)');
+  assert.ok(html.includes('"version":"2.0.0"'), 'el artefacto se sella 2.0.0');
   console.log('OK 1.32.2 · versión y sellos.');
 }
 
@@ -105,9 +105,11 @@ const corpus = html + '\n' + read('lazy.json');
 
 /* ===== 5 · Hoy: el día manda (D4) y novedades de la versión ===== */
 {
-  assert.ok(html.includes('blocks.splice(1, 0, novedades1311)'), 'las novedades entran tras la tarjeta del día');
-  assert.ok(!html.includes('blocks.unshift(novedades1311)'), 'las novedades ya no tapan el día');
-  assert.ok(html.includes("version: '1.32.2'"), 'la nota de novedades es la de esta versión');
+  /* 2.0 · tanda 2 (M5): «Esto es lo nuevo» SALE de Hoy — su
+     sitio es Ajustes › Acerca de, junto a la versión. */
+  assert.ok(!html.includes('blocks.splice(1, 0, novedades1311)'), 'las novedades ya no entran en Hoy (2.0 tanda 2)');
+  assert.ok(html.includes('novedades200b'), 'las novedades viven en Ajustes › Acerca de (capacidadesScreen)');
+  assert.ok(html.includes("version: '2.0.0'"), 'la nota de novedades es la de esta versión');
   console.log('OK 1.32.2 · D4 — Hoy abre con el día.');
 }
 

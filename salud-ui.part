@@ -1,0 +1,384 @@
+/* ===== Centro de salud (2.0 · tanda 4) =====
+   La pantalla «Salud»: una tarjeta por pieza del sistema, cada
+   una con su semáforo, su frescura y su porqué en llano — todo
+   compuesto en el servidor (/api/salud) —, sus reparaciones
+   seguras en un toque (cada una con su asiento en el Registro y
+   su confirmación cuando mueve algo) y la configuración guiada,
+   donde un paso solo se marca hecho cuando su comprobación real
+   lo confirma. Vive en una parte diferida: Hoy solo paga su
+   línea-resumen, como con el Registro. Aquí vive también la
+   ayuda por pantalla del cajón de ayuda (20#20, primera mitad):
+   los textos describen lo que cada pantalla hace DE VERDAD hoy. */
+let saludTab200d = 'salud';
+const SALUD_PILL200D = { bien: 'ok', vigilar: 'warn', mal: 'bad', 'sin-dato': 'dim' };
+function saludScreen200d() {
+  const wrap = n('div');
+  if (typeof satToken === 'undefined' || !satToken) {
+    wrap.append(panel('Salud', 'El Centro de salud vive en el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver cómo está cada pieza del sistema.'));
+    return [wrap];
+  }
+  const head = panel('Centro de salud',
+    'Cada pieza del sistema con su semáforo, su porqué y su arreglo cuando lo hay. Nada se repara en silencio: cada gesto queda en el Registro.');
+  head.append(tabbar([['salud', 'Salud'], ['configurar', 'Configurar']], saludTab200d,
+    key => { saludTab200d = key; render(); }));
+  const body = n('div');
+  body.append(n('p', 'Leyendo la salud del sistema…', 'muted'));
+  head.append(body);
+  wrap.append(head);
+  satApi('salud').then(data => {
+    if (page !== 'salud' || !body.isConnected) return;
+    body.replaceChildren();
+    if (saludTab200d === 'configurar') saludConfigPintar200d(body, data);
+    else saludTarjetasPintar200d(body, data);
+  }).catch(error => {
+    if (!body.isConnected) return;
+    body.replaceChildren(n('p', 'No se pudo leer la salud del sistema: ' + error.message, 'error-text'));
+  });
+  return [wrap];
+}
+/* «Revisar ahora»: el cruce de coherencia a demanda y repintado.
+   Es también el gesto del botón principal de la cabecera. */
+async function saludRevisar200d() {
+  try {
+    const r = await satApi('salud/coherencia', {});
+    toast(r.desacuerdos?.length ? 'Coherencia revisada: ' + r.desacuerdos.length + ' desacuerdo(s) encontrado(s).'
+      : 'Coherencia revisada: todo cuadra.', r.desacuerdos?.length ? 'error' : 'ok');
+  } catch (error) { toast(error.message, 'error'); }
+  render();
+}
+function saludTarjeta200d(tarjeta, accionesNode) {
+  const card = panel(tarjeta.titulo);
+  card.dataset.destino200b = tarjeta.id;
+  const head = n('div', undefined, 'panel-head');
+  head.append(statusPill(SALUD_PILL200D[tarjeta.estado] || 'dim',
+    tarjeta.estado === 'bien' ? 'Bien' : tarjeta.estado === 'vigilar' ? 'A vigilar' :
+    tarjeta.estado === 'mal' ? 'Mal' : 'Sin dato'),
+    n('span', tarjeta.frescuraTexto || '', 'muted'));
+  card.append(head);
+  card.append(n('p', tarjeta.porque));
+  card.append(n('p', 'Qué es esto: ' + tarjeta.queEs, 'muted'));
+  if (accionesNode) card.append(accionesNode);
+  return card;
+}
+function saludBoton200d(label, work, cls = 'soft') {
+  const b = n('button', label, cls);
+  b.type = 'button';
+  b.onclick = () => Promise.resolve().then(work).catch(error => toast(error.message, 'error'));
+  return b;
+}
+function saludTarjetasPintar200d(body, data) {
+  const grid = n('div', undefined, 'salud-grid200d');
+  const ex = data.ejecutor || {};
+  for (const tarjeta of data.tarjetas || []) {
+    const acts = n('div', undefined, 'actions');
+    let conAcciones = false;
+    const add = node => { acts.append(node); conAcciones = true; };
+    if (tarjeta.id.startsWith('puerta:')) {
+      const rfc = tarjeta.datos.rfc;
+      add(saludBoton200d('Re-probar la puerta', async () => {
+        const r = await satApi('salud/puerta', { rfc });
+        if (r.encolado) toast(r.repetido ? 'La prueba de la puerta de ' + rfc + ' ya estaba en cola: no se duplicó.'
+          : 'Prueba de la puerta de ' + rfc + ' encolada: tu equipo la corre al recogerla.', 'ok');
+        else toast(r.motivo || 'La prueba no se encoló.', 'error');
+        render();
+      }, 'primary'));
+      if (tarjeta.datos.tipo === 'equipo' || tarjeta.datos.tipo === 'sin-equipo')
+        add(saludBoton200d('Ver tu ejecutor', () => { satTab = 'ejecutor'; navigate('sat'); }));
+      if (tarjeta.datos.tipo === 'efirma')
+        add(saludBoton200d('Revisar la e.firma', () => { ajustesSection = 'contribuyentes'; navigate('settings'); }));
+    } else if (tarjeta.id === 'ejecutor') {
+      add(saludBoton200d('Regenerar el código de emparejado', async () => {
+        if (!confirm('Se creará un código de emparejado nuevo y el anterior dejará de servir al instante. ¿Seguir?')) return;
+        const r = await satApi('salud/codigo', {});
+        toast('Código nuevo: ' + r.codigo + ' — teclealo en tu PC en los próximos 10 minutos; el anterior ya no sirve.', 'ok');
+        render();
+      }));
+      add(saludBoton200d('Ir al Centro SAT › Ejecutor', () => { satTab = 'ejecutor'; navigate('sat'); }));
+      const extra = n('p', 'Trabajos en cola ahora: ' + (ex.enCola ?? 0) +
+        '. Versión que reporta tu ejecutor: ' + (tarjeta.datos.versionReportada || 'no consta — su señal no la trae') +
+        (tarjeta.datos.bundleVersion ? '. El paquete guardado en el servidor es la ' + tarjeta.datos.bundleVersion + '.' : '.'), 'muted');
+      tarjeta._extra200d = extra;
+      /* Tanda 5 (pieza 3): el aviso de dormido vive en Hoy y en el
+         correo; aquí solo su ajuste — la tarjeta ya enseña el
+         estado, no se duplica. */
+      if (tarjeta.datos.dormido) add(saludBoton200d(tarjeta.datos.dormido.ajusteSiempre ?
+        'Aviso de dormido: avisar siempre (cambiar a solo con trabajos)' :
+        'Aviso de dormido: solo si hay trabajos (cambiar a siempre)', async () => {
+        await satApi('salud/dormido', { siempre: !tarjeta.datos.dormido.ajusteSiempre });
+        toast('Ajuste guardado: el aviso de ejecutor dormido ' +
+          (!tarjeta.datos.dormido.ajusteSiempre ? 'avisará siempre que pase un día sin señal.' :
+            'solo avisará si hay trabajos esperándolo.'), 'ok');
+        render();
+      }));
+    } else if (tarjeta.id === 'solicitudes-vivas') {
+      /* Tanda 5 (pieza 4): la salida preparada, en un toque. El
+         aviso gemelo vive en Hoy; aquí no se duplica el aviso,
+         solo se ofrece el mismo gesto. */
+      for (const viva of tarjeta.datos.vivas || []) {
+        const fila = n('div', undefined, 'cp-row');
+        fila.append(n('span', viva.texto + ' (' + viva.checks + ' verificaciones)'));
+        fila.append(saludBoton200d('Pedir ese tramo otra vez', async () => {
+          const r = await satApi('solicitudes/repedir', { jobId: viva.id });
+          if (r.ok) toast('Petición creada para el mismo tramo, desplazada un segundo (' + r.startAt + ' → ' + r.endAt + '). La vieja se sigue vigilando.', 'ok');
+          else toast(r.error || 'No se pudo pedir ese tramo.', 'error');
+          render();
+        }, 'soft small'));
+        add(fila);
+      }
+    } else if (tarjeta.id === 'atascados') {
+      for (const trabajo of tarjeta.datos.atascados || []) {
+        const fila = n('div', undefined, 'cp-row');
+        fila.append(n('span', trabajo.nombre + ' · ' + trabajo.rfc + ' — ' + trabajo.motivo +
+          ' (desde el ' + fmtFechaHora(trabajo.desde) + ')'));
+        fila.append(saludBoton200d('Re-encolar', async () => {
+          const r = await satApi('salud/trabajo', { jobId: trabajo.id, accion: 'reencolar' });
+          toast(r.motivo || (r.yaEnCola ? 'Ese trabajo ya está en cola.' : 'Trabajo de vuelta en la cola.'), r.ok === false ? 'error' : 'ok');
+          render();
+        }, 'soft small'));
+        fila.append(saludBoton200d('Descartar', async () => {
+          if (!confirm('Descartar «' + trabajo.nombre + '» de ' + trabajo.rfc + ': saldrá de la cola y no se hará. Esto no se puede deshacer. ¿Seguir?')) return;
+          await satApi('salud/trabajo', { jobId: trabajo.id, accion: 'descartar' });
+          toast('Trabajo descartado: quedó registrado en el Registro.', 'ok');
+          render();
+        }, 'soft small'));
+        add(fila);
+      }
+      for (const trabajo of tarjeta.datos.fallidos || []) {
+        const fila = n('div', undefined, 'cp-row');
+        fila.append(n('span', 'Falló: ' + trabajo.nombre + ' · ' + trabajo.rfc +
+          (trabajo.error ? ' — ' + trabajo.error : '') + ' (el ' + fmtFechaHora(trabajo.actualizado) + ')'));
+        fila.append(saludBoton200d('Reintentar la descarga', async () => {
+          const r = await satApi('salud/trabajo', { jobId: trabajo.id, accion: 'reencolar' });
+          toast(r.motivo || (r.repetido ? 'Ya había un reintento vivo de ese trabajo: no se duplicó.'
+            : 'Reintento encolado con la memoria del trabajo fallido.'), r.ok === false ? 'error' : 'ok');
+          render();
+        }, 'soft small'));
+        add(fila);
+      }
+    } else if (tarjeta.id === 'correo') {
+      if (tarjeta.datos.configurado) add(saludBoton200d('Enviar correo de prueba', async () => {
+        await satApi('mail/test', {});
+        toast('Correo de prueba enviado a ' + (tarjeta.datos.destinatario || 'tu correo') + '.', 'ok');
+        render();
+      }, 'primary'));
+      else add(saludBoton200d('Configurar el correo', () => { ajustesSection = 'correo'; navigate('settings'); }));
+    } else if (tarjeta.id === 'respaldo') {
+      add(saludBoton200d('Ir a Respaldos', () => { ajustesSection = 'respaldos'; navigate('settings'); }));
+      const ensayo = tarjeta.datos.ensayo;
+      if (ensayo?.conteos) tarjeta._extra200d = n('p', 'Conteos cruzados del ensayo: ' +
+        (ensayo.conteos.tiendas?.invoices ?? '—') + ' CFDI · ' + (ensayo.conteos.tiendas?.people ?? '—') +
+        ' personas · ' + (ensayo.conteos.tiendas?.documents ?? '—') + ' documentos · ' +
+        (ensayo.conteos.perfiles ?? '—') + ' perfiles · ' + (ensayo.conteos.trabajos ?? '—') + ' trabajos.', 'muted');
+    } else if (tarjeta.id === 'coherencia') {
+      add(saludBoton200d('Revisar ahora', () => saludRevisar200d(), 'primary'));
+      for (const d of tarjeta.datos.desacuerdos || []) {
+        const fila = n('div', undefined, 'cp-row');
+        fila.append(n('span', (d.rfc ? d.rfc + ' — ' : '') + d.detalle));
+        if (d.enlace) fila.append(saludBoton200d('Verlo', () => navigate(d.enlace), 'soft small'));
+        add(fila);
+      }
+    } else if (tarjeta.id === 'efirma') {
+      add(saludBoton200d('Ir a Contribuyentes y e.firma', () => { ajustesSection = 'contribuyentes'; navigate('settings'); }));
+    } else if (tarjeta.id === 'pendientes-mes') {
+      /* Tanda 6: el botón único de subida vive en Bancos; desde la
+         tarjeta se llega a él en un toque. */
+      add(saludBoton200d('Subir estado de cuenta', () => { dineroTab = 'bancos'; navigate('money'); }, 'primary'));
+    }
+    const card = saludTarjeta200d(tarjeta, conAcciones ? acts : null);
+    if (tarjeta._extra200d) card.append(tarjeta._extra200d);
+    grid.append(card);
+  }
+  body.append(grid);
+  body.append(revisionPanel200e());
+  if (data.humo) {
+    const humo = panel('Arranque de esta versión');
+    humo.append(n('p', data.humo.texto + ' (Registrado el ' + fmtFechaHora(data.humo.at) + '.)'));
+    body.append(humo);
+  }
+}
+function saludConfigPintar200d(body, data) {
+  const lista = n('div', undefined, 'steps');
+  for (const paso of data.config || []) {
+    const card = n('section', undefined, 'step');
+    const head = n('div', undefined, 'step-head');
+    head.append(statusPill(paso.hecho ? 'ok' : 'warn', paso.hecho ? 'Hecho' : 'Pendiente'),
+      n('strong', paso.titulo));
+    card.append(head);
+    const cuerpo = n('div', undefined, 'step-body');
+    cuerpo.append(n('p', paso.queEs), n('p', paso.detalle, 'muted'));
+    const ir = saludBoton200d(paso.boton, () => {
+      if (paso.destino.view === 'settings') { ajustesSection = paso.destino.seccion; navigate('settings'); }
+      else if (paso.destino.view === 'sat') { satTab = paso.destino.tab; navigate('sat'); }
+      else navigate(paso.destino.view);
+    }, paso.hecho ? 'soft' : 'primary');
+    cuerpo.append(ir);
+    card.append(cuerpo);
+    lista.append(card);
+  }
+  body.append(lista);
+  body.append(n('p', 'Un paso se marca «Hecho» solo cuando su comprobación real lo confirma: no hay casillas que marcar a mano.', 'muted'));
+}
+/* ===== Ayuda por pantalla (20#20, primera mitad) =====
+   Qué es, para qué sirve y qué hacer en cada vista principal,
+   en llano y sin texto técnico. Describe lo que la pantalla
+   hace DE VERDAD hoy. La segunda mitad —ejemplos con datos del
+   propio expediente— queda pendiente nombrada en la tanda. */
+const AYUDA_TEXTOS200D = {
+  home: { q: 'Es tu centro de mando al abrir PacoSAT: el semáforo del día, lo que el sistema hizo solo, lo que te toca a ti y la salud en una línea.',
+    p: 'Sirve para saber en diez segundos si todo está en orden o si algo necesita tu gesto, sin recorrer pantalla por pantalla.',
+    h: 'Mira el semáforo y «Lo que te toca»: cada gesto te lleva a su tarjeta exacta. Descarga el mes desde «Acciones del día» y entra a Salud desde su línea-resumen.' },
+  invoices: { q: 'Es la tabla de todos tus CFDI: emitidos y recibidos, con su estado en el SAT (vigente, cancelado, sin revisar) y su PDF vinculado.',
+    p: 'Sirve para encontrar cualquier comprobante, ver si sigue vigente y abrir su detalle completo con sus impuestos y su timbre.',
+    h: 'Filtra por contribuyente, sentido o estado; toca un comprobante para verlo entero, copiar su UUID o imprimirlo. «Descargar del SAT» trae los que falten.' },
+  sat: { q: 'Es el Centro SAT: desde aquí se descargan tus facturas, tu constancia y tu opinión, se consultan los listados 69-B y se ve lo ya descargado y tu ejecutor.',
+    p: 'Sirve para todo lo que PacoSAT pide al SAT por ti, con la puerta de cada RFC y su causa viva cuando algo no abre.',
+    h: 'Elige la pestaña según el trámite. Si la puerta no abre, la tarjeta dice de quién es la causa —tu equipo, tu e.firma o el SAT— y el único gesto que toca.' },
+  tributario: { q: 'Es el Buzón Tributario de este RFC: las notificaciones del SAT listadas sin abrir ninguna, con su fecha y su plazo.',
+    p: 'Sirve para saber qué te ha notificado el SAT y cuándo se tiene por notificada cada una, sin que PacoSAT abra nada por ti.',
+    h: 'Pulsa «Consultar ahora» para listar de nuevo desde tu equipo. Abrir una notificación es gesto tuyo, en el portal del SAT.' },
+  declaraciones: { q: 'Es el mapa de tus declaraciones por año y mes: qué consta presentado, qué falta y qué acuses hay guardados.',
+    p: 'Sirve para ver de un vistazo la película completa de tus declaraciones y recuperar del SAT las que no consten.',
+    h: 'Toca un mes para ver su detalle y «Descargar declaraciones del SAT» para recuperar las que falten, con tu ejecutor.' },
+  docs: { q: 'Es tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados, cada uno con su «Ver» de un clic.',
+    p: 'Sirve para encontrar cualquier papel guardado sin cazarlo entre carpetas, y para subir los que tengas fuera.',
+    h: 'Filtra por RFC o por tipo, abre el documento con «Ver» y usa «Subir PDF» para archivar uno nuevo en su sitio.' },
+  dinero: { q: 'Es la pantalla de saldos: cuánto debes, cuánto te deben y qué ya se movió, con la conciliación contra tus estados de cuenta.',
+    p: 'Sirve para saber qué falta por pagar o por cobrar, comprobante a comprobante, y enlazar cada pago con su factura.',
+    h: 'Revisa «Por pagar» y «Por cobrar»; cuando un pago ya se hizo, enlázalo o márcalo aquí y el aviso de su factura se cierra solo.' },
+  pagos: { q: 'Es la preparación de los pagos del mes en tres pasos, con las tablas listas para llevar al banco.',
+    p: 'Sirve para armar la lista de pagos desde las facturas del mes sin teclear cuentas: los beneficiarios ya dados de alta se seleccionan, no se escriben.',
+    h: 'Sigue los tres pasos en orden: elige el mes, arma la lista desde las facturas y genera las tablas para el banco.' },
+  avisos: { q: 'Es tu bandeja de lo que está mal, lo que falta y lo que el sistema necesita de ti, cada aviso con su semáforo y su gesto.',
+    p: 'Sirve para no perder nada importante: cada aviso dice de quién es, qué significa y el único gesto que hace falta —o que se resuelve solo—.',
+    h: 'Trabaja los avisos de arriba abajo: resuelve, confirma o pospone cada uno en su tarjeta; los solventados quedan en el historial.' },
+  registro: { q: 'Es la bitácora única del sistema: conexiones, acciones y fallos en lenguaje llano, en orden cronológico.',
+    p: 'Sirve para comprobar qué hizo PacoSAT, qué intentó y qué no pudo —y por qué— sin fiarte de memoria: aquí queda todo asentado.',
+    h: 'Filtra por RFC o por clase y abre el detalle de un fallo para ver su traza. Puedes copiar lo visible o limpiarlo con Deshacer.' },
+  salud: { q: 'Es el Centro de salud: cada pieza del sistema —puerta, ejecutor, e.firma, correo, respaldo, disco, coherencia— con su semáforo y su porqué.',
+    p: 'Sirve para saber qué está bien, qué hay que vigilar y qué está mal, y reparar en un toque solo lo seguro, con su asiento en el Registro.',
+    h: 'Recorre las tarjetas: cada una dice qué es, cómo está y su arreglo cuando lo hay. En «Configurar» ves qué pasos faltan y el botón que lleva a hacerlos.' },
+  settings: { q: 'Son los Ajustes: contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema, la API y el acerca de.',
+    p: 'Sirve para dejar la casa en orden: quiénes son tus RFC, cómo te avisa el sistema y cómo se guarda tu expediente.',
+    h: 'Elige la sección en la franja de arriba y usa el botón principal de la cabecera para guardar o ejecutar lo de esa sección.' }
+};
+
+/* ===== Tanda 5 (2.0) · Revisión programada y «Ponte al día» =====
+   La revisión programada (pieza 1) se configura aquí, en Salud,
+   junto a la salud del sistema: días + hora por instalación y,
+   si se quiere, un ajuste propio por RFC. La pantalla enseña el
+   resumen en llano y la próxima corrida que calcula el servidor
+   (la misma cifra que sirve /api/revision: lo pintado y lo
+   servido no pueden divergir). */
+const REV_DIAS200E = [[1, 'lunes'], [2, 'martes'], [3, 'miércoles'], [4, 'jueves'], [5, 'viernes'], [6, 'sábado'], [0, 'domingo']];
+function revisionControles200e(cfg, alCambiar) {
+  const wrap = n('div');
+  const activa = n('label', undefined, 'check');
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.checked = cfg.enabled === true;
+  activa.append(cb, document.createTextNode(' Revisión activa'));
+  wrap.append(activa);
+  const diasWrap = n('div', undefined, 'actions');
+  const marcas = new Map();
+  for (const [num, nombre] of REV_DIAS200E) {
+    const lab = n('label', undefined, 'check');
+    const box = document.createElement('input');
+    box.type = 'checkbox'; box.checked = (cfg.dias || []).includes(num);
+    lab.append(box, document.createTextNode(' ' + nombre));
+    diasWrap.append(lab); marcas.set(num, box);
+  }
+  wrap.append(diasWrap);
+  const horaLab = n('label', 'Hora: ');
+  const hora = document.createElement('input');
+  hora.type = 'number'; hora.min = '0'; hora.max = '23'; hora.step = '1';
+  hora.value = String(cfg.hora ?? 8); hora.style.width = '4.5em';
+  horaLab.append(hora, document.createTextNode(' :00'));
+  wrap.append(horaLab);
+  const leer = () => ({ enabled: cb.checked,
+    dias: [...marcas.entries()].filter(([, box]) => box.checked).map(([num]) => num),
+    hora: Math.max(0, Math.min(23, Number(hora.value) || 0)) });
+  for (const el of [cb, hora, ...marcas.values()]) el.addEventListener('change', () => alCambiar(leer()));
+  return { wrap, leer };
+}
+function revisionPanel200e() {
+  const card = panel('Revisión programada de facturas nuevas',
+    'Los días elegidos, PacoSAT revisa qué facturas nuevas hay desde la última revisión — sin huecos: si un día el equipo estaba apagado, la siguiente revisión cubre desde la última hecha. Solo llega correo si hay altas reales.');
+  const body = n('div');
+  body.append(n('p', 'Leyendo el ajuste…', 'muted'));
+  card.append(body);
+  satApi('revision').then(data => {
+    if (!body.isConnected) return;
+    body.replaceChildren();
+    const resumen = n('p', '', 'strong-line');
+    const proxima = n('p', '', 'muted');
+    const pintarTextos = vista => {
+      resumen.textContent = vista.resumen;
+      proxima.textContent = vista.proxima ? 'Próxima revisión: ' + vista.proximaTexto + '.' : 'Sin próxima revisión programada.';
+    };
+    pintarTextos(data);
+    body.append(resumen, proxima);
+    const ctl = revisionControles200e(data.config, () => {});
+    body.append(ctl.wrap);
+    const fila = n('div', undefined, 'actions');
+    fila.append(saludBoton200d('Guardar el ajuste', async () => {
+      const vista = await satApi('revision/config', ctl.leer());
+      pintarTextos(vista);
+      toast('Revisión programada guardada: ' + vista.resumen, 'ok');
+    }, 'primary'));
+    fila.append(saludBoton200d('Revisar ahora', async () => {
+      const r = await satApi('revision/run-now', {});
+      const total = (r.resultados || []).reduce((a, x) => a + (x.solicitudes || 0), 0);
+      toast(total ? 'Revisión lanzada: ' + total + ' solicitud(es) al SAT en marcha.' :
+        'Revisión hecha: sin nada nuevo que pedir.', 'ok');
+      render();
+    }));
+    body.append(fila);
+    for (const por of data.porRfc || []) {
+      const detalle = n('details');
+      const sum = n('summary', 'Ajuste propio de ' + por.rfc + ' — ' + por.resumen +
+        (por.proxima ? ' · próxima: ' + por.proximaTexto : '') +
+        (por.ultima ? ' · última revisión: ' + por.ultima : ''));
+      detalle.append(sum);
+      const propio = data.config.porRfc?.[por.rfc];
+      const ctlR = revisionControles200e(propio ?
+        { enabled: propio.enabled !== undefined ? propio.enabled : data.config.enabled,
+          dias: propio.dias || data.config.dias, hora: propio.hora ?? data.config.hora } :
+        data.config, () => {});
+      detalle.append(ctlR.wrap);
+      const filaR = n('div', undefined, 'actions');
+      filaR.append(saludBoton200d('Guardar para ' + por.rfc, async () => {
+        await satApi('revision/config', { rfc: por.rfc, ...ctlR.leer() });
+        toast('Ajuste propio de ' + por.rfc + ' guardado.', 'ok'); render();
+      }, 'soft small'));
+      filaR.append(saludBoton200d('Que herede el general', async () => {
+        await satApi('revision/config', { rfc: por.rfc, heredar: true });
+        toast(por.rfc + ' vuelve al ajuste general.', 'ok'); render();
+      }, 'soft small'));
+      detalle.append(filaR);
+      body.append(detalle);
+    }
+  }).catch(error => {
+    if (body.isConnected) body.replaceChildren(n('p', 'No se pudo leer el ajuste: ' + error.message, 'error-text'));
+  });
+  return card;
+}
+/* «Ponte al día» (pieza 2): el botón vive en Hoy (ui.part) y su
+   trabajo aquí — llama al orquestador del servidor y enseña sus
+   tres líneas en una tarjeta efímera sobre las acciones del día.
+   El resumen dice lo encolado/hecho, nunca descargas terminadas. */
+async function ponteAlDia200e(btn) {
+  try {
+    const r = await satApi('ponte-al-dia', {});
+    const vieja = document.querySelector('[data-ponte200e]');
+    if (vieja) vieja.remove();
+    const card = panel('Ponte al día — así quedó');
+    card.dataset.ponte200e = '1';
+    for (const linea of r.lineas || []) card.append(n('p', linea));
+    card.append(n('p', 'Quedó asentado en el Registro.', 'muted'));
+    const cerrar = saludBoton200d('Cerrar', () => card.remove());
+    card.append(cerrar);
+    const ancla = btn.closest('.panel') || btn.parentElement;
+    ancla.after(card);
+    card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  } catch (error) { toast(error.message, 'error'); }
+  btn.disabled = false;
+}

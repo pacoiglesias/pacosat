@@ -500,6 +500,24 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
    quita solo el pago manual, nunca un complemento enlazado. */
 async function dineroMarkPaid(item, rowEl, paidLabel) {
   try {
+    /* Tanda 7B (0b · F3): con candidato ÚNICO del banco, antes de
+       marcar a mano se pregunta «¿Fue este?»; si fue, el pago
+       queda enlazado al movimiento (banks/marcar-pagado). */
+    let enlazado200h = false;
+    try {
+      const sug200h = await satApi('banks/sugerencia-pago?uuid=' + encodeURIComponent(item.row.id));
+      if (sug200h?.candidato) {
+        const fueEste = await new Promise(res => { let hecho = false;
+          dialog('¿Fue este?', [n('p', 'Hay un movimiento del banco que cuadra al centavo con este saldo:'),
+            n('p', (sug200h.candidato.banco || '') + ' · ' + sug200h.candidato.date + ' · $' +
+              String(sug200h.candidato.amount || '').replace('-', '') + ' — ' + (sug200h.candidato.concept || '')),
+            n('p', 'Si fue ese, el pago queda enlazado a ese movimiento; si no, se marca a mano como siempre.')],
+            () => { hecho = true; res(true); }, 'Sí, fue este');
+          $('dialog').addEventListener('close', () => { if (!hecho) res(false); }, { once: true }); });
+        if (fueEste) { await satApi('banks/marcar-pagado', { uuid: item.row.id, movementId: sug200h.candidato.movementId }); enlazado200h = true; }
+      }
+    } catch { /* sin candidato o sin banco: el marcado de siempre */ }
+    if (!enlazado200h) {
     /* Con recomprobación (pieza H): si la respuesta se perdió tras
        guardarse, el saldo re-leído ya no mostrará la deuda y se
        enseña el éxito real en la fila, no el error. */
@@ -508,6 +526,7 @@ async function dineroMarkPaid(item, rowEl, paidLabel) {
       const balance = (data.balances || []).find(row => row.id === item.row.id);
       return !balance || Number(balance.balance) <= 0;
     });
+    }
     dineroMarcados.add(item.row.id);
     const cobrado = paidLabel === 'Ya me pagaron';
     const texto = cobrado ? 'Cobrado. Quedó en el historial.' : 'Pagado. Quedó en el historial.';

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-lx1LVDrxj4CkAjU0nmiMTXtogVPx8BJWJ4p6EG0/jYc='; script-src 'sha256-H01+4Jq5Wu1bk+ZzW/2KGWTMJ7v+PcP+5KupvzvUYAg=' 'sha256-9xP1b2NojQDOJFjGRi0tvEowRFVDTgdL7V5GWilPBdI=' 'sha256-AVKbK1PbWa2bLb2r1mbUoZuB9Rj6GsavCzFNiLtHGSs=' 'sha256-mjs/zXndECX4oq2/sv10yZCtWtL3mkZ4qVvfZRnQ3P0=' 'sha256-1F61mKvtCdoG7x7ezKNJdw5L+IG3nM9FFNUcOytpOqY='; img-src data: blob:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><!--PACOSAT_TOKEN--><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e2a47'/%3E%3Cg transform='translate(8 8) scale(2)' fill='none' stroke='%23f4b942' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2.6v1.5M11 4.1h2l.9 4.3M10.1 8.4 11 4.1M6.9 6.2 3.8 4.6M17.1 6.2l3.1-1.6M8.6 20.6 10.1 8.4h3.8l1.5 12.2M10.4 14.6h3.2M6.4 20.6h11.2'/%3E%3C/g%3E%3C/svg%3E"><meta name="theme-color" id="theme-color-meta" content="#0e2a47">
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'sha256-J2GOu+xig+aXLlQ9fQl4EaXXTqbfq6c6th27DI4h8qE='; script-src 'sha256-AekcZGX8HVlwAflasgKyEOQG+ZPK32COErTIxByRnwY=' 'sha256-tyFPXDYVwGdGHR/3gKpdeFe5mSJY2jjBRTpoTVvnLoc=' 'sha256-+GCRMTK/K2Uop94CarHsyeMtDYKWUYSvqG9j5g4ToLw=' 'sha256-TEESr+wADcS5EkhEnq8qILTaQpNzjv4wDlYJIznPNQs=' 'sha256-6swi/qJLCEgJzz8PS5wzSkLirelxYpcQbsj3e1P/r2Y=' 'sha256-pqj9PUs5Ufiy88LIXPm6ASX3XpOkhrTgKc2LXNQruEc='; img-src data: blob:; frame-src blob:; connect-src 'self'; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><!--PACOSAT_TOKEN--><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e2a47'/%3E%3Cg transform='translate(8 8) scale(2)' fill='none' stroke='%23f4b942' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2.6v1.5M11 4.1h2l.9 4.3M10.1 8.4 11 4.1M6.9 6.2 3.8 4.6M17.1 6.2l3.1-1.6M8.6 20.6 10.1 8.4h3.8l1.5 12.2M10.4 14.6h3.2M6.4 20.6h11.2'/%3E%3C/g%3E%3C/svg%3E"><meta name="theme-color" id="theme-color-meta" content="#0e2a47">
 <style>:root{color-scheme:light;font:15px/1.48 "Segoe UI",system-ui,sans-serif;color:var(--ink);background:var(--bg);--ink:light-dark(#17293f,#e7eff8);--muted:light-dark(#54687f,#9db1c8);--border:light-dark(#d9e3ee,#2b3e55);--surface:light-dark(#fffefb,#14243a);--surface-2:light-dark(#f3f7fb,#1a2c47);--bg:light-dark(#e8ece7,#0a1424);--green:light-dark(#0e6b4f,#2fae83);--gold:light-dark(#a07d2c,#c9a86a);--tint:light-dark(#e1f1e9,#14352b);--nav-text:#d9e8f7;--nav-muted:light-dark(#93a9c4,#93a9c4);--nav-border:light-dark(#33507a,#274268);--danger:light-dark(#a0281d,#f0a49c);--danger-bg:light-dark(#f6d7d1,#47231f);--warn-ink:light-dark(#6e4a06,#f2cf7e);--warn-bg:light-dark(#f7dd9a,#473a14);--ok-ink:light-dark(#125d44,#9fe3c0);--ok-bg:light-dark(#c9ecd9,#14352b);--info-ink:light-dark(#33475e,#b9cadd);--info-bg:light-dark(#d9e3ef,#1c3049);--chart-2:light-dark(#3d7ab8,#6ea8dc);--accent:var(--green);--brand:var(--green);--ok:var(--ok-ink);--warn:var(--warn-ink);--bad:var(--danger);--money:var(--ink);--line:var(--border);--bd:1px solid var(--border);--r-s:8px;--r-m:12px;--r-l:16px;--r-pill:100px;--sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-5:24px;--shadow-1:0 18px 55px light-dark(#12251d33,#00000073);--shadow-2:0 8px 28px light-dark(#12251d26,#00000059);--accent-ink:var(--ok-ink);--nav-active-bg:light-dark(#14402f,#14352b);--nav-active-ink:#a9ecc9;--fs-xs:11px;--fs-s:12px;--fs-b:15px}@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){color-scheme:dark}}:root[data-theme="dark"]{color-scheme:dark}*{box-sizing:border-box}body{margin:0;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}svg{width:19px;height:19px;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round;fill:none;flex:none}.symbols,[hidden]{display:none!important}button,input,select,textarea{font:inherit}button,a,input,select{border-radius:var(--r-s)}button{color:var(--ink);border:var(--bd);background:var(--surface);padding:9px 12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:7px;text-align:left;transition:background-color .15s ease,border-color .15s ease}button:hover{background:var(--surface-2)}button:disabled{opacity:.5;cursor:default}button.primary{background:var(--green);border-color:var(--green);color:light-dark(#fff,#06231a);min-height:44px;padding:11px 15px}button.primary:hover:not(:disabled){background:light-dark(#0a5741,#3cc398)}button.quiet,.quiet{background:transparent;border-color:transparent}.metric-link{background:var(--info-bg);color:var(--info-ink);padding:6px 8px;font-size:12px}a{color:var(--green);font-weight:600;text-underline-offset:3px}input,select,textarea{border:1px solid light-dark(#bcccdc,#3a5578);background:var(--surface);color:var(--ink);padding:9px 11px;min-width:0;max-width:100%}:focus-visible{outline:3px solid light-dark(#1f7a6d,#57c7a3);outline-offset:2px}.frame{min-height:100vh;display:grid;grid-template-columns:232px minmax(0,1fr)}.sidebar{padding:26px 18px;background:light-dark(#0c1a2d,#081120);color:var(--nav-text);display:flex;flex-direction:column;gap:24px}.brand{display:flex;align-items:center;gap:10px;color:#fff;font-weight:720;font-size:22px;letter-spacing:-.025em}.brand small,.local small{display:block;color:var(--nav-muted);font-size:11px;font-weight:650;letter-spacing:.11em}.brand .logo img{width:100%;height:100%;object-fit:contain}.logo{width:42px;height:42px;display:grid;place-items:center;color:var(--accent-ink);background:var(--tint);border-radius:var(--r-m)}.logo svg{width:25px;height:25px}.switcher{display:grid;gap:7px}.switcher label{color:var(--nav-muted);font-size:11px;font-weight:700}.switcher select{background:light-dark(#1a3353,#16294a);border-color:var(--nav-border);color:var(--nav-text)}.sidebar nav{display:grid;gap:4px}.sidebar button{background:transparent;border-color:transparent;color:var(--nav-text);justify-content:flex-start;padding:11px 10px}.sidebar button:hover{background:light-dark(#1a3353,#16294a)}.sidebar .quiet{font-size:13px;padding:6px 4px}.sidebar nav button[aria-current]{background:var(--nav-active-bg);color:var(--nav-active-ink)}.nav-caption{display:block;color:var(--nav-muted);font-size:11px;font-weight:750;padding:3px 10px 4px}.local{display:flex;gap:10px;align-items:center;color:var(--nav-text);font-size:13px;margin-top:auto}.top{background:var(--surface);border-bottom:var(--bd);padding:14px 28px;display:flex;align-items:center;justify-content:space-between;color:var(--muted);gap:10px;font-size:13px}.top strong{color:var(--ink)}.slash{margin:0 7px;color:var(--muted)}.top-side{display:inline-flex;align-items:center;gap:12px}.header-counters{color:var(--muted);font-size:13px;font-weight:600}.top-tools{display:inline-flex;gap:6px;align-items:center}.icon-button{padding:6px}.top-tools .icon-button{color:var(--muted)}.top-tools .icon-button[aria-pressed="true"]{color:var(--green);border-color:var(--green)}.top-search input{background:light-dark(#1a3353,#16294a);border:1px solid var(--nav-border);color:var(--nav-text);border-radius:8px;padding:6px 10px;min-width:200px;font:inherit}.top-search input::placeholder{color:var(--nav-muted)}.badge,.tag{font-size:12px;color:var(--accent-ink);background:var(--tint);display:inline-flex;align-items:center;padding:4px 8px;border-radius:var(--r-pill);font-weight:650;white-space:nowrap}.dot{width:7px;height:7px;border-radius:50%;background:var(--green)}.news-badge{padding:1px 7px;border-radius:var(--r-pill);background:var(--danger);color:light-dark(#fff,#471a14);font-size:11px;font-weight:750}.page{max-width:1340px;margin:auto;padding:28px}.app-footer{color:var(--muted);font-size:12px}.app-footer-row{display:flex;align-items:center;gap:7px;padding-top:12px;border-top:var(--bd);color:var(--muted)}.app-footer-row svg{width:15px;height:15px}.heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:24px}.heading p{font-size:13px}.eyebrow{font-weight:750;font-size:11px;letter-spacing:.14em;color:var(--green);overflow-wrap:anywhere}h1{font-size:30px;font-weight:720;line-height:1.12;margin:6px 0}h2{font-size:17px;font-weight:650;margin:0}h3{font-size:16px;margin:0}p{margin:0;color:var(--muted)}.offline-banner{margin:0;padding:10px 28px;background:var(--danger-bg);color:var(--danger)}#status{margin:0 0 12px;padding:11px 13px;background:var(--tint);white-space:pre-line;overflow-wrap:anywhere;color:var(--ink)}#status[data-error=true]{background:var(--danger-bg);color:var(--danger)}body.drag-active::after{content:"Suelta los archivos para importar";position:fixed;inset:auto 0 22px 0;margin:0 auto;width:max-content;max-width:92vw;background:var(--green);color:light-dark(#fff,#06231a);padding:11px 18px;border-radius:100px;font-weight:700;z-index:60}
 
 .metric strong,.kpi strong,.total-hero strong,td.num,.activity-count,.header-counters,.news-badge,.sat-step-time,.chart text,.invoice-summary h3{font-variant-numeric:tabular-nums}.metric strong,.kpi strong,.facts strong,.dashboard-hero h2,.xml-view,.seal-details pre,.print-seals,.invoice-summary,#fields p{overflow-wrap:anywhere}.metric,.panel,.guide,.kpi{background:var(--surface);border:var(--bd);border-radius:var(--r-l)}.metric,.kpi{padding:16px;display:grid;gap:4px;min-width:0}.metric{grid-template-columns:1fr auto;align-items:center}.cards,.kpis{display:grid;gap:12px;margin-bottom:16px}.cards{grid-template-columns:repeat(3,minmax(0,1fr))}.kpis{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}.metric-label,.kpi-label{display:flex;gap:8px;align-items:center;color:var(--muted);font-weight:600;font-size:13px}.metric-label{grid-column:1/-1}.metric-label svg{color:var(--green)}.kpi-label svg{color:var(--green)}.metric strong,.kpi strong{font-size:26px;font-weight:700}.kpi small{color:var(--muted);font-size:13px}.kpi.split strong{font-size:20px}.kpi.ok strong{color:var(--ok-ink)}.kpi.bad strong{color:var(--danger)}.kpi.warn strong{color:var(--warn-ink)}.total-hero{display:grid;gap:4px;justify-items:center;text-align:center;padding:20px 16px}.total-hero strong{font-size:34px;font-weight:700}.panel{min-width:0;overflow:hidden;margin-bottom:16px}.panel>p{padding:12px 16px}.panel-head,.filters,.table-foot,.guide,.modal-head,.modal-actions,.aviso-head,.activity-dock-head,.activity-result-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;flex-wrap:wrap}.filters,.guide{justify-content:flex-start}.guide{background:var(--info-bg);margin-bottom:16px}.filters{background:var(--surface)}.filters input[type=search]{flex:1 1 200px}.filters button{margin-left:auto}.table-foot{color:var(--muted);font-size:13px}.actions,.hero-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.modal-head{padding:0}.modal-actions{justify-content:flex-end;margin-top:16px;padding:0}.dashboard-grid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px}.dashboard-hero{display:flex;align-items:center;justify-content:space-between;gap:22px;flex-wrap:wrap;margin-bottom:16px;padding:24px;border-radius:var(--r-l);background:light-dark(#152c4e,#132a44);color:#fff}.dashboard-hero h2{font-size:clamp(23px,3.1vw,34px);line-height:1.13;margin:5px 0 6px}.dashboard-hero p{color:light-dark(#cfe5ee,#b7d3de)}.hero-kicker{font-size:11px;font-weight:700;color:#a7edda}.table-wrap{overflow-x:auto}::selection{background:light-dark(#bfe3d2,#17573f)}table,.grid-table{width:100%;border-collapse:collapse}th,td{padding:11px 13px;border-top:var(--bd)}th{font-size:12px;color:var(--muted);background:var(--surface-2)}td small{display:block;color:var(--muted);margin-top:3px}td.num{white-space:nowrap;text-align:right}td button{font-size:13px;padding:7px 10px;white-space:nowrap;min-height:40px}.tabs,.tabbar{display:flex;gap:4px;flex-wrap:wrap;padding:9px 12px;border-bottom:var(--bd)}.tabs button,.tabbar button{border-color:transparent}.tabs button[aria-pressed=true],.tabbar button[aria-selected=true]{background:var(--tint);color:var(--accent-ink)}.status-pill{gap:7px;border-radius:100px;padding:6px 12px;font-size:13px;font-weight:650;border-color:transparent}.status-pill .pill-dot{width:9px;height:9px;border-radius:50%;background:currentColor;flex:none}.status-pill[data-state="warn"]{background:var(--warn-bg);color:var(--warn-ink)}.status-pill[data-state="bad"]{background:var(--danger-bg);color:var(--danger)}.status-pill[data-state="dim"]{background:var(--info-bg);color:var(--info-ink)}
@@ -437,6 +437,51 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
 
 .tabbar-secundaria{padding:5px 12px;background:var(--surface-2)}
 .tabbar-secundaria button{font-size:13px;min-height:36px;padding:5px 10px}
+
+
+
+.rfc-medallon200b{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--muted);border:var(--bd);font-weight:750;font-size:14px;flex:none}
+.salud-punto200b{width:11px;height:11px;border-radius:50%;background:var(--muted);flex:none;display:inline-block}
+.salud-punto200b[data-nivel="ok"]{background:#1d9e6c}
+.salud-punto200b[data-nivel="warn"]{background:#d99a16}
+.salud-punto200b[data-nivel="bad"]{background:#cf3a2e}
+.scope-menu-btn200b{gap:8px;max-width:46vw;overflow:hidden;white-space:nowrap;justify-content:flex-start;min-width:0}
+.scope-nombre200b{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.scope-menu200b{position:fixed;top:64px;right:14px;z-index:70;width:min(360px,92vw);background:var(--surface);border:var(--bd);border-radius:var(--r-l);box-shadow:var(--shadow-1);padding:10px;display:grid;gap:6px;max-height:70vh;overflow:auto}
+.scope-menu200b input{width:100%;font-size:16px}
+.scope-menu-row200b{display:flex;align-items:center;gap:9px;width:100%;min-height:44px}
+.contrib-row200b{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;margin:0 16px 8px;width:calc(100% - 32px)}
+.contrib-txt200b{display:grid;gap:2px;flex:1;min-width:0}
+.contrib-txt200b small{color:var(--muted)}
+.hoy-acciones200b{display:flex;gap:8px;flex-wrap:wrap;padding:4px 16px 14px}
+.hoy-acciones200b button{min-height:44px}
+.pintado-progresivo200b{content-visibility:auto;contain-intrinsic-size:auto 320px}
+.destino-realce200b{outline:3px solid var(--green);outline-offset:2px;transition:outline-color .4s ease}
+.search-toggle200b{display:none}
+@media(max-width:860px){
+.top{flex-wrap:nowrap;padding:6px 10px;gap:6px}
+.top>span:first-child .slash,.top #crumb{display:none}
+.top .header-counters,.top .badge{display:none}
+.top-side{flex-wrap:nowrap;gap:6px;min-width:0}
+.top-search{display:none}
+.top.busqueda200b .top-search{display:block;position:absolute;top:54px;left:8px;right:8px;z-index:65;background:var(--surface);padding:6px;border:var(--bd);border-radius:var(--r-m)}
+.top.busqueda200b .top-search input{width:100%;min-width:0}
+.top .icon-button{min-width:44px;min-height:44px}
+.search-toggle200b{display:inline-flex}
+.scope-menu-btn200b{min-height:44px}
+.scope-menu200b{top:56px}
+}
+
+.salud-grid200d{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));padding:2px}
+.salud-grid200d .panel{margin-bottom:0}
+.ayuda-cajon200d{margin:0 0 0 auto;height:100%;max-height:100vh;width:min(430px,95vw);border-radius:0}
+.ayuda-cajon200d h3{margin:14px 0 4px}
+
+
+
+
+.cmd-card[data-level="rojo"]{border:2px solid var(--danger);box-shadow:var(--shadow-2)}
+.cmd-card[data-level="ambar"]{border:2px solid var(--warn-ink);box-shadow:var(--shadow-2)}
 </style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -533,7 +578,7 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
 </aside>
 <div id="offline-banner" class="offline-banner" hidden></div>
 <main>
-  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><!-- F5 (1.22.0): el contribuyente también arriba, visible sin abrir la barra lateral — pensado para el día del segundo RFC. Espejo del selector lateral: cambiar uno cambia el otro. --><select id="scope-top" class="scope-top" aria-label="Contribuyente" title="Contribuyente"></select><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, folio fiscal o RFC…" aria-label="Buscador global de CFDI" title="Buscador global (Ctrl+K)"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="ask-button" class="icon-button" type="button" aria-label="Preguntas: pregunta en lenguaje normal" title="Preguntas"><svg><use href="#i-help"/></svg></button><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
+  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><!-- Selector global (2.0 · tanda 2, pieza 8): desplegable propio con medallón de color, buscador (desde 5 RFC) y punto de salud por contribuyente; el <select> espejo queda oculto y sigue siendo el valor que el resto del código sincroniza. --><button id="scope-menu-btn200b" class="scope-menu-btn200b" type="button" aria-haspopup="true" aria-expanded="false" title="Cambiar de contribuyente">Contribuyente</button><select id="scope-top" class="scope-top" aria-label="Contribuyente" title="Contribuyente" hidden></select><div id="scope-menu200b" class="scope-menu200b" hidden></div><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, folio fiscal o RFC…" aria-label="Buscador global de CFDI" title="Buscador global (Ctrl+K)"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="search-toggle200b" class="icon-button search-toggle200b" type="button" aria-label="Buscar" title="Buscar"><svg><use href="#i-search"/></svg></button><button id="ask-button" class="icon-button" type="button" aria-label="Ayuda de esta pantalla" title="Ayuda"><svg><use href="#i-help"/></svg></button><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
   <div class="page">
     <header class="heading">
       <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
@@ -597,8 +642,8 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
   <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
 </dialog>
-<script>const PACOSAT_META = {"version":"1.32.2","created":"2026-11-08T13:42:35-06:00"};
-const PACOSAT_LAZY = {"salidas":"/parte/salidas","pagos":"/parte/pagos","bancos":"/parte/bancos","registro":"/parte/registro"};
+<script>const PACOSAT_META = {"version":"2.0.0","created":"2026-11-08T13:42:35-06:00"};
+const PACOSAT_LAZY = {"salidas":"/parte/salidas","pagos":"/parte/pagos","bancos":"/parte/bancos","registro":"/parte/registro","salud":"/parte/salud"};
 'use strict';
 const $ = id => document.getElementById(id);
 const KB = 1024;
@@ -1359,21 +1404,23 @@ return 'Se pedirá al SAT: ' + (name ? name + ' (' + rfc + ')' : rfc) + ' · ' +
 
 
 const screens = {
-home: ['Hoy', 'Cómo amanece todo: qué hizo el sistema, qué falta y qué vence.', 'Importar XML / ZIP'],
+home: ['Hoy', 'Cómo amanece todo: qué hizo el sistema, qué falta y qué vence.', 'Descargar CFDI del SAT'],
 avisos: ['Avisos', 'Lo que está mal, lo que falta y lo que el sistema necesita de ti.', 'Revisar avisos ahora'],
 buzon: ['Recibidos', 'Lo nuevo que llegó a tu expediente: CFDI y documentos recientes, leídos y sin leer.', 'Marcar todo leído'],
 tributario: ['Buzón Tributario', 'Las notificaciones del SAT para este RFC: PacoSAT las lista sin abrir ninguna.', 'Consultar ahora'],
-invoices: ['Facturas', 'Todos tus CFDI: emitidos y recibidos, su estado en el SAT y su PDF, en una sola tabla.', 'Importar XML / ZIP'],
+invoices: ['Facturas', 'Todos tus CFDI: emitidos y recibidos, su estado en el SAT y su PDF, en una sola tabla.', 'Descargar del SAT'],
 docs: ['Documentos', 'Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados, con «Ver» de un clic.', 'Subir PDF'],
 declaraciones: ['Declaraciones', 'El mapa de tus declaraciones por año y mes: qué consta, qué falta y cómo se descarga del SAT.', 'Descargar declaraciones del SAT'],
 registro: ['Registro', 'Todo lo que el sistema hizo, intentó y no pudo: conexiones, acciones y fallos en lenguaje llano.', 'Exportar CSV'],
+salud: ['Salud', 'El Centro de salud: cada pieza del sistema con su semáforo, su porqué y su arreglo en un toque.', 'Revisar ahora la salud'],
 archivo: ['Archivo', 'Lo que guardaste fuera de las vistas de trabajo: CFDI y documentos archivados, recuperables con un toque.', 'Ir a Facturas'],
 dinero: ['Dinero', 'Cuánto debes, cuánto te deben y qué ya se movió.', 'Descargar Excel de saldos'],
 pagos: ['Pagos al banco', 'Prepara los pagos del mes en tres pasos y llévate las tablas para el banco.', 'Armar la lista del mes'],
 sat: ['Centro SAT', 'Descarga tus facturas, tu constancia y tus declaraciones del SAT.', 'Importar paquete'],
 salidas: ['Cierre y reportes', 'Cierra el mes paso a paso, mira qué vence y prepara lo de tu contadora.', 'Exportación completa'],
 settings: ['Ajustes', 'Contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema y acerca de.', 'Guardar ajustes'],
-preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Escribir tu pregunta']
+preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Escribir tu pregunta'],
+contribuyentes: ['Contribuyentes', 'Todos tus RFC ordenados por urgencia: puerta, última descarga, avisos y vencimientos de cada uno.', 'Ir a Hoy']
 };
 
 const VIEW_ALIASES = {
@@ -1401,7 +1448,7 @@ const portals = [
 
 
 
-let appSettings = { installName: '', senderName: '', accent: '', hasLogo: false, logoData: '' };
+let appSettings = { installName: '', senderName: '', accent: '', hasLogo: false, logoData: '', rfcColors: {} };
 try {
 const saved = JSON.parse(localStorage.getItem('pacosat-settings') || 'null');
 if (saved && typeof saved === 'object') appSettings = { ...appSettings, ...saved, hasLogo: Boolean(saved.logoData) };
@@ -1568,8 +1615,9 @@ const themeButton = $('theme-toggle');
 if (themeButton) themeButton.onclick = () => { prefSet('pacosat-theme', themeIsDark() ? 'light' : 'dark'); applyTheme(); };
 
 
+
 const askButton = $('ask-button');
-if (askButton) askButton.onclick = () => navigate('preguntas');
+if (askButton) askButton.onclick = () => ayudaAbrir200d();
 
 const moreButton = $('more-button');
 if (moreButton) moreButton.onclick = () => {
@@ -1579,6 +1627,57 @@ if (frame) frame.classList.toggle('sheet-open');
 const unlock = () => { if (soundOn) ensureAudio(); };
 window.addEventListener('pointerdown', unlock, { once: true });
 window.addEventListener('keydown', unlock, { once: true });
+}
+
+
+
+
+
+
+function ayudaAbrir200d() {
+const abrir = () => {
+document.querySelector('.ayuda-cajon200d')?.remove();
+const d = document.createElement('dialog');
+d.className = 'ayuda-cajon200d';
+d.setAttribute('aria-label', 'Ayuda de esta pantalla');
+const t = (typeof AYUDA_TEXTOS200D !== 'undefined' && AYUDA_TEXTOS200D[page]) || null;
+const head = n('div', undefined, 'modal-head');
+head.append(n('h2', 'Ayuda · ' + (screens[page]?.[0] || 'Esta pantalla')));
+const cerrar = n('button', undefined, 'icon-button');
+cerrar.type = 'button';
+cerrar.setAttribute('aria-label', 'Cerrar la ayuda');
+cerrar.append(icon('close'));
+cerrar.onclick = () => d.close();
+head.append(cerrar);
+d.append(head);
+const bloque = (titulo, texto) => {
+const s = n('section');
+s.append(n('h3', titulo), n('p', texto));
+return s;
+};
+if (t) d.append(bloque('Qué es', t.q), bloque('Para qué sirve', t.p), bloque('Qué hacer', t.h));
+
+
+if (typeof satToken !== 'undefined' && satToken)
+satApi('ayuda-ejemplo200h' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(r => {
+if (r?.ejemplo && d.isConnected) d.append(bloque('Ejemplo de tu expediente', r.ejemplo.texto));
+}).catch(() => {});
+else d.append(bloque('Qué es', screens[page]?.[1] || 'Esta pantalla.'),
+n('p', 'La ayuda detallada de esta pantalla no llegó: puedes preguntar con tus datos en Preguntas.'));
+const acts = n('div', undefined, 'modal-actions');
+const preguntar = n('button', 'Preguntar con tus datos', 'soft');
+preguntar.type = 'button';
+preguntar.onclick = () => { d.close(); navigate('preguntas'); };
+const salir = n('button', 'Cerrar', 'primary');
+salir.type = 'button';
+salir.onclick = () => d.close();
+acts.append(preguntar, salir);
+d.append(acts);
+document.body.append(d);
+d.showModal();
+};
+if (typeof AYUDA_TEXTOS200D !== 'undefined' || typeof ensureLazyPart !== 'function') abrir();
+else ensureLazyPart('salud').then(abrir);
 }
 initPrefs();
 let newsCount = 0;
@@ -2375,20 +2474,30 @@ return 'lleva ' + Math.floor(s / 3600) + ' h ' + String(Math.floor(s / 60) % 60)
 
 
 
-function jobProgress1312({ fase = '', desde = 0, done = null, total = null } = {}) {
+function jobProgress1312({ fase = '', desde = 0, done = null, total = null, estado = '' } = {}) {
 const wrap = n('div', undefined, 'job-progress');
 wrap.setAttribute('role', 'progressbar');
-const conocido = Number.isFinite(Number(total)) && Number(total) > 0 && Number.isFinite(Number(done));
-if (conocido) wrap.setAttribute('aria-valuenow', String(Math.min(100, Math.round(Number(done) / Number(total) * 100))));
+
+
+
+
+
+const espera = ['en-cola', 'esperando', 'pausado'].includes(estado);
+const conocido = !espera && Number.isFinite(Number(total)) && Number(total) > 0 && Number.isFinite(Number(done));
+const pct = conocido ? Math.min(100, Math.round(Number(done) / Number(total) * 100)) : 0;
+if (conocido) wrap.setAttribute('aria-valuenow', String(pct));
+if (espera) wrap.setAttribute('aria-valuenow', '0');
 const linea = n('div', undefined, 'job-progress-line');
 const bits = [];
 if (fase) bits.push(fase);
 if (conocido) bits.push(number.format(Number(done)) + ' de ' + number.format(Number(total)));
-const tiempo = fmtElapsed1312(desde);
+const transcurrido = fmtElapsed1312(desde);
+const tiempo = espera && transcurrido ? transcurrido.replace(/^lleva /, 'esperando desde hace ') : transcurrido;
 linea.append(n('span', bits.join(' · ')), n('span', tiempo, 'job-progress-time'));
-const bar = n('div', undefined, 'job-bar' + (conocido ? '' : ' job-bar-ind'));
+const bar = n('div', undefined, 'job-bar' + (espera ? ' job-bar-espera' : conocido ? '' : ' job-bar-ind'));
 const fill = n('i', undefined, 'job-bar-fill');
-if (conocido) fill.style.width = Math.min(100, Math.round(Number(done) / Number(total) * 100)) + '%';
+if (conocido) fill.style.width = pct + '%';
+if (espera) fill.style.width = '0%';
 bar.append(fill);
 wrap.append(linea, bar);
 return wrap;
@@ -2518,6 +2627,7 @@ scopeTop.value = scope;
 }
 prefetchLazyParts();
 if (!skipRender) render();
+if (typeof enlaceProfundo200c === 'function') enlaceProfundo200c();
 }
 function navigate(view) {
 const alias = VIEW_ALIASES[view];
@@ -2572,11 +2682,404 @@ function primaryLabel() {
 
 
 
-if (page === 'sat') return { descargar: 'Descargar CFDI del SAT', estado: 'Revisar mis CFDI ahora', listas: 'Actualizar listados', descargado: 'Actualizar estado', ejecutor: 'Emparejar un ejecutor en mi equipo' }[satTab] || 'Descargar CFDI del SAT';
+if (page === 'sat') return { descargar: 'Descargar CFDI del SAT', estado: 'Revisar mis CFDI ahora', listas: 'Actualizar listados', descargado: 'Actualizar estado', ejecutor: satData?.ejecutor?.emparejado ? 'Tu ejecutor' : 'Emparejar un ejecutor en mi equipo' }[satTab] || 'Descargar CFDI del SAT';
 if (page === 'settings') return { general: 'Guardar ajustes', contribuyentes: 'Agregar RFC', correo: 'Guardar el correo', respaldos: 'Crear respaldo', sinconexion: 'Sincronizar ahora', sistema: 'Actualizar estado', acerca: 'Ver la versión', api: 'Actualizar el panel' }[ajustesSection] || 'Guardar ajustes';
 if (page === 'salidas') return { cierre: 'Exportación completa', calendario: 'Elegir el mes del cierre', diot: 'Exportar CSV', reportes: 'Exportación completa' }[cierreSection] || 'Exportación completa';
+
+
+
+
+
+if (page === 'invoices') return 'Descargar del SAT';
+if (page === 'home') return pasoHoy200();
 return screens[page][2];
 }
+
+
+
+
+
+function pasoHoy200() {
+if (!satData) return 'Descargar CFDI del SAT';
+if (scope && (satData.pendingProfiles || []).includes(scope)) return 'Dar sus credenciales';
+const tipo = causaP200(scope ? satData.puerta?.[scope] : null, satData.ejecutor).tipo;
+return tipo === 'equipo' || tipo === 'sin-equipo' ? 'Ver tu ejecutor'
+: tipo === 'efirma' ? 'Revisar la e.firma' : 'Descargar CFDI del SAT';
+}
+
+
+
+
+
+
+
+
+
+const RFC_PALETA200B = [
+['azul', '#175c9e', 'Azul'], ['verde', '#0e6b4f', 'Verde'], ['teal', '#0f766e', 'Turquesa'],
+['violeta', '#6d28d9', 'Violeta'], ['burdeos', '#9f2436', 'Burdeos'], ['ambar', '#9a5b00', 'Ámbar'],
+['grafito', '#3f5468', 'Grafito'], ['oliva', '#556b1f', 'Oliva'], ['ciruela', '#7a2e5e', 'Ciruela'],
+['marron', '#7c4a1e', 'Marrón']];
+const rfcPaleta200b = clave => RFC_PALETA200B.find(([k]) => k === clave) || null;
+function rfcColorClave200b(rfc) {
+if (!rfc) return '';
+const delEstado = typeof satData !== 'undefined' && satData ? satData.settings?.rfcColors?.[rfc] : '';
+if (delEstado) return delEstado;
+const delPerfil = typeof satData !== 'undefined' && satData ?
+(satData.profiles || []).find(p => p.rfc === rfc)?.color : '';
+return delPerfil || (typeof appSettings !== 'undefined' ? appSettings.rfcColors?.[rfc] : '') || '';
+}
+
+
+function medallon200b(rfc, nombre) {
+const el = n('span', undefined, 'rfc-medallon200b');
+el.textContent = String(nombre || rfc || '?').trim().charAt(0).toUpperCase() || '?';
+el.setAttribute('aria-hidden', 'true');
+const pal = rfcPaleta200b(rfcColorClave200b(rfc));
+el.dataset.color = pal ? pal[0] : '';
+if (pal) { el.style.background = pal[1]; el.style.color = '#ffffff'; }
+el.title = (nombre || rfc || '') + (pal ? ' · color ' + pal[2] : '');
+return el;
+}
+
+
+
+
+function saludRfc200b(rfc, ahora = Date.now()) {
+const sd = typeof satData !== 'undefined' && satData ? satData : null;
+if (!sd || !rfc) return { nivel: 'dim', porque: 'sin datos todavía' };
+const puerta = sd.puerta?.[rfc] || null;
+const ex = sd.ejecutor || null;
+const sinAbrir = Number(sd.tributario?.[rfc]?.sinAbrir || 0);
+const causa = puerta && puerta.probada && puerta.ok === false ?
+(typeof causaP200 === 'function' ? causaP200(puerta, ex, ahora) : null) : null;
+if (causa && (causa.tipo === 'equipo' || causa.tipo === 'sin-equipo'))
+return { nivel: 'bad', porque: 'tu equipo no responde: la puerta no se puede probar' };
+if (causa && causa.tipo === 'efirma' && !causa.vieja)
+return { nivel: 'bad', porque: 'la puerta del SAT no abre con su e.firma' };
+if (ex && ex.emparejado && !ex.enLinea)
+return { nivel: 'warn', porque: 'tu equipo no responde desde el ' + fmtFechaHora(ex.ultimoVisto) };
+if (causa && causa.vieja)
+return { nivel: 'warn', porque: 'la foto de su puerta es vieja (' + fmtFechaHora(puerta.probada) + ')' };
+if (sinAbrir > 0) return { nivel: 'warn', porque: number.format(sinAbrir) + ' notificación(es) del Buzón sin abrir' };
+if (puerta && puerta.ok) return { nivel: 'ok', porque: 'puerta abierta y sin avisos sin abrir' };
+return { nivel: 'dim', porque: 'puerta sin probar todavía' };
+}
+
+
+
+function urgenciaRfc200b(rfc, ahora = Date.now()) {
+const sd = typeof satData !== 'undefined' && satData ? satData : null;
+if (!sd || !rfc) return 0;
+let puntos = 0;
+const salud = saludRfc200b(rfc, ahora);
+if (salud.nivel === 'bad') puntos += 100; else if (salud.nivel === 'warn') puntos += 40;
+puntos += Math.min(30, Number(sd.tributario?.[rfc]?.sinAbrir || 0) * 10);
+puntos += Math.min(20, Number(sd.buzonUnread?.[rfc] || 0) * 4);
+const perfil = (sd.profiles || []).find(p => p.rfc === rfc);
+if (perfil?.certExpires) {
+const dias = Math.ceil((perfil.certExpires - ahora) / 86400000);
+if (dias <= 0) puntos += 90; else if (dias <= 30) puntos += 60; else if (dias <= 60) puntos += 30;
+}
+if ((sd.pendingProfiles || []).includes(rfc)) puntos += 80;
+return puntos;
+}
+
+
+
+
+
+let destinoPendiente200b = '';
+function irDestino200b(view, destinoId) {
+destinoPendiente200b = destinoId || '';
+navigate(view);
+aplicarDestino200b();
+}
+
+
+
+
+
+
+let enlaceAplicado200c = '';
+function enlaceProfundo200c() {
+const hash = String(location.hash || '');
+if (!hash.startsWith('#/') || hash === enlaceAplicado200c) return;
+enlaceAplicado200c = hash;
+const [vista, query] = hash.slice(2).split('?');
+const params = new URLSearchParams(query || '');
+const rfc = params.get('rfc') || '';
+if (rfc && people.some(person => person.id === rfc)) scope = rfc;
+const periodo = params.get('periodo') || '';
+if (/^\d{4}-\d{2}$/.test(periodo)) month = periodo;
+const vistas200c = { facturas: 'invoices', avisos: 'avisos', documentos: 'docs',
+hoy: 'home', cierre: 'salidas', buzon: 'tributario', declaraciones: 'declaraciones' };
+const destino = params.get('destino') || '';
+const uuid = params.get('uuid') || '';
+if (uuid) term = uuid;
+navigate(vistas200c[vista] || 'home');
+if (destino) irDestino200b(vistas200c[vista] || 'home', destino);
+if (uuid) setTimeout(() => {
+const row = invoices.find(item => String(item.id).toUpperCase() === uuid.toUpperCase());
+if (row) invoiceDetail(row);
+}, 700);
+}
+function aplicarDestino200b() {
+if (!destinoPendiente200b) return;
+const id = destinoPendiente200b;
+destinoPendiente200b = '';
+const buscar = () => document.querySelector('[data-destino200b="' + id + '"]');
+let el = buscar();
+if (!el) { setTimeout(() => { el = buscar(); if (el) realzar200b(el); }, 350); return; }
+realzar200b(el);
+}
+function realzar200b(el) {
+try { el.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch {  }
+el.classList.add('destino-realce200b');
+setTimeout(() => el.classList.remove('destino-realce200b'), 2400);
+}
+
+
+
+
+
+
+function hoyAcciones200b() {
+const wrap = panel('Acciones del día');
+wrap.dataset.bloque200b = 'acciones';
+const fila = n('div', undefined, 'hoy-acciones200b');
+const hoy = new Date();
+const mesKey = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+const rango = typeof downloadShortcutRange === 'function' ?
+downloadShortcutRange('mes', hoy.toISOString().slice(0, 10)) : { start: mesKey + '-01', end: hoy.toISOString().slice(0, 10) };
+const descargar = n('button', 'Descargar este mes', 'primary');
+descargar.type = 'button';
+descargar.onclick = () => { if (scope && typeof downloadSheet === 'function') downloadSheet(scope, { start: rango.start, end: rango.end }); else showSatDownload(); };
+fila.append(descargar);
+const cubierto = invoices.some(row => row.date.startsWith(mesKey) && (!scope || row.from.rfc === scope || row.to.rfc === scope));
+if (cubierto) {
+const pasado = n('button', 'Descargar el mes pasado', 'soft');
+pasado.type = 'button';
+pasado.onclick = () => {
+const r2 = downloadShortcutRange('mes-pasado', hoy.toISOString().slice(0, 10));
+if (scope && typeof downloadSheet === 'function') downloadSheet(scope, { start: r2.start, end: r2.end }); else showSatDownload();
+};
+fila.append(pasado);
+}
+const buzonBtn = n('button', 'Buzón Tributario', 'soft');
+buzonBtn.type = 'button';
+buzonBtn.onclick = () => irDestino200b('tributario', 'buzon');
+const declBtn = n('button', 'Declaraciones', 'soft');
+declBtn.type = 'button';
+declBtn.onclick = () => navigate('declaraciones');
+const constBtn = n('button', 'Constancia', 'soft');
+constBtn.type = 'button';
+constBtn.onclick = () => irDestino200b('sat', 'constancia');
+fila.append(buzonBtn, declBtn, constBtn);
+const ponte = n('button', 'Ponte al día', 'soft');
+ponte.type = 'button';
+ponte.onclick = () => { ponte.disabled = true;
+ensureLazyPart('salud').then(() => ponteAlDia200e(ponte)).catch(() => { ponte.disabled = false; }); };
+fila.append(ponte);
+wrap.append(fila);
+return wrap;
+}
+
+
+
+function hoySaludLinea200b() {
+const wrap = panel();
+wrap.dataset.bloque200b = 'salud-linea';
+const fila = n('div', undefined, 'cp-row');
+const health = typeof satData !== 'undefined' && satData ? satData.health : null;
+const nivel = !health ? 'dim' : health.level === 'mal' ? 'bad' : health.level === 'vigilar' ? 'warn' : 'ok';
+const bh = typeof satData !== 'undefined' && satData ? satData.backupHealth : null;
+const textoRespaldo = !bh ? '' : bh.failed ? ' · el último respaldo falló' :
+bh.lastOk ? ' · respaldo del ' + fmtFechaHora(bh.lastOk) : '';
+fila.append(statusPill(nivel, nivel === 'bad' ? 'Salud: algo va mal' : nivel === 'warn' ? 'Salud: a vigilar' : nivel === 'ok' ? 'Salud: todo bien' : 'Salud: sin datos'),
+n('span', 'Salud del sistema y respaldo' + textoRespaldo + ' — su detalle vive en su pantalla.'));
+const ir = n('button', 'Ver la salud', 'soft small');
+ir.type = 'button';
+ir.onclick = () => navigate('salud');
+fila.append(ir);
+wrap.append(fila);
+return wrap;
+}
+
+
+
+
+
+function contribuyentesPanel200b() {
+const wrap = panel('Contribuyentes', 'Todos tus RFC de un vistazo, primero quien necesita un gesto. Toca uno para entrar a su Hoy.');
+wrap.dataset.bloque200b = 'panel-contribuyentes';
+const sd = typeof satData !== 'undefined' && satData ? satData : null;
+const perfiles = new Map((sd?.profiles || []).map(p => [p.rfc, p]));
+const filas = people.map(person => ({ rfc: person.id, nombre: person.name }));
+for (const p of sd?.profiles || [])
+if (!filas.some(f => f.rfc === p.rfc)) filas.push({ rfc: p.rfc, nombre: p.pending ? 'Alta preparada (faltan credenciales)' : 'Contribuyente' });
+filas.sort((a, b) => urgenciaRfc200b(b.rfc) - urgenciaRfc200b(a.rfc) || a.nombre.localeCompare(b.nombre, 'es-MX'));
+if (!filas.length) { wrap.append(n('p', 'Sin contribuyentes todavía.', 'empty')); return wrap; }
+for (const fila of filas) {
+const perfil = perfiles.get(fila.rfc);
+const salud = saludRfc200b(fila.rfc);
+const row = n('button', undefined, 'contrib-row200b');
+row.type = 'button';
+row.dataset.rfc = fila.rfc;
+const ultima = perfil?.lastSatSuccess ? fmtFechaHora(perfil.lastSatSuccess) : 'sin descargas registradas';
+const sinAbrir = Number(sd?.tributario?.[fila.rfc]?.sinAbrir || 0);
+const vence = perfil?.certExpires ? 'e.firma vence el ' + fmtFechaCorta(perfil.certExpires) : 'sin vencimiento a la vista';
+const txt = n('span', undefined, 'contrib-txt200b');
+txt.append(n('strong', fila.nombre + ' · ' + fila.rfc),
+n('small', 'Puerta: ' + salud.porque + ' · Última descarga: ' + ultima +
+' · Avisos sin abrir: ' + number.format(sinAbrir) + ' · ' + vence));
+const punto = n('span', undefined, 'salud-punto200b');
+punto.dataset.nivel = salud.nivel;
+punto.title = salud.porque;
+row.append(medallon200b(fila.rfc, fila.nombre), txt, punto);
+row.onclick = () => {
+scope = fila.rfc;
+const a1 = $('scope'); if (a1) a1.value = scope;
+const a2 = $('scope-top'); if (a2) a2.value = scope;
+navigate('home');
+};
+wrap.append(row);
+}
+return wrap;
+}
+function contribuyentesScreen200b() { return [contribuyentesPanel200b()]; }
+
+
+
+
+
+
+
+function pintarBotonScope200b() {
+const btn = $('scope-menu-btn200b');
+if (!btn || !btn.replaceChildren) return;
+const persona = people.find(p => p.id === scope);
+const salud = saludRfc200b(scope);
+const punto = n('span', undefined, 'salud-punto200b');
+punto.dataset.nivel = salud.nivel;
+punto.title = salud.porque;
+btn.replaceChildren(medallon200b(scope, persona?.name || scope),
+n('span', persona ? persona.name + ' · ' + scope : 'Sin contribuyente', 'scope-nombre200b'), punto);
+btn.title = 'Contribuyente: ' + (persona?.name || scope || '—') + ' — ' + salud.porque;
+}
+function pintarScopeMenu200b(filtro = '') {
+const menu = $('scope-menu200b');
+if (!menu) return;
+menu.replaceChildren();
+if (people.length >= 5) {
+const buscar = input('search', { placeholder: 'Buscar por nombre o RFC…', 'aria-label': 'Buscar contribuyente' });
+buscar.value = filtro;
+buscar.oninput = () => { pintarScopeMenu200b(buscar.value); const b2 = menu.querySelector('input'); if (b2) { b2.focus(); b2.setSelectionRange?.(b2.value.length, b2.value.length); } };
+menu.append(buscar);
+}
+const needle = filtro.trim().toLocaleLowerCase('es-MX');
+const ordenadas = [...people].sort((a, b) => urgenciaRfc200b(b.id) - urgenciaRfc200b(a.id) || a.name.localeCompare(b.name, 'es-MX'));
+let visibles = 0;
+for (const persona of ordenadas) {
+if (needle && !(persona.name + ' ' + persona.id).toLocaleLowerCase('es-MX').includes(needle)) continue;
+visibles++;
+const salud = saludRfc200b(persona.id);
+const row = n('button', undefined, 'scope-menu-row200b');
+row.type = 'button';
+row.dataset.rfc = persona.id;
+const punto = n('span', undefined, 'salud-punto200b');
+punto.dataset.nivel = salud.nivel;
+punto.title = salud.porque;
+row.append(medallon200b(persona.id, persona.name), n('span', persona.name + ' · ' + persona.id, 'scope-nombre200b'), punto);
+row.onclick = () => {
+scope = persona.id;
+const a1 = $('scope'); if (a1) a1.value = scope;
+const a2 = $('scope-top'); if (a2) a2.value = scope;
+menu.hidden = true;
+$('scope-menu-btn200b')?.setAttribute('aria-expanded', 'false');
+render();
+};
+menu.append(row);
+}
+if (!visibles) menu.append(n('p', 'Ningún contribuyente coincide con esa búsqueda.', 'muted'));
+const todos = n('button', 'Ver todos los contribuyentes', 'soft small');
+todos.type = 'button';
+todos.onclick = () => { menu.hidden = true; navigate('contribuyentes'); };
+menu.append(todos);
+}
+(function cablearScopeMenu200b() {
+const btn = typeof document !== 'undefined' ? document.getElementById('scope-menu-btn200b') : null;
+if (!btn || !btn.addEventListener) return;
+btn.addEventListener('click', () => {
+const menu = $('scope-menu200b');
+if (!menu) return;
+const abrir = menu.hidden;
+if (abrir) pintarScopeMenu200b('');
+menu.hidden = !abrir;
+btn.setAttribute('aria-expanded', String(abrir));
+});
+
+
+const lupa = document.getElementById('search-toggle200b');
+if (lupa && lupa.addEventListener) lupa.addEventListener('click', () => {
+const top = document.querySelector('.top');
+if (top) top.classList.toggle('busqueda200b');
+const input = document.getElementById('global-search');
+if (input) { input.focus(); input.select?.(); }
+});
+})();
+
+
+
+
+async function asignarColor200b(rfc, color) {
+if (typeof satToken !== 'undefined' && satToken) {
+const result = await satApi('settings', { installName: appSettings.installName, senderName: appSettings.senderName,
+accent: appSettings.accent, rfcColor: { rfc, color } });
+appSettings = { ...appSettings, ...result.settings, logoData: appSettings.logoData };
+if (typeof satData !== 'undefined' && satData) satData.settings = result.settings;
+} else {
+appSettings.rfcColors = { ...(appSettings.rfcColors || {}) };
+if (color) appSettings.rfcColors[rfc] = color; else delete appSettings.rfcColors[rfc];
+try {
+const previo = JSON.parse(localStorage.getItem('pacosat-settings') || '{}');
+localStorage.setItem('pacosat-settings', JSON.stringify({ ...previo, rfcColors: appSettings.rfcColors }));
+} catch {  }
+}
+render();
+}
+function colorPicker200b() {
+const wrap = panel('Color de cada contribuyente',
+'Un color por RFC, de la paleta cerrada de la casa: se ve como un medallón fino junto a su nombre — en el selector, en las tarjetas del Centro SAT y en el panel general. No cambia el color de la app ni sale en reportes o correos.');
+wrap.dataset.bloque200b = 'color-rfc';
+for (const persona of people) {
+const row = n('div', undefined, 'cp-row');
+row.append(medallon200b(persona.id, persona.name), n('span', persona.name + ' · ' + persona.id));
+const opciones = n('div', undefined, 'swatches');
+const actual = rfcColorClave200b(persona.id);
+const sinColor = n('button', 'Sin color', 'swatch');
+sinColor.type = 'button';
+sinColor.setAttribute('aria-pressed', String(!actual));
+sinColor.onclick = () => asignarColor200b(persona.id, '').catch(error => toast(error.message, 'error'));
+opciones.append(sinColor);
+for (const [clave, hex, etiqueta] of RFC_PALETA200B) {
+const b = n('button', undefined, 'swatch');
+b.type = 'button';
+b.title = etiqueta;
+b.setAttribute('aria-pressed', String(actual === clave));
+const dot = n('span', undefined, 'swatch-dot');
+dot.style.background = hex;
+b.append(dot, n('span', etiqueta));
+b.onclick = () => asignarColor200b(persona.id, clave).catch(error => toast(error.message, 'error'));
+opciones.append(b);
+}
+row.append(opciones);
+wrap.append(row);
+}
+if (!people.length) wrap.append(n('p', 'Sin contribuyentes todavía.', 'empty'));
+return wrap;
+}
+
 
 
 
@@ -2606,6 +3109,7 @@ return promise;
 function lazyPartForView(view) {
 if (view === 'pagos') return 'pagos';
 if (view === 'registro') return 'registro';
+if (view === 'salud') return 'salud';
 if (view === 'salidas' && cierreSection === 'reportes') return 'salidas';
 if (view === 'dinero' && dineroTab === 'bancos') return 'bancos';
 return null;
@@ -2666,9 +3170,10 @@ $('primary').disabled = !ready || importing;
 
 
 
-const content = ({ home, avisos: avisosScreen, buzon: buzonScreen, tributario: tributarioScreen, invoices: invoiceScreen, docs: docsView, dinero: dineroView,
+const content = ({ home, contribuyentes: contribuyentesScreen200b, avisos: avisosScreen, buzon: buzonScreen, tributario: tributarioScreen, invoices: invoiceScreen, docs: docsView, dinero: dineroView,
 declaraciones: declaracionesScreen,
 registro: typeof registroScreen === 'function' ? registroScreen : null,
+salud: typeof saludScreen200d === 'function' ? saludScreen200d : null,
 archivo: typeof archivoScreen1311 === 'function' ? archivoScreen1311 : null,
 pagos: typeof pagosScreen === 'function' ? pagosScreen : null,
 sat: satView, salidas: cierreView, settings: ajustesView, preguntas: preguntasScreen })[page]();
@@ -2676,7 +3181,25 @@ for (const el of content) el.classList?.add('view-in');
 
 
 
+
+
+
+
+
+
+
+
+
+if (page === 'home') content.forEach((el, i) => {
+if (i >= 2) el.classList?.add('pintado-progresivo200b');
+});
+
+
+
 if (typeof senalesBarra1311 === 'function') { try { senalesBarra1311(); } catch {  } }
+
+
+try { pintarBotonScope200b(); } catch {  }
 $('body').replaceChildren(...content);
 applySettings();
 }
@@ -2722,7 +3245,9 @@ if (fallos > 0) pill = statusPill('bad', 'Algo falló',
 fallos + ' fallo(s) en las últimas 24 h, según el Registro', () => navigate('registro'));
 else if (necesita > 0 || puertaNoAbre) pill = statusPill('warn', 'Te toca algo',
 [necesita ? necesita + ' aviso(s) necesitan tu gesto' : '',
-puertaNoAbre ? 'la puerta del SAT consta que no abre' : ''].filter(Boolean).join(' · '),
+puertaNoAbre ? (causaP200(scope ? puerta[scope] : null, satData.ejecutor).tipo === 'equipo'
+? 'tu equipo no responde: la puerta se probará sola al volver' : 'la puerta del SAT consta que no abre') : '']
+.filter(Boolean).join(' · '),
 () => navigate('avisos'));
 else pill = statusPill('ok', 'Todo en orden',
 'Sin fallos en 24 h, sin avisos que te necesiten y sin puerta cerrada que conste');
@@ -2987,10 +3512,20 @@ const informes = (avisos?.historial || []).filter(item => item.kind === 'informe
 if (informes) line(cHizo, 'Informes mensuales enviados en el historial: ' + informes + '.');
 if (!resueltos.length && !reconcile?.confirmed.length) line(cHizo, 'Sin actividad registrada hoy: el sistema vigila en silencio.');
 
-if (avisos?.counts?.total) line(cFalta, avisos.counts.total + ' aviso(s) abiertos: ' +
-[avisos.counts.mal ? avisos.counts.mal + ' por corregir' : '', avisos.counts.falta ? avisos.counts.falta + ' que faltan' : '',
-avisos.counts.espera ? avisos.counts.espera + ' en espera' : ''].filter(Boolean).join(', ') + '.',
-() => navigate('avisos'));
+
+
+
+if (avisos?.counts?.total) {
+const nAv = avisos.counts.total;
+const tf200 = (avisos.avisos || []).map(a => a.titulo).filter(Boolean).slice(0, 3);
+
+
+
+const primerAvisoId = (avisos.avisos || [])[0]?.id;
+line(cFalta, nAv + ' aviso(s) abiertos' +
+(tf200.length ? ': ' + tf200.join('; ') + (nAv > tf200.length ? '…' : '') : '') + '.',
+() => irDestino200b('avisos', primerAvisoId != null ? 'aviso-' + primerAvisoId : ''));
+}
 else line(cFalta, 'Sin avisos abiertos: nada esperando por ti en el Centro.');
 
 
@@ -3000,19 +3535,23 @@ if (avisos?.counts?.total && avisos.canales && !avisos.canales.correo && !avisos
 line(cFalta, 'Tus alertas no te llegan fuera de la app: activa el correo o el push para que te avisen al nacer.', () => navigate('settings'));
 
 
+
+
+
+
 const buzonN = typeof buzonUnreadFor === 'function' ? buzonUnreadFor(scope) : 0;
-line(cFalta, 'Buzón: ' + number.format(buzonN) + ' sin leer' + (buzonN ? '.' : ': todo visto.'), () => navigate('buzon'));
-if (typeof paintBuzonBadge === 'function') paintBuzonBadge();
-
-
 const tribN = typeof tribSinAbrirFor === 'function' ? tribSinAbrirFor(scope) : 0;
 const tribConsultado = typeof tribConsultadoFor === 'function' ? tribConsultadoFor(scope) : false;
 const tribTenida = typeof tribTenidaFor === 'function' ? tribTenidaFor(scope) : null;
-line(cFalta, 'Buzón Tributario: ' + (tribConsultado
-? number.format(tribN) + ' sin abrir' + (tribN
-? (tribTenida ? ': la más antigua se tiene por notificada el ' + declFechaLarga(tribTenida.tenida) + ' aunque nadie la abra.' : '.')
+const btSat = ' · Buzón Tributario del SAT: ';
+line(cFalta, 'Buzón: ' + number.format(buzonN) + ' sin leer' +
+(tribConsultado
+? btSat + number.format(tribN) + ' sin abrir' + (tribN
+? (tribTenida ? ' — la más antigua se tiene por notificada el ' + declFechaLarga(tribTenida.tenida) + ' aunque nadie la abra.' : '.')
 : ': todo abierto.')
-: 'sin consultar todavía.'), () => navigate('tributario'));
+: btSat + 'sin consultar todavía: consúltalo para saber si el SAT te dejó algo.'),
+() => irDestino200b('tributario', 'buzon'));
+if (typeof paintBuzonBadge === 'function') paintBuzonBadge();
 if (typeof paintTribBadge === 'function') paintTribBadge();
 
 
@@ -3021,7 +3560,7 @@ if (ex && ex.enCola > 0) line(cFalta, 'Ejecutor local: ' + ex.enCola +
 (ex.enCola === 1 ? ' trabajo' : ' trabajos') +
 (ex.enLinea ? ' en cola; tu equipo está en línea y los está recogiendo.'
 : ' esperando tu equipo: sin él en línea, no salen.'),
-() => { satTab = 'ejecutor'; navigate('sat'); });
+() => { satTab = 'ejecutor'; irDestino200b('sat', 'ejecutor'); });
 if (checklist) {
 const pending = checklist.items.filter(item => item.level !== 'ok');
 line(cFalta, pending.length
@@ -3033,11 +3572,12 @@ const upcoming = (avisos?.avisos || []).filter(item => item.vence)
 .sort((a, b) => String(a.vence).localeCompare(String(b.vence))).slice(0, 3);
 for (const item of upcoming)
 line(cVence, item.titulo + ' — vence el ' + new Date(item.vence).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }) +
-(item.responsable ? ' (lo resuelve ' + item.responsable + ')' : '') + '.', () => navigate('avisos'));
+(item.responsable ? ' (lo resuelve ' + item.responsable + ')' : '') + '.',
+() => irDestino200b('avisos', item.id != null ? 'aviso-' + item.id : ''));
 for (const profile of satdocs?.profiles || []) {
 for (const [doc, label] of [[profile.constancia, 'Constancia'], [profile.opinion, 'Opinión']])
 if (doc && doc.level !== 'ok') line(cVence, label + ' de ' + profile.rfc + ': lleva ' + doc.ageDays +
-' días; toca renovarla.', () => navigate('sat'));
+' días; toca renovarla.', () => irDestino200b('sat', label === 'Constancia' ? 'constancia' : 'opinion'));
 }
 if (!upcoming.length) line(cVence, 'Sin vencimientos a la vista en los avisos.');
 
@@ -3174,7 +3714,19 @@ secondary.append(recent, history);
 
 
 
-const blocks = [todayPanel(), banner, metrics, commandCenter(), monthlyChart()];
+
+
+
+
+
+
+
+
+
+
+
+
+const blocks = [todayPanel(), hoyAcciones200b()];
 
 
 
@@ -3185,7 +3737,7 @@ if (noraSesionCache === null) {
 noraSesionCache = 'consultando';
 satApi('guest/config').then(cfg => {
 noraSesionCache = Boolean(cfg.sesionContadora);
-if (noraSesionCache && document.querySelector('.dashboard-hero')) render();
+if (noraSesionCache && page === 'home') render();
 }).catch(() => { noraSesionCache = false; });
 }
 }
@@ -3194,22 +3746,8 @@ if (noraSesionCache && document.querySelector('.dashboard-hero')) render();
 
 
 
-const salud = healthCard();
-if (salud) blocks.splice(4, 0, salud);
 
-
-const respaldoCard = typeof backupHealthCard === 'function' ? backupHealthCard() : null;
-if (respaldoCard) blocks.splice(5, 0, respaldoCard);
-
-
-
-
-
-const novedades1311 = typeof novedadesCard1311 === 'function' ? novedadesCard1311() : null;
-
-
-if (novedades1311) blocks.splice(1, 0, novedades1311);
-blocks.splice(novedades1311 ? 4 : 3, 0, gestosPanel1311());
+blocks.push(gestosPanel1311(), hoySaludLinea200b());
 if (lastImport) {
 
 const card = panel('Última importación');
@@ -3224,14 +3762,14 @@ dialog('UUID duplicados en la última importación',
 card.append(acts);
 blocks.push(card);
 }
-blocks.push(secondary);
 
 
 
 
 
 
-if (visiblePeople.length !== 1) blocks.push(tasks);
+
+void secondary; void tasks; void visiblePeople;
 
 
 
@@ -3296,6 +3834,38 @@ downloadSheet(scope, preset);
 } else toast('La hoja de descarga vive en el Centro SAT.', 'error');
 };
 list.append(descargarSat);
+
+
+
+
+if (typeof satToken !== 'undefined' && satToken) {
+const vistasBar200h = n('div', undefined, 'actions');
+const vistasSel200h = select([['', 'Vistas guardadas…']], '', 'Vistas guardadas de Facturas');
+const cargarVistas200h = () => satApi('vistas200h?rfc=' + encodeURIComponent(scope || '')).then(d => {
+vistasSel200h.replaceChildren(new Option('Vistas guardadas…', ''));
+for (const v of (d.vistas || []).filter(x => x.pantalla === 'facturas'))
+vistasSel200h.append(new Option(v.nombre, v.id, false, false));
+vistasSel200h._porId = Object.fromEntries((d.vistas || []).map(v => [v.id, v]));
+}).catch(() => {});
+vistasSel200h.onchange = () => { const v = vistasSel200h._porId?.[vistasSel200h.value];
+if (!v) return; const f = v.filtros || {};
+term = f.term || ''; month = f.month || ''; invoiceKind = f.kind || '';
+invoiceState = f.state || ''; invoicePayState = f.payState || ''; direction = f.direction || 'Todos';
+if (v.rfc) { scope = v.rfc; $('scope').value = scope; }
+invoicePage = 0; render(); };
+const guardarVista200h = n('button', 'Guardar vista', 'soft small');
+guardarVista200h.onclick = () => { const nombreIn = input('text', { maxLength: 60, required: true });
+dialog('Guardar la vista actual', [field('Nombre de la vista', nombreIn)], async () => {
+await satApi('vistas200h', { rfc: scope, pantalla: 'facturas', nombre: nombreIn.value,
+filtros: { term, month, kind: invoiceKind, state: invoiceState, payState: invoicePayState, direction } });
+toast('Vista guardada: la aplicas en un toque desde Facturas.'); cargarVistas200h();
+}, 'Guardar vista'); };
+const borrarVista200h = n('button', 'Borrar vista', 'soft small');
+borrarVista200h.onclick = async () => { if (!vistasSel200h.value) { toast('Elige primero la vista que quieres borrar.', 'error'); return; }
+await satApi('vistas200h/borrar', { id: vistasSel200h.value }); toast('Vista borrada.'); cargarVistas200h(); };
+vistasBar200h.append(vistasSel200h, guardarVista200h, borrarVista200h);
+list.append(vistasBar200h); cargarVistas200h();
+}
 const tabs = n('div', undefined, 'tabs');
 for (const title of ['Todos', 'Recibidos', 'Emitidos']) {
 const button = action(title, () => { direction = title; invoicePage = 0; render(); });
@@ -3495,6 +4065,16 @@ search.setAttribute('aria-label', 'Buscar documentos');
 search.oninput = () => { docTerm = search.value; docPage = 0; paintDocs(); };
 filters.append(choice, search);
 list.append(filters);
+
+
+
+if (typeof satToken !== 'undefined' && satToken) {
+const papelBtn = action('Subir un papel', () =>
+ensureLazyPart('salidas').then(() => { if (typeof subirPapel200g === 'function') subirPapel200g(); }), 'primary', 'up');
+const papelRow = n('div', undefined, 'sat-actions');
+papelRow.append(papelBtn, n('span', 'Foto o PDF: sugiere RFC y tipo, y archiva en 2 toques. En escritorio también puedes arrastrar el archivo sobre la app.', 'muted'));
+list.append(papelRow);
+}
 const result = n('div');
 list.append(result);
 function paintDocs() {
@@ -3514,9 +4094,13 @@ const acts = n('div', undefined, 'actions');
 acts.append(action('Ver', () => viewDocOnline(doc)));
 acts.append(action('Descargar', () => downloadDocOnline(doc)));
 if (doc.uuid) acts.append(action('Desvincular', () => unlinkDocument(doc)));
+if (typeof satToken !== 'undefined' && satToken) acts.append(action('Compartir', () =>
+ensureLazyPart('salidas').then(() => { if (typeof compartir200g === 'function') compartir200g('documento', doc.id); })));
 acts.append(action('Archivar', () => docArchivar1311(doc)));
 acts.append(action('Eliminar', () => deleteDocument(doc)));
-return [cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name), doc.rfc, dateLabel(doc.date), doc.period || '—', acts];
+const celdaDoc = cell(doc.kind, doc.uuid ? doc.uuid + ' · ' + doc.name : doc.name);
+celdaDoc.dataset.doc200g = doc.id;
+return [celdaDoc, doc.rfc, dateLabel(doc.date), doc.period || '—', acts];
 })));
 else result.append(empty('Sin documentos', 'Sube un PDF o descarga tu constancia y tu opinión del SAT: el gesto está aquí mismo.',
 scope && typeof satToken !== 'undefined' && satToken
@@ -3533,6 +4117,26 @@ await refresh();
 finally { if (boton && boton.isConnected) { boton.disabled = false; boton.textContent = texto; } }
 }, 'primary', 'down')
 : undefined));
+
+
+
+
+if (typeof satToken !== 'undefined' && satToken && sliced.length) {
+satApi('miniaturas200g' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(d => {
+if (!result.isConnected || !d?.documentos) return;
+const oks = new Set(d.documentos.filter(x => x.estado === 'ok').map(x => x.id));
+for (const celda of result.querySelectorAll('[data-doc200g]')) {
+const id = celda.dataset.doc200g;
+if (!oks.has(id)) continue;
+fetch('/api/miniatura200g?id=' + encodeURIComponent(id), { headers: { 'X-PacoSAT-Token': satToken } })
+.then(r => r.ok ? r.blob() : null).then(blob => {
+if (!blob || !celda.isConnected) return;
+const img = n('img'); img.alt = 'Primera página'; img.width = 54;
+img.src = URL.createObjectURL(blob); celda.prepend(img);
+}).catch(() => {});
+}
+}).catch(() => {});
+}
 const foot = n('div', undefined, 'table-foot');
 foot.append(n('span', number.format(rows.length) + ' documentos'));
 if (rows.length > 35) {
@@ -4141,7 +4745,8 @@ wrap.append(n('p', 'La e.firma se autoriza una vez por RFC y PacoSAT la guarda c
 wrap.append(action('Autorizar o gestionar la e.firma', () => showSatDownload(), 'primary', 'lock'));
 const alta = typeof elementalAltaCard === 'function' ? elementalAltaCard() : null;
 const otro = typeof otroRfcAltaCard === 'function' ? otroRfcAltaCard() : null;
-return [wrap, alta, otro].filter(Boolean);
+
+return [wrap, colorPicker200b(), alta, otro].filter(Boolean);
 }
 
 
@@ -4225,12 +4830,26 @@ ensureLazyPart('salidas').then(ok => {
 if (!ok || typeof salidasExportPanel !== 'function' || page !== 'settings' || ajustesSection !== 'respaldos'
 || !mount.isConnected) return;
 mount.append(salidasExportPanel());
+if (typeof restaurar200gPanel === 'function') mount.append(restaurar200gPanel());
 });
 }
 }
 else if (ajustesSection === 'sinconexion') parts.push(...offlineScreen());
 else if (ajustesSection === 'sistema') { parts.push(...operationsScreen()); const loginCard = adminLoginCard(); if (loginCard) parts.push(loginCard); }
-else if (ajustesSection === 'api') parts.push(...apiPanelSection1320());
+else if (ajustesSection === 'api') {
+parts.push(...apiPanelSection1320());
+
+
+if (typeof satToken !== 'undefined' && satToken && typeof ensureLazyPart === 'function') {
+const mount = n('div');
+parts.push(mount);
+ensureLazyPart('salidas').then(ok => {
+if (!ok || page !== 'settings' || ajustesSection !== 'api' || !mount.isConnected) return;
+if (typeof webhooks200gPanel === 'function') mount.append(webhooks200gPanel());
+if (typeof ics200gPanel === 'function') mount.append(ics200gPanel());
+});
+}
+}
 else parts.push(...capacidadesScreen());
 return parts;
 }
@@ -4441,7 +5060,7 @@ health.append(grid(['Componente', 'Estado'], [
 ['Respaldo', 'Exporta una copia cifrada antes de actualizar. Ningún respaldo incluye la e.firma ni las credenciales SMTP; el respaldo programado del servidor sí incluye la cola SAT y el estado operativo.']
 ]));
 const buttons = n('div', undefined, 'actions');
-buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
+buttons.append(action('Centro SAT', () => navigate('sat')), action('Abrir el Centro de salud', () => navigate('salud'), 'soft'), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
 if (satToken && satData.mail?.enabled) buttons.append(action('Enviar correo de prueba', async () => {
 await satApi('mail/test', {});
 announce('Correo de prueba enviado a ' + satData.mail.recipient + '.');
@@ -5164,6 +5783,12 @@ if (typeof satToken !== 'undefined' && satToken) {
 try {
 const data = await satApi('invoice-history?id=' + encodeURIComponent(row.id));
 for (const event of data.events || []) if (event.kind !== 'emission' && event.kind !== 'pdf') events.push(event);
+
+
+const vida200h = await satApi('vida200h?uuid=' + encodeURIComponent(row.id)).catch(() => null);
+for (const hito of vida200h?.hitos || [])
+events.push({ at: hito.at ? new Date(hito.at).toISOString() : null,
+label: 'Línea de vida · ' + hito.tipo, detail: hito.texto });
 } catch {  }
 }
 events.sort((a, b) => (a.at || '9999').localeCompare(b.at || '9999'));
@@ -5245,6 +5870,13 @@ typeof satToken !== 'undefined' && satToken &&
 typeof cfdiArchivar1311 === 'function') {
 itemsFila.push({ label: 'Archivar', fn: () => cfdiArchivar1311(row)
 .catch(error => announce(error.message, true)) });
+}
+
+
+
+if (typeof satToken !== 'undefined' && satToken && typeof ensureLazyPart === 'function') {
+itemsFila.push({ label: 'Compartir por correo', fn: () =>
+ensureLazyPart('salidas').then(() => { if (typeof compartir200g === 'function') compartir200g('cfdi', row.id); }) });
 }
 menuFila._setItems1312(itemsFila);
 wrap.append(menuFila);
@@ -5496,7 +6128,19 @@ if (page === 'sat') {
 if (satTab === 'estado') { await pollMonitor(); return; }
 if (satTab === 'listas') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
 if (satTab === 'descargado') { await pollSat(); render(); return; }
-if (satTab === 'ejecutor') { document.querySelector('.executor-pair')?.click(); return; }
+if (satTab === 'ejecutor') {
+
+
+
+const exP = satData?.ejecutor;
+if (exP?.emparejado) {
+render();
+announce(exP.enLinea ? 'Tu ejecutor está en línea en tu equipo.' :
+'Tu equipo no responde' + (exP.ultimoVisto ? ' desde el ' + localDateTime(exP.ultimoVisto) : '') + ': abre el ejecutor en tu PC.');
+return;
+}
+document.querySelector('.executor-pair')?.click(); return;
+}
 
 
 
@@ -5520,6 +6164,14 @@ const consultar = document.querySelector('.trib-consultar');
 if (consultar && !consultar.disabled) { consultar.click(); return; }
 if (consultar) { toast('La consulta del Buzón ya está en curso.', 'ok'); return; }
 toast('La pantalla del Buzón aún se está pintando: pulsa «Consultar ahora» en su franja.', 'error'); return;
+}
+if (page === 'salud') {
+
+
+
+await ensureLazyPart('salud');
+if (typeof saludRevisar200d === 'function') { await saludRevisar200d(); return; }
+render(); return;
 }
 if (page === 'settings') {
 if (ajustesSection === 'general') { await saveAppSettings(); return; }
@@ -5551,6 +6203,25 @@ const armar = document.querySelector('.pagos-armar');
 if (armar) { armar.scrollIntoView({ block: 'center' }); armar.click(); return; }
 toast('Abre primero la tarjeta de vencimientos para preparar los pagos.', 'error'); return;
 }
+if (page === 'invoices') {
+
+
+
+if (scope) downloadSheet(scope); else showSatDownload();
+return;
+}
+if (page === 'home') {
+
+
+
+const paso = primaryLabel();
+if (paso === 'Ver tu ejecutor') satTab = 'ejecutor';
+if (paso === 'Dar sus credenciales') satTab = 'descargar';
+if (paso === 'Descargar CFDI del SAT') { if (scope) downloadSheet(scope); else showSatDownload(); }
+else navigate('sat');
+return;
+}
+if (page === 'contribuyentes') { navigate('home'); return; }
 if (page === 'preguntas') { render(); const q = document.querySelector('main input[type="text"]'); if (q) q.focus(); return; }
 if (page === 'registro') { if (typeof downloadRegistroCsv === 'function') await downloadRegistroCsv(); return; }
 if (page === 'archivo') { navigate('invoices'); return; }
@@ -5633,6 +6304,37 @@ controls.push(row);
 dialog('Más resultados para «' + query + '»', controls);
 } catch {  }
 }
+
+
+
+async function globalSearch200h(query) {
+try {
+if (typeof satToken === 'undefined' || !satToken) return;
+const data = await satApi('buscar200h?q=' + encodeURIComponent(query) +
+(scope ? '&rfc=' + encodeURIComponent(scope) : '&todos=1'));
+const grupos = data?.porRfc || [];
+if (!grupos.length || $('dialog').open) return;
+const controls = [];
+const titulos = { cfdi: 'CFDI', documentos: 'Documentos del SAT', avisos: 'Avisos', registro: 'Registro' };
+for (const grupoRfc of grupos) {
+controls.push(n('h3', 'RFC ' + grupoRfc.rfc));
+for (const [clave, items] of Object.entries(grupoRfc.grupos || {})) {
+if (!items?.length) continue;
+controls.push(n('strong', titulos[clave] || clave));
+for (const item of items.slice(0, 6)) {
+const row = n('div', undefined, 'cp-row');
+row.append(n('span', item.texto || item.uuid || ''),
+action('Ir', () => { $('dialog').close();
+if (item.destino?.uuid) { const inv = invoices.find(r => r.id === item.destino.uuid);
+if (inv) { navigate('invoices'); invoiceDetail(inv); return; } }
+navigate(item.destino?.vista || 'home'); }, 'soft small'));
+controls.push(row);
+}
+}
+}
+if (controls.length) dialog('Resultados en todo PacoSAT para «' + query + '»', controls);
+} catch {  }
+}
 function runGlobalSearch() {
 const query = globalSearchInput.value.trim();
 if (!query) return;
@@ -5675,6 +6377,7 @@ else announce((hadFilters ? 'Filtros anteriores limpiados. ' : '') +
 
 
 globalSearchExtras1310(query, found.length);
+globalSearch200h(query);
 }
 globalSearchInput.addEventListener('keydown', event => {
 if (event.key === 'Enter') { event.preventDefault(); runGlobalSearch(); }
@@ -5950,9 +6653,76 @@ else toast('Cancelación pedida: el trabajo se detiene en el servidor y lo parci
 } catch (error) { toast(error.message, 'error'); }
 }
 
+
+
+
+
 function localDateTime(value) {
 if (!value) return 'Al activar';
-return new Intl.DateTimeFormat('es-MX', { dateStyle: 'short', timeStyle: 'short' }).format(value);
+const ms = +new Date(value);
+return Number.isFinite(ms) ? fmtFechaHora(ms) : String(value);
+}
+function localTime(value) { const s = localDateTime(value); return s.split(', ')[1] || s; }
+
+
+
+
+
+
+
+
+function causaP200(p, e, a = Date.now()) {
+if (!p?.probada) return { tipo: 'sin-probar', vieja: false, probadaMs: 0 };
+const probadaMs = +new Date(p.probada), visto = Number(e?.ultimoVisto) || 0;
+const vieja = !(probadaMs > 0) || a - probadaMs > 86400000 ||
+(e?.emparejado && !e?.enLinea && visto > probadaMs);
+const tipo = e?.emparejado && !e.enLinea ? 'equipo' : !e?.emparejado ? 'sin-equipo' : p.ok ? 'abre'
+: /sin-efirma|credencial|e\.firma/i.test(String(p.errorKind || '') + ' ' + String(p.error || '')) && !vieja ? 'efirma'
+: vieja ? 'vieja' : 'puerta';
+return { tipo, vieja, probadaMs };
+}
+function textoP200(p, e, a = Date.now()) {
+const causa = causaP200(p, e, a);
+if (causa.tipo === 'sin-probar') return '';
+const fecha = localDateTime(causa.probadaMs || p.probada);
+const noAbre = 'NO abre — ' + (p.error || 'sin motivo registrado');
+if (causa.tipo === 'equipo')
+return 'Tu equipo no responde desde el ' + localDateTime(e.ultimoVisto) +
+': esa es la causa viva. La última prueba es del ' + fecha +
+(causa.vieja ? ' (foto vieja: puede estar desactualizada)' : '') +
+'; al volver tu equipo, la puerta se prueba sola antes que nada.';
+if (causa.tipo === 'vieja')
+return 'Esto se probó el ' + fecha + '; puede estar desactualizado: ' + (p.ok ? 'entonces abría.' : noAbre);
+return 'Puerta probada el ' + fecha + ': ' + (p.ok ? 'abre — la e.firma entra sola cada semana' : noAbre);
+}
+
+
+
+
+
+function vigil200(ahora = Date.now()) {
+if (typeof satData === 'undefined' || !satData) return { nivel: 'dim', titulo: 'Vigilando', detalle: '' };
+if (satData.rest?.active) return { nivel: 'dim', titulo: '🌙 Descansando', detalle: '' };
+const puerta = scope ? satData.puerta?.[scope] : null;
+const ejV = satData.ejecutor;
+const causa = causaP200(puerta, ejV, ahora);
+const mal = (nivel, pata, detalle) => ({ nivel, titulo: '⚠ Vigilando con un problema: ' + pata, detalle });
+if (causa.tipo === 'efirma') return mal('bad', 'la puerta del SAT',
+'La puerta no abre con la e.firma de este RFC: revísala en el Centro SAT.');
+if (causa.tipo === 'equipo') return mal('warn', 'tu equipo no responde',
+'Sin señal desde el ' + localDateTime(ejV.ultimoVisto) +
+': las consultas esperan a que abras el ejecutor.');
+if (causa.tipo === 'sin-equipo') return mal('warn', 'falta tu equipo',
+'Sin equipo emparejado no hay Buzón ni Declaraciones.');
+if (causa.tipo === 'vieja' || (puerta?.probada && causa.vieja)) return mal('warn', 'la prueba de la puerta es vieja',
+'Se probó el ' + localDateTime(puerta.probada) + ' y puede estar desactualizada.');
+if (puerta?.probada && !puerta.ok) return mal('warn', 'la puerta del SAT',
+puerta.error || 'La última prueba de la puerta no abrió.');
+const perfil = (satData.profiles || []).find(p => p.rfc === scope);
+if (perfil?.lastSatSuccess && ahora - perfil.lastSatSuccess > 8 * 86400000)
+return mal('warn', 'la última descarga es vieja',
+'La última descarga con éxito fue el ' + localDateTime(perfil.lastSatSuccess) + '.');
+return { nivel: 'ok', titulo: '🟢 Vigilando', detalle: 'Descarga y avisos automáticos activos' };
 }
 function selectPerson() {
 check(people.length, 'Agrega un contribuyente antes de configurar el SAT.');
@@ -5966,9 +6736,13 @@ function restSwitch() {
 const wrap = n('div', undefined, 'rest-switch');
 const active = Boolean(satData.rest?.active);
 const label = n('span', undefined, 'rest-label');
-label.append(n('strong', active ? '🌙 Descansando' : '🟢 Vigilando'),
+
+
+
+const vig = active ? null : vigil200();
+label.append(n('strong', active ? '🌙 Descansando' : vig.titulo),
 n('small', active ? 'Sin envíos al SAT ni avisos' + (satData.rest.until && satData.rest.until < Date.UTC(2099, 0, 1) ? ' hasta ' + localDateTime(satData.rest.until) : ' (sin fecha: se reactiva con este interruptor)') :
-'Descarga y avisos automáticos activos'));
+vig.detalle));
 const toggle = n('button', active ? 'Reactivar' : 'Descansar', 'rest-toggle');
 toggle.type = 'button';
 toggle.setAttribute('aria-pressed', String(active));
@@ -6023,7 +6797,7 @@ let satQuickRfc = '', satQuickDocs = null;
 function satQuickCuando(doc) {
 const fecha = new Date(doc.issuedAt);
 return fecha.toDateString() === new Date().toDateString()
-? 'hoy ' + fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+? 'hoy ' + localTime(fecha.getTime())
 : 'el ' + localDate(doc.issuedAt);
 }
 
@@ -6176,7 +6950,7 @@ if (declJob) {
 const pasos = declJob.steps || [];
 salida.declaraciones.progreso = { fase: pasos[pasos.length - 1]?.paso ||
 (declJob.estado === 'en-cola' ? 'En cola: esperando a tu equipo' : 'Trabajando en tu equipo'),
-desde: declJob.creado || 0 };
+desde: declJob.creado || 0, estado: declJob.estado };
 } else if (d.declProgreso?.running)
 salida.declaraciones.progreso = { fase: d.declProgreso.step || 'Recuperando declaraciones…', desde: d.declProgreso.at || 0 };
 const buzonJob = jobActivo(['buzon-listar']);
@@ -6212,14 +6986,13 @@ if (buzonJob) {
 const pasos = buzonJob.steps || [];
 salida.buzon.progreso = { fase: pasos[pasos.length - 1]?.paso ||
 (buzonJob.estado === 'en-cola' ? 'En cola: esperando a tu equipo' : 'Trabajando en tu equipo'),
-desde: buzonJob.creado || 0 };
+desde: buzonJob.creado || 0, estado: buzonJob.estado };
 } else if (d.trib?.progreso?.running)
 salida.buzon.progreso = { fase: d.trib.progreso.step || 'Consultando el buzón…', desde: d.trib.progreso.at || 0 };
 
 
-if (d.puerta?.probada)
-salida.buzon.detalle = 'Puerta probada el ' + localDateTime(d.puerta.probada) + ': ' +
-(d.puerta.ok ? 'abre — la e.firma entra sola cada semana' : 'NO abre — ' + (d.puerta.error || 'sin motivo registrado'));
+
+if (d.puerta?.probada) salida.buzon.detalle = textoP200(d.puerta, d.ejecutor);
 return salida;
 }
 let satGridDocs = null;
@@ -6278,8 +7051,15 @@ const DEFINICIONES = [
 const tarjetas = {};
 for (const [clave, glyph, nombre] of DEFINICIONES) {
 const card = n('article', undefined, 'tramite-card');
+
+
+
+
+card.dataset.destino200b = clave;
 const head = n('div', undefined, 'tramite-head');
 head.append(icon(glyph), n('strong', nombre));
+if (typeof medallon200b === 'function')
+head.append(medallon200b(rfc, personas.find(p => p.id === rfc)?.name || rfc));
 
 
 const focoTag = n('span', 'Te necesita', 'tramite-foco-tag');
@@ -7025,6 +7805,17 @@ if (preset.end) end.value = preset.end;
 const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Solo el listado (los datos de cada factura, sin bajar los XML)']], 'cfdi');
 if (preset?.type) type.value = preset.type;
 
+
+if (!preset && typeof satToken !== 'undefined' && satToken) {
+const cargarRango200h = () => satApi('descarga-rango200h?rfc=' + encodeURIComponent(person.value) +
+'&direction=' + encodeURIComponent(direction.value)).then(d => {
+if (d?.rango?.desde) { start.value = d.rango.desde; if (d.rango.hasta) end.value = d.rango.hasta; refreshPlan(); }
+}).catch(() => {});
+person.addEventListener('change', cargarRango200h);
+direction.addEventListener('change', cargarRango200h);
+cargarRango200h();
+}
+
 const quick = n('div', undefined, 'actions');
 const fmt = date => date.toISOString().slice(0, 10);
 const setRange = (from, to) => { start.value = fmt(from); end.value = fmt(to); refreshPlan(); };
@@ -7064,6 +7855,7 @@ dialog('Solicitar un periodo al SAT', [field('Contribuyente', person), field('Co
 field('Tipo de solicitud', type), field('Planificador 5002', planBox), field('Periodo frecuente', quick),
 field('Fecha inicial', start), field('Fecha final', end)], async () => {
 const payload = { rfc: person.value, direction: direction.value, start: start.value, end: end.value, type: type.value };
+satApi('descarga-rango200h', { rfc: person.value, direction: direction.value, desde: start.value, hasta: end.value }).catch(() => {});
 
 if (preset?.shiftEnd) payload.shiftEnd = 1;
 for (;;) {
@@ -7328,13 +8120,23 @@ return;
 for (const profile of visibles) {
 const card = n('article', undefined, 'sat-card');
 const head = n('div', undefined, 'sat-card-head');
-head.append(n('strong', profile.rfc), satDocPill(profile.constancia, 'Constancia'), satDocPill(profile.opinion, 'Opinión'));
+head.append(n('strong', profile.rfc),
+
+icon('constancia'), satDocPill(profile.constancia, 'Constancia'),
+icon('opinion'), satDocPill(profile.opinion, 'Opinión'));
 card.append(head);
 const meta = n('div', undefined, 'sat-meta');
 
 
 const verButton = (doc, label, kind) => {
 if (!doc?.fileId) return;
+
+
+if (typeof satToken !== 'undefined' && satToken)
+fetch('/api/miniatura200g?id=' + encodeURIComponent(doc.fileId), { headers: { 'X-PacoSAT-Token': satToken } })
+.then(r => r.ok ? r.blob() : null).then(blob => { if (!blob || !meta.isConnected) return;
+const img = n('img'); img.alt = 'Primera página de la ' + label; img.width = 54;
+img.src = URL.createObjectURL(blob); meta.prepend(img); }).catch(() => {});
 const ver = n('button', 'Ver', 'soft small');
 ver.title = 'Ver la ' + label.toLowerCase() + ' dentro de PacoSAT';
 ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: profile.rfc, kind,
@@ -7351,6 +8153,8 @@ verButton(profile.constancia, 'Constancia', 'Constancia / CIF');
 if (profile.opinion) {
 meta.append(n('span', 'Opinión emitida: ' + localDate(profile.opinion.issuedAt) + (profile.opinion.source === 'manual' ? ' (subida a mano)' : '')));
 meta.append(statusPill('ok', 'Vigente'));
+if (profile.opinion.sentido) meta.append(n('span', 'Sentido: ' + profile.opinion.sentido.toUpperCase() +
+(profile.opinion.vigencia ? ' · vigente hasta el ' + profile.opinion.vigencia : '')));
 verButton(profile.opinion, 'Opinión', 'Opinión de cumplimiento');
 }
 if (profile.lastAttempt) meta.append(n('span', 'Último intento de descarga: ' + localDateTime(profile.lastAttempt)));
@@ -7505,8 +8309,7 @@ const list = n('ol', undefined, 'sat-steps');
 for (const step of steps || []) {
 const item = n('li');
 item.append(
-n('span', new Date(step.at).toLocaleTimeString('es-MX',
-{ hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'sat-step-time'),
+n('span', localTime(step.at), 'sat-step-time'),
 n('span', step.text + (withUrl && step.url ? ' · ' + step.url : '')));
 list.append(item);
 }
@@ -7925,8 +8728,7 @@ const list = n('ol', undefined, 'sat-steps');
 for (const step of run.steps || []) {
 const item = n('li');
 item.append(
-n('span', new Date(step.at).toLocaleTimeString('es-MX',
-{ hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'sat-step-time'),
+n('span', localTime(step.at), 'sat-step-time'),
 n('span', (step.intento ? 'Intento ' + step.intento + ' · ' : '') + (step.paso || '') +
 (step.detalle ? ' — ' + step.detalle : '')));
 list.append(item);
@@ -8744,7 +9546,7 @@ return monitorSummary;
 
 
 let checkRun = null, listsRun = null;
-const runHora = () => new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+const runHora = () => localTime(Date.now());
 function runElapsedText(run) {
 const seconds = Math.max(0, Math.round((Date.now() - run.startedAt) / 1000));
 return 'lleva ' + (seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min ' + String(seconds % 60).padStart(2, '0') + ' s');
@@ -9232,7 +10034,11 @@ if (sideDot) sideDot.style.background = 'var(--warn-ink)';
 sideText.textContent = number.format(paused.length) + (paused.length === 1 ? ' trabajo en pausa' : ' trabajos en pausa');
 if (sideDot) sideDot.style.background = 'var(--danger)';
 } else {
-sideText.textContent = 'Sin trabajos en curso' + (view.nextAuto ? ' · próxima revisión: ' + localDateTime(view.nextAuto) : '');
+
+
+
+sideText.textContent = 'Sin trabajos en curso' + (view.nextAuto ? ' · próxima revisión: ' +
+localDateTime(typeof view.nextAuto === 'object' ? view.nextAuto.at : view.nextAuto) : '');
 if (sideDot) sideDot.style.background = '';
 }
 }
@@ -9270,8 +10076,17 @@ if (!jobsBox) {
 const dock = $('activity-dock');
 if (dock) { jobsBox = n('section', undefined, 'activity-dock'); jobsBox.id = 'activity-jobs'; dock.after(jobsBox); }
 }
+
+
+
+
+
+
+const franjaDuplica200b = typeof page !== 'undefined' && ['sat', 'tributario', 'declaraciones'].includes(page);
+if (franjaDuplica200b && navJobsCancel) navJobsCancel.replaceChildren();
 if (jobsBox) {
-const entries = [...running.map(e => ({ ...e, enPausa: false })), ...paused.map(e => ({ ...e, enPausa: true }))];
+const entries = franjaDuplica200b ? [] :
+[...running.map(e => ({ ...e, enPausa: false })), ...paused.map(e => ({ ...e, enPausa: true }))];
 jobsBox.hidden = !entries.length;
 if (entries.length) {
 jobsBox.replaceChildren();
@@ -9300,8 +10115,10 @@ jobsBox.append(rowEl);
 
 
 
-jobsBox.append(jobProgress1312({ fase: entry.phase || '',
-desde: entry.since || 0, done: entry.done, total: entry.total }));
+jobsBox.append(jobProgress1312({ fase: entry.enPausa
+? 'Esperando' + (entry.state === 'esperando' ? ' a tu equipo' : '') : (entry.phase || ''),
+desde: entry.since || 0, done: entry.done, total: entry.total,
+estado: entry.enPausa ? (entry.state || 'pausado') : (entry.state || '') }));
 }
 }
 }
@@ -9827,6 +10644,34 @@ const gridBox = n('div', undefined, 'cmd-grid');
 wrap.append(gridBox);
 
 
+const pendRow200h = n('div'); wrap.append(pendRow200h);
+if (typeof satToken !== 'undefined' && satToken) satApi('status').then(d => {
+const p = d?.estadosPendientes;
+if (!p?.faltantes?.length || !pendRow200h.isConnected) return;
+const row = n('div', undefined, 'cp-row');
+row.append(statusPill('warn', 'Falta el estado de ' + p.mesAnterior),
+n('span', p.faltantes.map(f => (f.banco || '') + ' ' + (f.nombre || '') + (f.last4 ? ' ···' + f.last4 : '')).join(' · ')));
+const subir = n('button', 'Subir estado de cuenta', 'primary small');
+subir.onclick = () => navigate('bancos');
+row.append(subir); pendRow200h.replaceChildren(row);
+}).catch(() => {});
+
+
+
+const semanaRow200h = n('div'); wrap.append(semanaRow200h);
+if (typeof satToken !== 'undefined' && satToken) satApi('semana200h' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(d => {
+if (!d?.puntos?.length || !semanaRow200h.isConnected) return;
+const row = n('div', undefined, 'cp-row');
+row.append(statusPill('info', 'Semana ' + d.desde + ' a ' + d.hasta));
+for (const punto of d.puntos.slice(0, 8)) {
+const b = n('button', (punto.hoy ? 'HOY · ' : '') + punto.fecha.slice(8) + '/' + punto.fecha.slice(5, 7) + ' · ' + punto.texto, 'soft small');
+b.onclick = () => navigate(punto.destino?.vista || 'cumplimiento');
+row.append(b);
+}
+semanaRow200h.replaceChildren(row);
+}).catch(() => {});
+
+
 
 
 
@@ -10217,6 +11062,14 @@ wrap.append(head);
 if (health.level === 'bien') {
 const fila = n('div', undefined, 'health-ok-row');
 for (const check of health.checks) {
+
+
+
+
+if (check.state !== 'bien') {
+fila.append(statusPill(check.state === 'mal' ? 'bad' : 'warn', check.label + ' — ' + check.dato));
+continue;
+}
 const chip = n('span', undefined, 'health-chip');
 chip.append(n('strong', '✓ ' + check.label), n('small', check.dato));
 fila.append(chip);
@@ -10259,7 +11112,7 @@ return response.json();
 const stampText = iso => {
 const date = new Date(iso);
 return date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
-' a las ' + date.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+' a las ' + localTime(date.getTime());
 };
 function settingsScreen() {
 pendingLogo = undefined;
@@ -10545,7 +11398,8 @@ const recursos = [
 ['Avisos activos con su plazo y su gesto', 'GET /api/v1/avisos?rfc=TU_RFC'],
 ['Documentos del expediente', 'GET /api/v1/documentos?rfc=TU_RFC'],
 ['Resumen del Buzón Tributario (conteos y plazos, sin contenido)', 'GET /api/v1/buzon/resumen?rfc=TU_RFC'],
-['El Registro en una ventana de tiempo', 'GET /api/v1/registro?rfc=TU_RFC']];
+['El Registro en una ventana de tiempo', 'GET /api/v1/registro?rfc=TU_RFC'],
+['Notas de los CFDI (solo llaves con alcance «lectura-notas», filtradas por su RFC)', 'GET /api/v1/cfdi/notas?rfc=TU_RFC']];
 const lista = n('div', undefined, 'api-recursos');
 for (const [nombre, ruta] of recursos) {
 const fila = n('div', undefined, 'api-recurso');
@@ -10610,7 +11464,8 @@ body.append(caja);
 const form = n('div', undefined, 'api-form');
 const nombreIn = input('text', { maxlength: '60', placeholder: '¿Para quién o para qué? (p. ej. Excel de la oficina)', autocomplete: 'off' });
 const alcanceSel = n('select');
-alcanceSel.append(new Option('Lectura completa', 'lectura'), new Option('Solo resúmenes', 'lectura-resumen'));
+alcanceSel.append(new Option('Lectura completa', 'lectura'), new Option('Solo resúmenes', 'lectura-resumen'),
+new Option('Lectura completa + notas de los CFDI', 'lectura-notas'));
 const rfcSel = n('select');
 rfcSel.append(new Option('Todos los RFC', ''));
 for (const person of people) rfcSel.append(new Option(person.name + ' · ' + person.id, person.id));
@@ -10680,7 +11535,7 @@ if (menuItems.length)
 head.append(cardMenu1312('Más opciones de la llave ' + llave.nombre, menuItems));
 const meta = n('p', undefined, 'api-key-meta');
 meta.append(
-n('span', (llave.alcance === 'lectura-resumen' ? 'Solo resúmenes' : 'Lectura completa') +
+n('span', (llave.alcance === 'lectura-resumen' ? 'Solo resúmenes' : llave.alcance === 'lectura-notas' ? 'Lectura completa + notas' : 'Lectura completa') +
 (llave.rfc ? ' · solo ' + llave.rfc : ' · todos los RFC')),
 n('span', 'Creada el ' + localDateTime(llave.creada)),
 n('span', llave.ultimoUso ? 'Último uso: ' + localDateTime(llave.ultimoUso) : 'Sin uso todavía'),
@@ -10806,7 +11661,7 @@ if (failure) { toast(failure.message, 'error'); render(); return; }
 overview = await satApi('lists');
 if (finalProgress?.cancelled) {
 runBox.replaceChildren(n('p', 'Cancelado por ti a las ' +
-new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) +
+localTime(Date.now()) +
 ': se sigue usando la copia del ' + (source.fetched ? localDateTime(source.fetched) : '—') + '.', 'run-final'));
 update.disabled = false; update.textContent = 'Actualizar ahora';
 return;
@@ -11104,7 +11959,7 @@ const section = $('print-report');
 section.replaceChildren();
 const head = n('div', undefined, 'report-head');
 head.append(n('h1', 'Constancia de validación en listados del SAT'),
-n('p', installName + ' · ' + new Date().toLocaleString('es-MX', { dateStyle: 'full', timeStyle: 'short' })));
+n('p', installName + ' · ' + localDateTime(Date.now())));
 const body = n('div', undefined, 'report-body');
 body.append(n('p', 'Empresa validada: ' + (cp.name || cp.rfc) + ' (' + cp.rfc + ')' + (cp.kind ? ' · ' + cp.kind : '')));
 const table = n('table', undefined, 'report-table');
@@ -11638,11 +12493,30 @@ try {
 
 
 
+let enlazado200h = false;
+try {
+const sug200h = await satApi('banks/sugerencia-pago?uuid=' + encodeURIComponent(item.row.id));
+if (sug200h?.candidato) {
+const fueEste = await new Promise(res => { let hecho = false;
+dialog('¿Fue este?', [n('p', 'Hay un movimiento del banco que cuadra al centavo con este saldo:'),
+n('p', (sug200h.candidato.banco || '') + ' · ' + sug200h.candidato.date + ' · $' +
+String(sug200h.candidato.amount || '').replace('-', '') + ' — ' + (sug200h.candidato.concept || '')),
+n('p', 'Si fue ese, el pago queda enlazado a ese movimiento; si no, se marca a mano como siempre.')],
+() => { hecho = true; res(true); }, 'Sí, fue este');
+$('dialog').addEventListener('close', () => { if (!hecho) res(false); }, { once: true }); });
+if (fueEste) { await satApi('banks/marcar-pagado', { uuid: item.row.id, movementId: sug200h.candidato.movementId }); enlazado200h = true; }
+}
+} catch {  }
+if (!enlazado200h) {
+
+
+
 await satApiGuardar('money/mark-paid', { uuid: item.row.id }, async () => {
 const data = await satApi('money');
 const balance = (data.balances || []).find(row => row.id === item.row.id);
 return !balance || Number(balance.balance) <= 0;
 });
+}
 dineroMarcados.add(item.row.id);
 const cobrado = paidLabel === 'Ya me pagaron';
 const texto = cobrado ? 'Cobrado. Quedó en el historial.' : 'Pagado. Quedó en el historial.';
@@ -12323,8 +13197,7 @@ await kvSet('queue', remaining);
 if (remaining.length < queue.length) { logEvent('Cola sin conexión ejecutada al recuperar la red.'); announce('La cola sin conexión se ejecutó al volver la conexión.'); }
 }
 function offlineStamp(bundle) {
-return 'Estás viendo datos de las ' + new Intl.DateTimeFormat('es-MX', { hour: '2-digit', minute: '2-digit' }).format(bundle.generatedAt) +
-' del ' + new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(bundle.generatedAt);
+return 'Estás viendo datos del ' + localDateTime(bundle.generatedAt);
 }
 function offlineScreen() {
 const wrap = n('div');
@@ -12656,7 +13529,7 @@ const log = await satApi('access-log');
 if (log.entries.length) {
 body.append(n('h4', 'Bitácora de accesos'));
 for (const entry of log.entries.slice(0, 30))
-body.append(n('p', new Date(entry.at).toLocaleString('es-MX') + ' · ' + entry.kind + ' · ' + entry.detail, 'muted'));
+body.append(n('p', localDateTime(entry.at) + ' · ' + entry.kind + ' · ' + entry.detail, 'muted'));
 }
 } catch (error) { body.append(n('p', error.message, 'error-text')); }
 };
@@ -12862,16 +13735,41 @@ titulo: 'Sube la e.firma de ' + rfc,
 detalle: 'Su alta está preparada: sin su e.firma (o su CIEC) PacoSAT no puede descargar nada de este RFC.',
 boton: 'Dar sus credenciales', ir: () => navigate('sat') });
 const ex = satData.ejecutor;
+const irEjecutor200 = () => { satTab = 'ejecutor'; navigate('sat'); };
 if (ex && !ex.emparejado) lista.push({
 titulo: 'Empareja tu equipo',
 detalle: 'Sin el ejecutor en tu PC, el Buzón Tributario y las Declaraciones no pueden entrar al portal del SAT.',
-boton: 'Emparejar', ir: () => { satTab = 'ejecutor'; navigate('sat'); } });
+boton: 'Emparejar', ir: irEjecutor200 });
 const puerta = scope ? satData.puerta?.[scope] : null;
-if (puerta && puerta.probada && puerta.ok === false) lista.push({
-titulo: 'La puerta del SAT no abre',
-detalle: 'La última prueba automática no pudo entrar con la e.firma de ' + scope +
-(puerta.error ? ' (' + puerta.error + ')' : '') + ': el gesto es revisarla.',
-boton: 'Revisar la e.firma', ir: () => navigate('sat') });
+if (puerta && puerta.probada && puerta.ok === false) {
+
+
+
+
+const causaP = causaP200(puerta, ex);
+const irSat = () => navigate('sat');
+const errP = puerta.error ? ' (' + puerta.error + ')' : '';
+const gestoP = (titulo, detalle, boton, ir) => lista.push({ titulo, detalle, boton, ir });
+if (causaP.tipo === 'equipo') gestoP('Tu equipo no responde',
+'Sin señal desde el ' + localDateTime(ex.ultimoVisto) +
+': la puerta no se puede probar. Al abrir el ejecutor, se prueba sola antes que nada.',
+'Ver tu ejecutor', irEjecutor200);
+else if (causaP.tipo === 'sin-equipo') gestoP('La puerta del SAT espera tu equipo',
+'Sin equipo emparejado la puerta no se puede probar: la última foto es del ' +
+localDateTime(puerta.probada) + ' y no manda hoy.',
+'Emparejar tu equipo', irEjecutor200);
+else if (causaP.tipo === 'vieja') gestoP('La puerta del SAT: foto vieja',
+'La última prueba es del ' + localDateTime(puerta.probada) +
+' y puede estar desactualizada' + errP + ': no es una sentencia de hoy.',
+'Ver la puerta', irSat);
+else if (causaP.tipo === 'puerta') gestoP('La puerta del SAT no abre',
+'La última prueba automática no pudo entrar' + errP + ': mírala en su tarjeta.',
+'Ver la puerta', irSat);
+else gestoP('La puerta del SAT no abre',
+'La última prueba automática no pudo entrar con la e.firma de ' + scope +
+errP + ': el gesto es revisarla.',
+'Revisar la e.firma', irSat);
+}
 if (satData.adminLogin && !satData.adminLogin.configurado) lista.push({
 titulo: 'Activa tu acceso con contraseña',
 detalle: 'Sin él entras con el acceso de siempre del navegador; con tu contraseña, la app pide la suya y recuerda tu equipo de confianza.',
@@ -12938,14 +13836,15 @@ wrap.append(row);
 
 
 const NOVEDADES_1311 = {
-version: '1.32.2',
+version: '2.0.0',
 puntos: [
-'El color de la casa ahora es el azul: botones, marcas y estados visten el azul en claro y en oscuro. El verde de antes sigue en Ajustes › Color de acento, como una muestra más, por si lo quieres de vuelta.',
-'Modo oscuro pulido y medido: los rótulos de la barra lateral y la alerta de meses vencidos de Declaraciones ya cumplen el mismo contraste que el resto del sistema, en las doce pantallas.',
-'Marca propia: PacoSAT estrena su faro — el mismo dibujo en la barra lateral, en el pie y en el icono de la app — y el medallón ya vira con el tema y el acento en vez de quedarse en su verde fijo de antes.',
-'Los reportes imprimen en tamaño carta (antes A4): el PDF de las salidas y la representación impresa de los comprobantes salen en el papel que se usa aquí.',
-'En Hoy manda el día: la tarjeta «Hoy en PacoSAT», con lo que te toca, va primero y «Esto es lo nuevo» queda debajo, sin taparla.',
-'El Registro respira: la hora y el texto de cada suceso ya no van pegados.'
+'La construcción grande: Hoy es corto y sin duplicados, la puerta del SAT dice la causa viva (si tu equipo está apagado, lo dice y no te manda a la e.firma) y el semáforo de vigilancia ya no se queda en verde con una pata caída.',
+'Los correos salen con la cara del sistema: tarjetas, el faro y un botón que abre el comprobante exacto. El de la Opinión dice si salió positiva o negativa y hasta cuándo vale. Y el de novedades ya solo anuncia lo que de verdad entra nuevo — solo altas reales —, un solo correo por RFC y día.',
+'Centro de salud nuevo: cada pieza con su semáforo y su frescura, reparaciones en un toque, configuración guiada y un cruce interno que detecta desacuerdos antes de que los veas tú.',
+'Puedes programar los días y la hora en que el sistema revisa tus facturas nuevas, y el botón «Ponte al día» lo pone todo al corriente en un toque.',
+'Cada RFC puede tener su color, asignado por ti, y hay un panel general de contribuyentes ordenado por urgencia: con muchos RFC, todo identificado de un vistazo.',
+'Bancos: un solo botón sube el estado de cuenta — el sistema detecta banco, cuenta y periodo, lo aplica con Deshacer y corre la conciliación contra tus facturas. Del día 1 al 10 te recuerda los estados que falten, cuenta por cuenta.',
+'Cierre de mes guiado paso a paso, el mes en un ZIP listo para el despacho, y el candado de ejercicio cerrado: un año cerrado no se toca sin desbloquearlo a propósito.'
 ]
 };
 function novedadesCard1311() {
@@ -13071,12 +13970,19 @@ const puerta = (typeof satData !== 'undefined' && scope) ? satData?.puerta?.[sco
 if (!puerta || !puerta.probada) {
 dot.dataset.state = 'sin-dato';
 txt.textContent = 'Puerta del SAT: sin probar todavía';
-} else if (puerta.ok) {
-dot.dataset.state = 'ok';
-txt.textContent = 'Puerta del SAT: abre';
 } else {
-dot.dataset.state = 'mal';
-txt.textContent = 'Puerta del SAT: no abre — revísala en Hoy';
+
+
+
+const causaB = causaP200(puerta, satData?.ejecutor);
+const filaB = causaB.tipo === 'equipo' ? ['mal', 'sin señal de tu equipo desde el ' + localDateTime(satData.ejecutor.ultimoVisto)]
+: causaB.tipo === 'sin-equipo' ? ['mal', 'falta emparejar tu equipo']
+: puerta.ok && !causaB.vieja ? ['ok', 'abre']
+: puerta.ok || causaB.vieja ? [puerta.ok ? 'vigilar' : 'mal',
+(puerta.ok ? 'abría' : 'no abría') + ' el ' + localDateTime(puerta.probada) + ' (foto vieja)']
+: ['mal', 'no abre — revísala en Hoy'];
+dot.dataset.state = filaB[0];
+txt.textContent = 'Puerta del SAT: ' + filaB[1];
 }
 }
 const badge = document.getElementById('gestos-badge');
@@ -13269,7 +14175,7 @@ paintAvisosBadge(avisosBadgeCount(data));
 const actuales = new Set((data.avisos || []).map(aviso => aviso.id));
 const nuevos = [...actuales].filter(id => !previos.has(id)).length;
 const cerrados = [...previos].filter(id => !actuales.has(id)).length;
-const hora = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+const hora = localTime(Date.now());
 if (page === 'avisos') render();
 toast('Avisos recalculados · ' + hora + (nuevos || cerrados
 ? ' — ' + [nuevos ? nuevos + ' nuevo(s)' : '', cerrados ? cerrados + ' cerrado(s)' : '']
@@ -13723,6 +14629,9 @@ soundCue('success');
 }
 function avisoCard(aviso) {
 const card = n('div', undefined, 'aviso-card');
+
+
+card.dataset.destino200b = 'aviso-' + aviso.id;
 const head = n('div', undefined, 'aviso-head');
 const check = input('checkbox', { 'aria-label': 'Seleccionar este aviso' });
 check.classList.add('aviso-check');
@@ -14457,6 +15366,7 @@ return bar;
 function executorPanel() {
 const wrap = panel('Ejecutor local del SAT',
 'Las consultas del Buzón y de Declaraciones se navegan desde tu equipo, con tu sesión de e.firma por RFC. PacoSAT ordena, registra y archiva lo que vuelve verificado.');
+wrap.dataset.destino200b = 'ejecutor';
 const body = n('div');
 wrap.append(body);
 const pintar = data => {
@@ -14507,21 +15417,30 @@ row.append(revocar);
 }
 body.append(row);
 }
-for (const job of (data.trabajos || []).slice(0, 8)) {
+
+
+
+
+
+{
+const vivos = (data.trabajos || []).filter(j => ['en-cola', 'reclamado', 'en-curso'].includes(j.estado));
 const row = n('div', undefined, 'cp-row');
-row.append(statusPill(job.estado === 'hecho' ? 'ok' : job.estado === 'fallido' ? 'bad' : 'warn',
-{ 'en-cola': 'En cola', reclamado: 'Reclamado', 'en-curso': 'En curso', hecho: 'Hecho', fallido: 'Falló la verificación' }[job.estado] || job.estado));
-row.append(n('span', (({ 'buzon-listar': 'Consultar el Buzón', 'declaraciones-recuperar': 'Descargar declaraciones',
-'declaracion-folio': 'Reimprimir un acuse por folio', 'puerta-probar': 'Probar la puerta del SAT',
-'documento-sat': 'Descargar un documento del SAT' })[job.kind] || 'Trabajo del SAT') + ' · ' + job.rfc +
-(job.payload?.periodo ? ' · ' + job.payload.periodo : '') +
-(job.payload?.folio ? ' · folio ' + job.payload.folio : '') +
-' · ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(job.creado) : '') +
-(job.esperandoEquipo ? ' · esperando tu equipo' : '') +
-(job.error ? ' · ' + job.error : '')));
+row.append(n('span', 'Cola de trabajos: ' + number.format(vivos.length) +
+(vivos.length === 1 ? ' trabajo vivo' : ' trabajos vivos') +
+' — cada uno vive en su tarjeta, arriba en esta misma pantalla.'));
+if (vivos.length) {
+const irTarjetas = n('button', 'Ver en su tarjeta', 'soft small');
+irTarjetas.type = 'button';
+irTarjetas.onclick = () => document.querySelector('.tramite-grid')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+row.append(irTarjetas);
+}
 body.append(row);
 }
-body.append(executorPairBoton(body));
+
+
+
+
+body.append(activos.length ? executorPairBoton(body, undefined, 'Emparejar otro equipo') : executorPairBoton(body));
 body.append(executorPairCodeBoton(body));
 };
 (async () => {
@@ -14542,6 +15461,7 @@ return [wrap];
 }
 const head = panel('Buzón Tributario · ' + (scope || 'sin contribuyente'),
 'Las notificaciones que el SAT deja en su buzón oficial para este RFC. PacoSAT solo las LISTA: no abre ninguna, porque abrirla puede darla por notificada e iniciar plazos. Abrirlas es tu gesto, en el portal oficial.');
+head.dataset.destino200b = 'buzon';
 const body = n('div');
 head.append(body);
 wrap.append(head);
@@ -14890,6 +15810,12 @@ return capacidadesDoc;
 }
 function capacidadesScreen() {
 const wrap = n('div');
+
+
+
+
+const novedades200b = typeof novedadesCard1311 === 'function' ? novedadesCard1311() : null;
+if (novedades200b) wrap.append(novedades200b);
 const loading = panel('Todo lo que tendrá PacoSAT');
 loading.append(n('p', 'Cargando el documento de capacidades…'));
 wrap.append(loading);
@@ -14929,7 +15855,11 @@ list.append(row);
 panelNode.append(list);
 panels.push(panelNode);
 }
-wrap.replaceChildren(...panels);
+
+
+let viva200b = false;
+try { viva200b = Boolean(novedades200b && document.contains(novedades200b)); } catch { viva200b = false; }
+wrap.replaceChildren(...(viva200b ? [novedades200b] : []), ...panels);
 });
 return [wrap];
 }

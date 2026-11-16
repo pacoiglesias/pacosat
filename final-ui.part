@@ -87,8 +87,7 @@ async function flushOfflineQueue() {
   if (remaining.length < queue.length) { logEvent('Cola sin conexión ejecutada al recuperar la red.'); announce('La cola sin conexión se ejecutó al volver la conexión.'); }
 }
 function offlineStamp(bundle) {
-  return 'Estás viendo datos de las ' + new Intl.DateTimeFormat('es-MX', { hour: '2-digit', minute: '2-digit' }).format(bundle.generatedAt) +
-    ' del ' + new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium' }).format(bundle.generatedAt);
+  return 'Estás viendo datos del ' + localDateTime(bundle.generatedAt);
 }
 function offlineScreen() {
   const wrap = n('div');
@@ -420,7 +419,7 @@ function guestPanel() {
       if (log.entries.length) {
         body.append(n('h4', 'Bitácora de accesos'));
         for (const entry of log.entries.slice(0, 30))
-          body.append(n('p', new Date(entry.at).toLocaleString('es-MX') + ' · ' + entry.kind + ' · ' + entry.detail, 'muted'));
+          body.append(n('p', localDateTime(entry.at) + ' · ' + entry.kind + ' · ' + entry.detail, 'muted'));
       }
     } catch (error) { body.append(n('p', error.message, 'error-text')); }
   };
@@ -626,16 +625,41 @@ function gestosLista1311() {
     detalle: 'Su alta está preparada: sin su e.firma (o su CIEC) PacoSAT no puede descargar nada de este RFC.',
     boton: 'Dar sus credenciales', ir: () => navigate('sat') });
   const ex = satData.ejecutor;
+  const irEjecutor200 = () => { satTab = 'ejecutor'; navigate('sat'); };
   if (ex && !ex.emparejado) lista.push({
     titulo: 'Empareja tu equipo',
     detalle: 'Sin el ejecutor en tu PC, el Buzón Tributario y las Declaraciones no pueden entrar al portal del SAT.',
-    boton: 'Emparejar', ir: () => { satTab = 'ejecutor'; navigate('sat'); } });
+    boton: 'Emparejar', ir: irEjecutor200 });
   const puerta = scope ? satData.puerta?.[scope] : null;
-  if (puerta && puerta.probada && puerta.ok === false) lista.push({
-    titulo: 'La puerta del SAT no abre',
-    detalle: 'La última prueba automática no pudo entrar con la e.firma de ' + scope +
-      (puerta.error ? ' (' + puerta.error + ')' : '') + ': el gesto es revisarla.',
-    boton: 'Revisar la e.firma', ir: () => navigate('sat') });
+  if (puerta && puerta.probada && puerta.ok === false) {
+    /* Causa viva primero (2.0, M1 / 2.1): si el ejecutor no
+       responde, el gesto es el equipo — jamás la e.firma; si
+       la foto es vieja, se dice vieja; la e.firma solo es el
+       gesto cuando ES la causa y la prueba es fresca. */
+    const causaP = causaP200(puerta, ex);
+    const irSat = () => navigate('sat');
+    const errP = puerta.error ? ' (' + puerta.error + ')' : '';
+    const gestoP = (titulo, detalle, boton, ir) => lista.push({ titulo, detalle, boton, ir });
+    if (causaP.tipo === 'equipo') gestoP('Tu equipo no responde',
+      'Sin señal desde el ' + localDateTime(ex.ultimoVisto) +
+        ': la puerta no se puede probar. Al abrir el ejecutor, se prueba sola antes que nada.',
+      'Ver tu ejecutor', irEjecutor200);
+    else if (causaP.tipo === 'sin-equipo') gestoP('La puerta del SAT espera tu equipo',
+      'Sin equipo emparejado la puerta no se puede probar: la última foto es del ' +
+        localDateTime(puerta.probada) + ' y no manda hoy.',
+      'Emparejar tu equipo', irEjecutor200);
+    else if (causaP.tipo === 'vieja') gestoP('La puerta del SAT: foto vieja',
+      'La última prueba es del ' + localDateTime(puerta.probada) +
+        ' y puede estar desactualizada' + errP + ': no es una sentencia de hoy.',
+      'Ver la puerta', irSat);
+    else if (causaP.tipo === 'puerta') gestoP('La puerta del SAT no abre',
+      'La última prueba automática no pudo entrar' + errP + ': mírala en su tarjeta.',
+      'Ver la puerta', irSat);
+    else gestoP('La puerta del SAT no abre',
+      'La última prueba automática no pudo entrar con la e.firma de ' + scope +
+        errP + ': el gesto es revisarla.',
+      'Revisar la e.firma', irSat);
+  }
   if (satData.adminLogin && !satData.adminLogin.configurado) lista.push({
     titulo: 'Activa tu acceso con contraseña',
     detalle: 'Sin él entras con el acceso de siempre del navegador; con tu contraseña, la app pide la suya y recuerda tu equipo de confianza.',
@@ -702,14 +726,15 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '1.32.2',
+  version: '2.0.0',
   puntos: [
-    'El color de la casa ahora es el azul: botones, marcas y estados visten el azul en claro y en oscuro. El verde de antes sigue en Ajustes › Color de acento, como una muestra más, por si lo quieres de vuelta.',
-    'Modo oscuro pulido y medido: los rótulos de la barra lateral y la alerta de meses vencidos de Declaraciones ya cumplen el mismo contraste que el resto del sistema, en las doce pantallas.',
-    'Marca propia: PacoSAT estrena su faro — el mismo dibujo en la barra lateral, en el pie y en el icono de la app — y el medallón ya vira con el tema y el acento en vez de quedarse en su verde fijo de antes.',
-    'Los reportes imprimen en tamaño carta (antes A4): el PDF de las salidas y la representación impresa de los comprobantes salen en el papel que se usa aquí.',
-    'En Hoy manda el día: la tarjeta «Hoy en PacoSAT», con lo que te toca, va primero y «Esto es lo nuevo» queda debajo, sin taparla.',
-    'El Registro respira: la hora y el texto de cada suceso ya no van pegados.'
+    'La construcción grande: Hoy es corto y sin duplicados, la puerta del SAT dice la causa viva (si tu equipo está apagado, lo dice y no te manda a la e.firma) y el semáforo de vigilancia ya no se queda en verde con una pata caída.',
+    'Los correos salen con la cara del sistema: tarjetas, el faro y un botón que abre el comprobante exacto. El de la Opinión dice si salió positiva o negativa y hasta cuándo vale. Y el de novedades ya solo anuncia lo que de verdad entra nuevo — solo altas reales —, un solo correo por RFC y día.',
+    'Centro de salud nuevo: cada pieza con su semáforo y su frescura, reparaciones en un toque, configuración guiada y un cruce interno que detecta desacuerdos antes de que los veas tú.',
+    'Puedes programar los días y la hora en que el sistema revisa tus facturas nuevas, y el botón «Ponte al día» lo pone todo al corriente en un toque.',
+    'Cada RFC puede tener su color, asignado por ti, y hay un panel general de contribuyentes ordenado por urgencia: con muchos RFC, todo identificado de un vistazo.',
+    'Bancos: un solo botón sube el estado de cuenta — el sistema detecta banco, cuenta y periodo, lo aplica con Deshacer y corre la conciliación contra tus facturas. Del día 1 al 10 te recuerda los estados que falten, cuenta por cuenta.',
+    'Cierre de mes guiado paso a paso, el mes en un ZIP listo para el despacho, y el candado de ejercicio cerrado: un año cerrado no se toca sin desbloquearlo a propósito.'
   ]
 };
 function novedadesCard1311() {
@@ -835,12 +860,19 @@ function senalesBarra1311() {
     if (!puerta || !puerta.probada) {
       dot.dataset.state = 'sin-dato';
       txt.textContent = 'Puerta del SAT: sin probar todavía';
-    } else if (puerta.ok) {
-      dot.dataset.state = 'ok';
-      txt.textContent = 'Puerta del SAT: abre';
     } else {
-      dot.dataset.state = 'mal';
-      txt.textContent = 'Puerta del SAT: no abre — revísala en Hoy';
+      /* Causa viva también aquí (2.0, M1): con el equipo
+         apagado el punto nombra ESA causa, no un «revísala»
+         que manda a la e.firma; y la foto vieja se dice vieja. */
+      const causaB = causaP200(puerta, satData?.ejecutor);
+      const filaB = causaB.tipo === 'equipo' ? ['mal', 'sin señal de tu equipo desde el ' + localDateTime(satData.ejecutor.ultimoVisto)]
+        : causaB.tipo === 'sin-equipo' ? ['mal', 'falta emparejar tu equipo']
+        : puerta.ok && !causaB.vieja ? ['ok', 'abre']
+        : puerta.ok || causaB.vieja ? [puerta.ok ? 'vigilar' : 'mal',
+            (puerta.ok ? 'abría' : 'no abría') + ' el ' + localDateTime(puerta.probada) + ' (foto vieja)']
+        : ['mal', 'no abre — revísala en Hoy'];
+      dot.dataset.state = filaB[0];
+      txt.textContent = 'Puerta del SAT: ' + filaB[1];
     }
   }
   const badge = document.getElementById('gestos-badge');

@@ -21,8 +21,10 @@
 !ejecutor-local.mjs
 !pagos.mjs
 !salidas-doc.mjs
+!tanda200g.mjs
 !qr-cfdi.mjs
 !news-mail.mjs
+!mail-layout.mjs
 !secret-box.mjs
 !push.mjs
 !ejecutor-bundle.zip

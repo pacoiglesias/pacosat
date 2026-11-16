@@ -30,7 +30,7 @@ let registroUltimoLote = null;
 const REGISTRO_ORIGEN = { paco: 'Paco', sistema: 'Sistema', ejecutor: 'Tu equipo' };
 function registroLineaTexto(item) {
   const fecha = typeof fmtFechaHora === 'function' ? fmtFechaHora(item.at)
-    : new Date(item.at).toLocaleString('es-MX');
+    : localDateTime(item.at);
   return fecha + ' · ' + (REGISTRO_ORIGEN[item.origen] || 'Sistema') + ' · ' + item.texto +
     (item.rfc ? ' · ' + item.rfc : '');
 }

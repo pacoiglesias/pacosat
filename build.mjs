@@ -49,6 +49,14 @@ function parseCapacidades(markdown) {
 }
 const capacidades = existsSync(new URL('docs/CAPACIDADES.md', import.meta.url)) ?
   parseCapacidades(read('docs/CAPACIDADES.md')) : { updated: '', sections: [] };
+/* Capacidades VIVAS (2.0.0, M8 de la auditoría del 15 nov): la
+   versión que el documento describe sale de la versión real del
+   paquete en cada build — el escaparate no puede volver a
+   quedarse versiones por detrás del producto. La fecha sigue
+   siendo la del documento (verify.cjs la coteja contra él). */
+if (capacidades.sections.length) {
+  capacidades.version = pkg.version;
+}
 /* Hasta la 1.10.x el JSON de capacidades viajaba DENTRO del script
    (37,9 KB en cada carga) para una pantalla que se visita rara vez.
    Desde la 1.11.0 se genera como artefacto propio capacidades.json y
@@ -184,7 +192,7 @@ const css = stripCssComments(['style.part','design.part','polish.part'].map(read
    chequeos del núcleo; ciec vive en el panel del Centro SAT; y
    final-ui trae el arranque, el modo sin conexión y el invitado. */
 const MAIN_PARTS = ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','ciec-ui.part','declaraciones-ui.part','monitor-ui.part','coverage-ui.part','problemas-ui.part','settings-ui.part','lists-ui.part','money-ui.part','compliance-ui.part','final-ui.part','avisos-ui.part','buzon-ui.part','tributario-ui.part','capacidades-ui.part'];
-const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part', registro: 'registro-ui.part' };
+const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part', registro: 'registro-ui.part', salud: 'salud-ui.part' };
 const lazyScripts = {};
 for (const [name, file] of Object.entries(LAZY_PARTS)) lazyScripts[name] = stripJsComments(read(file));
 const lazyManifest = 'const PACOSAT_LAZY = ' + JSON.stringify(Object.fromEntries(Object.keys(LAZY_PARTS).map(name => [name, '/parte/' + name]))) + ';\n';

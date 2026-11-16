@@ -85,7 +85,7 @@ import { createSatDeclFetch } from './sat-declaraciones.mjs';
 import { createSatTribFetch } from './sat-tributario.mjs';
 import { SAT_EXECUTOR_PROTOCOL_VERSION } from './sat-executor.mjs';
 
-export const EJECUTOR_VERSION = '1.32.2';
+export const EJECUTOR_VERSION = '2.0.0';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const URL_BASE = String(process.env.PACOSAT_URL || '').replace(/\/$/, '');
@@ -478,6 +478,18 @@ async function ejecutar(job) {
   return { status: 'failed', result: { steps, error: String(ultimoError?.message || ultimoError || 'Sin resultado'), errorKind: String(ultimoError?.code || '') } };
 }
 
+/* O7 (tanda 5, 2.0): modo ráfaga al reconectar. El servidor dice
+   en el latido y en el reclamo cuántos trabajos quedan pendientes
+   (`pendientes`); mientras la cola sea >0 el siguiente sondeo
+   llega a los 3 s (dentro de la banda 2–5 s) y el reclamo pide
+   hasta vaciarla — una cola acumulada durante una ausencia se
+   vacía en segundos, no en pulsos de 20 s. Funciones puras: la
+   suite las juzga sin proceso. */
+export const executorPollDelay200e = ({ activos = 0, pendientes = 0 } = {}) =>
+  (activos > 0 || pendientes > 0) ? 3000 : POLL_MS;
+export const executorClaimLimit200e = pendientes =>
+  Math.min(10, Math.max(3, Number(pendientes) || 0));
+
 async function ciclo() {
   /* El latido alimenta la cancelación remota (1.31.0): el
      servidor responde `cancelados: [jobIds]` con los trabajos
@@ -490,15 +502,22 @@ async function ciclo() {
       if (id != null && id !== '') canceladosRemotos.add(String(id));
     }
   }
-  const { trabajos } = await api('/api/executor/claim', { limit: 3 });
-  for (const job of trabajos || []) {
+  const pendientesLatido = Number(latido?.pendientes) || 0;
+  const respuesta = await api('/api/executor/claim', { limit: executorClaimLimit200e(pendientesLatido) });
+  const trabajos = respuesta?.trabajos || [];
+  for (const job of trabajos) {
     console.log('[ejecutor] trabajo ' + job.kind + ' · ' + job.rfc);
     const outcome = await ejecutar(job);
     await api('/api/executor/result', { jobId: job.id, ...outcome });
     console.log('[ejecutor] resultado enviado: ' + outcome.status);
   }
   await podarSesionesVivas();
-  return (trabajos || []).length;
+  /* Pendientes tras el ciclo: el reclamo ya los trae contados
+     DESPUÉS de repartir (quedan en cola); con un servidor viejo
+     sin ese campo, se descuentan del latido los reclamados. */
+  const pendientes = respuesta?.pendientes !== undefined ? Number(respuesta.pendientes) || 0 :
+    Math.max(0, pendientesLatido - trabajos.length);
+  return { activos: trabajos.length, pendientes };
 }
 
 export async function runExecutorLoop({ once = false } = {}) {
@@ -510,16 +529,15 @@ export async function runExecutorLoop({ once = false } = {}) {
     ' · ejecutor ' + EJECUTOR_VERSION + ' · e.firma local en ' + EFIRMA_DIR);
   await comprobarActualizacion();
   do {
-    let activos = 0;
-    try { activos = await ciclo(); } catch (error) { console.error('[ejecutor] ' + (error?.message || error)); }
-    /* Sondeo adaptativo (1.31.1): en reposo, el pulso de
-       siempre (20 s); si el ciclo acaba de mover trabajos, el
-       siguiente llega a los 5 s — una ráfaga (mensuales de
-       varios meses, puerta + trámite) no espera un pulso
-       entero entre trabajo y trabajo, y el NAS no recibe ni
-       una petición más cuando no hay nada. */
+    let cicloRes = { activos: 0, pendientes: 0 };
+    try { cicloRes = await ciclo(); } catch (error) { console.error('[ejecutor] ' + (error?.message || error)); }
+    /* Sondeo adaptativo (1.31.1) llevado a su consecuencia
+       (O7, tanda 5): en reposo, el pulso de siempre (20 s); si
+       el ciclo movió trabajos O el servidor anuncia cola
+       pendiente, el siguiente llega a los 3 s — tras una
+       ausencia, la cola se vacía en segundos. */
     if (!once) await new Promise(resolve =>
-      setTimeout(resolve, activos > 0 ? Math.min(POLL_MS, 5000) : POLL_MS));
+      setTimeout(resolve, executorPollDelay200e(cicloRes)));
   } while (!once);
 }
 

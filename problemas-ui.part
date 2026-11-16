@@ -189,6 +189,34 @@ function commandCenter() {
     'Todo tu sistema de un vistazo: cada área con su semáforo, lo que tiene pendiente y su última actividad. La acción principal de cada área se hace desde aquí, sin entrar pantalla por pantalla.');
   const gridBox = n('div', undefined, 'cmd-grid');
   wrap.append(gridBox);
+  /* Tanda 7B (0a): la fila del pendiente de estados, EN HOY, con
+     su botón «Subir estado de cuenta» que lleva a Bancos. */
+  const pendRow200h = n('div'); wrap.append(pendRow200h);
+  if (typeof satToken !== 'undefined' && satToken) satApi('status').then(d => {
+    const p = d?.estadosPendientes;
+    if (!p?.faltantes?.length || !pendRow200h.isConnected) return;
+    const row = n('div', undefined, 'cp-row');
+    row.append(statusPill('warn', 'Falta el estado de ' + p.mesAnterior),
+      n('span', p.faltantes.map(f => (f.banco || '') + ' ' + (f.nombre || '') + (f.last4 ? ' ···' + f.last4 : '')).join(' · ')));
+    const subir = n('button', 'Subir estado de cuenta', 'primary small');
+    subir.onclick = () => navigate('bancos');
+    row.append(subir); pendRow200h.replaceChildren(row);
+  }).catch(() => {});
+  /* Tanda 7B (18): la franja de la semana fiscal, bajo las
+     acciones del día: vencimientos, pagos registrados y cierres,
+     con HOY marcado; cada punto lleva a su sitio. */
+  const semanaRow200h = n('div'); wrap.append(semanaRow200h);
+  if (typeof satToken !== 'undefined' && satToken) satApi('semana200h' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(d => {
+    if (!d?.puntos?.length || !semanaRow200h.isConnected) return;
+    const row = n('div', undefined, 'cp-row');
+    row.append(statusPill('info', 'Semana ' + d.desde + ' a ' + d.hasta));
+    for (const punto of d.puntos.slice(0, 8)) {
+      const b = n('button', (punto.hoy ? 'HOY · ' : '') + punto.fecha.slice(8) + '/' + punto.fecha.slice(5, 7) + ' · ' + punto.texto, 'soft small');
+      b.onclick = () => navigate(punto.destino?.vista || 'cumplimiento');
+      row.append(b);
+    }
+    semanaRow200h.replaceChildren(row);
+  }).catch(() => {});
   /* Orden por urgencia + filtro «Solo lo que me necesita»
      (1.31.2): las tarjetas del Centro de mando se ordenan por
      su semáforo real (rojo → ámbar → gris → verde) con
@@ -581,6 +609,14 @@ function healthCard() {
   if (health.level === 'bien') {
     const fila = n('div', undefined, 'health-ok-row');
     for (const check of health.checks) {
+      /* El ✓ sale del STATE de cada comprobación (2.0, 3.5),
+         nunca del nivel general por defecto: si el servidor
+         dice «vigilar» o «mal» de una pieza, su chip lo dice
+         con su píldora, aunque el resto esté bien. */
+      if (check.state !== 'bien') {
+        fila.append(statusPill(check.state === 'mal' ? 'bad' : 'warn', check.label + ' — ' + check.dato));
+        continue;
+      }
       const chip = n('span', undefined, 'health-chip');
       chip.append(n('strong', '✓ ' + check.label), n('small', check.dato));
       fila.append(chip);

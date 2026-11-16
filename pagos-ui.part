@@ -302,6 +302,13 @@ async function pagosFillVencimientos(body, refrescar) {
    nueva solo nace cuando Paco genera las tablas — no se crea
    ni se paga nada en silencio al pulsar el botón. */
 async function pagosRepetir1310(item, outBody) {
+  /* Tanda 7B (16 · F11): antes de precargar, el servidor coteja
+     cada beneficiario contra el catálogo: si ya no está o su
+     cuenta cambió, se avisa ANTES de seguir y no se precarga. */
+  try {
+    const verif = await satApi('repetir-pago200h', { id: item.id });
+    if (verif.bloqueado) { toast('No se repitió: ' + verif.avisos.join(' '), 'error'); return; }
+  } catch { /* sin servidor nuevo, el Repetir de siempre */ }
   const detalle = await satApi('pagos/preparation?rfc=' + encodeURIComponent(scope) + '&id=' + encodeURIComponent(item.id));
   const prep = detalle.preparation;
   check(prep, 'Esa preparación ya no se puede leer.');
@@ -445,6 +452,25 @@ async function pagosFillCatalog(catBody, prepBody, outBody) {
   if (pagosSteps[1]) pagosSteps[1].note.textContent = pagosCatalogo.length
     ? pagosCatalogo.length + (pagosCatalogo.length === 1 ? ' beneficiario' : ' beneficiarios') + ' en el catálogo'
     : 'Tu catálogo: normalmente solo se mira';
+  /* Paso 1 colapsado (2.0 · tanda 2, hallazgo 2.5): si el
+     catálogo YA existe, el paso 1 se pinta como UNA línea-
+     resumen («Catálogo: N beneficiarios · Editar») y la lista
+     del mes manda el primer pantallazo; el catálogo entero se
+     abre solo al pulsar «Editar». Sin catálogo, el alta manda
+     como siempre (el cuerpo queda abierto). */
+  if (pagosSteps[1] && pagosCatalogo.length) {
+    const paso1 = pagosSteps[1];
+    paso1.body.hidden = true;
+    paso1.section.dataset.colapsado200b = '1';
+    paso1.note.textContent = 'Catálogo: ' + pagosCatalogo.length +
+      (pagosCatalogo.length === 1 ? ' beneficiario' : ' beneficiarios') + ' · ';
+    if (!paso1.section.querySelector('.pagos-editar200b')) {
+      const editar = n('button', 'Editar', 'soft small pagos-editar200b');
+      editar.type = 'button';
+      editar.onclick = () => { paso1.body.hidden = false; paso1.section.dataset.colapsado200b = ''; };
+      paso1.note.after(editar);
+    }
+  }
   catBody.replaceChildren();
   if (scope === 'MFI6212158B4' && !pagosCatalogo.length) {
     const seedBox = n('div', undefined, 'pagos-seed');

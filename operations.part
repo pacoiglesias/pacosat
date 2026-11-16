@@ -37,7 +37,7 @@ function operationsScreen() {
     ['Respaldo', 'Exporta una copia cifrada antes de actualizar. Ningún respaldo incluye la e.firma ni las credenciales SMTP; el respaldo programado del servidor sí incluye la cola SAT y el estado operativo.']
   ]));
   const buttons = n('div', undefined, 'actions');
-  buttons.append(action('Centro SAT', () => navigate('sat')), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
+  buttons.append(action('Centro SAT', () => navigate('sat')), action('Abrir el Centro de salud', () => navigate('salud'), 'soft'), action('Crear respaldo cifrado', backupDialog), action('Actualizar estado', async () => { await pollSat(); await pollMonitor(); render(); }));
   if (satToken && satData.mail?.enabled) buttons.append(action('Enviar correo de prueba', async () => {
     await satApi('mail/test', {});
     announce('Correo de prueba enviado a ' + satData.mail.recipient + '.');

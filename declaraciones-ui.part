@@ -76,8 +76,7 @@ function declRunsDetails(rfc) {
       for (const step of run.steps || []) {
         const item = n('li');
         item.append(
-          n('span', new Date(step.at).toLocaleTimeString('es-MX',
-            { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'sat-step-time'),
+          n('span', localTime(step.at), 'sat-step-time'),
           n('span', (step.intento ? 'Intento ' + step.intento + ' · ' : '') + (step.paso || '') +
             (step.detalle ? ' — ' + step.detalle : '')));
         list.append(item);

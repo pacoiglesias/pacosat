@@ -24,6 +24,12 @@ async function loadCapacidades() {
 }
 function capacidadesScreen() {
   const wrap = n('div');
+  /* «Esto es lo nuevo» vive AQUÍ (2.0 · tanda 2, M5): junto a
+     la versión, en Ajustes › Acerca de — salió de Hoy, que se
+     queda con el día. La tarjeta es la de siempre
+     (novedadesCard1311): sale tras un montaje hasta cerrarla. */
+  const novedades200b = typeof novedadesCard1311 === 'function' ? novedadesCard1311() : null;
+  if (novedades200b) wrap.append(novedades200b);
   const loading = panel('Todo lo que tendrá PacoSAT');
   loading.append(n('p', 'Cargando el documento de capacidades…'));
   wrap.append(loading);
@@ -63,7 +69,11 @@ function capacidadesScreen() {
       panelNode.append(list);
       panels.push(panelNode);
     }
-    wrap.replaceChildren(...panels);
+    /* Las novedades sobreviven a la carga del documento solo
+       si siguen en pantalla (si Paco ya las cerró, no vuelven). */
+    let viva200b = false;
+    try { viva200b = Boolean(novedades200b && document.contains(novedades200b)); } catch { viva200b = false; }
+    wrap.replaceChildren(...(viva200b ? [novedades200b] : []), ...panels);
   });
   return [wrap];
 }

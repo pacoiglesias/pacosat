@@ -157,7 +157,14 @@ const invoice = (id, date, from, to, total, method = 'PPD') => ({ id, date, kind
     assert.ok(!/cumple 30 días|cumple 60 días/.test(resumenesA[0].subject + resumenesA[0].text));
     const nacimientosA = sent.filter(mail => /Nueva alerta/.test(mail.subject));
     assert.equal(nacimientosA.length, 1, 'El aviso nuevo notifica al nacer, una vez.');
-    assert.equal(sent.length, 2, 'Resumen + nacimiento: nada más.');
+    /* 2.0·T3 (A5): el tick cae en viernes por la mañana y el
+       resumen de viernes — activado por defecto porque el correo
+       de avisos está configurado — es un envío APARTE, con su
+       propio asunto; del sistema de avisos sigue saliendo solo
+       resumen + nacimiento. */
+    const viernesB = sent.filter(mail => /Resumen de viernes/.test(mail.subject));
+    assert.equal(viernesB.length, 1, 'El resumen de viernes (A5) sale una vez, como envío propio.');
+    assert.equal(sent.length, 3, 'Resumen + nacimiento + viernes: nada más.');
     notices = await (await call('/api/notices')).json();
     assert.equal(notices.avisos.find(aviso => aviso.importe === '500.00').baseline, false);
     console.log('avisos.test · línea base silenciosa y digest único: ok');
