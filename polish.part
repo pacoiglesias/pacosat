@@ -430,3 +430,48 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
 /* Centro SAT: la barra de pestañas como franja secundaria (1.32.1, S3) */
 .tabbar-secundaria{padding:5px 12px;background:var(--surface-2)}
 .tabbar-secundaria button{font-size:13px;min-height:36px;padding:5px 10px}
+
+/* ===== Tanda 2 · 2.0: identidad por RFC, selector, panel
+   general, pintado progresivo y cabecera móvil compacta ===== */
+.rfc-medallon200b{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--muted);border:var(--bd);font-weight:750;font-size:14px;flex:none}
+.salud-punto200b{width:11px;height:11px;border-radius:50%;background:var(--muted);flex:none;display:inline-block}
+.salud-punto200b[data-nivel="ok"]{background:#1d9e6c}
+.salud-punto200b[data-nivel="warn"]{background:#d99a16}
+.salud-punto200b[data-nivel="bad"]{background:#cf3a2e}
+.scope-menu-btn200b{gap:8px;max-width:46vw;overflow:hidden;white-space:nowrap;justify-content:flex-start;min-width:0}
+.scope-nombre200b{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.scope-menu200b{position:fixed;top:64px;right:14px;z-index:70;width:min(360px,92vw);background:var(--surface);border:var(--bd);border-radius:var(--r-l);box-shadow:var(--shadow-1);padding:10px;display:grid;gap:6px;max-height:70vh;overflow:auto}
+.scope-menu200b input{width:100%;font-size:16px}
+.scope-menu-row200b{display:flex;align-items:center;gap:9px;width:100%;min-height:44px}
+.contrib-row200b{display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:10px 12px;margin:0 16px 8px;width:calc(100% - 32px)}
+.contrib-txt200b{display:grid;gap:2px;flex:1;min-width:0}
+.contrib-txt200b small{color:var(--muted)}
+.hoy-acciones200b{display:flex;gap:8px;flex-wrap:wrap;padding:4px 16px 14px}
+.hoy-acciones200b button{min-height:44px}
+.pintado-progresivo200b{content-visibility:auto;contain-intrinsic-size:auto 320px}
+.destino-realce200b{outline:3px solid var(--green);outline-offset:2px;transition:outline-color .4s ease}
+.search-toggle200b{display:none}
+@media(max-width:860px){
+.top{flex-wrap:nowrap;padding:6px 10px;gap:6px}
+.top>span:first-child .slash,.top #crumb{display:none}
+.top .header-counters,.top .badge{display:none}
+.top-side{flex-wrap:nowrap;gap:6px;min-width:0}
+.top-search{display:none}
+.top.busqueda200b .top-search{display:block;position:absolute;top:54px;left:8px;right:8px;z-index:65;background:var(--surface);padding:6px;border:var(--bd);border-radius:var(--r-m)}
+.top.busqueda200b .top-search input{width:100%;min-width:0}
+.top .icon-button{min-width:44px;min-height:44px}
+.search-toggle200b{display:inline-flex}
+.scope-menu-btn200b{min-height:44px}
+.scope-menu200b{top:56px}
+}
+/* Salud y ayuda (2.0 · tanda 4) */
+.salud-grid200d{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));padding:2px}
+.salud-grid200d .panel{margin-bottom:0}
+.ayuda-cajon200d{margin:0 0 0 auto;height:100%;max-height:100vh;width:min(430px,95vw);border-radius:0}
+.ayuda-cajon200d h3{margin:14px 0 4px}
+
+/* Tanda 7B (19 · V3): la tarjeta que pide el gesto de Paco gana
+   presencia por REALCE propio (borde y sombra del acento de la
+   casa); ninguna otra se atenúa. */
+.cmd-card[data-level="rojo"]{border:2px solid var(--danger);box-shadow:var(--shadow-2)}
+.cmd-card[data-level="ambar"]{border:2px solid var(--warn-ink);box-shadow:var(--shadow-2)}

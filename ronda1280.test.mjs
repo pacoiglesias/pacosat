@@ -428,8 +428,13 @@ const falloNavegacion = marcador => async () => {
   assert.ok(ui.includes('avisos.counts?.total > 0'), 'P4: con avisos abiertos hay protagonista de avisos');
   assert.ok(ui.includes('Revisar tus avisos abiertos'), 'P4: y Hoy no se queda en «Todo en orden»');
   assert.ok(ui.includes("satApiLectura('registro/resumen')"), 'P1: Hoy trae la línea del Registro');
-  /* P5: sin duplicados. */
-  assert.ok(ui.includes('visiblePeople.length !== 1'), 'P5: con un contribuyente visible, la tabla repetida sale de Hoy');
+  /* P5: sin duplicados.
+     Re-basificado en la 2.0 · tanda 2 (M5): la tabla de
+     contribuyentes ya no vive en Hoy con NINGÚN conteo — la
+     sustituye el panel general de contribuyentes, alcanzable
+     desde el selector («Ver todos»). */
+  assert.ok(!ui.includes('blocks.push(tasks)'), 'P5: la tabla de contribuyentes no se monta en Hoy (2.0 tanda 2)');
+  assert.ok(ui.includes('contribuyentesPanel200b'), 'P5: su sitio es el panel general de contribuyentes');
   assert.ok(ui.includes('reconcile?.confirmed.length'), 'P5: la línea de conciliaciones solo con algo que contar');
   /* P6: folios en el detalle del mes. */
   assert.ok(declaracionesUi.includes('Reimprimir el acuse de este mes'), 'P6: reimprimir vive en el detalle del mes');
@@ -518,7 +523,7 @@ const falloNavegacion = marcador => async () => {
   assert.ok(caps.includes('MENÚ DE 13 DESTINOS'), 'P8/D3: el menú dice sus 13 destinos reales');
   assert.ok(caps.includes('SEMANAL'), 'P8/D4: el buzón automático consta con su cadencia semanal real');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"1.32.2"'), 'el artefacto se sella con la versión vigente (1.32.2)');
+  assert.ok(html.includes('"version":"2.0.0"'), 'el artefacto se sella con la versión vigente (2.0.0)');
   console.log('OK 1.28.0 · P8 — CAPACIDADES veraz: e.firma viva, versión al pie, 13 destinos y cadencia semanal; copias idénticas.');
 }
 

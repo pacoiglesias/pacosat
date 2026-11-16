@@ -157,7 +157,7 @@ async function loadMonitorSummary(force = false) {
    en el módulo, no en el DOM. Nada de depender solo de la franja
    de actividad de arriba, lejos de la acción. */
 let checkRun = null, listsRun = null;
-const runHora = () => new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+const runHora = () => localTime(Date.now());
 function runElapsedText(run) {
   const seconds = Math.max(0, Math.round((Date.now() - run.startedAt) / 1000));
   return 'lleva ' + (seconds < 60 ? seconds + ' s' : Math.floor(seconds / 60) + ' min ' + String(seconds % 60).padStart(2, '0') + ' s');
@@ -645,7 +645,11 @@ function paintActivity() {
       sideText.textContent = number.format(paused.length) + (paused.length === 1 ? ' trabajo en pausa' : ' trabajos en pausa');
       if (sideDot) sideDot.style.background = 'var(--danger)';
     } else {
-      sideText.textContent = 'Sin trabajos en curso' + (view.nextAuto ? ' · próxima revisión: ' + localDateTime(view.nextAuto) : '');
+      /* nextAuto viaja como {label, at} desde el servidor
+         (2.0 · tanda 2): se pinta SU FECHA, no el objeto —
+         antes salía «[object Object]» en la barra lateral. */
+      sideText.textContent = 'Sin trabajos en curso' + (view.nextAuto ? ' · próxima revisión: ' +
+        localDateTime(typeof view.nextAuto === 'object' ? view.nextAuto.at : view.nextAuto) : '');
       if (sideDot) sideDot.style.background = '';
     }
   }
@@ -683,8 +687,17 @@ function paintActivity() {
     const dock = $('activity-dock');
     if (dock) { jobsBox = n('section', undefined, 'activity-dock'); jobsBox.id = 'activity-jobs'; dock.after(jobsBox); }
   }
+  /* Un trabajo, un sitio por pantalla (2.0 · tanda 2,
+     corrección 3 / 2.3): en Centro SAT el trabajo vive SOLO
+     en su tarjeta, y en Buzón/Declaraciones manda su banner
+     propio con su único Cancelar — en esas pantallas la
+     franja global NO se pinta (y el Cancelar del renglón del
+     menú tampoco compite dentro de Centro SAT). */
+  const franjaDuplica200b = typeof page !== 'undefined' && ['sat', 'tributario', 'declaraciones'].includes(page);
+  if (franjaDuplica200b && navJobsCancel) navJobsCancel.replaceChildren();
   if (jobsBox) {
-    const entries = [...running.map(e => ({ ...e, enPausa: false })), ...paused.map(e => ({ ...e, enPausa: true }))];
+    const entries = franjaDuplica200b ? [] :
+      [...running.map(e => ({ ...e, enPausa: false })), ...paused.map(e => ({ ...e, enPausa: true }))];
     jobsBox.hidden = !entries.length;
     if (entries.length) {
       jobsBox.replaceChildren();
@@ -713,8 +726,10 @@ function paintActivity() {
            lo conoce (done/total) y el tiempo desde su inicio
            real (since). Sin total: indeterminada, sin % falso.
            El Cancelar queda en la fila, junto a la barra. */
-        jobsBox.append(jobProgress1312({ fase: entry.phase || '',
-          desde: entry.since || 0, done: entry.done, total: entry.total }));
+        jobsBox.append(jobProgress1312({ fase: entry.enPausa
+            ? 'Esperando' + (entry.state === 'esperando' ? ' a tu equipo' : '') : (entry.phase || ''),
+          desde: entry.since || 0, done: entry.done, total: entry.total,
+          estado: entry.enPausa ? (entry.state || 'pausado') : (entry.state || '') }));
       }
     }
   }

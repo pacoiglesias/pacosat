@@ -159,13 +159,23 @@ function satDocsSection() {
     for (const profile of visibles) {
       const card = n('article', undefined, 'sat-card');
       const head = n('div', undefined, 'sat-card-head');
-      head.append(n('strong', profile.rfc), satDocPill(profile.constancia, 'Constancia'), satDocPill(profile.opinion, 'Opinión'));
+      head.append(n('strong', profile.rfc),
+        /* Tanda 7B (27): glifos propios de trazo fino de la casa. */
+        icon('constancia'), satDocPill(profile.constancia, 'Constancia'),
+        icon('opinion'), satDocPill(profile.opinion, 'Opinión'));
       card.append(head);
       const meta = n('div', undefined, 'sat-meta');
       /* Un clic en «Ver» y el documento se abre dentro de la app
          (1.10.2): nada de ir a buscarlo a una carpeta. */
       const verButton = (doc, label, kind) => {
         if (!doc?.fileId) return;
+        /* Tanda 7B (0c): la miniatura real de la primera página,
+           la que el servidor ya genera y cachea (thumbs200g). */
+        if (typeof satToken !== 'undefined' && satToken)
+          fetch('/api/miniatura200g?id=' + encodeURIComponent(doc.fileId), { headers: { 'X-PacoSAT-Token': satToken } })
+            .then(r => r.ok ? r.blob() : null).then(blob => { if (!blob || !meta.isConnected) return;
+              const img = n('img'); img.alt = 'Primera página de la ' + label; img.width = 54;
+              img.src = URL.createObjectURL(blob); meta.prepend(img); }).catch(() => {});
         const ver = n('button', 'Ver', 'soft small');
         ver.title = 'Ver la ' + label.toLowerCase() + ' dentro de PacoSAT';
         ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: profile.rfc, kind,
@@ -182,6 +192,8 @@ function satDocsSection() {
       if (profile.opinion) {
         meta.append(n('span', 'Opinión emitida: ' + localDate(profile.opinion.issuedAt) + (profile.opinion.source === 'manual' ? ' (subida a mano)' : '')));
         meta.append(statusPill('ok', 'Vigente'));
+        if (profile.opinion.sentido) meta.append(n('span', 'Sentido: ' + profile.opinion.sentido.toUpperCase() +
+          (profile.opinion.vigencia ? ' · vigente hasta el ' + profile.opinion.vigencia : '')));
         verButton(profile.opinion, 'Opinión', 'Opinión de cumplimiento');
       }
       if (profile.lastAttempt) meta.append(n('span', 'Último intento de descarga: ' + localDateTime(profile.lastAttempt)));
@@ -336,8 +348,7 @@ function satDocStepList(steps, withUrl) {
   for (const step of steps || []) {
     const item = n('li');
     item.append(
-      n('span', new Date(step.at).toLocaleTimeString('es-MX',
-        { hour: '2-digit', minute: '2-digit', second: '2-digit' }), 'sat-step-time'),
+      n('span', localTime(step.at), 'sat-step-time'),
       n('span', step.text + (withUrl && step.url ? ' · ' + step.url : '')));
     list.append(item);
   }

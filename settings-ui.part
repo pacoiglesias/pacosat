@@ -14,7 +14,7 @@ async function satApiDelete(route) {
 const stampText = iso => {
   const date = new Date(iso);
   return date.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: 'numeric', month: 'long', year: 'numeric' }) +
-    ' a las ' + date.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' });
+    ' a las ' + localTime(date.getTime());
 };
 function settingsScreen() {
   pendingLogo = undefined;
@@ -300,7 +300,8 @@ function apiDocPanel1320() {
     ['Avisos activos con su plazo y su gesto', 'GET /api/v1/avisos?rfc=TU_RFC'],
     ['Documentos del expediente', 'GET /api/v1/documentos?rfc=TU_RFC'],
     ['Resumen del Buzón Tributario (conteos y plazos, sin contenido)', 'GET /api/v1/buzon/resumen?rfc=TU_RFC'],
-    ['El Registro en una ventana de tiempo', 'GET /api/v1/registro?rfc=TU_RFC']];
+    ['El Registro en una ventana de tiempo', 'GET /api/v1/registro?rfc=TU_RFC'],
+    ['Notas de los CFDI (solo llaves con alcance «lectura-notas», filtradas por su RFC)', 'GET /api/v1/cfdi/notas?rfc=TU_RFC']];
   const lista = n('div', undefined, 'api-recursos');
   for (const [nombre, ruta] of recursos) {
     const fila = n('div', undefined, 'api-recurso');
@@ -365,7 +366,8 @@ function apiPanelSection1320() {
     const form = n('div', undefined, 'api-form');
     const nombreIn = input('text', { maxlength: '60', placeholder: '¿Para quién o para qué? (p. ej. Excel de la oficina)', autocomplete: 'off' });
     const alcanceSel = n('select');
-    alcanceSel.append(new Option('Lectura completa', 'lectura'), new Option('Solo resúmenes', 'lectura-resumen'));
+    alcanceSel.append(new Option('Lectura completa', 'lectura'), new Option('Solo resúmenes', 'lectura-resumen'),
+      new Option('Lectura completa + notas de los CFDI', 'lectura-notas'));
     const rfcSel = n('select');
     rfcSel.append(new Option('Todos los RFC', ''));
     for (const person of people) rfcSel.append(new Option(person.name + ' · ' + person.id, person.id));
@@ -435,7 +437,7 @@ function apiPanelSection1320() {
         head.append(cardMenu1312('Más opciones de la llave ' + llave.nombre, menuItems));
       const meta = n('p', undefined, 'api-key-meta');
       meta.append(
-        n('span', (llave.alcance === 'lectura-resumen' ? 'Solo resúmenes' : 'Lectura completa') +
+        n('span', (llave.alcance === 'lectura-resumen' ? 'Solo resúmenes' : llave.alcance === 'lectura-notas' ? 'Lectura completa + notas' : 'Lectura completa') +
           (llave.rfc ? ' · solo ' + llave.rfc : ' · todos los RFC')),
         n('span', 'Creada el ' + localDateTime(llave.creada)),
         n('span', llave.ultimoUso ? 'Último uso: ' + localDateTime(llave.ultimoUso) : 'Sin uso todavía'),

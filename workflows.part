@@ -667,6 +667,12 @@ function invoiceDetail(row) {
       try {
         const data = await satApi('invoice-history?id=' + encodeURIComponent(row.id));
         for (const event of data.events || []) if (event.kind !== 'emission' && event.kind !== 'pdf') events.push(event);
+        /* Tanda 7B (2): la línea de vida completa del servidor
+           (descubierto, avisos, notas, marcas, pagos, archivo). */
+        const vida200h = await satApi('vida200h?uuid=' + encodeURIComponent(row.id)).catch(() => null);
+        for (const hito of vida200h?.hitos || [])
+          events.push({ at: hito.at ? new Date(hito.at).toISOString() : null,
+            label: 'Línea de vida · ' + hito.tipo, detail: hito.texto });
       } catch { /* sin servidor o sin historia remota: se muestra la local */ }
     }
     events.sort((a, b) => (a.at || '9999').localeCompare(b.at || '9999'));
@@ -748,6 +754,13 @@ function invoiceActions(row) {
     typeof cfdiArchivar1311 === 'function') {
     itemsFila.push({ label: 'Archivar', fn: () => cfdiArchivar1311(row)
       .catch(error => announce(error.message, true)) });
+  }
+  /* Compartir en un toque (tanda 7A, A7): el servidor prepara
+     el correo con la ficha del comprobante y su XML adjunto;
+     el envío sigue siendo gesto de Paco. */
+  if (typeof satToken !== 'undefined' && satToken && typeof ensureLazyPart === 'function') {
+    itemsFila.push({ label: 'Compartir por correo', fn: () =>
+      ensureLazyPart('salidas').then(() => { if (typeof compartir200g === 'function') compartir200g('cfdi', row.id); }) });
   }
   menuFila._setItems1312(itemsFila);
   wrap.append(menuFila);
@@ -999,7 +1012,19 @@ $('primary').onclick = handle(async () => {
     if (satTab === 'estado') { await pollMonitor(); return; }
     if (satTab === 'listas') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
     if (satTab === 'descargado') { await pollSat(); render(); return; }
-    if (satTab === 'ejecutor') { document.querySelector('.executor-pair')?.click(); return; }
+    if (satTab === 'ejecutor') {
+      /* Contextual (2.0, 2.6): con ejecutor emparejado, el
+         primario es «Tu ejecutor» y enseña su estado — no
+         ofrece emparejar de nuevo; sin ninguno, empareja. */
+      const exP = satData?.ejecutor;
+      if (exP?.emparejado) {
+        render();
+        announce(exP.enLinea ? 'Tu ejecutor está en línea en tu equipo.' :
+          'Tu equipo no responde' + (exP.ultimoVisto ? ' desde el ' + localDateTime(exP.ultimoVisto) : '') + ': abre el ejecutor en tu PC.');
+        return;
+      }
+      document.querySelector('.executor-pair')?.click(); return;
+    }
     /* Descargar (1.32.1, G4): la cabecera de la pantalla de
        descargar ABRE la hoja de descarga del RFC elegido — antes
        decía «Importar paquete» y abría el importador de archivos
@@ -1023,6 +1048,14 @@ $('primary').onclick = handle(async () => {
     if (consultar && !consultar.disabled) { consultar.click(); return; }
     if (consultar) { toast('La consulta del Buzón ya está en curso.', 'ok'); return; }
     toast('La pantalla del Buzón aún se está pintando: pulsa «Consultar ahora» en su franja.', 'error'); return;
+  }
+  if (page === 'salud') {
+    /* «Revisar ahora la salud» (2.0 · tanda 4): la cabecera corre
+       el cruce de coherencia a demanda y repinta — la etiqueta
+       promete exactamente ese gesto. */
+    await ensureLazyPart('salud');
+    if (typeof saludRevisar200d === 'function') { await saludRevisar200d(); return; }
+    render(); return;
   }
   if (page === 'settings') {
     if (ajustesSection === 'general') { await saveAppSettings(); return; }
@@ -1054,6 +1087,25 @@ $('primary').onclick = handle(async () => {
     if (armar) { armar.scrollIntoView({ block: 'center' }); armar.click(); return; }
     toast('Abre primero la tarjeta de vencimientos para preparar los pagos.', 'error'); return;
   }
+  if (page === 'invoices') {
+    /* «Descargar del SAT» (2.0, 1.3): la cabecera de Facturas
+       abre la MISMA hoja de descarga que el botón de la
+       pantalla — su acción protagonista, no el importador. */
+    if (scope) downloadSheet(scope); else showSatDownload();
+    return;
+  }
+  if (page === 'home') {
+    /* El paso del día (2.0, 1.3): la etiqueta de pasoHoy200
+       despacha a su gesto real; sin gesto protagonista, la
+       descarga de CFDI del SAT con su hoja de periodos. */
+    const paso = primaryLabel();
+    if (paso === 'Ver tu ejecutor') satTab = 'ejecutor';
+    if (paso === 'Dar sus credenciales') satTab = 'descargar';
+    if (paso === 'Descargar CFDI del SAT') { if (scope) downloadSheet(scope); else showSatDownload(); }
+    else navigate('sat');
+    return;
+  }
+  if (page === 'contribuyentes') { navigate('home'); return; }
   if (page === 'preguntas') { render(); const q = document.querySelector('main input[type="text"]'); if (q) q.focus(); return; }
   if (page === 'registro') { if (typeof downloadRegistroCsv === 'function') await downloadRegistroCsv(); return; }
   if (page === 'archivo') { navigate('invoices'); return; }
@@ -1136,6 +1188,37 @@ async function globalSearchExtras1310(query, facturasEncontradas) {
     dialog('Más resultados para «' + query + '»', controls);
   } catch { /* Los extras nunca rompen la búsqueda de Facturas. */ }
 }
+/* Tanda 7B (1 · M7/F1): el buscador unificado del servidor —
+   grupos CFDI / Documentos / Avisos / Registro, separados por
+   RFC, cada resultado con su destino exacto. */
+async function globalSearch200h(query) {
+  try {
+    if (typeof satToken === 'undefined' || !satToken) return;
+    const data = await satApi('buscar200h?q=' + encodeURIComponent(query) +
+      (scope ? '&rfc=' + encodeURIComponent(scope) : '&todos=1'));
+    const grupos = data?.porRfc || [];
+    if (!grupos.length || $('dialog').open) return;
+    const controls = [];
+    const titulos = { cfdi: 'CFDI', documentos: 'Documentos del SAT', avisos: 'Avisos', registro: 'Registro' };
+    for (const grupoRfc of grupos) {
+      controls.push(n('h3', 'RFC ' + grupoRfc.rfc));
+      for (const [clave, items] of Object.entries(grupoRfc.grupos || {})) {
+        if (!items?.length) continue;
+        controls.push(n('strong', titulos[clave] || clave));
+        for (const item of items.slice(0, 6)) {
+          const row = n('div', undefined, 'cp-row');
+          row.append(n('span', item.texto || item.uuid || ''),
+            action('Ir', () => { $('dialog').close();
+              if (item.destino?.uuid) { const inv = invoices.find(r => r.id === item.destino.uuid);
+                if (inv) { navigate('invoices'); invoiceDetail(inv); return; } }
+              navigate(item.destino?.vista || 'home'); }, 'soft small'));
+          controls.push(row);
+        }
+      }
+    }
+    if (controls.length) dialog('Resultados en todo PacoSAT para «' + query + '»', controls);
+  } catch { /* el camino de Facturas de siempre no se toca */ }
+}
 function runGlobalSearch() {
   const query = globalSearchInput.value.trim();
   if (!query) return;
@@ -1178,6 +1261,7 @@ function runGlobalSearch() {
   /* F1: sin bloquear el camino de Facturas, se buscan también
      los Documentos del SAT y los Avisos que casen. */
   globalSearchExtras1310(query, found.length);
+  globalSearch200h(query);
 }
 globalSearchInput.addEventListener('keydown', event => {
   if (event.key === 'Enter') { event.preventDefault(); runGlobalSearch(); }

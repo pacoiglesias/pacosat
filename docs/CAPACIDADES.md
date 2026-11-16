@@ -1,8 +1,8 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Versión del software que describe este documento: 1.29.1**
+**Versión del software que describe este documento: 2.0.0**
 
-**Última modificación: 12 nov 2026, 15:04 UTC**
+**Última modificación: 15 nov 2026**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del repositorio (la FUENTE del listado: la app lo muestra dentro, en la pantalla «Qué incluye PacoSAT», generada desde él en cada build) y `~/workspace/pacosat-capacidades.md` (copia de trabajo). Al tocar una, se toca la otra en el mismo cambio. Se actualiza en cada ronda y cada despliegue, junto con el sello de versión.
@@ -295,6 +295,22 @@ Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del reposito
 - ✅ PROACTIVIDAD NUEVA: dos fallos seguidos en la ENTRADA del portal levantan el aviso «el SAT cambió su entrada» el mismo día; la cuenta atrás del Buzón avisa cuando una notificación está a menos de 24 h de tenerse por notificada; el primer CFDI de un emisor nuevo (o un importe que triplica su patrón) avisa al llegar; el ejecutor en silencio más de dos días se dice en Hoy y por alerta semanal; el día 1, el cierre del mes anterior se cuenta completo o nombrando lo que falta; el parte de la mañana sube de tono lo que lleva tres días esperando; y tras cada respaldo programado, la copia se resucita en silencio en una base aislada — solo habla si el ensayo falla.
 - ✅ NOTAS EN LOS CFDI: cada comprobante admite una nota libre de Paco, visible en su detalle y en el Excel de facturas; el XML jamás se toca.
 - ⏳ LA PRUEBA DE VERDAD SIGUE SIENDO LA DEL LUNES 16: la navegación nueva se construyó contra la portada capturada; su verificación contra el portal real — Buzón que lista sin abrir, un mes de Declaraciones con su acuse, la puerta veraz en su tarjeta y un Cancelar que mata un trabajo vivo — se hace con Paco presente en el montaje, como quedó acordado.
+
+## 19. Rondas 1.32.x — API vendible, caminos honestos y diseño (14–15 nov 2026)
+- ✅ API de cliente v1 (1.32.0): estado, totales, CFDI, avisos, documentos, buzón y registro sobre el mismo cálculo de las pantallas, con llaves por RFC y alcances, panel en Ajustes › API y cada llamada asentada en el Registro.
+- ✅ Las 22 correcciones de caminos (1.32.1): cada botón de cabecera hace lo que promete; «Descargar» en cada documento; el Registro se puede copiar y borrar con Deshacer; la puerta se refresca con cualquier entrada real.
+- ✅ Diseño (1.32.2): azul como acento por defecto, el faro como marca en barra, pie e icono, e impresión en Carta verificada en los cinco reportes.
+- ✅ Un solo criterio de novedad (1.32.3): el correo de novedades anuncia exactamente las altas reales de cada importación; sin altas, no hay correo.
+
+## 20. Ronda 2.0.0 — la construcción final (15 nov 2026)
+- ✅ Hoy corto y sin duplicados (medido: ≤3 pantallas en escritorio, ≤5 en móvil), con descargar el mes en 2 toques y cada «Ver» aterrizando en su tarjeta exacta.
+- ✅ La puerta dice la causa viva y lleva caducidad: si tu equipo está apagado, eso es lo que se lee; el semáforo de vigilancia se compone de puerta, ejecutor y última descarga.
+- ✅ Correos en HTML con la plantilla madre del faro, enlaces profundos al registro exacto, la Opinión con su sentido y su vigencia en el asunto, un solo correo de novedades por RFC y día, y la pantalla «Correos y avisos» con lo enviado.
+- ✅ Centro de salud y reparación: cada pieza con semáforo y frescura, reparaciones seguras en un toque, configuración guiada con comprobación real, auditoría interna de coherencia, ensayo de restauración automático y prueba de humo tras cada montaje.
+- ✅ Revisión programada de facturas nuevas por días y hora, botón «Ponte al día», alerta de ejecutor dormido y vigía de solicitudes vivas con su salida preparada.
+- ✅ Multi-RFC: color asignable por contribuyente, selector con buscador y salud por RFC, y panel general de contribuyentes ordenado por urgencia.
+- ✅ Bancos: un solo botón sube el estado de cuenta (detecta banco, cuenta y periodo, lo aplica con Deshacer), recordatorio de estados del día 1 al 10 por cuenta, conciliación banco↔facturas y pantalla de contrapartes.
+- ✅ Cierre de mes guiado, el mes en un ZIP y «Enviar al despacho», candado de ejercicio cerrado, restauración guiada con respaldo de seguridad previo, panel de valor, webhooks firmados, calendario fiscal por RFC (ICS), invitado de solo lectura por RFC y buscador global que busca en todo.
 
 ## Fuera de alcance (decidido por Paco)
 - Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT).

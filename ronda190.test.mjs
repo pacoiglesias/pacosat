@@ -222,7 +222,18 @@ try {
   assert.equal((await call('/api/storage', { batch: {} })).status, 403, 'y sigue sin poder escribir');
   token = adminToken;
   await call('/api/guest/config', { rfcs: [OWN] });
+  /* CORRECCIÓN H-4 (seguridad 2.0): rotar el alcance PURGA las
+     sesiones vivas — la sesión emitida con el alcance anterior
+     no entra ni hereda el alcance nuevo (la prueba anterior
+     afirmaba justo ese comportamiento fugado y se corrige
+     aquí): hace falta un login nuevo. */
   token = guestLogin.token;
+  assert.equal((await call('/api/storage?store=invoices')).status, 403,
+    'H-4: la sesión anterior a la rotación de alcance está purgada');
+  token = adminToken;
+  const guestLogin2 = await (await call('/api/guest/login', { password: 'invitado-190' })).json();
+  assert.ok(guestLogin2.token, 'login nuevo tras la rotación');
+  token = guestLogin2.token;
   const ownInvoices = await (await call('/api/storage?store=invoices')).json();
   assert.ok(ownInvoices.length >= 8, 'con su RFC en el alcance, el invitado sí ve el expediente: ' + ownInvoices.length);
   const ownMoney = await (await call('/api/money')).json();

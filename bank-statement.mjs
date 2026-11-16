@@ -39,10 +39,63 @@ function movementDate(line, yearHint) {
   if (match && yearHint) return yearHint + '-' + MONTHS[match[2]] + '-' + match[1].padStart(2, '0');
   return null;
 }
+/* Bancos que el estado puede nombrar impresos (2.0 · tanda 6):
+   la detección sale SOLO de lo impreso en el documento; un banco
+   que el estado no nombra queda en '' y la pantalla pregunta. */
+const BANK_PATTERNS = [[/BBVA|BANCOMER/, 'BBVA'], [/SANTANDER/, 'Santander'],
+  [/CITIBANAMEX|BANAMEX/, 'Banamex'], [/BANORTE/, 'Banorte'], [/HSBC/, 'HSBC'],
+  [/INBURSA/, 'Inbursa'], [/SCOTIABANK/, 'Scotiabank'], [/BANREGIO/, 'BanRegio'],
+  [/BANCO AZTECA/, 'Banco Azteca'], [/KONFIO/, 'Konfio'], [/BANBAJIO|BAJIO/, 'BanBajío']];
+export function detectBankName(text) {
+  const whole = plain(text);
+  for (const [pattern, name] of BANK_PATTERNS) if (pattern.test(whole)) return name;
+  return '';
+}
+/* Números de cuenta/CLABE impresos en el estado (2.0 · tanda 6):
+   se extraen las ristras de dígitos de 10 a 18 posiciones (cuenta
+   o CLABE) y, aparte, las terminaciones visibles de una cuenta
+   enmascarada («****2590», «···2590», «cta. …2590»). Nada se
+   completa ni se supone: lo enmascarado cruza solo por sus
+   dígitos visibles. */
+export function extractAccountDigits(text) {
+  const raw = String(text || '');
+  const full = new Set();
+  for (const match of raw.matchAll(/\d[\d\s-]{8,}\d/g)) {
+    const digits = match[0].replace(/\D/g, '');
+    if (digits.length >= 10 && digits.length <= 18) full.add(digits);
+  }
+  const masked = new Set();
+  for (const match of raw.matchAll(/(?:\*{2,}|·{2,}|…|\.{3,})\s*(\d{3,4})\b/g)) masked.add(match[1]);
+  for (const match of raw.matchAll(/(?:TERMINACION|TERMINA EN|CTA\.?|CUENTA)\D{0,12}(\d{4})\b/gi)) masked.add(match[1]);
+  return { full: [...full], masked: [...masked] };
+}
+/* Periodo impreso en el estado (2.0 · tanda 6): primero el rango
+   «del … al …» o «Periodo: …» si el documento lo trae; si no, el
+   mes mayoritario de los movimientos leídos. Sin ninguna de las
+   dos cosas, null: el periodo se pregunta, no se supone. */
+export function detectPeriodMonth(text, movements = []) {
+  const lines = String(text || '').split(/\r?\n/);
+  for (const line of lines) {
+    if (!/PERIODO|DEL\s+\d|AL\s+\d{1,2}[\/\-]/i.test(plain(line))) continue;
+    const dates = [...line.matchAll(/\b(\d{4})-(\d{2})-(\d{2})\b|\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/g)];
+    if (dates.length) {
+      const first = dates[0];
+      if (first[1]) return first[1] + '-' + first[2];
+      return (first[6].length === 2 ? '20' + first[6] : first[6]) + '-' + first[5].padStart(2, '0');
+    }
+  }
+  const tally = new Map();
+  for (const mv of movements) {
+    const key = String(mv.date || '').slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(key)) tally.set(key, (tally.get(key) || 0) + 1);
+  }
+  let best = null, bestN = 0;
+  for (const [key, n] of tally) if (n > bestN) { best = key; bestN = n; }
+  return best;
+}
 export function parseStatementText(text, month = '') {
   const lines = String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
-  const whole = plain(text);
-  const detected = /BBVA|BANCOMER/.test(whole) ? 'BBVA' : /SANTANDER/.test(whole) ? 'Santander' : '';
+  const detected = detectBankName(text);
   const opening = amountAfterLabel(lines, [/SALDO\s+(INICIAL|ANTERIOR|DE APERTURA)/]);
   const closing = amountAfterLabel(lines, [/SALDO\s+(FINAL|ACTUAL|AL CIERRE|NUEVO)/, /SALDO\s+TOTAL\s+AL/]);
   const credits = amountAfterLabel(lines, [/TOTAL\s+(DE\s+)?(ABONOS|DEPOSITOS|CREDITOS)/, /SUMA\s+(DE\s+)?(ABONOS|DEPOSITOS)/]);
@@ -64,8 +117,15 @@ export function parseStatementText(text, month = '') {
       balanceCents: balance.cents });
   }
   const complete = opening !== null && closing !== null;
+  /* Tanda 6: lo que el documento trae impreso para identificarlo
+     sin teclear nada — banco, cuenta/CLABE o sus dígitos visibles
+     y el periodo. Para un fondo de inversión el «saldo final» ES
+     su valuación del estado: no hacen falta movimientos. */
+  const digits = extractAccountDigits(text);
+  const period = detectPeriodMonth(text, movements);
   return { detected, opening, closing, credits, charges, movements,
-    state: complete ? 'ok' : 'review' };
+    state: complete ? 'ok' : 'review',
+    accountFull: digits.full, accountMasked: digits.masked, period };
 }
 export async function extractPdfTextLines(raw) {
   if (raw.length < 8 || raw.length > 15 * 1024 * 1024 || raw.subarray(0, 5).toString() !== '%PDF-') {

@@ -134,9 +134,76 @@ async function cancelarTramite1310(desc) {
   } catch (error) { toast(error.message, 'error'); }
 }
 
+/* Formato ÚNICO de fecha y hora de la casa (2.0, hallazgo 1.4):
+   «14 nov, 17:02» en 24 h, el de fmtFechaHora — ningún bloque
+   pinta ya su propio formato con hora suelta. localTime da
+   solo la hora, con el mismo criterio. */
 function localDateTime(value) {
   if (!value) return 'Al activar';
-  return new Intl.DateTimeFormat('es-MX', { dateStyle: 'short', timeStyle: 'short' }).format(value);
+  const ms = +new Date(value);
+  return Number.isFinite(ms) ? fmtFechaHora(ms) : String(value);
+}
+function localTime(value) { const s = localDateTime(value); return s.split(', ')[1] || s; }
+/* ===== Puerta: causa viva y caducidad (2.0, M1 / hallazgo 2.1) =====
+   El veredicto de sat_puerta es una FOTO: si el ejecutor no
+   responde, la causa viva es el equipo apagado y ningún texto
+   manda a la e.firma; si la prueba es vieja (>24 h, o anterior
+   a la última señal con el equipo caído), se presenta como foto
+   vieja. El gesto de la e.firma solo nace cuando la causa viva
+   ES la e.firma y la prueba es fresca. Puro: Hoy, Centro SAT y
+   la barra lateral componen con esto mismo. */
+function causaP200(p, e, a = Date.now()) {
+  if (!p?.probada) return { tipo: 'sin-probar', vieja: false, probadaMs: 0 };
+  const probadaMs = +new Date(p.probada), visto = Number(e?.ultimoVisto) || 0;
+  const vieja = !(probadaMs > 0) || a - probadaMs > 86400000 ||
+    (e?.emparejado && !e?.enLinea && visto > probadaMs);
+  const tipo = e?.emparejado && !e.enLinea ? 'equipo' : !e?.emparejado ? 'sin-equipo' : p.ok ? 'abre'
+    : /sin-efirma|credencial|e\.firma/i.test(String(p.errorKind || '') + ' ' + String(p.error || '')) && !vieja ? 'efirma'
+    : vieja ? 'vieja' : 'puerta';
+  return { tipo, vieja, probadaMs };
+}
+function textoP200(p, e, a = Date.now()) {
+  const causa = causaP200(p, e, a);
+  if (causa.tipo === 'sin-probar') return '';
+  const fecha = localDateTime(causa.probadaMs || p.probada);
+  const noAbre = 'NO abre — ' + (p.error || 'sin motivo registrado');
+  if (causa.tipo === 'equipo')
+    return 'Tu equipo no responde desde el ' + localDateTime(e.ultimoVisto) +
+      ': esa es la causa viva. La última prueba es del ' + fecha +
+      (causa.vieja ? ' (foto vieja: puede estar desactualizada)' : '') +
+      '; al volver tu equipo, la puerta se prueba sola antes que nada.';
+  if (causa.tipo === 'vieja')
+    return 'Esto se probó el ' + fecha + '; puede estar desactualizado: ' + (p.ok ? 'entonces abría.' : noAbre);
+  return 'Puerta probada el ' + fecha + ': ' + (p.ok ? 'abre — la e.firma entra sola cada semana' : noAbre);
+}
+/* ===== Semáforo de vigilancia compuesto (2.0, M2 / 1.1) =====
+   puerta (del RFC en ámbito) + ejecutor (última señal) + última
+   descarga: verde SOLO si todo está sano; una pata caída baja a
+   ámbar nombrándola, y la puerta cerrada por e.firma, a rojo.
+   Puro a partir de satData: lo usan Hoy y el Centro SAT. */
+function vigil200(ahora = Date.now()) {
+  if (typeof satData === 'undefined' || !satData) return { nivel: 'dim', titulo: 'Vigilando', detalle: '' };
+  if (satData.rest?.active) return { nivel: 'dim', titulo: '🌙 Descansando', detalle: '' };
+  const puerta = scope ? satData.puerta?.[scope] : null;
+  const ejV = satData.ejecutor;
+  const causa = causaP200(puerta, ejV, ahora);
+  const mal = (nivel, pata, detalle) => ({ nivel, titulo: '⚠ Vigilando con un problema: ' + pata, detalle });
+  if (causa.tipo === 'efirma') return mal('bad', 'la puerta del SAT',
+    'La puerta no abre con la e.firma de este RFC: revísala en el Centro SAT.');
+  if (causa.tipo === 'equipo') return mal('warn', 'tu equipo no responde',
+    'Sin señal desde el ' + localDateTime(ejV.ultimoVisto) +
+      ': las consultas esperan a que abras el ejecutor.');
+  if (causa.tipo === 'sin-equipo') return mal('warn', 'falta tu equipo',
+    'Sin equipo emparejado no hay Buzón ni Declaraciones.');
+  if (causa.tipo === 'vieja' || (puerta?.probada && causa.vieja)) return mal('warn', 'la prueba de la puerta es vieja',
+    'Se probó el ' + localDateTime(puerta.probada) + ' y puede estar desactualizada.');
+  if (puerta?.probada && !puerta.ok) return mal('warn', 'la puerta del SAT',
+    puerta.error || 'La última prueba de la puerta no abrió.');
+  const perfil = (satData.profiles || []).find(p => p.rfc === scope);
+  if (perfil?.lastSatSuccess && ahora - perfil.lastSatSuccess > 8 * 86400000)
+    return mal('warn', 'la última descarga es vieja',
+      'La última descarga con éxito fue el ' + localDateTime(perfil.lastSatSuccess) + '.');
+  return { nivel: 'ok', titulo: '🟢 Vigilando', detalle: 'Descarga y avisos automáticos activos' };
 }
 function selectPerson() {
   check(people.length, 'Agrega un contribuyente antes de configurar el SAT.');
@@ -150,9 +217,13 @@ function restSwitch() {
   const wrap = n('div', undefined, 'rest-switch');
   const active = Boolean(satData.rest?.active);
   const label = n('span', undefined, 'rest-label');
-  label.append(n('strong', active ? '🌙 Descansando' : '🟢 Vigilando'),
+  /* El rótulo es el semáforo COMPUESTO (2.0, M2): sin descanso,
+     «Vigilando» solo sale en verde si puerta, ejecutor y última
+     descarga están sanos; si no, nombra la pata que falla. */
+  const vig = active ? null : vigil200();
+  label.append(n('strong', active ? '🌙 Descansando' : vig.titulo),
     n('small', active ? 'Sin envíos al SAT ni avisos' + (satData.rest.until && satData.rest.until < Date.UTC(2099, 0, 1) ? ' hasta ' + localDateTime(satData.rest.until) : ' (sin fecha: se reactiva con este interruptor)') :
-      'Descarga y avisos automáticos activos'));
+      vig.detalle));
   const toggle = n('button', active ? 'Reactivar' : 'Descansar', 'rest-toggle');
   toggle.type = 'button';
   toggle.setAttribute('aria-pressed', String(active));
@@ -207,7 +278,7 @@ let satQuickRfc = '', satQuickDocs = null;
 function satQuickCuando(doc) {
   const fecha = new Date(doc.issuedAt);
   return fecha.toDateString() === new Date().toDateString()
-    ? 'hoy ' + fecha.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })
+    ? 'hoy ' + localTime(fecha.getTime())
     : 'el ' + localDate(doc.issuedAt);
 }
 /* ===== Parrilla de trámites del Centro SAT (1.29.2) =====
@@ -360,7 +431,7 @@ function satTramiteEstados(d) {
     const pasos = declJob.steps || [];
     salida.declaraciones.progreso = { fase: pasos[pasos.length - 1]?.paso ||
       (declJob.estado === 'en-cola' ? 'En cola: esperando a tu equipo' : 'Trabajando en tu equipo'),
-      desde: declJob.creado || 0 };
+      desde: declJob.creado || 0, estado: declJob.estado };
   } else if (d.declProgreso?.running)
     salida.declaraciones.progreso = { fase: d.declProgreso.step || 'Recuperando declaraciones…', desde: d.declProgreso.at || 0 };
   const buzonJob = jobActivo(['buzon-listar']);
@@ -396,14 +467,13 @@ function satTramiteEstados(d) {
     const pasos = buzonJob.steps || [];
     salida.buzon.progreso = { fase: pasos[pasos.length - 1]?.paso ||
       (buzonJob.estado === 'en-cola' ? 'En cola: esperando a tu equipo' : 'Trabajando en tu equipo'),
-      desde: buzonJob.creado || 0 };
+      desde: buzonJob.creado || 0, estado: buzonJob.estado };
   } else if (d.trib?.progreso?.running)
     salida.buzon.progreso = { fase: d.trib.progreso.step || 'Consultando el buzón…', desde: d.trib.progreso.at || 0 };
-  /* La puerta auto-probada (1.30.0): su veredicto, en el detalle
-     de esta tarjeta; si nunca se probó, no se dice nada. */
-  if (d.puerta?.probada)
-    salida.buzon.detalle = 'Puerta probada el ' + localDateTime(d.puerta.probada) + ': ' +
-      (d.puerta.ok ? 'abre — la e.firma entra sola cada semana' : 'NO abre — ' + (d.puerta.error || 'sin motivo registrado'));
+  /* La puerta auto-probada: su veredicto, en el detalle de esta
+     tarjeta, con causa viva y caducidad (2.0, M1) — la foto vieja
+     no sentencia y el equipo apagado manda sobre la e.firma. */
+  if (d.puerta?.probada) salida.buzon.detalle = textoP200(d.puerta, d.ejecutor);
   return salida;
 }
 let satGridDocs = null;
@@ -462,8 +532,15 @@ function satCardGrid() {
   const tarjetas = {};
   for (const [clave, glyph, nombre] of DEFINICIONES) {
     const card = n('article', undefined, 'tramite-card');
+    /* Identidad por RFC + destino exacto (2.0 · tanda 2,
+       piezas 5 y 7): la cabecera de la tarjeta lleva el
+       medallón de color del contribuyente de la parrilla, y
+       la tarjeta se marca como destino de los «Ver» de Hoy. */
+    card.dataset.destino200b = clave;
     const head = n('div', undefined, 'tramite-head');
     head.append(icon(glyph), n('strong', nombre));
+    if (typeof medallon200b === 'function')
+      head.append(medallon200b(rfc, personas.find(p => p.id === rfc)?.name || rfc));
     /* Etiqueta del foco (1.31.1): la tarjeta que necesita a Paco
        lo dice con palabras, no solo con el color. */
     const focoTag = n('span', 'Te necesita', 'tramite-foco-tag');
@@ -1208,6 +1285,17 @@ function requestDialog(preset) {
   }
   const type = select([['cfdi', 'CFDI (XML completos)'], ['metadata', 'Solo el listado (los datos de cada factura, sin bajar los XML)']], 'cfdi');
   if (preset?.type) type.value = preset.type;
+  /* Tanda 7B (25): sin preselección de hueco, la hoja abre con el
+     último rango usado de ese RFC y sentido, editable como siempre. */
+  if (!preset && typeof satToken !== 'undefined' && satToken) {
+    const cargarRango200h = () => satApi('descarga-rango200h?rfc=' + encodeURIComponent(person.value) +
+      '&direction=' + encodeURIComponent(direction.value)).then(d => {
+      if (d?.rango?.desde) { start.value = d.rango.desde; if (d.rango.hasta) end.value = d.rango.hasta; refreshPlan(); }
+    }).catch(() => {});
+    person.addEventListener('change', cargarRango200h);
+    direction.addEventListener('change', cargarRango200h);
+    cargarRango200h();
+  }
   /* Periodos frecuentes en un clic (1.6.10): sin teclear fechas. */
   const quick = n('div', undefined, 'actions');
   const fmt = date => date.toISOString().slice(0, 10);
@@ -1248,6 +1336,7 @@ function requestDialog(preset) {
     field('Tipo de solicitud', type), field('Planificador 5002', planBox), field('Periodo frecuente', quick),
     field('Fecha inicial', start), field('Fecha final', end)], async () => {
     const payload = { rfc: person.value, direction: direction.value, start: start.value, end: end.value, type: type.value };
+    satApi('descarga-rango200h', { rfc: person.value, direction: direction.value, desde: start.value, hasta: end.value }).catch(() => {});
     /* Desde el Libro, «Pedir con el cierre exacto» nace ya con la variante. */
     if (preset?.shiftEnd) payload.shiftEnd = 1;
     for (;;) {

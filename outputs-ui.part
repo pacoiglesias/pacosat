@@ -90,6 +90,9 @@ function salidasScreen() {
      construye el servidor con las cifras verdad; aquí solo se piden.
      Sin servidor se dice claro y no se finge ninguna descarga. */
   if (satToken) wrap.append(salidasDisenadasPanel());
+  /* Tanda 7A: cierre guiado con semáforo real, ZIP del mes,
+     envío al despacho, pólizas, candado y panel de valor. */
+  if (satToken) { wrap.append(cierre200gPanel()); wrap.append(valor200gPanel()); }
   else wrap.append(panel('Salidas por destino (PDF y Excel)', 'Los PDF de papel y los Excel reales los construye el servidor de PacoSAT: conecta la app en modo servidor (NAS) para descargarlos desde aquí.'));
   /* Reporte Mano Fil (1.16.0, P12): su panel propio, tras las
      salidas diseñadas; sin servidor no se finge la descarga. */
@@ -341,19 +344,43 @@ function mailPanel() {
   const compose = n('button', 'Escribir correo', 'primary');
   compose.onclick = () => composeMailDialog();
   panelEl.append(compose);
+  /* Correos y avisos · Enviados (2.0 · E10): la lista de
+     mail_sends con asunto, destinatario, RFC, hora en el formato
+     de la casa, tipo y estado de entrega (con su motivo en
+     llano); tocar un envío enseña su contenido — el texto que
+     salió y, si se guardó, su HTML —. Solo lectura: nada se
+     reenvía desde aquí. */
+  const enviados = panel('Correos y avisos · Enviados',
+    'Todo lo que salió de esta instalación, con su estado de entrega. Toca un envío para ver su contenido. Solo lectura.');
   const log = n('div');
-  panelEl.append(log);
+  enviados.append(log);
+  panelEl.append(enviados);
   (async () => {
     try {
       const data = await satApi('mail/log');
       log.replaceChildren();
       if (!data.sends.length) { log.append(n('p', 'Todavía no se ha enviado ningún correo desde la app.', 'muted')); return; }
-      for (const send of data.sends.slice(0, 20)) {
+      for (const send of data.sends.slice(0, 50)) {
         const row = n('div', undefined, 'cp-row');
+        row.dataset.mailSend200c = String(send.id);
+        const detalle = n('div');
+        detalle.hidden = true;
+        const verHtml = send.html ? action('Ver el HTML que salió', () => {
+          const url = URL.createObjectURL(new Blob([send.html], { type: 'text/html' }));
+          window.open(url, '_blank');
+        }, 'soft') : null;
+        detalle.append(n('pre', send.body || '(este envío no guardó su texto)'));
+        if (verHtml) detalle.append(verHtml);
+        const cabeza = n('button', '', 'cell-link');
+        cabeza.type = 'button';
+        cabeza.textContent = send.subject + ' → ' + send.recipients;
+        cabeza.onclick = () => { detalle.hidden = !detalle.hidden; };
         row.append(statusPill(send.ok ? 'ok' : 'bad', send.ok ? 'Enviado' : 'Falló'),
           n('span', localDateTime(send.at), 'muted'),
-          n('span', send.subject + ' → ' + send.recipients + (send.error ? ' · ' + send.error : '')));
-        log.append(row);
+          n('span', (send.kind || 'correo') + (send.rfc ? ' · ' + send.rfc : ''), 'muted'),
+          cabeza,
+          n('span', send.error ? 'Motivo: ' + send.error : '', 'muted'));
+        log.append(row, detalle);
       }
     } catch { /* sin servidor */ }
   })();
@@ -391,6 +418,33 @@ function autoReportsPanel() {
     };
     body.append(build('nora', 'Informe mensual a la contadora', true), build('weekly', 'Resumen semanal (lunes)', false),
       build('manofil', 'Reporte Mano Fil mensual (Rodrigo y José Javier)', true));
+    /* Resumen de viernes (2.0 · A5): la semana fiscal en 5 líneas
+       por RFC. Su forma trae día de la semana (1=lunes … 5=viernes);
+       sin configuración guardada, el servidor lo activa solo si el
+       correo de avisos ya está configurado. */
+    {
+      const item = config.friday || {};
+      const form = n('div', undefined, 'satdoc-form');
+      const enabled = input('checkbox', { checked: Boolean(item.enabled ?? (typeof satData !== 'undefined' && satData?.mail?.enabled)) });
+      const label = n('label', undefined, 'switch-line');
+      label.append(enabled, n('span', 'Resumen de viernes (la semana fiscal en 5 líneas, por RFC)'));
+      form.append(label);
+      const weekdayInput = input('number', { value: item.weekday || 5, min: 1, max: 7, 'aria-label': 'Día de la semana (1 es lunes)' });
+      form.append(n('span', 'Día de la semana (1 = lunes) '), weekdayInput);
+      const hourInput = input('number', { value: item.hour ?? 8, min: 0, max: 23, 'aria-label': 'Hora' });
+      form.append(n('span', ' a las '), hourInput, n('span', ':00'));
+      const recipients = input('text', { value: item.recipients || '', placeholder: 'Destinatarios (vacío = tu correo de avisos)' });
+      form.append(recipients);
+      const save = n('button', 'Guardar', 'soft');
+      save.onclick = async () => {
+        const next = { ...config, friday: { enabled: enabled.checked, weekday: Number(weekdayInput.value) || 5,
+          hour: Number(hourInput.value), recipients: recipients.value } };
+        try { fill(await satApi('reports/config', next)); toast('Informe automático guardado.', 'ok'); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      form.append(save);
+      body.append(form);
+    }
     const nowBtn = n('button', 'Enviar ahora el paquete del mes pasado', 'soft');
     nowBtn.onclick = async () => {
       const prev = new Date(); prev.setMonth(prev.getMonth() - 1);
@@ -461,4 +515,293 @@ async function exportFull(year) {
     download(new Blob([zipStore(entries)], { type: 'application/zip' }), 'PacoSAT-exportacion' + (year ? '-' + year : '-completa') + '.zip');
     toast('Exportación lista: ' + (entries.length - 1) + ' archivos.', 'ok');
   } catch (error) { toast(error.message, 'error'); }
+}
+
+/* ===== Tanda 7A (2.0) · Cierre guiado, ZIP del mes, panel de
+   valor, pólizas y candado — todo se pide al servidor, que es
+   quien comprueba contra los datos; aquí no se calcula nada. */
+function cierre200gPanel() {
+  const panelEl = panel('Cierre guiado del mes', 'El asistente comprueba cada paso contra los datos del expediente (cobertura, metadatos, vigilancia, Dinero y Bancos): nada se marca a mano. Con todo en verde, el mes se cierra y sus informes quedan generados.');
+  const rfc = () => scope || people[0]?.id || '';
+  const out = n('div');
+  const cargar = async () => {
+    out.replaceChildren(n('p', 'Comprobando el mes contra el expediente…', 'muted'));
+    try {
+      const est = await satApi('cierre200g?rfc=' + encodeURIComponent(rfc()) + '&month=' + encodeURIComponent(OUT.month));
+      out.replaceChildren();
+      for (const paso of est.pasos) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill(paso.ok ? 'ok' : 'bad', paso.ok ? 'En verde' : 'Falta'),
+          n('span', paso.label + ' — ' + paso.detalle));
+        out.append(row);
+      }
+      if (est.cerrado) out.append(n('p', 'Mes cerrado el ' + localDate(est.cerradoAt) + (est.cerradoPor ? ' por ' + est.cerradoPor : '') + '.', 'ok-text'));
+      const acciones = n('div', undefined, 'sat-actions');
+      const cerrar = n('button', est.cerrado ? 'Mes cerrado' : 'Cerrar el mes', 'primary');
+      cerrar.disabled = !est.completo || est.cerrado;
+      cerrar.onclick = async () => {
+        try { const r = await satApi('cierre200g/cerrar', { rfc: rfc(), month: OUT.month });
+          toast('Mes cerrado: sus informes quedaron generados al cerrar.', 'ok'); cargar(); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      const zip = n('button', 'El mes en un ZIP', 'soft');
+      zip.onclick = () => salidaDescargar('salidas200g/zip-mes', { rfc: rfc(), month: OUT.month }, zip);
+      const desp = n('button', 'Enviar al despacho', 'soft');
+      desp.onclick = async () => {
+        desp.disabled = true;
+        try { const r = await satApi('salidas200g/enviar-despacho', { rfc: rfc(), month: OUT.month });
+          if (r.enviado) toast('Enviado al despacho: ' + r.recipients, 'ok');
+          else { download(new Blob([decode64(r.preparado.content)], { type: 'application/zip' }), r.preparado.name);
+            toast(r.nota, 'ok'); }
+        } catch (error) { toast(error.message, 'error'); }
+        finally { desp.disabled = false; }
+      };
+      const pol = n('button', 'Para el contador (pólizas)', 'soft');
+      pol.onclick = () => salidaDescargar('salidas200g/polizas', { rfc: rfc(), month: OUT.month }, pol);
+      acciones.append(cerrar, zip, desp, pol);
+      out.append(acciones);
+      const inf = await satApi('informes200g?rfc=' + encodeURIComponent(rfc()) + '&month=' + encodeURIComponent(OUT.month)).catch(() => null);
+      if (inf?.informe) {
+        const fila = n('div', undefined, 'cp-row');
+        fila.append(n('span', 'Informes del mes: ' + inf.informe.texto + (inf.informe.desactualizado ? ' · DESACTUALIZADO (los datos cambiaron tras el cierre)' : '')));
+        const servir = n('button', 'Descargar el cierre guardado', 'soft');
+        servir.onclick = () => salidaDescargar('informes200g/servir', { rfc: rfc(), month: OUT.month, cual: 'cierre' }, servir);
+        const regen = n('button', 'Regenerar informes', 'soft');
+        regen.onclick = async () => { try { await satApi('informes200g/regenerar', { rfc: rfc(), month: OUT.month }); toast('Informes regenerados con los datos de ahora.', 'ok'); cargar(); } catch (e) { toast(e.message, 'error'); } };
+        fila.append(servir, regen);
+        out.append(fila);
+      }
+      /* Candado del ejercicio (20#12) */
+      const year = OUT.month.slice(0, 4);
+      const filaCandado = n('div', undefined, 'cp-row');
+      filaCandado.append(n('span', 'Ejercicio ' + year + ': ' + (est.ejercicioCerrado ? 'CERRADO — sus escrituras están bloqueadas en el servidor.' : 'abierto.')));
+      const candadoBtn = n('button', est.ejercicioCerrado ? 'Desbloquear ejercicio ' + year : 'Cerrar ejercicio ' + year, 'soft');
+      candadoBtn.onclick = async () => {
+        if (est.ejercicioCerrado) {
+          if (!confirm('¿Desbloquear el ejercicio ' + year + ' de ' + rfc() + '? Sus datos se podrán tocar otra vez y el gesto queda en el Registro.')) return;
+          try { await satApi('ejercicios200g/desbloquear', { rfc: rfc(), year, confirmar: true }); toast('Ejercicio desbloqueado (registrado).', 'ok'); cargar(); }
+          catch (e) { toast(e.message, 'error'); }
+        } else {
+          if (!confirm('¿Cerrar el ejercicio ' + year + ' de ' + rfc() + '? El servidor bloqueará notas, archivar, marcas de pago, importaciones y estados de ese año.')) return;
+          try { await satApi('ejercicios200g/cerrar', { rfc: rfc(), year }); toast('Ejercicio cerrado: escrituras bloqueadas.', 'ok'); cargar(); }
+          catch (e) { toast(e.message, 'error'); }
+        }
+      };
+      filaCandado.append(candadoBtn);
+      out.append(filaCandado);
+    } catch (error) { out.replaceChildren(n('p', 'No se pudo comprobar: ' + error.message, 'error-text')); }
+  };
+  const ver = n('button', 'Comprobar el cierre del mes', 'soft');
+  ver.onclick = cargar;
+  panelEl.append(ver, out);
+  return panelEl;
+}
+function valor200gPanel() {
+  const panelEl = panel('Lo que PacoSAT ha cazado (panel de valor)', 'Contado SOLO de sus registros: cada cifra enseña su lista detrás. Nada estimado ni proyectado: lo que no sale de un registro, no va.');
+  const perSel = select([['todo', 'Todo el histórico'], ['anio', 'Este año']], 'todo', 'Periodo');
+  const out = n('div');
+  const ver = n('button', 'Ver el panel de valor', 'soft');
+  ver.onclick = async () => {
+    out.replaceChildren(n('p', 'Contando desde los registros…', 'muted'));
+    try {
+      const v = await satApi('valor200g?periodo=' + encodeURIComponent(perSel.value));
+      out.replaceChildren();
+      const filas = [
+        ['Cancelaciones detectadas a tiempo', v.cancelaciones.numero + ' · $' + v.cancelaciones.suma,
+          v.cancelaciones.detalle.map(d => d.fecha + ' · ' + d.uuid + ' · $' + d.total).join('\n')],
+        ['Emisores en listas 69-B (EFOS) marcados', v.efos.numero + ' · $' + v.efos.suma,
+          v.efos.detalle.map(d => d.rfc + ' · ' + d.lista + ' · ' + d.comprobantes + ' comprobante(s) · $' + d.total).join('\n')],
+        ['Plazos del Buzón atendidos (abiertas o archivadas)', String(v.buzon.cumplidos),
+          v.buzon.detalle.map(d => d.fecha + ' · ' + d.rfc + ' · ' + d.asunto).join('\n')],
+        ['Descargas terminadas', v.descargas.solicitudesTerminadas + ' solicitudes · ' + v.descargas.cfdiBajados + ' CFDI bajados', ''],
+        ['Último ensayo de restauración', v.respaldosProbados ? (v.respaldosProbados.ok ? 'Pasó' : 'NO pasó') + ' · ' + localDate(v.respaldosProbados.at) : 'Sin ensayos registrados', v.respaldosProbados?.detalle || '']
+      ];
+      for (const [label, cifra, detalle] of filas) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(n('span', label + ': '), n('strong', cifra));
+        if (detalle) { const pre = n('pre', detalle); pre.style.whiteSpace = 'pre-wrap'; row.append(pre); }
+        out.append(row);
+      }
+    } catch (error) { out.replaceChildren(n('p', 'No se pudo contar: ' + error.message, 'error-text')); }
+  };
+  panelEl.append(fieldWrap('Periodo', perSel), ver, out);
+  return panelEl;
+}
+
+/* ===== Tanda 7A · Webhooks salientes, calendario fiscal vivo y
+   restauración guiada (viven en esta parte diferida; Ajustes los
+   monta con el patrón de montaje perezoso de siempre). */
+function webhooks200gPanel() {
+  const panelEl = panel('Webhooks salientes', 'Avisos automáticos a otro sistema cuando pasa algo en PacoSAT: CFDI nuevo, cancelación detectada, opinión descargada o novedad en el Buzón. Cada entrega va firmada (HMAC-SHA256) y queda registrada aquí; un webhook fallido nunca bloquea el suceso.');
+  const out = n('div');
+  const urlIn = input('url', { placeholder: 'https://tu-sistema.example/webhook', 'aria-label': 'Dirección del webhook' });
+  const eventosSel = select([['cfdi-nuevo', 'CFDI nuevo'], ['cancelacion-detectada', 'Cancelación detectada'],
+    ['opinion-descargada', 'Opinión descargada'], ['buzon-nuevo', 'Novedad en el Buzón']], 'cfdi-nuevo', 'Evento');
+  const crear = n('button', 'Crear webhook', 'soft');
+  crear.onclick = async () => {
+    try { const r = await satApi('webhooks200g', { url: urlIn.value.trim(), eventos: [eventosSel.value] });
+      toast('Webhook creado. Su secreto (se enseña una sola vez): ' + r.secret, 'ok'); pintar(); }
+    catch (e) { toast(e.message, 'error'); }
+  };
+  const pintar = async () => {
+    out.replaceChildren(n('p', 'Leyendo webhooks y entregas…', 'muted'));
+    try {
+      const d = await satApi('webhooks200g');
+      out.replaceChildren();
+      if (!d.webhooks.length) out.append(n('p', 'Sin webhooks todavía.', 'muted'));
+      for (const h of d.webhooks) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill(h.activo ? 'ok' : 'dim', h.activo ? 'Activo' : 'Apagado'),
+          n('span', h.url + ' · eventos: ' + h.eventos.join(', ')));
+        const probar = n('button', 'Enviar prueba', 'soft');
+        probar.onclick = async () => { try { await satApi('webhooks200g/probar', { evento: h.eventos[0] || 'cfdi-nuevo' }); toast('Prueba enviada: mira el registro de entregas.', 'ok'); pintar(); } catch (e) { toast(e.message, 'error'); } };
+        const toggle = n('button', h.activo ? 'Apagar' : 'Encender', 'soft');
+        toggle.onclick = async () => { try { await satApi('webhooks200g/estado', { id: h.id, activo: !h.activo }); pintar(); } catch (e) { toast(e.message, 'error'); } };
+        row.append(probar, toggle);
+        out.append(row);
+      }
+      if (d.entregas.length) {
+        out.append(n('strong', 'Últimas entregas'));
+        for (const e of d.entregas.slice(0, 10)) {
+          const row = n('div', undefined, 'cp-row');
+          row.append(statusPill(e.ok ? 'ok' : 'bad', e.ok ? 'Entregada' : 'Falló'),
+            n('span', e.evento + ' · ' + localDate(e.at) + ' · HTTP ' + (e.estado || '—') + ' · ' + e.intentos + ' intento(s)' + (e.error ? ' · ' + e.error : '')));
+          out.append(row);
+        }
+      }
+    } catch (e) { out.replaceChildren(n('p', e.message, 'error-text')); }
+  };
+  panelEl.append(fieldWrap('Dirección (URL)', urlIn), fieldWrap('Evento', eventosSel), crear, out);
+  pintar();
+  return panelEl;
+}
+function ics200gPanel() {
+  const panelEl = panel('Calendario fiscal vivo (ICS)', 'Una dirección por RFC para suscribir tu calendario a los vencimientos que PacoSAT ya conoce (declaraciones, Buzón, e.firma). Se genera de los datos vivos en cada petición: nunca se queda viejo. Quien tenga la dirección puede ver esos vencimientos; regenerarla revoca la anterior.');
+  const rfcSel = select(people.map(p => [p.id, (p.name || p.id) + ' · ' + p.id]), scope || people[0]?.id || '', 'Contribuyente');
+  const out = n('div');
+  const ver = n('button', 'Enseñar la dirección', 'soft');
+  ver.onclick = async () => {
+    out.replaceChildren(n('p', 'Pidiendo la dirección…', 'muted'));
+    try {
+      const d = await satApi('ics200g?rfc=' + encodeURIComponent(rfcSel.value));
+      out.replaceChildren();
+      const urlTxt = n('p', d.url);
+      const copiar = n('button', 'Copiar la dirección', 'soft');
+      copiar.onclick = () => { try { navigator.clipboard.writeText(d.url); toast('Dirección copiada.', 'ok'); } catch { toast('Copia la dirección a mano.', 'error'); } };
+      const regen = n('button', 'Regenerar (revoca la anterior)', 'soft');
+      regen.onclick = async () => {
+        if (!confirm('¿Regenerar la dirección del calendario de ' + rfcSel.value + '? La anterior deja de funcionar al momento.')) return;
+        try { const r = await satApi('ics200g/regenerar', { rfc: rfcSel.value }); toast('Dirección nueva generada: la anterior quedó revocada.', 'ok'); out.replaceChildren(n('p', r.url)); }
+        catch (e) { toast(e.message, 'error'); }
+      };
+      const row = n('div', undefined, 'sat-actions'); row.append(copiar, regen);
+      out.append(urlTxt, row);
+    } catch (e) { out.replaceChildren(n('p', e.message, 'error-text')); }
+  };
+  panelEl.append(fieldWrap('Contribuyente', rfcSel), ver, out);
+  return panelEl;
+}
+function restaurar200gPanel() {
+  const panelEl = panel('Restaurar un respaldo (guiado)', 'Eliges el respaldo y PacoSAT hace el resto: ANTES de tocar nada crea un respaldo de seguridad del estado actual (obligatorio, sin opción de saltarlo), restaura y verifica con los conteos cruzados. Si la verificación no cuadra, te ofrece volver al respaldo de seguridad.');
+  const out = n('div');
+  const cargar = async () => {
+    out.replaceChildren(n('p', 'Listando los respaldos guardados…', 'muted'));
+    try {
+      const d = await satApi('respaldos200g');
+      out.replaceChildren();
+      if (!d.configurado) { out.append(n('p', 'El respaldo programado no está configurado en esta instalación: sin carpeta de respaldos no hay nada que restaurar desde aquí.', 'muted')); return; }
+      if (!d.respaldos.length) { out.append(n('p', 'No hay respaldos guardados todavía.', 'muted')); return; }
+      for (const r of d.respaldos) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(n('span', 'Respaldo del ' + r.stamp + ' · ' + r.destino + ' · ' + Math.max(1, Math.round(r.bytes / 1024)) + ' KB' +
+          (r.seguridad ? ' · de seguridad (de una restauración anterior)' : '')));
+        if (!r.seguridad) {
+          const btn = n('button', 'Restaurar este', 'soft');
+          btn.onclick = async () => {
+            if (!confirm('Se va a reemplazar el expediente actual por el respaldo del ' + r.stamp + '. Antes, PacoSAT guardará un respaldo de seguridad del estado actual. ¿Seguir?')) return;
+            btn.disabled = true; btn.textContent = 'Restaurando (con su respaldo de seguridad previo)…';
+            try { const res = await satApi('respaldos200g/restaurar', { stamp: r.stamp, confirmar: true });
+              toast(res.aviso, res.ok ? 'ok' : 'error'); cargar(); render(); }
+            catch (e) { toast(e.message, 'error'); }
+            finally { btn.disabled = false; btn.textContent = 'Restaurar este'; }
+          };
+          row.append(btn);
+        }
+        out.append(row);
+      }
+      const volver = n('button', 'Volver al respaldo de seguridad', 'soft');
+      volver.onclick = async () => {
+        if (!confirm('¿Volver al estado que había justo antes de la última restauración guiada?')) return;
+        try { const res = await satApi('respaldos200g/volver-seguridad', {}); toast(res.ok ? 'De vuelta en el respaldo de seguridad, verificado.' : 'La vuelta se aplicó pero la verificación marca diferencias.', res.ok ? 'ok' : 'error'); render(); }
+        catch (e) { toast(e.message, 'error'); }
+      };
+      out.append(volver);
+    } catch (e) { out.replaceChildren(n('p', e.message, 'error-text')); }
+  };
+  const ver = n('button', 'Ver los respaldos', 'soft');
+  ver.onclick = cargar;
+  panelEl.append(ver, out);
+  return panelEl;
+}
+
+/* ===== Tanda 7A · Compartir en un toque (A7), subir un papel
+   en 2 toques (F7) y arrastrar y soltar (F13). */
+async function compartir200g(kind, id) {
+  try {
+    const d = await satApi('compartir200g', { kind, id });
+    composeMailDialog({ to: d.preparado.to, subject: d.preparado.subject,
+      text: d.preparado.text, attachments: d.preparado.attachments });
+    toast('Correo preparado con su ficha y adjunto: el envío es gesto tuyo.', 'ok');
+  } catch (e) { toast(e.message, 'error'); }
+}
+function papelTipoSugerido200g(nombre) {
+  const bajo = String(nombre || '').toLowerCase();
+  if (/constancia|csf|situacion fiscal/.test(bajo)) return 'Constancia / CIF';
+  if (/opinion|32-?d|cumplimiento/.test(bajo)) return 'Opinión de cumplimiento';
+  if (/acuse|declaracion/.test(bajo)) return 'Acuse';
+  if (/estado de cuenta/.test(bajo)) return 'Estado de cuenta';
+  return 'Documento';
+}
+async function papelClasificar200g(file) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let bin = '';
+  for (let i = 0; i < buf.length; i += 32768) bin += String.fromCharCode(...buf.subarray(i, i + 32768));
+  const content = btoa(bin);
+  const rfcSel = select(people.map(p => [p.id, (p.name || p.id) + ' · ' + p.id]),
+    scope && people.some(p => p.id === scope) ? scope : (people[0]?.id || ''), 'Contribuyente');
+  const tipos = [...new Set(['Documento', 'Constancia / CIF', 'Opinión de cumplimiento', 'Acuse', 'Estado de cuenta', ...(typeof DOCUMENTS !== 'undefined' ? DOCUMENTS : [])])];
+  const tipoSel = select(tipos.map(t => [t, t]), papelTipoSugerido200g(file.name), 'Tipo de documento');
+  dialog('Archivar este papel', [
+    n('p', '«' + file.name + '» — PacoSAT sugiere el contribuyente del ámbito y el tipo por su nombre; corrígelos aquí si no son, y al guardar queda archivado en Documentos.'),
+    field('Contribuyente', rfcSel), field('Tipo', tipoSel)
+  ], async () => {
+    const r = await satApi('documentos200g/subir-papel', { name: file.name, content, rfc: rfcSel.value, kind: tipoSel.value });
+    toast('Papel archivado como ' + r.kind + ' de ' + r.rfc + '.', 'ok');
+    if (typeof refresh === 'function') await refresh();
+    if (page === 'documents') render();
+  }, 'Archivar el papel');
+}
+function subirPapel200g() {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = '.pdf,image/*';
+  inp.onchange = () => { if (inp.files?.[0]) papelClasificar200g(inp.files[0]).catch(e => toast(e.message, 'error')); };
+  inp.click();
+}
+/* Arrastrar y soltar sobre la app (F13): los XML/ZIP entran por
+   el importador de siempre; un PDF suelto abre la tarjeta de
+   clasificación del papel. Se registra una sola vez aunque la
+   parte diferida se precargue en reposo. */
+if (typeof window !== 'undefined' && !window.__papel200gDnD) {
+  window.__papel200gDnD = true;
+  window.addEventListener('dragover', e => { e.preventDefault(); });
+  window.addEventListener('drop', e => {
+    e.preventDefault();
+    const files = [...(e.dataTransfer?.files || [])];
+    if (!files.length) return;
+    const xmls = files.filter(f => /\.(xml|zip)$/i.test(f.name));
+    const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || /^image\//.test(f.type));
+    if (xmls.length && typeof importBatch === 'function')
+      importBatch(xmls).catch(error => announce(error.message, true));
+    for (const f of pdfs) papelClasificar200g(f).catch(error => toast(error.message, 'error'));
+  });
 }

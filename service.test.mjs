@@ -116,7 +116,8 @@ try {
   assert.equal((await call('/api/run-now', { rfc })).status, 200);
   assert.equal((await call('/api/mail/test', {})).status, 200);
   assert.equal(sent.length, 2);
-  assert.equal(sent[1].subject, 'PacoSAT · Correo de prueba');
+  assert.equal(sent[1].subject, 'PacoSAT · Correo de prueba (EJEMPLO)'); /* 2.0·T3 (6.5): la prueba lleva la plantilla real y va marcada EJEMPLO */
+  assert.ok(sent[1].html && sent[1].html.includes('<svg'), 'la prueba sale con la plantilla madre en HTML');
   assert.equal((await call('/api/lock', { rfc })).status, 200);
   assert.equal((await call('/api/run-now', { rfc })).status, 409); /* bloqueado: no se envía nada */
   time += 60 * 60000;

@@ -314,22 +314,37 @@ const recXml = (uuid, fecha, extra = {}) => ({ name: uuid + '.xml',
   console.log('OK 1.22.0 D — Ajustes › Correo manda: apagado = cero correos de novedades; encendido = sale el pendiente.');
 }
 
-/* ===== E · El tope horario compartido detiene el sexto aviso ===== */
+/* ===== E · El tope horario compartido detiene el sexto aviso =====
+   Vehículo actualizado en la tanda 4 (2.0): el escenario original
+   (seis pasadas de la carpeta vigilada el mismo día) ya no puede
+   alcanzar el tope, porque O8 (tanda 3, requisito de Paco) funde
+   las pasadas del mismo día y la misma cesta en UN envío diario,
+   y la recuperación mensual es un programa de la instalación, no
+   por RFC. El tope en sí no cambió — presupuesto compartido de 5
+   correos de suceso por hora, despachado entero en la misma
+   pasada: los que caben salen individuales y el resto se agrupa
+   en el resumen del día — y se ejerce con seis nacimientos de
+   aviso el mismo día (seis saldos nuevos vencidos). */
 {
-  const dir = mkdtempSync(join(tmpdir(), 'pacosat-1220-tope-'));
-  mkdirSync(dir, { recursive: true });
-  const h = harness(fakeSat(), { watchDir: dir, inboxParser: FixtureParser, watchSettleMs: 0 });
+  const h = harness(fakeSat());
   await setupMail(h);
-  for (let i = 1; i <= 6; i++) {
-    const uuid = '12200000-004' + i + '-404' + i + '-804' + i + '-00000000014' + i;
-    writeFileSync(join(dir, 'lote' + i + '.xml'), xmlCfdi({ uuid, fecha: '2026-11-0' + i + 'T10:00:00',
-      emisor: EMISOR, receptor: RFC, total: '100.00', serie: 'E', folio: String(i) }));
-    await h.service.inboxTick(h.time);
-    h.time += 3 * MIN; await h.service.tick();
-  }
-  assert.equal(newsMails(h.mails).length, 5,
+  h.time += 1 * MIN; await h.service.tick();   /* primera evaluación: nace la línea base */
+  const lote = [];
+  for (let i = 1; i <= 6; i++)
+    lote.push({ id: '12200000-006' + i + '-406' + i + '-806' + i + '-00000000016' + i,
+      date: '2026-09-01', kind: 'I',
+      from: { rfc: 'NUEV030303AAA', name: 'EMPRESA NUEV030303AAA' },
+      to: { rfc: RFC, name: 'JUGUETE SA' },
+      total: '500.00', currency: 'MXN', fiscal: { paymentMethod: 'PPD', transferred: [], withheld: [] } });
+  const seed = await h.call('POST', '/api/storage', { batch: { invoices: lote } });
+  assert.equal(seed.status, 200);
+  h.time += 3 * MIN; await h.service.tick();
+  const nacimientos = h.mails.filter(m => String(m.subject || '').includes('Nueva alerta'));
+  assert.equal(nacimientos.length, 5,
     'cinco avisos en la hora salen; el sexto lo detiene el tope compartido y va al resumen del día');
+  h.time += 3 * MIN; await h.service.tick();
+  assert.equal(h.mails.filter(m => String(m.subject || '').includes('Nueva alerta')).length, 5,
+    'el sexto no gotea en el ciclo siguiente: quedó agrupado en el resumen');
   h.service.close();
-  rmSync(dir, { recursive: true, force: true });
-  console.log('OK 1.22.0 E — tope de 5 correos/hora compartido con los avisos de suceso: el sexto no sale como correo.');
+  console.log('OK 1.22.0 E — tope de 5 correos/hora compartido entre sucesos y nacimientos: el sexto no sale como correo.');
 }

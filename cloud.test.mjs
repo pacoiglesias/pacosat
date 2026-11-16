@@ -573,8 +573,11 @@ try {
      el espejo) añaden sus dos notificaciones propias. */
   assert.equal(certMails().length, 4);
   assert.ok(certMails().some(mail => /vencida o vence hoy/.test(mail.text || '')), 'el resumen trae la vencida');
-  assert.equal(certBirths().length, 5, 'cada aviso del escenario notificó al nacer, una vez (90, 60, 30, 0 y el espejo)');
-  console.log('OK: caducidad de e.firma leída del certificado real, persistida y con avisos por umbral (90/60/30/0) sin duplicados, agrupados en el resumen diario.');
+  /* Tanda 7B (pieza 8): los umbrales ganan el hito de 7 días, así que
+     el último ciclo trae UN nacimiento más (el del umbral 7, que cae
+     entre el 30 y el 0): 90, 60, 30, 7, 0 y el espejo = 6. */
+  assert.equal(certBirths().length, 6, 'cada aviso del escenario notificó al nacer, una vez (90, 60, 30, 7, 0 y el espejo)');
+  console.log('OK: caducidad de e.firma leída del certificado real, persistida y con avisos por umbral (90/60/30/7/0) sin duplicados, agrupados en el resumen diario.');
 } finally { certService.close(); }
 
 // --- 1.6.5: historia de un CFDI desde los datos guardados ---
@@ -652,7 +655,9 @@ const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_
     /* El nombre del remitente llega saneado (los caracteres de marcado
        se eliminan y queda texto inerte, seguro para la cabecera From) y
        el resto intacto tras un reinicio completo sobre el mismo volumen. */
-    assert.deepEqual(status.settings, { installName: 'Mano Fil · PacoSAT', senderName: 'PacoSAT bMano/b Fil', accent: 'azul', hasLogo: true });
+    /* rfcColors (2.0 · tanda 2, pieza 7): el mapa de color por
+       RFC viaja en los ajustes servidos; vacío sin asignaciones. */
+    assert.deepEqual(status.settings, { installName: 'Mano Fil · PacoSAT', senderName: 'PacoSAT bMano/b Fil', accent: 'azul', hasLogo: true, rfcColors: {} });
     assert.ok(status.serverStartedAt > 0);
     /* El sello de modificación de la copia lo aporta el servidor (la
        mtime del archivo servido que recibe al crearse el servicio). */

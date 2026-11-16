@@ -127,11 +127,22 @@ try {
   /* Y el resto de rutas de constancias sigue fuera de su alcance. */
   assert.equal((await call('/api/satdocs')).status, 403);
 
-  /* INVITADO dentro de alcance: ve el mismo PDF, en línea. */
+  /* INVITADO dentro de alcance: ve el mismo PDF, en línea.
+     CORRECCIÓN H-4 (seguridad 2.0): rotar el alcance en
+     guest/config PURGA las sesiones vivas — la sesión emitida
+     con el alcance anterior ya no entra ni hereda el alcance
+     nuevo (la prueba anterior afirmaba justo ese comportamiento
+     fugado y se corrige aquí): hace falta un login nuevo. */
   token = adminToken;
   res = await call('/api/guest/config', { rfcs: [RFC] });
   assert.equal(res.status, 200);
   token = guestLogin.token;
+  res = await call('/api/files/view?id=' + encodeURIComponent(constanciaId));
+  assert.equal(res.status, 403, 'H-4: la sesión anterior a la rotación de alcance está purgada');
+  token = adminToken;
+  const guestLogin2 = (await call('/api/guest/login', { password: 'invitado-1102' })).json();
+  assert.ok(guestLogin2.token, 'login nuevo tras la rotación');
+  token = guestLogin2.token;
   res = await call('/api/files/view?id=' + encodeURIComponent(constanciaId));
   assert.equal(res.status, 200, 'dentro de su alcance, el invitado sí ve el documento');
   assert.ok(res.headers['content-disposition']?.startsWith('inline;'));

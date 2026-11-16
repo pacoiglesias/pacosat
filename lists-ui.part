@@ -90,7 +90,7 @@ function listsScreen() {
         overview = await satApi('lists');
         if (finalProgress?.cancelled) {
           runBox.replaceChildren(n('p', 'Cancelado por ti a las ' +
-            new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) +
+            localTime(Date.now()) +
             ': se sigue usando la copia del ' + (source.fetched ? localDateTime(source.fetched) : '—') + '.', 'run-final'));
           update.disabled = false; update.textContent = 'Actualizar ahora';
           return;
@@ -388,7 +388,7 @@ function printListsCertificate(cp, sources) {
   section.replaceChildren();
   const head = n('div', undefined, 'report-head');
   head.append(n('h1', 'Constancia de validación en listados del SAT'),
-    n('p', installName + ' · ' + new Date().toLocaleString('es-MX', { dateStyle: 'full', timeStyle: 'short' })));
+    n('p', installName + ' · ' + localDateTime(Date.now())));
   const body = n('div', undefined, 'report-body');
   body.append(n('p', 'Empresa validada: ' + (cp.name || cp.rfc) + ' (' + cp.rfc + ')' + (cp.kind ? ' · ' + cp.kind : '')));
   const table = n('table', undefined, 'report-table');

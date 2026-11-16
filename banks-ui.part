@@ -5,6 +5,7 @@
    total. Vive en el servidor (NAS); sus movimientos alimentan la
    conciliación de Dinero. */
 const BANK_QUICK = [['BBVA', 'Cuenta Maestra Pyme', 'cuenta'], ['BBVA', 'Fondo', 'fondo'],
+  ['BBVA', 'Tarjeta de crédito', 'tarjeta'],
   ['Santander', 'Cuenta de cheques', 'cuenta'], ['Santander', 'FONSER1', 'fondo'], ['Konfio', 'Cuenta', 'cuenta']];
 function bancosScreen() {
   const wrap = n('div');
@@ -38,6 +39,10 @@ function bancosScreen() {
           '): cada cuenta aporta su último estado archivado. Sube el estado que falta y la posición queda de un solo mes.', 'today-line'));
     }
     body.append(position);
+    /* Tanda 6: el botón único protagonista y las vistas nuevas. */
+    body.append(bancosAutoPanel200f(draw, data));
+    body.append(bancosConciliacionPanel200f());
+    body.append(bancosContrapartesPanel200f());
     if (!data.accounts.length) {
       const empty = panel('Tus cuentas', 'Da de alta la primera cuenta con un toque o con el formulario. Después sube el PDF de cada mes y PacoSAT lee los saldos.');
       const chips = n('div', undefined, 'traffic-strip');
@@ -175,12 +180,13 @@ function bankAccountForm(draw) {
      que se seleccione aquí). */
   const owner = select([['', 'Sin RFC dueño (se ve en todos)'],
     ...people.map(p => [p.id, (p.name || p.id) + ' · ' + p.id])], scope || '', 'RFC dueño');
+  const numero = input('text', { placeholder: 'Número o CLABE completo (opcional)', inputmode: 'numeric' });
   const add = n('button', 'Crear cuenta', 'soft');
   add.onclick = async () => {
-    try { const data = await satApi('banks/accounts', { bank: bank.value, name: name.value, last4: last4.value, rfc: owner.value }); announce('Cuenta creada.'); draw(data); }
+    try { const data = await satApi('banks/accounts', { bank: bank.value, name: name.value, last4: last4.value, numero: numero.value, rfc: owner.value }); announce('Cuenta creada.'); draw(data); }
     catch (error) { toast(error.message, 'error'); }
   };
-  form.append(fieldWrap('Banco', bank), fieldWrap('Nombre', name), fieldWrap('Terminación', last4), fieldWrap('RFC dueño', owner), add);
+  form.append(fieldWrap('Banco', bank), fieldWrap('Nombre', name), fieldWrap('Terminación', last4), fieldWrap('Número o CLABE', numero), fieldWrap('RFC dueño', owner), add);
   panelEl.append(form);
   return panelEl;
 }
@@ -255,4 +261,257 @@ async function bancosSaldoVivo1310(box, account, panelEl) {
     box.append(n('p', 'Saldo vivo (90 días): $' + centsLabel(BigInt(Math.round(saldo))) + ' · ' + baseNota +
       '. Toca la línea para ir a su estado de cuenta.', 'today-line'), svg);
   } catch { /* el saldo vivo es un extra: sin él, la cuenta sigue en su panel */ }
+}
+
+/* ===== Tanda 6 (2.0) · Bancos: subida única, conciliación y
+   contrapartes =====
+   Pieza 1: UN botón «Subir estado de cuenta» — eliges el archivo
+   (en el móvil, también foto con la cámara) y el servidor detecta
+   del propio documento el banco, la cuenta y el periodo. La
+   tarjeta de confirmación ES la confirmación: al aplicar, el
+   estado queda archivado en su cuenta, los movimientos se
+   aplican, corre la conciliación y queda el Deshacer. Si la
+   detección no es segura, se enseña la lista de cuentas con su
+   identidad y el alta en el acto con lo detectado precargado. */
+const MESES200F = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const mesTexto200f = key => /^\d{4}-\d{2}$/.test(key || '') ? MESES200F[Number(key.slice(5, 7)) - 1] + ' de ' + key.slice(0, 4) : (key || '');
+function bancosAutoPanel200f(draw, data) {
+  const panelEl = panel('Subir estado de cuenta', 'Un solo botón: eliges el PDF (o lo capturas con la cámara) y PacoSAT detecta el banco, la cuenta y el periodo del propio documento, te lo enseña y, con tu toque, lo archiva en su cuenta, aplica los movimientos y corre la conciliación.');
+  const file = input('file', { accept: 'application/pdf,image/*' });
+  file.setAttribute('capture', 'environment');
+  file.hidden = true;
+  const btn = n('button', 'Subir estado de cuenta', 'primary');
+  btn.onclick = () => file.click();
+  const box = n('div');
+  panelEl.append(btn, file, box);
+  file.onchange = async () => {
+    if (!file.files?.[0]) return;
+    box.replaceChildren(n('p', 'Leyendo el documento…', 'muted'));
+    try {
+      const content = encode64(new Uint8Array(await file.files[0].arrayBuffer()));
+      const r = await satApi('banks/detect', { content });
+      bancosAutoTarjeta200f(box, content, r.deteccion, draw, data);
+    } catch (error) { box.replaceChildren(n('p', 'No se pudo leer el documento: ' + error.message, 'error-text')); }
+    file.value = '';
+  };
+  return panelEl;
+}
+function bancosAutoTarjeta200f(box, content, det, draw, data) {
+  box.replaceChildren();
+  const cuentas = det.cuentas || (data && data.accounts) || [];
+  const elegida = det.accountId ? cuentas.find(c => c.id === det.accountId) : null;
+  const titular = (det.banco || 'Banco no nombrado en el estado') +
+    (elegida ? ' · ' + elegida.nombre + (elegida.last4 ? ' ····' + elegida.last4 : '') : '') +
+    ' · ' + (det.periodo ? mesTexto200f(det.periodo) : 'periodo sin detectar') +
+    ' · ' + det.movimientos + ' movimientos · Saldo final $' + (det.saldoFinal ?? '¿?') + ' según el estado';
+  box.append(n('p', titular + (det.segura ? ' — ¿Lo archivo y lo aplico?' : ''), 'strong-line'));
+  if (det.via) box.append(n('p', 'Cuenta detectada por ' + det.via + '.', 'muted'));
+  if (!det.segura && det.motivo) box.append(n('p', det.motivo + ' Señala la cuenta:', 'muted'));
+  const fila = n('div', undefined, 'actions');
+  const aplicarCon = async (accountId, month) => {
+    try {
+      const r = await satApi('banks/statements/auto', { content, accountId: accountId || undefined, month: month || undefined });
+      box.replaceChildren();
+      box.append(n('p', 'Aplicado: ' + r.aplicados + ' movimiento(s) en su cuenta' +
+        (r.duplicadosOmitidos ? ' · ' + r.duplicadosOmitidos + ' duplicado(s) omitido(s)' : '') +
+        '. La conciliación corrió: mira la vista «Conciliación» de esta pantalla.', 'strong-line'));
+      const deshacer = n('button', 'Deshacer', 'soft');
+      deshacer.onclick = async () => {
+        try { const d2 = await satApi('banks/statements/delete', { id: r.statementId });
+          announce('Estado retirado: el Deshacer quedó asentado en el Registro.'); draw(d2); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      box.append(deshacer);
+      soundCue('success');
+      draw(r);
+    } catch (error) { toast(error.message || 'No se pudo aplicar.', 'error'); }
+  };
+  if (det.segura) {
+    const aplicar = n('button', 'Aplicar', 'primary');
+    aplicar.onclick = () => aplicarCon(det.accountId, det.periodo);
+    fila.append(aplicar);
+  }
+  const otra = n('button', det.segura ? 'Elegir otra cuenta' : 'Elegir la cuenta', 'soft');
+  otra.onclick = () => {
+    box.replaceChildren(n('p', titular, 'strong-line'), n('p', 'Toca la cuenta de este estado:', 'muted'));
+    const lista = n('div');
+    for (const cuenta of cuentas) {
+      const b = n('button', cuenta.banco + ' · ' + cuenta.nombre + (cuenta.last4 ? ' ····' + cuenta.last4 : '') +
+        (cuenta.rfc ? ' · de ' + cuenta.rfc : ' · sin RFC dueño'), 'soft small');
+      b.onclick = () => {
+        if (det.periodo) return aplicarCon(cuenta.id, det.periodo);
+        const mes = input('month', { value: previousMonthKey() });
+        box.replaceChildren(n('p', 'El estado no trae periodo legible. Elige su mes:', 'muted'), mes);
+        const ok = n('button', 'Aplicar en esta cuenta', 'primary');
+        ok.onclick = () => aplicarCon(cuenta.id, mes.value);
+        box.append(ok);
+      };
+      lista.append(b);
+    }
+    box.append(lista);
+    /* Alta en el acto, con lo detectado precargado. */
+    const alta = n('details', undefined, 'seal-details');
+    alta.append(n('summary', '¿No está dada de alta? Darla de alta con lo detectado'));
+    const fBanco = input('text', { value: det.precarga?.bank || det.banco || '' });
+    const fNombre = input('text', { placeholder: 'Nombre de la cuenta' });
+    const fNumero = input('text', { value: det.precarga?.numero || '', inputmode: 'numeric' });
+    const fOwner = select([['', 'Sin RFC dueño (se ve en todos)'],
+      ...people.map(p => [p.id, (p.name || p.id) + ' · ' + p.id])], scope || '', 'RFC dueño');
+    const crear = n('button', 'Crear la cuenta y aplicar el estado', 'primary');
+    crear.onclick = async () => {
+      try {
+        const creada = await satApi('banks/accounts', { bank: fBanco.value, name: fNombre.value || 'Cuenta',
+          numero: fNumero.value, last4: det.precarga?.last4 || '', rfc: fOwner.value });
+        const nueva = creada.accounts[creada.accounts.length - 1];
+        await aplicarCon(nueva.id, det.periodo);
+      } catch (error) { toast(error.message, 'error'); }
+    };
+    alta.append(fieldWrap('Banco', fBanco), fieldWrap('Nombre', fNombre),
+      fieldWrap('Número o CLABE detectado', fNumero), fieldWrap('RFC dueño', fOwner), crear);
+    box.append(alta);
+  };
+  fila.append(otra);
+  const cancelar = n('button', 'Cancelar', 'soft');
+  cancelar.onclick = () => box.replaceChildren();
+  fila.append(cancelar);
+  box.append(fila);
+}
+/* Pieza 3 · Conciliación por cuenta y periodo, con la frase
+   exacta «sin pago visto en esta cuenta» y enlace en un toque. */
+function bancosConciliacionPanel200f() {
+  const panelEl = panel('Conciliación', 'Por cuenta y periodo: las facturas sin pago visto en esta cuenta y los pagos sin factura de esa cuenta. Nada se afirma pagado sin enlace; enlazar y desenlazar queda en el Registro.');
+  const out = n('div');
+  const cargar = n('button', 'Ver la conciliación de este mes', 'soft');
+  const mes = input('month', { value: previousMonthKey() });
+  cargar.onclick = async () => {
+    out.replaceChildren(n('p', 'Cruzando movimientos y facturas…', 'muted'));
+    try {
+      const data = await satApi('banks/conciliacion?month=' + encodeURIComponent(mes.value));
+      out.replaceChildren();
+      out.append(n('p', data.regla, 'muted'));
+      for (const vista of data.porCuenta) {
+        out.append(n('h3', vista.account.banco + ' · ' + vista.account.nombre +
+          (vista.account.last4 ? ' ····' + vista.account.last4 : '')));
+        out.append(n('p', vista.conteos.facturasSinPagoVisto + ' factura(s) sin pago visto en esta cuenta · ' +
+          vista.conteos.pagosSinFactura + ' pago(s) sin factura · ' + vista.conteos.enlazados + ' enlazado(s).', 'muted'));
+        for (const inv of vista.facturasSinPagoVisto) {
+          const row = n('div', undefined, 'cp-row');
+          row.append(statusPill('warn', 'Sin pago visto en esta cuenta'),
+            n('span', inv.date + ' · ' + (inv.from?.name || inv.from?.rfc || '') + ' · $' + inv.total +
+              ' · ' + inv.uuid.slice(0, 8) + '…'));
+          const ver = n('button', 'Ver factura', 'soft small');
+          ver.onclick = () => { const target = invoices.find(r => r.id === inv.uuid); if (target) invoiceDetail(target); };
+          const pagado = n('button', 'Ya se pagó', 'soft small');
+          pagado.onclick = async () => {
+            try {
+              const sug = await satApi('banks/sugerencia-pago?uuid=' + encodeURIComponent(inv.uuid));
+              if (sug.candidato) {
+                row.replaceChildren(statusPill('warn', '¿Fue este?'),
+                  n('span', sug.candidato.banco + ' · ' + sug.candidato.date + ' · $' +
+                    (sug.candidato.amount || '').replace('-', '') + ' — ' + (sug.candidato.concept || '')));
+                const enlazar = n('button', 'Enlazar este movimiento', 'primary small');
+                enlazar.onclick = async () => {
+                  await satApi('banks/marcar-pagado', { uuid: inv.uuid, movementId: sug.candidato.movementId });
+                  toast('Enlazado: la factura y el movimiento quedan amarrados.');
+                  cargar.onclick();
+                };
+                const manual = n('button', 'No: marcar sin movimiento', 'soft small');
+                manual.onclick = async () => {
+                  await satApi('banks/marcar-pagado', { uuid: inv.uuid });
+                  toast('Marcado como pagado, sin movimiento enlazado.');
+                  cargar.onclick();
+                };
+                row.append(enlazar, manual);
+              } else {
+                await satApi('banks/marcar-pagado', { uuid: inv.uuid });
+                toast('Marcado como pagado (sin movimiento candidato: no se inventó ninguno).');
+                cargar.onclick();
+              }
+            } catch (error) { toast(error.message, 'error'); }
+          };
+          row.append(ver, pagado);
+          out.append(row);
+        }
+        for (const pago of vista.pagosSinFactura) {
+          const row = n('div', undefined, 'cp-row');
+          row.append(statusPill('dim', 'Pago sin factura'),
+            n('span', pago.movement.date + ' · ' + (pago.movement.concept || '') + ' · $' + pago.movement.amount +
+              (pago.sugerencia ? ' → sugiere: ' + (pago.sugerencia.from?.name || '') + ' $' + pago.sugerencia.total : '')));
+          if (pago.sugerencia) {
+            const enlazar = n('button', 'Enlazar en un toque', 'soft small');
+            enlazar.onclick = async () => {
+              try { await satApi('banks/conciliar/link', { movementId: pago.movement.id, uuid: pago.sugerencia.uuid, month: mes.value });
+                toast('Enlazado: ambos salen de sus listas.'); cargar.onclick(); }
+              catch (error) { toast(error.message, 'error'); }
+            };
+            row.append(enlazar);
+          }
+          out.append(row);
+        }
+        for (const link of vista.enlazados) {
+          const row = n('div', undefined, 'cp-row');
+          row.append(statusPill('ok', 'Enlazado'),
+            n('span', (link.movement?.date || '') + ' · $' + (link.movement?.amount || '') + ' ↔ factura ' +
+              link.uuid.slice(0, 8) + '…'));
+          const des = n('button', 'Desenlazar', 'soft small');
+          des.onclick = async () => {
+            try { await satApi('banks/conciliar/unlink', { matchId: link.matchId, month: mes.value });
+              toast('Desenlazado: vuelve a las listas.'); cargar.onclick(); }
+            catch (error) { toast(error.message, 'error'); }
+          };
+          row.append(des);
+          out.append(row);
+        }
+      }
+    } catch (error) { out.replaceChildren(n('p', 'No se pudo cruzar: ' + error.message, 'error-text')); }
+  };
+  panelEl.append(fieldWrap('Periodo', mes), cargar, out);
+  return panelEl;
+}
+/* Pieza 5 · Contrapartes: totales reales por empresa, con su
+   periodo elegible; tocar una filtra Facturas por ella. */
+function bancosContrapartesPanel200f() {
+  const panelEl = panel('Contrapartes', 'Las empresas con las que opera cada contribuyente: total emitido y recibido de sus CFDI, su última operación y su estado en listas 69-B si consta. Toca una para ver sus comprobantes.');
+  const rfcSel = select(people.map(p => [p.id, (p.name || p.id) + ' · ' + p.id]), scope || people[0]?.id || '', 'Contribuyente');
+  const perSel = select([['todo', 'Todo'], ['anio', 'Este año'], ['pasado', 'Año pasado']], 'todo', 'Periodo');
+  const out = n('div');
+  const ver = n('button', 'Ver contrapartes', 'soft');
+  ver.onclick = async () => {
+    out.replaceChildren(n('p', 'Sumando sus CFDI…', 'muted'));
+    try {
+      const data = await satApi('banks/contrapartes?rfc=' + encodeURIComponent(rfcSel.value) +
+        '&periodo=' + encodeURIComponent(perSel.value));
+      out.replaceChildren();
+      if (!data.contrapartes.length) out.append(n('p', 'Sin operaciones con contrapartes en este periodo.', 'muted'));
+      for (const cp of data.contrapartes) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill('dim', '$' + cp.total),
+          n('span', cp.nombre + ' · ' + cp.rfc + ' · emitido $' + cp.totalEmitido + ' · recibido $' +
+            cp.totalRecibido + ' · ' + cp.comprobantes + ' comprobante(s) · última: ' + cp.ultima +
+            ' · 69-B: ' + cp.estado69b));
+        row.style.cursor = 'pointer';
+        row.onclick = () => { if (typeof setInvoiceTerm === 'function') setInvoiceTerm(cp.rfc); navigate('invoices'); };
+        /* Descarga por contraparte (tanda 7A, 20#11): su ZIP con
+           XML + PDF si consta y su índice CSV que suma SOLO lo
+           listado. Nombre: RFCcontraparte-año. */
+        const dlZip = n('button', 'Descargar todo (ZIP)', 'soft');
+        dlZip.type = 'button';
+        dlZip.onclick = async ev => {
+          ev.stopPropagation();
+          dlZip.disabled = true; dlZip.textContent = 'Preparando…';
+          try {
+            const d = await satApi('salidas200g/contraparte-zip', { rfc: rfcSel.value, contraparte: cp.rfc,
+              year: String(cp.ultima || '').slice(0, 4) || String(new Date().getFullYear()) });
+            download(new Blob([decode64(d.content)], { type: 'application/zip' }), d.name);
+            toast('ZIP listo: ' + d.name + ' (' + d.comprobantes + ' comprobante(s), suma listada $' + d.sumaListada + ')', 'ok');
+          } catch (error) { toast(error.message, 'error'); }
+          finally { dlZip.disabled = false; dlZip.textContent = 'Descargar todo (ZIP)'; }
+        };
+        row.append(dlZip);
+        out.append(row);
+      }
+    } catch (error) { out.replaceChildren(n('p', 'No se pudo sumar: ' + error.message, 'error-text')); }
+  };
+  panelEl.append(fieldWrap('Contribuyente', rfcSel), fieldWrap('Periodo', perSel), ver, out);
+  return panelEl;
 }
