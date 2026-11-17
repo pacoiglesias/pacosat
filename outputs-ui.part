@@ -162,13 +162,27 @@ function reportesScreen201() {
       imprimirVista201('Dinero · saldos abiertos', 'Las canceladas no entran en los saldos.', ['Sentido', 'Contraparte', 'Fecha', 'Saldo'], filas);
     }]
   ]);
-  /* Conciliación de Bancos (2.0.1, auditoría de salida): NO
-     hay generador PDF/Excel de conciliación en la capa de
-     salidas, y esta fila no finge que lo hay. Su único botón
-     lleva a Bancos, donde la conciliación del mes se ve y se
-     imprime tal cual con su botón «Imprimir conciliación». */
-  filaReporte('Conciliación de Bancos', 'Sin PDF ni Excel propios: la conciliación se ve y se imprime en Bancos, tal cual se ve.', null, [
-    ['Ver e imprimir en Bancos', () => navigate('bancos'), 'primary']
+  /* Conciliación de Bancos (2.0.1: sin salidas propias;
+     2.3.0 · pieza 13: ya las tiene). PDF y Excel reales del
+     mes elegido contra GET /api/reportes/conciliacion, como
+     las demás filas de esta pantalla; el botón de Bancos se
+     queda: allí la conciliación se ve y se imprime en vivo
+     con su «Imprimir conciliación». Nada desaparece. */
+  const mesConciliacion = input('month', { value: mesDef, 'aria-label': 'Mes de la conciliación' });
+  const bajarConciliacion230 = formato => async b => {
+    b.disabled = true;
+    try {
+      const mes = mesConciliacion.value || mesDef;
+      const blob = await satApiBlob('reportes/conciliacion?rfc=' + encodeURIComponent(rfc()) +
+        '&mes=' + encodeURIComponent(mes) + '&formato=' + formato);
+      download(blob, 'conciliacion-' + rfc() + '-' + mes + '.' + (formato === 'pdf' ? 'pdf' : 'xlsx'));
+    } catch (error) { toast(error.message, 'error'); }
+    b.disabled = false;
+  };
+  filaReporte('Conciliación de Bancos', 'La conciliación del mes en PDF para papel y en Excel para trabajarla; en Bancos se ve y se imprime en vivo.', mesConciliacion, [
+    ['PDF', bajarConciliacion230('pdf'), 'primary'],
+    ['Excel', bajarConciliacion230('xlsx')],
+    ['Ver e imprimir en Bancos', () => navigate('bancos')]
   ]);
   /* Avisos (PDF y Excel de salidas, kind avisos). */
   filaReporte('Avisos', 'El parte de avisos del RFC: lo que está mal, lo que falta y lo que vence.', null, [

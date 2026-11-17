@@ -57,7 +57,7 @@ function declaracionesGrupo201() {
       if (!wrap.isConnected) return;
       body.replaceChildren();
       if (!vistas.length) {
-        body.append(n('p', 'No se pudieron leer las declaraciones de este RFC.', 'muted'));
+        body.append(n('p', 'No se pudieron leer las declaraciones de este RFC.', 'empty'));
         return;
       }
       for (const [ejercicio, data] of vistas) {
@@ -133,7 +133,7 @@ function declaracionesGrupo201() {
         bloque.append(verMapa);
         body.append(bloque);
       }
-    } catch { if (wrap.isConnected) body.replaceChildren(n('p', 'No se pudieron leer las declaraciones de este RFC.', 'muted')); }
+    } catch { if (wrap.isConnected) body.replaceChildren(n('p', 'No se pudieron leer las declaraciones de este RFC.', 'empty')); }
   })();
   return wrap;
 }
@@ -169,6 +169,79 @@ function declFechaCorta(iso) {
 }
 let declEjercicio = new Date().getFullYear();
 let declCache = null;
+/* ===== Estado de Declaraciones en su entrada del menú (2.0.2) =====
+   Una sola línea corta bajo «Declaraciones», con la MISMA fuente
+   que su pantalla ya lee: el diario de corridas
+   (GET /api/declaraciones/runs?rfc=). Solo se dice lo que la
+   corrida más reciente ya trae — su fecha (started) y su
+   resultado (ok) —: sin corridas, «Sin bajar todavía»; la última
+   buena, «Última bajada: <fecha corta>»; la última fallida,
+   «Último intento: <fecha corta> · no se pudo». Ningún conteo
+   nuevo. La función de texto es pura (recibe las corridas) para
+   que la suite la juzgue con diarios de mentira hechos con los
+   campos reales. */
+function declMenuTexto202(runs) {
+  const run = (runs || [])[0];
+  if (!run) return 'Sin bajar todavía';
+  const fecha = typeof fechaCortaMenu202 === 'function' ? fechaCortaMenu202(run.started) : '';
+  return run.ok ? 'Última bajada: ' + fecha : 'Último intento: ' + fecha + ' · no se pudo';
+}
+/* ===== Menú de Declaraciones con el resumen del servidor
+   (2.3.0 · pieza 3) =====
+   La línea pasa a salir de GET /api/declaraciones/resumen
+   (conocidas, faltaMes, faltaPeriodo, hayDatos): con datos,
+   «{conocidas} de {ejercicio}» y su cola — « · falta {mes}»
+   si el servidor señala un mes que falta, « · al día» si no.
+   Sin datos (hayDatos en falso o la lectura no llega), manda
+   el texto de siempre desde el diario de corridas: no se
+   inventa ningún conteo. faltaMes puede venir como periodo
+   «2026-10» o como nombre: el periodo se nombra por su mes. */
+function declFaltaMes230(faltaMes) {
+  const texto = String(faltaMes || '').trim();
+  const periodo = texto.match(/^\d{4}-(\d{2})/);
+  if (periodo) {
+    const nombre = (typeof DECL_MESES !== 'undefined' ? DECL_MESES : [])[Number(periodo[1]) - 1];
+    if (nombre) return nombre.toLowerCase();
+  }
+  return texto;
+}
+function declMenuTexto230(resumen, runs) {
+  if (resumen && resumen.hayDatos) {
+    const base = Number(resumen.conocidas) + ' de ' + resumen.ejercicio;
+    return resumen.faltaMes ? base + ' · falta ' + declFaltaMes230(resumen.faltaMes) : base + ' · al día';
+  }
+  return declMenuTexto202(runs);
+}
+/* Caché de 60 s del resumen, como la del menú (menuEstados202):
+   la pantalla de Declaraciones repinta su span con ESTA misma
+   lectura cacheada, sin lanzar peticiones duplicadas. */
+let declResumen230Cache = { rfc: '', ejercicio: 0, at: 0, resumen: null };
+async function declResumen230(rfc) {
+  const ejercicio = new Date().getFullYear();
+  const ahora = Date.now();
+  if (declResumen230Cache.rfc === rfc && declResumen230Cache.ejercicio === ejercicio &&
+      ahora - declResumen230Cache.at < 60000) return declResumen230Cache.resumen;
+  let resumen = null;
+  try {
+    resumen = await satApi('declaraciones/resumen?rfc=' + encodeURIComponent(rfc) + '&ejercicio=' + ejercicio);
+  } catch { resumen = null; }
+  declResumen230Cache = { rfc, ejercicio, at: ahora, resumen };
+  return resumen;
+}
+async function pintarDeclMenu202() {
+  const el = document.getElementById('decl-menu-estado202');
+  if (!el) return;
+  if (typeof satToken === 'undefined' || !satToken || !scope) { el.textContent = ''; return; }
+  try {
+    const resumen = typeof declResumen230 === 'function' ? await declResumen230(scope) : null;
+    if (resumen && resumen.hayDatos) {
+      if (el.isConnected) el.textContent = declMenuTexto230(resumen, null);
+      return;
+    }
+    const diario = await satApi('declaraciones/runs?rfc=' + encodeURIComponent(scope));
+    if (el.isConnected) el.textContent = declMenuTexto230(resumen, diario.runs);
+  } catch { if (el.isConnected) el.textContent = ''; }
+}
 /* Diario visible de la última corrida (1.23.0, A3): pinta la
    corrida más reciente de GET /api/declaraciones/runs?rfc= — cada
    paso con su hora, su paso y su detalle, y el cierre (guardada o
@@ -180,6 +253,13 @@ function declRunsDetails(rfc) {
     try {
       const diario = await satApi('declaraciones/runs?rfc=' + encodeURIComponent(rfc));
       const run = (diario.runs || [])[0];
+      /* La entrada del menú enseña el mismo diario (2.0.2): se
+         repinta con ESTA lectura, sin otra petición. Con el
+         resumen de la 2.3.0 ya cacheado y con datos, manda él:
+         es la misma lectura que pinta pintarDeclMenu202. */
+      const menuDecl202 = document.getElementById('decl-menu-estado202');
+      if (menuDecl202) menuDecl202.textContent = declMenuTexto230(
+        declResumen230Cache.rfc === rfc ? declResumen230Cache.resumen : null, diario.runs);
       if (!run || !details.isConnected) return;
       details.hidden = false;
       details.append(n('summary', 'Diario de la última corrida · ' + localDateTime(run.started) +
@@ -299,7 +379,77 @@ function declFallbackPanel(fill, hayError) {
    un toque desde cualquier sitio. La sección es la misma de
    siempre; Documentos ya no la repite. */
 function declaracionesScreen() {
+  /* El span del menú se repinta con la lectura del resumen
+     (2.3.0 · pieza 3), cacheada 60 s: entrar aquí no duplica
+     la petición que el menú ya pagó. */
+  if (typeof pintarDeclMenu202 === 'function') pintarDeclMenu202();
   return [declaracionesSection()];
+}
+/* ===== Línea de vida de cada declaración (2.3.0 · pieza 15) =====
+   Cada operación conocida del cruce que la vista ya consume
+   (view.cruce201.operacionesConocidas) se presenta como su
+   línea de vida: Presentada (fecha + nº de operación) → Acuse
+   (su botón «Ver acuse» si consta; si no, «Sin acuse todavía»
+   con la bajada que la vista ya tiene) → Declaración (su PDF
+   si consta). Nada se lee de otro sitio: si el cruce no trae
+   una operación, aquí no se pinta. La parte pura decide los
+   textos y qué consta; el pintado resuelve el documento en
+   view.documentos por su operación y clase (su fileId). */
+function declVida230(op) {
+  if (!op || !op.operacion) return null;
+  return {
+    operacion: String(op.operacion),
+    periodo: String(op.periodo || ''),
+    presentada: 'Presentada' + (op.fechaPresentacion ? ' el ' + declFechaLarga(op.fechaPresentacion) : '') +
+      ' · nº de operación ' + String(op.operacion),
+    tieneAcuse: Boolean(op.tieneAcuse),
+    tieneDeclaracion: Boolean(op.tieneDeclaracion)
+  };
+}
+function declLineasVida230(view, fill) {
+  const box = n('div', undefined, 'decl-vida230');
+  const ops = (view?.cruce201?.operacionesConocidas || []).map(declVida230).filter(Boolean);
+  if (!ops.length) return box;
+  box.append(n('h4', 'Línea de vida de cada declaración'));
+  const crudas = new Map((view.cruce201.operacionesConocidas || []).map(o => [String(o.operacion), o]));
+  const docDe = (op, clase) => {
+    const cruda = crudas.get(op.operacion);
+    const idDoc = clase === 'acuse' ? cruda?.documentoAcuseId : cruda?.documentoDeclaracionId;
+    return (view.documentos || []).find(d => d.fileId && d.clase === clase &&
+      ((idDoc && d.id === idDoc) || d.operacion === op.operacion));
+  };
+  for (const op of ops) {
+    const fila = n('div', undefined, 'cp-row decl-vida-row230');
+    fila.append(n('span', op.presentada));
+    if (op.tieneAcuse) {
+      const doc = docDe(op, 'acuse');
+      if (doc) {
+        const ver = n('button', 'Ver acuse', 'soft small');
+        ver.type = 'button';
+        ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: scope, kind: doc.label || 'Acuse',
+          name: (doc.label || 'Acuse') + ' · ' + scope + '.pdf' });
+        fila.append(ver);
+      } else fila.append(n('span', 'Acuse guardado', 'muted'));
+    } else {
+      fila.append(n('span', 'Sin acuse todavía', 'muted'));
+      const bajar = n('button', 'Bajar el acuse', 'soft small');
+      bajar.type = 'button';
+      bajar.onclick = () => declRun('mensuales', fill, bajar, op.periodo || '');
+      fila.append(bajar);
+    }
+    if (op.tieneDeclaracion) {
+      const doc = docDe(op, 'declaracion');
+      if (doc) {
+        const ver = n('button', 'Ver declaración', 'soft small');
+        ver.type = 'button';
+        ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: scope, kind: doc.label || 'Declaración',
+          name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' });
+        fila.append(ver);
+      } else fila.append(n('span', 'Declaración guardada', 'muted'));
+    } else fila.append(n('span', 'Sin declaración guardada', 'muted'));
+    box.append(fila);
+  }
+  return box;
 }
 function declaracionesSection() {
   const section = panel('Declaraciones y acuses',
@@ -335,6 +485,10 @@ function declaracionesSection() {
     runAnual.onclick = () => declRun('anual', fill, runAnual);
     head.append(runMensuales, runAnual);
     body.append(head);
+    /* Programación fija de acuses (2.3.0 · pieza 14): se dice
+       en llano junto a las descargas de la vista, sin controles
+       nuevos — la programación es fija, no un ajuste. */
+    body.append(n('p', 'Cada día 18, PacoSAT baja solo el acuse del mes anterior y te avisa.', 'muted decl-programada230'));
     /* Guía de espera del ejecutor (1.29.1, D5): sin equipo en
        línea, el primer pantallazo enseña su estado real y el
        paso concreto, no una cola sin salida guiada. */
@@ -585,6 +739,10 @@ function declaracionesSection() {
        servicio oficial de acuses trabaja POR FOLIO — el panel de
        folios y la recuperación por año completo viven debajo del
        mapa, con su límite dicho en voz alta. */
+    /* Línea de vida de cada operación conocida (2.3.0 ·
+       pieza 15): Presentada → Acuse → Declaración, desde el
+       cruce que esta misma vista ya consume. */
+    body.append(declLineasVida230(view, fill));
     body.append(declFoliosPanel(view, fill), declAniosPanel(view, fill), declComoFunciona());
     /* Documentos recuperados del ejercicio: declaración y acuse,
        distinguidos, como lista completa del archivo. */
@@ -644,7 +802,7 @@ function declaracionesSection() {
       for (let i = 0; i < 2; i++) skel.append(n('div', undefined, 'skel-block'));
       body.append(skel);
     }
-    fill().catch(error => { body.replaceChildren(n('p', error.message, 'error-text')); });
+    fill().catch(error => { body.replaceChildren(n('p', error.message, 'empty error-text')); });
   }
   return section;
 }

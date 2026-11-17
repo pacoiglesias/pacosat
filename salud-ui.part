@@ -94,9 +94,15 @@ function saludTarjetasPintar200d(body, data) {
         render();
       }));
       add(saludBoton200d('Abrir el panel del ejecutor', () => navigate('ejecutor')));
+      /* Residencia verificable (2.3.0 · pieza 5): la misma
+         línea que pinta Hoy, desde status.ejecutor.residencia;
+         sin reporte, «sin reportar todavía», sin fingir. */
       const extra = n('p', 'Trabajos en cola ahora: ' + (ex.enCola ?? 0) +
         '. Versión que reporta tu ejecutor: ' + (tarjeta.datos.versionReportada || 'no consta — su señal no la trae') +
-        (tarjeta.datos.bundleVersion ? '. El paquete guardado en el servidor es la ' + tarjeta.datos.bundleVersion + '.' : '.'), 'muted');
+        (tarjeta.datos.bundleVersion ? '. El paquete guardado en el servidor es la ' + tarjeta.datos.bundleVersion + '.' : '.') +
+        ' ' + (typeof residenciaTexto230 === 'function'
+          ? residenciaTexto230(typeof satData !== 'undefined' ? satData?.ejecutor : null)
+          : 'Residente: sin reportar todavía') + '.', 'muted');
       tarjeta._extra200d = extra;
       /* Tanda 5 (pieza 3): el aviso de dormido vive en Hoy y en el
          correo; aquí solo su ajuste — la tarjeta ya enseña el
@@ -162,6 +168,22 @@ function saludTarjetasPintar200d(body, data) {
         render();
       }, 'primary'));
       else add(saludBoton200d('Configurar el correo', () => { ajustesSection = 'correo'; navigate('settings'); }));
+    } else if (tarjeta.id === 'push') {
+      /* Push verificable (2.3.0 · pieza 16): SOLO si el
+         servidor manda la tarjeta — el cliente no la fabrica.
+         «Suscrito» con su nº de dispositivos, o «sin suscribir»
+         con el botón que lleva al panel de Ajustes donde se
+         activa (el panel de push de esta instalación). */
+      const datosPush = tarjeta.datos || {};
+      const dispositivos = Number(datosPush.dispositivos);
+      const suscrito = datosPush.suscrito === true || (!Number.isNaN(dispositivos) && dispositivos > 0);
+      if (suscrito) {
+        tarjeta._extra200d = n('p', 'Suscrito' +
+          (!Number.isNaN(dispositivos) ? ' · ' + dispositivos + ' dispositivo(s) con avisos push' : '') + '.', 'muted');
+      } else {
+        tarjeta._extra200d = n('p', 'Sin suscribir: ningún dispositivo recibe avisos push todavía.', 'muted');
+        add(saludBoton200d('Activarlo en Ajustes', () => navigate('settings'), 'primary'));
+      }
     } else if (tarjeta.id === 'respaldo') {
       add(saludBoton200d('Ir a Respaldos', () => { ajustesSection = 'respaldos'; navigate('settings'); }));
       const ensayo = tarjeta.datos.ensayo;
@@ -169,6 +191,43 @@ function saludTarjetasPintar200d(body, data) {
         (ensayo.conteos.tiendas?.invoices ?? '—') + ' CFDI · ' + (ensayo.conteos.tiendas?.people ?? '—') +
         ' personas · ' + (ensayo.conteos.tiendas?.documents ?? '—') + ' documentos · ' +
         (ensayo.conteos.perfiles ?? '—') + ' perfiles · ' + (ensayo.conteos.trabajos ?? '—') + ' trabajos.', 'muted');
+      /* Ensayo a un toque (2.3.0 · pieza 19): el botón corre la
+         restauración de prueba y el resultado queda EN la
+         tarjeta. Si falta la contraseña del respaldo, se dice
+         en llano como gesto pendiente — nunca como error
+         técnico. */
+      const resultadoEnsayo230 = n('p', '', 'muted ensayo-resultado230');
+      add(saludBoton200d('Probar la restauración ahora', async () => {
+        resultadoEnsayo230.textContent = 'Probando la restauración…';
+        const pintarResultado230 = r => {
+          const detalle = String(r?.detail || '');
+          if (r?.ok) resultadoEnsayo230.textContent = '✓ ' + (detalle || 'La restauración de prueba salió bien.') +
+            (r.at ? ' (' + fmtFechaHora(r.at) + ')' : '');
+          else if (/contraseña|password/i.test(detalle))
+            resultadoEnsayo230.textContent = 'Falta un gesto tuyo: ' + detalle +
+              ' La contraseña se define en Ajustes › Respaldos.';
+          else resultadoEnsayo230.textContent = '✗ ' + (detalle || 'El ensayo no salió.');
+        };
+        try {
+          pintarResultado230(await satApi('backup/restore-test', {}));
+        } catch (error) {
+          if (/contraseña|password/i.test(error.message || '')) {
+            resultadoEnsayo230.textContent = 'Falta un gesto tuyo: ' + error.message +
+              ' La contraseña se define en Ajustes › Respaldos.';
+            return;
+          }
+          /* Respuesta perdida: se re-lee el estado antes de
+             declarar el fallo (regla de verdad de las acciones,
+             el mismo patrón de la tarjeta de Respaldos). */
+          try {
+            await pollSat();
+            const ultimo = typeof satData !== 'undefined' ? satData?.backupRestoreTest : null;
+            if (ultimo && ultimo.at) { pintarResultado230(ultimo); return; }
+          } catch { /* sin re-lectura: manda el error original */ }
+          resultadoEnsayo230.textContent = '✗ ' + error.message;
+        }
+      }, 'primary'));
+      add(resultadoEnsayo230);
     } else if (tarjeta.id === 'coherencia') {
       add(saludBoton200d('Revisar ahora', () => saludRevisar200d(), 'primary'));
       for (const d of tarjeta.datos.desacuerdos || []) {

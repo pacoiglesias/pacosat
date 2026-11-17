@@ -396,3 +396,116 @@ export function buildPdf(doc) {
   out.push(enc(xref + `trailer\n<< /Size ${maxId + 1} /Root 1 0 R >>\nstartxref\n${xrefAt}\n%%EOF`));
   return Buffer.concat(out);
 }
+
+/* ================= Conciliación bancaria (ronda 2.3.0, pieza 13) =================
+   Los artefactos de la conciliación de Bancos: reciben EXACTAMENTE
+   el objeto que calcula conciliacion200f en local-server.mjs (el
+   mismo que pinta la pantalla de Bancos) y solo lo ponen en papel
+   y en Excel. Ninguna cifra se calcula aquí: los conteos son los
+   del cálculo y los importes viajan como el texto que el cálculo
+   ya formateó (en el Excel se pasan a centavos para que la celda
+   sea de dinero de verdad, sin cambiar su valor). */
+const centavosDeTexto = texto => {
+  const n = Number(String(texto ?? '').replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? Math.round(n * 100) : null;
+};
+const nombreContraparteConc = (invoice, rfcCuenta) => {
+  if (!invoice) return '';
+  const cp = invoice.from?.rfc && invoice.from.rfc !== rfcCuenta ? invoice.from : invoice.to;
+  return cp?.name || cp?.rfc || '';
+};
+const cuentaTituloConc = cuenta => [cuenta?.banco, cuenta?.nombre,
+  cuenta?.last4 ? '···' + cuenta.last4 : ''].filter(Boolean).join(' · ') || 'Cuenta';
+
+export function buildConciliacionPdf(conciliacion, meta = {}) {
+  const porCuenta = Array.isArray(conciliacion?.porCuenta) ? conciliacion.porCuenta : [];
+  const sections = [];
+  sections.push({ heading: 'Resumen', lines: [
+    'Conciliación del mes ' + (meta.mes || conciliacion?.month || '') +
+      (meta.rfc ? ' de ' + meta.rfc : ' de todas las cuentas') + '.',
+    conciliacion?.regla || '',
+    '«Sin pago visto en esta cuenta» quiere decir que en los movimientos de esa cuenta no consta un pago enlazado a la factura: no es una afirmación de que no se haya pagado por otro lado.' ] });
+  if (!porCuenta.length)
+    sections.push({ heading: 'Cuentas', lines: ['No hay cuentas bancarias en este alcance: la conciliación no tiene movimientos que cruzar.'] });
+  for (const cuenta of porCuenta) {
+    const titulo = cuentaTituloConc(cuenta.account);
+    const conteos = cuenta.conteos || {};
+    sections.push({ heading: titulo, lines: [
+      'Facturas sin pago visto en esta cuenta: ' + (conteos.facturasSinPagoVisto ?? 0) +
+      ' · Pagos sin factura: ' + (conteos.pagosSinFactura ?? 0) +
+      ' · Enlazados: ' + (conteos.enlazados ?? 0) + '.' ] });
+    if ((cuenta.facturasSinPagoVisto || []).length)
+      sections.push({ heading: 'Facturas sin pago visto · ' + titulo, table: { columns: [
+        { title: 'Fecha', width: 0.12 }, { title: 'Contraparte', width: 0.34 },
+        { title: 'Total', width: 0.14, align: 'right' }, { title: 'Saldo', width: 0.14, align: 'right' },
+        { title: 'Folio fiscal', width: 0.26 }],
+        rows: cuenta.facturasSinPagoVisto.slice(0, 60).map(inv => [String(inv.date || '').slice(0, 10),
+          nombreContraparteConc(inv, cuenta.account?.rfc), '$' + inv.total, '$' + inv.saldo,
+          String(inv.uuid || '').slice(0, 8) + '…']) } });
+    if ((cuenta.pagosSinFactura || []).length)
+      sections.push({ heading: 'Pagos sin factura · ' + titulo, table: { columns: [
+        { title: 'Fecha', width: 0.12 }, { title: 'Concepto', width: 0.44 },
+        { title: 'Importe', width: 0.16, align: 'right' }, { title: 'Sugerencia', width: 0.28 }],
+        rows: cuenta.pagosSinFactura.slice(0, 60).map(p => [String(p.movement?.date || '').slice(0, 10),
+          String(p.movement?.concept || ''), '$' + p.movement?.amount,
+          p.sugerencia ? 'Factura de ' + nombreContraparteConc(p.sugerencia, cuenta.account?.rfc) +
+            ' por $' + p.sugerencia.total : (p.candidatas ? p.candidatas + ' candidatas por importe' : 'Sin sugerencia')]) } });
+    if ((cuenta.enlazados || []).length)
+      sections.push({ heading: 'Enlazados · ' + titulo, table: { columns: [
+        { title: 'Fecha del pago', width: 0.14 }, { title: 'Concepto', width: 0.38 },
+        { title: 'Importe', width: 0.16, align: 'right' }, { title: 'Factura', width: 0.32 }],
+        rows: cuenta.enlazados.slice(0, 60).map(e => [String(e.movement?.date || '').slice(0, 10),
+          String(e.movement?.concept || ''), e.movement ? '$' + e.movement.amount : '—',
+          e.invoice ? nombreContraparteConc(e.invoice, cuenta.account?.rfc) + ' · ' +
+            String(e.uuid || '').slice(0, 8) + '…' : String(e.uuid || '').slice(0, 8) + '…']) } });
+  }
+  return buildPdf({ title: 'Conciliación bancaria · ' + (meta.mes || conciliacion?.month || ''),
+    subtitle: meta.rfc || 'Todas las cuentas', generated: meta.generado || '', sections });
+}
+
+export function buildConciliacionXlsx(conciliacion, meta = {}) {
+  const porCuenta = Array.isArray(conciliacion?.porCuenta) ? conciliacion.porCuenta : [];
+  const resumen = [
+    ['Qué es este archivo', 'Conciliación bancaria de ' + (meta.mes || conciliacion?.month || '') +
+      (meta.rfc ? ' de ' + meta.rfc : ' de todas las cuentas') + ' — la misma de la pantalla Bancos'],
+    ['Regla de cruce', conciliacion?.regla || ''],
+    ['Generado', meta.generado || '']];
+  for (const cuenta of porCuenta)
+    resumen.push([cuentaTituloConc(cuenta.account),
+      'Sin pago visto: ' + (cuenta.conteos?.facturasSinPagoVisto ?? 0) +
+      ' · Pagos sin factura: ' + (cuenta.conteos?.pagosSinFactura ?? 0) +
+      ' · Enlazados: ' + (cuenta.conteos?.enlazados ?? 0)]);
+  const sinPago = [], pagosSin = [], enlazados = [];
+  for (const cuenta of porCuenta) {
+    const titulo = cuentaTituloConc(cuenta.account);
+    for (const inv of cuenta.facturasSinPagoVisto || [])
+      sinPago.push([titulo, String(inv.date || '').slice(0, 10) || null,
+        nombreContraparteConc(inv, cuenta.account?.rfc), String(inv.uuid || ''),
+        centavosDeTexto(inv.total), centavosDeTexto(inv.saldo)]);
+    for (const p of cuenta.pagosSinFactura || [])
+      pagosSin.push([titulo, String(p.movement?.date || '').slice(0, 10) || null,
+        String(p.movement?.concept || ''), centavosDeTexto(p.movement?.amount),
+        p.sugerencia ? String(p.sugerencia.uuid || '') : '',
+        p.sugerencia ? nombreContraparteConc(p.sugerencia, cuenta.account?.rfc) : '',
+        p.candidatas ?? 0]);
+    for (const e of cuenta.enlazados || [])
+      enlazados.push([titulo, String(e.movement?.date || '').slice(0, 10) || null,
+        String(e.movement?.concept || ''), centavosDeTexto(e.movement?.amount),
+        String(e.uuid || ''), nombreContraparteConc(e.invoice, cuenta.account?.rfc)]);
+  }
+  return buildXlsx({ sheets: [
+    { name: 'Resumen', columns: [{ title: 'Concepto', width: 34 }, { title: 'Valor', width: 96 }], rows: resumen },
+    { name: 'Sin pago visto', columns: [
+      { title: 'Cuenta', width: 30 }, { title: 'Fecha', type: 'date', width: 12 },
+      { title: 'Contraparte', width: 34 }, { title: 'Folio fiscal (UUID)', width: 38 },
+      { title: 'Total', type: 'money', width: 15 }, { title: 'Saldo', type: 'money', width: 15 }], rows: sinPago },
+    { name: 'Pagos sin factura', columns: [
+      { title: 'Cuenta', width: 30 }, { title: 'Fecha', type: 'date', width: 12 },
+      { title: 'Concepto', width: 48 }, { title: 'Importe', type: 'money', width: 15 },
+      { title: 'Factura sugerida (UUID)', width: 38 }, { title: 'Contraparte sugerida', width: 30 },
+      { title: 'Candidatas', type: 'int', width: 11 }], rows: pagosSin },
+    { name: 'Enlazados', columns: [
+      { title: 'Cuenta', width: 30 }, { title: 'Fecha del pago', type: 'date', width: 13 },
+      { title: 'Concepto', width: 48 }, { title: 'Importe', type: 'money', width: 15 },
+      { title: 'Folio fiscal (UUID)', width: 38 }, { title: 'Contraparte', width: 30 }], rows: enlazados }] });
+}

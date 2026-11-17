@@ -508,6 +508,13 @@ function trabajosSatSection() {
         };
         line.append(cancel);
       }
+      /* «Seguir» tras cancelar (2.3.0 · pieza 6): la corrida
+         cancelada se reanuda desde aquí con su jobId (el del
+         ejecutor o el id de la fila); el servidor dice en
+         llano qué se reanudó — o por qué no se puede — y ese
+         texto queda a la vista junto al botón. */
+      if (row.estado === 'cancelada' && typeof seguirBoton230 === 'function' && (row.jobId || row.id))
+        line.append(seguirBoton230(row.jobId || row.id, fill));
       const go = n('button', 'Ver detalle', 'soft small');
       go.type = 'button';
       go.onclick = () => navigate(row.enlace === 'satdocs' || row.enlace === 'declaraciones' ? 'docs' : 'sat');

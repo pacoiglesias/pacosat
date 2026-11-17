@@ -7,7 +7,9 @@ import { createPacoSATService } from './local-server.mjs';
 
 /* Ronda 1.11.0 — la versión final del rediseño. Lo que esta suite
    fija para que no vuelva atrás:
-   1) El menú es de 9 destinos por tarea (+ Preguntas) y las 21
+   1) El menú es de 11 destinos por tarea (9 de la limpieza
+      2.0.1 + Buzón y Declaraciones propios de la 2.0.2)
+      (+ Preguntas) y las 21
       vistas históricas quedan TODAS alcanzables: destino canónico
       o alias declarado en VIEW_ALIASES (flujos.md).
    2) «Ya se pagó» cierra el aviso con UN toque: la llamada de la
@@ -76,8 +78,15 @@ try {
      sustituye a la de los 13 destinos de la 1.31.1. Las 21
      vistas históricas siguen alcanzables (canónicas o alias),
      como comprueba la aserción siguiente. */
-  assert.deepEqual(views, ['home', 'invoices', 'dinero', 'docs', 'avisos', 'reportes', 'lists', 'salud', 'settings'],
-    'el menú lateral tiene exactamente los 9 destinos de la limpieza 2.0.1 (orden directa de Paco)');
+  /* 2.0.2 (orden directa de Paco, la misma noche: «¿Dónde está
+     el Buzón?» en su iPhone): Buzón y Declaraciones recuperan
+     su entrada PROPIA — lo necesario no se esconde — y el menú
+     pasa a 11 destinos, con Buzón y Declaraciones tras
+     Documentos, cada uno con su estado en la propia entrada.
+     RE-BASE por orden directa: esta aserción sustituye a la de
+     los 9 destinos de la limpieza 2.0.1. */
+  assert.deepEqual(views, ['home', 'invoices', 'dinero', 'docs', 'tributario', 'declaraciones', 'avisos', 'reportes', 'lists', 'salud', 'settings'],
+    'el menú lateral tiene exactamente los 11 destinos de la 2.0.2 (Buzón y Declaraciones con entrada propia)');
   const bottomAt = layout.indexOf('bottombar');
   const bottom = layout.slice(bottomAt, bottomAt + 1200);
   for (const view of ['home', 'avisos', 'buzon', 'dinero']) assert.ok(bottom.includes('data-view="' + view + '"'), 'barra inferior: ' + view);
@@ -408,9 +417,9 @@ try {
      ancho y a enseñar su Cancelar entero dentro del menú (en la
      primera captura se le cortaba la última letra); el techo
      CSS se re-basifica a 48.500 y el HTML queda en 663.000. */
-  assert.ok(htmlBytes <= 800000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 800.000, RE-BASE de la fase 2 de cliente de la 2.0.1: el artefacto mide 798.249 B — las piezas de cliente de las 30 mejoras (y la nº 31, el botón «Ejecutar aquí») que viven en la parte principal (confirmación y pre-vuelo de despachos nº 5/21, modo urgente y tira fiscal de Hoy nº 4/15, a medias nº 16, espera y foto tocada nº 27/23, búsqueda por importe y concepto nº 24, selector de contraparte y orden por importe nº 13/26, comparativo de Totales nº 11, Avisos en dos grupos con su Imprimir y contrapartes nuevas nº 9/2/10, cruce201 en Documentos nº 3, confirmación en la hoja de descarga y plantilla de año nº 5/28, línea de vida con documento nº 6, tiempo estimado nº 22, Mes de Dinero y ficha PDF nº 12/29, imprimir en Listas y Contribuyentes nº 2) suman +23.742 B medidos sobre los 774.507 B de la limpieza; venía de 780.000)');
+  assert.ok(htmlBytes <= 822500, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 822.500, RE-BASE de la 2.3.0: el artefacto mide 820.999 B (+20.350 B sobre los 800.649 B de la 2.0.2: +15.278 B de las piezas funcionales de cliente de las 20 mejoras, +2.739 B de la ronda visual, +1.607 B de los gemelos de oscuro por sistema y +726 B de la nota de novedades 2.3.0); en la 2.0.2 medía 800.649 B — +1.739 B sobre los 798.910 B asentados de la 2.0.1: las entradas propias de Buzón y Declaraciones con sus spans, sus textos de estado y su pintado —; contabilidad anterior: fase 2 de cliente de la 2.0.1: el artefacto medía 798.249 B — las piezas de cliente de las 30 mejoras (y la nº 31, el botón «Ejecutar aquí») que viven en la parte principal (confirmación y pre-vuelo de despachos nº 5/21, modo urgente y tira fiscal de Hoy nº 4/15, a medias nº 16, espera y foto tocada nº 27/23, búsqueda por importe y concepto nº 24, selector de contraparte y orden por importe nº 13/26, comparativo de Totales nº 11, Avisos en dos grupos con su Imprimir y contrapartes nuevas nº 9/2/10, cruce201 en Documentos nº 3, confirmación en la hoja de descarga y plantilla de año nº 5/28, línea de vida con documento nº 6, tiempo estimado nº 22, Mes de Dinero y ficha PDF nº 12/29, imprimir en Listas y Contribuyentes nº 2) suman +23.742 B medidos sobre los 774.507 B de la limpieza; venía de 780.000)');
   const cssBytes = ['style.part', 'design.part', 'polish.part'].reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-  assert.ok(cssBytes <= 67000, 'el CSS pesa ' + cssBytes + ' B (tope 67.000, RE-BASE de la limpieza 2.0.1 por orden directa de Paco: el CSS medía ya 66.546 B tras la parte de cliente anterior de esta ronda —46 B sobre el tope anterior— y las reglas propias de la limpieza (marco del mando de Hoy, estado de Listas en el menú, grupo de Declaraciones, efecto de canceladas) añaden +370 B medidos: 66.916 B en total; venía de 66.500 de la 2.0 tanda 7B)');
+  assert.ok(cssBytes <= 73500, 'el CSS pesa ' + cssBytes + ' B (tope 73.500, RE-BASE de la 2.3.0: el CSS mide 72.268 B (+5.352 B sobre los 66.916 B asentados: +3.392 B de la ronda visual y +1.960 B de los gemelos de oscuro por sistema con su comentario); antes, RE-BASE de la limpieza 2.0.1 por orden directa de Paco: el CSS medía ya 66.546 B tras la parte de cliente anterior de esta ronda —46 B sobre el tope anterior— y las reglas propias de la limpieza (marco del mando de Hoy, estado de Listas en el menú, grupo de Declaraciones, efecto de canceladas) añaden +370 B medidos: 66.916 B en total; venía de 66.500 de la 2.0 tanda 7B)');
 
   const defined = [...layout.matchAll(/<symbol id="(i-[a-z]+)"/g)].map(match => match[1]);
   assert.ok(defined.length >= 20, 'la hoja de símbolos existe');

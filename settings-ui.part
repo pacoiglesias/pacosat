@@ -126,7 +126,37 @@ function settingsScreen() {
   panels.push(saveBar);
   if (satToken && !guestMode) panels.push(guestPanel());
   if (satToken && !guestMode) { panels.push(paperlessPanel()); panels.push(pushPanel()); }
+  /* Comercial apagado (2.3.0 · pieza 20): el panel comercial
+     SOLO existe si /api/status dice comercial: true en ESTA
+     instalación. Con false (lo normal) no se pinta ni el
+     panel ni texto alguno: ni rastro en la interfaz. */
+  if (typeof satData !== 'undefined' && satData?.comercial === true) panels.push(comercialPanel230());
   return panels;
+}
+/* Panel comercial (2.3.0 · pieza 20): solo nace con
+   status.comercial === true. Enseña el estado de licencia
+   que devuelva GET /api/comercial/estado, en llano y solo
+   con los campos que el servidor dé: sin campos conocidos,
+   una línea sobria sin inventar licencias ni fechas. */
+function comercialPanel230() {
+  const panelEl = panel('Licencia comercial', 'El estado de la licencia de esta instalación de PacoSAT.');
+  const body = n('div');
+  panelEl.append(body);
+  body.append(n('p', 'Leyendo el estado de la licencia…', 'muted'));
+  satApi('comercial/estado').then(data => {
+    if (!body.isConnected) return;
+    body.replaceChildren();
+    const texto = [data?.texto, data?.detalle, data?.estado, data?.licencia?.estado]
+      .find(v => typeof v === 'string' && v.trim());
+    body.append(n('p', texto || 'Panel comercial activo en esta instalación.'));
+    if (typeof data?.licencia?.titular === 'string' && data.licencia.titular)
+      body.append(n('p', 'Titular: ' + data.licencia.titular, 'muted'));
+    if (typeof data?.licencia?.vence === 'string' && data.licencia.vence)
+      body.append(n('p', 'Vigencia hasta: ' + data.licencia.vence, 'muted'));
+  }).catch(error => {
+    if (body.isConnected) body.replaceChildren(n('p', 'No se pudo leer el estado de la licencia: ' + error.message, 'error-text'));
+  });
+  return panelEl;
 }
 /* Puente a Paperless (1.25.0, AGREGAR 2): las constancias,
    opiniones y acuses que PacoSAT archiva se copian también a tu
@@ -139,6 +169,9 @@ function paperlessPanel() {
   const panelEl = panel('Puente a Paperless', 'Copia en tu archivo documental (Paperless-ngx) de las constancias, opiniones y acuses que PacoSAT archiva, con etiquetas por RFC y tipo.');
   const body = n('div');
   panelEl.append(body);
+  /* El resultado de la última prueba sobrevive al repintado
+     del panel (pieza 17): guardar y repintar no lo borra. */
+  let pruebaGuardada230 = '';
   const draw = async () => {
     body.replaceChildren(n('p', 'Consultando el puente…', 'muted'));
     try {
@@ -158,15 +191,40 @@ function paperlessPanel() {
       const token = input('password', { placeholder: estado.tokenSet ? 'Token guardado — escribe solo para cambiarlo' : 'Token de API de Paperless', autocomplete: 'new-password' });
       const activoLabel = n('label', undefined, 'switch-line');
       activoLabel.append(activo, n('span', 'Activar el puente'));
+      /* Probar la conexión a un toque (2.3.0 · pieza 17): el
+         resultado queda escrito EN el panel, no solo en un
+         aviso que se va; y al guardar con el puente activo la
+         prueba corre en el acto — activar y saber que funciona
+         en el mismo gesto. */
+      const pruebaTexto = n('p', pruebaGuardada230, 'muted paperless-prueba230');
+      const probar = async () => {
+        pruebaTexto.textContent = 'Probando la conexión con tu Paperless…';
+        try {
+          const r = await satApi('paperless/probar', {});
+          pruebaGuardada230 = (r?.ok ? '✓ ' : '✗ ') +
+            (r?.texto || (r?.ok ? 'Paperless responde.' : 'Paperless no respondió.'));
+          pruebaTexto.textContent = pruebaGuardada230;
+          return Boolean(r?.ok);
+        } catch (error) {
+          pruebaGuardada230 = '✗ ' + error.message;
+          pruebaTexto.textContent = pruebaGuardada230;
+          return false;
+        }
+      };
       const guardar = n('button', 'Guardar el puente', 'soft');
       guardar.onclick = async () => {
         try {
           await satApi('paperless/config', { enabled: activo.checked, baseUrl: base.value.trim(),
             token: token.value.trim() || undefined });
-          toast('Puente a Paperless guardado.', 'ok'); draw();
+          toast('Puente a Paperless guardado.', 'ok');
+          if (activo.checked) { await probar(); draw(); }
+          else draw();
         } catch (error) { toast(error.message, 'error'); }
       };
-      form.append(activoLabel, fieldWrap('Dirección de tu Paperless', base), fieldWrap('Token de API', token), guardar);
+      const probarBtn = n('button', 'Probar conexión', 'soft');
+      probarBtn.type = 'button';
+      probarBtn.onclick = () => probar();
+      form.append(activoLabel, fieldWrap('Dirección de tu Paperless', base), fieldWrap('Token de API', token), guardar, probarBtn, pruebaTexto);
       body.append(form);
       if (enCola) {
         const retry = n('button', 'Reintentar la cola ahora', 'soft');

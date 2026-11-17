@@ -151,6 +151,43 @@ function reg(args) {
   });
 }
 
+/* ---------- Residencia VERIFICABLE (2.3.0, pieza 5) ----------
+   La lectura que el latido del ejecutor manda a PacoSAT: tres
+   hechos leídos del estado REAL de este equipo, no declarados
+   a ciegas. La interpretación es una función pura sobre el
+   estado del registro y el marcador, para que las pruebas la
+   juzguen en cualquier sistema; la lectura (estadoResidencia)
+   solo añade el reg.exe y el fichero del marcador.
+   - registrada: la clave Run apunta a ESTE lanzador (la
+     residencia de verdad: Windows arrancará este ejecutor).
+   - protocolo: el shell\open\command de pacosat:// apunta a
+     ESTE lanzador con su "%1" (el protocolo despierta a este
+     ejecutor, no a otro residuo).
+   - rechazada: el marcador de rechazo de Paco manda en esta
+     carpeta — si consta, la residencia NO debe darse por
+     buena aunque un Run viejo sobreviviera: los dos hechos
+     viajan por separado y quien lee decide con los dos. */
+export function residenciaDesdeEstado(estado = {}, { dir = carpetaPropia(), rechazada = false } = {}) {
+  return {
+    registrada: estado.comandoRun != null && estado.comandoRun === comandoLanzador(dir),
+    protocolo: estado.comandoApertura != null && estado.comandoApertura === comandoApertura(dir),
+    rechazada: rechazada === true,
+  };
+}
+
+/* La residencia leída de este equipo, ahora mismo. Nunca
+   lanza: fuera de Windows el registro no existe y los dos
+   hechos de registro van a false (el marcador sí se lee: es
+   un fichero de esta carpeta, en cualquier sistema). */
+export async function estadoResidencia({ dir = carpetaPropia() } = {}) {
+  try {
+    const estado = await estadoRegistro({ dir });
+    return residenciaDesdeEstado(estado, { dir, rechazada: hayRechazoArranque(dir) });
+  } catch {
+    return { registrada: false, protocolo: false, rechazada: false };
+  }
+}
+
 /* Lee el estado real del registro. Fuera de Windows: no-op
    declarado, estado vacío y motivo dicho. */
 export async function estadoRegistro({ dir = carpetaPropia() } = {}) {

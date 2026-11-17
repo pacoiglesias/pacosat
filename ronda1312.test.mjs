@@ -72,9 +72,9 @@ function makeHarness(options = {}) {
 /* ===== 1 · ESTÁTICAS ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.0.1', 'la versión vigente es 2.0.1 (las enmiendas anteriores viajan dentro, acumulativas; la 2.0.1 reconstruye los motores contra el mapa real)');
+  assert.equal(pkg.version, '2.3.0', 'la versión vigente es 2.0.1 (las enmiendas anteriores viajan dentro, acumulativas; la 2.0.1 reconstruye los motores contra el mapa real)');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.0.1"'), 'el artefacto se sella con la versión vigente');
+  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella con la versión vigente');
   const ui = read('ui.part'), sat = read('sat-ui.part'), mon = read('monitor-ui.part'),
     avisos = read('avisos-ui.part'), money = read('money-ui.part'), pagos = read('pagos-ui.part'),
     prob = read('problemas-ui.part'), trib = read('tributario-ui.part'), wf = read('workflows.part'),

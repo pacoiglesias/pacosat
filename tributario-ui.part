@@ -28,11 +28,47 @@ function tribTenidaFor(rfc) {
   return tribCache && tribCache.rfc === rfc ? tribCache.proximaTenida || null : null;
 }
 /* Talón vacío deliberado (1.31.0, punto B): el Buzón Tributario
-   ya no es renglón del menú ni lleva contador — vive dentro del
-   Centro SAT, y su conteo de sin abrir se ve en su tarjeta y en
-   su pantalla. La función se conserva porque Hoy y los flujos la
-   siguen llamando; ya no hay elemento que pintar. */
+   no lleva contador-inventario en el menú — su conteo de sin
+   abrir se ve en su tarjeta y en su pantalla. La función se
+   conserva porque Hoy y los flujos la siguen llamando; el
+   ESTADO en texto de su entrada del menú (2.0.2) lo pinta
+   pintarBuzonMenu202, justo debajo, no este talón. */
 function paintTribBadge() { /* sin distintivo desde la 1.31.0 */ }
+/* ===== Estado del Buzón en su entrada del menú (2.0.2) =====
+   Una sola línea corta bajo «Buzón», con la MISMA fuente que la
+   pantalla y la tarjeta de Hoy: la vista del servidor
+   (tribOverview, GET /api/tributario?rfc=) — sinAbrir,
+   comunicadosNoLeidos y comunicadosFecha de la última consulta
+   buena, y ultimaConsulta. Nada nuevo se calcula: si hay sin
+   abrir, eso manda; si no, los comunicados sin leer con su
+   fecha; sin pendientes, la fecha de la última consulta; nunca
+   consultado, se dice. La función de texto es pura (recibe la
+   vista y devuelve la línea) para que la suite la juzgue con
+   vistas de mentira hechas con los campos reales. */
+const MESES_MENU202 = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+function fechaCortaMenu202(ms) {
+  const d = new Date(Number(ms));
+  if (!ms || Number.isNaN(d.getTime())) return '';
+  return d.getDate() + ' ' + MESES_MENU202[d.getMonth()] +
+    (d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : '');
+}
+function buzonMenuTexto202(data) {
+  if (!data || (!data.ultimaConsulta && !data.total)) return 'Sin consultar todavía';
+  if (Number(data.sinAbrir) > 0) return Number(data.sinAbrir) + ' sin abrir';
+  if (Number(data.comunicadosNoLeidos) > 0)
+    return Number(data.comunicadosNoLeidos) + ' comunicados sin leer' +
+      (data.comunicadosFecha ? ' · ' + fechaCortaMenu202(data.comunicadosFecha) : '');
+  return 'Sin pendientes' + (data.ultimaConsulta ? ' · ' + fechaCortaMenu202(data.ultimaConsulta) : '');
+}
+async function pintarBuzonMenu202() {
+  const el = document.getElementById('buzon-menu-estado202');
+  if (!el) return;
+  if (typeof satToken === 'undefined' || !satToken || !scope) { el.textContent = ''; return; }
+  try {
+    const data = await satApi('tributario?rfc=' + encodeURIComponent(scope));
+    if (el.isConnected) el.textContent = buzonMenuTexto202(data);
+  } catch { if (el.isConnected) el.textContent = ''; }
+}
 /* ===== Ejecutor local del SAT (1.29.0) =====
    La ejecución contra el portal corre en TU equipo (tu sesión,
    tu IP): PacoSAT encola los trabajos y este panel enseña si el
@@ -277,6 +313,10 @@ function tributarioScreen() {
         proximaTenida: data.proximaTenida || null };
     }
     paintTribBadge();
+    /* La entrada del menú enseña el mismo estado (2.0.2): se
+       repinta con ESTA vista, sin otra lectura. */
+    const menuBuzon202 = document.getElementById('buzon-menu-estado202');
+    if (menuBuzon202) menuBuzon202.textContent = buzonMenuTexto202(data);
     body.replaceChildren();
     const progreso = data.progreso || {};
     const isRunning = running || Boolean(progreso.running);

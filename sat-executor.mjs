@@ -280,6 +280,37 @@ export function buildExecutorJob({ rfc = '', kind = '', payload = {}, created = 
   }
   if (payload.tipo !== undefined) cleanPayload.tipo = payload.tipo === 'anual' ? 'anual' : 'mensual';
   if (payload.documento !== undefined) cleanPayload.documento = String(payload.documento).slice(0, 40);
+  /* Solo faltantes (2.3.0, pieza nº 6): declaraciones-recuperar
+     admite { soloFaltantes: true } — recuperar únicamente las
+     operaciones que aún no tienen su acuse archivado — junto al
+     ejercicio y el periodo de siempre. Es un booleano estricto
+     (cualquier otra cosa es false) y solo vive en esta clase de
+     trabajo: en las demás se sigue descartando como cualquier
+     campo no reconocido del payload. */
+  if (kind === 'declaraciones-recuperar' && payload.soloFaltantes !== undefined)
+    cleanPayload.soloFaltantes = payload.soloFaltantes === true;
+  /* Operaciones que ya tienen acuse (2.3.0, pieza nº 6 — admisión
+     mínima del constructor de servidor): la lista que acompaña a
+     soloFaltantes, para que el ejecutor descarte los documentos
+     de esas operaciones sin volver a bajarlos. Viaja saneada como
+     el progreso: números de operación válidos (sin espacios), sin
+     duplicados y con el mismo tope (500); lo que no case se
+     filtra, no tumba el trabajo. Solo vive en esta clase de
+     trabajo: en las demás se descarta como cualquier campo no
+     reconocido. Sin la lista, el campo no nace (las claves de los
+     trabajos de siempre no cambian). */
+  if (kind === 'declaraciones-recuperar' && Array.isArray(payload.operacionesConAcuse)) {
+    const vistasConAcuse = new Set();
+    const conAcuse = [];
+    for (const cruda of payload.operacionesConAcuse) {
+      const operacion = String(cruda || '').replace(/\s+/g, '');
+      if (!OPERACION_RE.test(operacion) || vistasConAcuse.has(operacion)) continue;
+      vistasConAcuse.add(operacion);
+      conAcuse.push(operacion);
+      if (conAcuse.length >= 500) break;
+    }
+    if (conAcuse.length) cleanPayload.operacionesConAcuse = conAcuse;
+  }
   if (kind === 'declaracion-folio' && !cleanPayload.folio)
     throw new Error('La reimpresión por folio necesita el folio: sin folio no hay trabajo.');
   /* La clave incluye el TIPO (corrección H-1.4): sin él, una
@@ -287,7 +318,14 @@ export function buildExecutorJob({ rfc = '', kind = '', payload = {}, created = 
      colisionaban y la segunda se devolvía como «repetida» de la
      primera sin ejecutarse jamás. */
   const dedupeKey = [cleanRfc, kind, cleanPayload.tipo || '', cleanPayload.ejercicio || '', cleanPayload.periodo || '',
-    cleanPayload.folio || '', cleanPayload.documento || ''].join('|');
+    cleanPayload.folio || '', cleanPayload.documento || ''].join('|') +
+    /* Y el modo solo-faltantes (2.3.0): pedir solo lo que falta
+       no es el mismo trabajo que pedir el periodo entero — con
+       la misma clave, el segundo se devolvería como «repetido»
+       del primero sin ejecutarse. Solo se añade el sufijo
+       cuando el modo va activo: las claves de siempre no
+       cambian. */
+    (cleanPayload.soloFaltantes ? '|solo-faltantes' : '');
   return { protocol: SAT_EXECUTOR_PROTOCOL_VERSION, rfc: cleanRfc, kind,
     payload: cleanPayload, plan: routePlan(kind, cleanPayload),
     sesion: { metodo: 'efirma', persistentePorRfc: true,
@@ -459,6 +497,34 @@ export function validateExecutorResult(job = {}, result = {}) {
     out.puerta = result.puerta === 'abre' ? 'abre' : '';
     if (out.puerta && !operations.includes('entrar-con-efirma'))
       throw new Error('El resultado de la prueba de puerta no declara la operación de entrar con e.firma.');
+  }
+  if (job.kind === 'declaraciones-recuperar') {
+    /* Progreso por operaciones (2.3.0, pieza nº 6): el ejecutor
+       puede declarar qué operaciones ya completó en esta corrida
+       ({ operacionesCompletadas: [nº operación, …] }) para que
+       una recuperación de solo-faltantes reanude sin repetir las
+       hechas. Viaja saneado como las transacciones: números de
+       operación válidos (sin espacios), sin duplicados y con
+       tope; lo que no case se filtra, no tumba el resultado —
+       y no es una operación del protocolo: la lista cerrada
+       SAT_EXECUTOR_OPERATIONS no crece. */
+    const vistasOp = new Set();
+    out.operacionesCompletadas = [];
+    /* El ejecutor la declara dentro de su «progreso»
+       ({ progreso: { operacionesCompletadas } }, la forma que
+       ejecutor-local.mjs emite); la forma a nivel raíz también se
+       admite. Sin este puente, el progreso llegaba al servidor y
+       se perdía en la validación (admisión mínima 2.3.0, pieza
+       nº 6, constructor de servidor). */
+    const crudasProgreso = Array.isArray(result.operacionesCompletadas) ? result.operacionesCompletadas :
+      Array.isArray(result.progreso?.operacionesCompletadas) ? result.progreso.operacionesCompletadas : [];
+    for (const cruda of crudasProgreso) {
+      const operacion = String(cruda || '').replace(/\s+/g, '');
+      if (!OPERACION_RE.test(operacion) || vistasOp.has(operacion)) continue;
+      vistasOp.add(operacion);
+      out.operacionesCompletadas.push(operacion);
+      if (out.operacionesCompletadas.length >= 500) break;
+    }
   }
   if (job.kind === 'declaraciones-recuperar' || job.kind === 'declaracion-folio' || job.kind === 'documento-sat') {
     const expected = { ejercicio: job.payload?.ejercicio || 0, periodo: job.payload?.periodo || '',

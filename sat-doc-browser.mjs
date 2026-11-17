@@ -188,8 +188,29 @@ export function prepareKeyForPortal(der, password) {
    o cuyo cuerpo anuncie la «respuesta completa» con el PDF en
    Base64, o cualquier JSON con un campo de PDF en Base64. Devuelve
    el PDF validado o null. Es la implementación propia de la pista
-   de Paco; el portal simulado de las pruebas la ejercita. */
+   de Paco; el portal simulado de las pruebas la ejercita.
+   Endurecimiento 2.3.0: la búsqueda vieja perdía la fase cuando el
+   JSON la anidaba a más de 4 niveles, cuando el Base64 venía
+   PARTIDO en trozos dentro de un array y cuando el valor traía el
+   prefijo data-URI («data:application/pdf;base64,…») — tres formas
+   que una respuesta real puede tomar y que el decodificador pelado
+   no reconoce como PDF —. Ahora la visita baja hasta 10 niveles,
+   junta los trozos de un array de cadenas en orden, quita el
+   prefijo data-URI y normaliza el alfabeto base64url antes de
+   decodificar; el candidato solo vale si decodifica a un PDF de
+   verdad (isPdfBuffer), como siempre. */
 export function extractBase64Pdf(responses) {
+  const tryDecode = (raw) => {
+    try {
+      let text = String(raw || '').trim();
+      const dataUri = text.match(/^data:[^,]*;base64,/i);
+      if (dataUri) text = text.slice(dataUri[0].length);
+      text = text.replace(/\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
+      if (text.length < 100) return null;
+      const buffer = Buffer.from(text, 'base64');
+      return isPdfBuffer(buffer) ? buffer : null;
+    } catch { return null; }
+  };
   for (const item of responses || []) {
     const body = typeof item.body === 'string' ? item.body : '';
     if (!body) continue;
@@ -198,14 +219,22 @@ export function extractBase64Pdf(responses) {
     try { json = JSON.parse(body); } catch { /* puede ser el base64 pelado */ }
     const candidates = [];
     const visit = (value, depth) => {
-      if (!value || depth > 4) return;
+      if (value === null || value === undefined || depth > 10) return;
       if (typeof value === 'string') {
-        if (value.length > 400 && /^[A-Za-z0-9+/=\s]+$/.test(value)) candidates.push(value);
+        if ((value.length > 400 && /^[A-Za-z0-9+/=\s_-]+$/.test(value)) ||
+          /^data:[^,]*;base64,/i.test(value)) candidates.push(value);
+        return;
+      }
+      if (Array.isArray(value)) {
+        /* Base64 partido: los trozos sueltos no decodifican a
+           nada; juntos, en su orden, son el documento. */
+        if (value.length > 1 && value.every(v => typeof v === 'string')) candidates.push(value.join(''));
+        for (const v of value) visit(v, depth + 1);
         return;
       }
       if (typeof value === 'object') {
         for (const [k, v] of Object.entries(value)) {
-          if (typeof v === 'string' && /pdf|documento|base64|archivo|respuesta/i.test(k)) candidates.push(v);
+          if (typeof v === 'string' && /pdf|documento|base64|archivo|respuesta|contenido|reporte|acuse/i.test(k)) candidates.push(v);
           else visit(v, depth + 1);
         }
       }
@@ -213,10 +242,8 @@ export function extractBase64Pdf(responses) {
     if (json) visit(json, 0);
     else if (urlHints && body.length > 400) candidates.push(body.trim());
     for (const candidate of candidates) {
-      try {
-        const buffer = Buffer.from(String(candidate).replace(/\s+/g, ''), 'base64');
-        if (isPdfBuffer(buffer)) return buffer;
-      } catch { /* siguiente candidato */ }
+      const buffer = tryDecode(candidate);
+      if (buffer) return buffer;
     }
   }
   return null;
@@ -468,17 +495,61 @@ export async function fetchDocumentInBrowser({ page, creds, kind, urls = {}, tim
           'que actualizar PacoSAT: el diario de la corrida guarda la página y el marco del trámite.');
   }
 
-  /* Opinión: el SPA puede entregar el PDF como respuesta binaria o
-     cerrar con la fase de respuesta completa en Base64. Se vigilan
-     ambas vías y también el rebote conocido a la autorización. */
+  /* Opinión (diagnóstico y arreglo 2.3.0): el flujo viejo SOLO
+     ESPERABA — tras el login no hacía ningún clic ni navegación —
+     mientras la constancia, que sí baja de forma fiable, NAVEGA
+     y PULSA hasta el paso que genera su PDF (menú, marco,
+     «Generar Constancia», heurística del marco, «Generar»). Si
+     el SPA de la opinión (ptsc32d) solo pide su PDF tras un gesto
+     en pantalla, la espera pasiva muere siempre con la sesión ya
+     abierta: es el modo de fallo reproducido en el portal
+     simulado de ronda230motores.test.mjs y el que encaja con las
+     dos corridas reales del 16 nov 2026, que fallaron con la
+     sesión YA abierta y el mismo texto de «no entregó su PDF».
+     La evidencia disponible no cierra las otras dos vías
+     posibles (ventana de captura corta y forma de la respuesta
+     no reconocida), así que el driver las cubre también:
+     extractBase64Pdf endurecido (arriba) y captura de respuestas
+     octet-stream en el driver real. El arreglo principal: la
+     opinión se comporta como la constancia — primero se vigila
+     la entrega automática (descarga del navegador y fase
+     Base64, como siempre) y, si no llega, se busca y se PULSA
+     su control de generar por sus textos visibles, con clic
+     seguro cuando el driver lo ofrece y con la heurística del
+     marco como respaldo, reintentando el gesto cada pocos
+     segundos por si el SPA pinta tarde (la misma paciencia con
+     la que la constancia vigila su marco). Los textos son
+     CANDIDATOS buscados en pantalla, del más específico al
+     genérico «Generar» — el mismo último recurso de la
+     constancia —: si ninguno aparece, el error lo dice así. */
   try { hooks?.step?.('Pidiendo la opinión de cumplimiento…', page.url()); } catch { /* progreso opcional */ }
+  const TEXTOS_GENERAR_OPINION = ['Generar opinión de cumplimiento', 'Generar opinión',
+    'Generar PDF', 'Generar', 'Descargar PDF', 'Descargar'];
   let authzBounces = 0;
   let lastUrl = page.url();
+  let gestoHecho = false;
+  let proximoGesto = 0;
   while (Date.now() < deadline) {
     const pdf = await page.waitForPdf(3_000);
     if (pdf && isPdfBuffer(pdf)) return { content: pdf, keyMaterial };
     const fromBase64 = extractBase64Pdf(await page.responses().catch(() => []));
     if (fromBase64) return { content: fromBase64, keyMaterial };
+    if (!gestoHecho && Date.now() >= proximoGesto) {
+      proximoGesto = Date.now() + 5_000;
+      for (const texto of TEXTOS_GENERAR_OPINION) {
+        const clic = typeof page.clickTextSeguro === 'function'
+          ? await page.clickTextSeguro(texto).catch(() => false)
+          : typeof page.clickText === 'function'
+            ? await page.clickText(texto).catch(() => false) : false;
+        if (clic) { gestoHecho = true; break; }
+      }
+      if (!gestoHecho && typeof page.clickFrameGenerate === 'function') {
+        gestoHecho = await page.clickFrameGenerate().catch(() => false);
+      }
+      if (gestoHecho) {
+        try { hooks?.step?.('Generando la opinión de cumplimiento…', page.url()); } catch { /* progreso opcional */ }
+      }
+    }
     const url = page.url();
     if (url !== lastUrl) {
       if (/\/oauth2\/|\/authz|Error\.aspx/i.test(url)) authzBounces++;
@@ -491,9 +562,23 @@ export async function fetchDocumentInBrowser({ page, creds, kind, urls = {}, tim
     }
     await sleep(750);
   }
-  throw failure('paso-interactivo', 'La sesión con el SAT se abrió, pero la opinión de ' +
-    'cumplimiento no entregó su PDF ni en la respuesta del navegador ni en su fase de respuesta ' +
-    'completa. Si el portal cambió esa fase, habrá que actualizar PacoSAT con lo que responda ahora.');
+  const sinEntrega = failure('paso-interactivo', gestoHecho
+    ? 'La sesión con el SAT se abrió y se pulsó el control de generar de la opinión, pero su PDF ' +
+      'no llegó ni en la respuesta del navegador ni en su fase de respuesta completa. Puede ser ' +
+      'lentitud del portal: inténtalo de nuevo; si el portal cambió esa pantalla, habrá que ' +
+      'actualizar PacoSAT con lo que responda ahora.'
+    : 'La sesión con el SAT se abrió, pero la opinión de cumplimiento no entregó su PDF ni en la ' +
+      'respuesta del navegador ni en su fase de respuesta completa, y en su página no apareció ' +
+      'el control de generar que PacoSAT sabe pulsar. Si el portal cambió esa fase, habrá que ' +
+      'actualizar PacoSAT con lo que responda ahora.');
+  /* Evidencia como desde la 2.0.1: el error viaja con la foto y
+     el HTML de la pantalla (la fábrica también los adjunta en su
+     catch; aquí quedan aunque el flujo se use directo). */
+  if (page && typeof page.diagnostics === 'function' && !sinEntrega.diag) {
+    const diag = await page.diagnostics().catch(() => null);
+    if (diag) sinEntrega.diag = diag;
+  }
+  throw sinEntrega;
 }
 
 /* Fábrica del descargador por navegador, con la validación local
@@ -742,9 +827,19 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         if (type.includes('application/pdf')) {
           lastPdfUrl = url;
           response.body().then(body => { if (body && body.length) pdfBodies.push(body); }).catch(() => {});
-        } else if (type.includes('json') || type.includes('text')) {
+        } else if (type.includes('json') || type.includes('text') ||
+          type.includes('octet-stream') || type === '') {
+          /* Octet-stream y sin tipo (2.3.0): un portal puede
+             entregar el PDF — o su fase Base64 — con un tipo
+             genérico; antes esa respuesta no se capturaba por
+             NINGUNA vía y la opinión moría «sin entregar» aunque
+             el navegador la hubiera recibido. Si el cuerpo ES
+             un PDF, va a la pila de PDF; si no, a la de textos
+             que extractBase64Pdf vigila. */
           response.body().then(body => {
-            if (body && body.length && body.length < 1_500_000) {
+            if (!body || !body.length) return;
+            if (isPdfBuffer(body)) { pdfBodies.push(body); return; }
+            if (body.length < 1_500_000) {
               textResponses.push({ url, body: body.toString('utf8') });
               if (textResponses.length > 60) textResponses.shift();
             }

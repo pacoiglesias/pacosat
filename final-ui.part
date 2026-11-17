@@ -736,18 +736,13 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '2.0.1',
+  version: '2.3.0',
   puntos: [
-    'Limpieza a fondo: Hoy es corto y claro — el estado de cada pieza con su fecha, lo que te necesita y las cuatro acciones grandes, sin nada repetido.',
-    'Las acciones se hacen desde Hoy, en un toque: descargar facturas despacha la descarga, el Buzón despacha su consulta y Declaraciones despacha la recuperación. Ya no hay pestañas escondidas.',
-    'El menú quedó corto y llano: nueve entradas, con Reportes y Listas del SAT propias. Las Listas enseñan su resultado y su fecha en la propia entrada del menú, y lo demás cuelga de Salud, a un toque.',
-    'Facturas tiene un filtro nuevo, «Canceladas»: solo los comprobantes cancelados, con su estado y su efecto en el mes. Siguen fuera de los totales, como siempre.',
-    'Documentos es ahora tu expediente vivo: agrupado por tipo — constancia, opinión con su sentido y su vigencia, declaraciones por año y el resto — y si en el SAT constan acuses que aquí faltan, la pantalla lo dice y los baja. Cada documento, una sola vez.',
-    'Imprimir y reportar, a la vista: la pantalla Reportes junta todos los reportes con su periodo y sus botones de PDF, Excel e Imprimir, y Facturas, Dinero y Documentos llevan su botón «Imprimir» sin esconderlo en ningún menú.',
-    'Los pasillos del Buzón Tributario y de Declaraciones están reconstruidos contra el portal real del SAT: la consulta y la recuperación siguen los pasos que el portal enseña hoy, no los de antes.',
-    'El acceso con e.firma está reforzado: antes de firmar, el sistema verifica el formulario que tiene delante, para no firmar a ciegas en una página que no es la de acceso.',
-    'Las Listas 69-B se ven claras de un vistazo: la vista abre con quién está limpio y quién señalado, en qué listado consta y la fecha de la última comprobación. Esa misma foto, en una línea con su fecha, está también en Salud.',
-    'En Documentos, cada documento lleva su botón «Archivar» a la vista, junto a «Descargar». De la constancia y la opinión, la más reciente se marca «vigente» y las demás «anterior», y archivar las anteriores queda a un toque: los documentos no se borran, se archivan y se recuperan cuando quieras.'
+    'Hoy te cuenta «Qué cambió desde ayer», línea a línea y sin ruido, y estrena «Tus empresas»: la foto de cada RFC con sus cuatro semáforos — puerta, buzón, declaraciones y listas — de un vistazo.',
+    'Los trabajos cancelados ahora tienen «Seguir»: se reanudan sin repetir lo ya hecho (en declaraciones, solo baja lo que falta). Y antes de pedir una ventana de facturas, la confirmación te avisa si esa ventana ya se había pedido, para no gastar peticiones al SAT.',
+    'Declaraciones enseña la línea de vida de cada declaración — presentada, su acuse y dónde vive su PDF —, su entrada del menú dice cuántas llevas del año y qué mes falta, y cada día 18 PacoSAT baja solo el acuse del mes anterior y te avisa con los datos.',
+    'La Opinión de cumplimiento ahora llega hasta su botón de generar, como ya hacía la Constancia. La conciliación de Bancos sale en PDF y Excel desde Reportes, y el Registro busca por texto en todo el historial, no solo en lo último cargado.',
+    'Salud enseña si tu ejecutor vive residente en tu equipo y con una sola instancia, y probar la conexión de Paperless y el ensayo de restauración se hace desde su propia tarjeta, con el resultado a la vista. Y la app entera se ve más limpia: tipografía ordenada, tarjetas con aire, estados vacíos diseñados y el modo oscuro pulido, también cuando el oscuro viene de tu sistema.'
   ]
 };
 function novedadesCard1311() {
@@ -865,6 +860,21 @@ function archivoScreen1311() {
    gestos»: lo que no consta no se señala). Se repinta en cada
    render, con el estado ya cargado — ninguna llamada nueva. */
 let gestosCiecExtra1311 = 0;
+/* La línea de la puerta del menú, con su frescura (2.3.0 ·
+   pieza 12): estado + de cuándo es la foto, como las demás
+   líneas del menú — «abre · foto de hoy», «no abre · foto del
+   {fecha}», «sin probar todavía». Pura: «hoy» es el día de
+   calendario de la prueba, no «hace menos de 24 h». */
+function puertaLinea230(puerta, ahora = Date.now()) {
+  if (!puerta || !puerta.probada) return { estado: 'sin-dato', texto: 'sin probar todavía' };
+  const foto = new Date(puerta.probada), hoy = new Date(ahora);
+  const esHoy = foto.getFullYear() === hoy.getFullYear() && foto.getMonth() === hoy.getMonth() &&
+    foto.getDate() === hoy.getDate();
+  const cuando = esHoy ? 'foto de hoy'
+    : 'foto del ' + (typeof fechaCortaMenu202 === 'function' ? fechaCortaMenu202(puerta.probada)
+      : foto.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }));
+  return { estado: puerta.ok ? 'ok' : 'mal', texto: (puerta.ok ? 'abre' : 'no abre') + ' · ' + cuando };
+}
 function senalesBarra1311() {
   const dot = document.getElementById('puerta-dot');
   const txt = document.getElementById('puerta-txt');
@@ -878,12 +888,17 @@ function senalesBarra1311() {
          apagado el punto nombra ESA causa, no un «revísala»
          que manda a la e.firma; y la foto vieja se dice vieja. */
       const causaB = causaP200(puerta, satData?.ejecutor);
+      /* Estado + frescura (pieza 12): la foto vieja se sigue
+         diciendo vieja, con su fecha; la fresca dice «foto de
+         hoy» o «foto del {fecha}» tras el abre/no abre. Las
+         causas de equipo no cambian: nombran su causa. */
+      const linea230 = puertaLinea230(puerta);
       const filaB = causaB.tipo === 'equipo' ? ['mal', 'sin señal de tu equipo desde el ' + localDateTime(satData.ejecutor.ultimoVisto)]
         : causaB.tipo === 'sin-equipo' ? ['mal', 'falta emparejar tu equipo']
-        : puerta.ok && !causaB.vieja ? ['ok', 'abre']
-        : puerta.ok || causaB.vieja ? [puerta.ok ? 'vigilar' : 'mal',
-            (puerta.ok ? 'abría' : 'no abría') + ' el ' + localDateTime(puerta.probada) + ' (foto vieja)']
-        : ['mal', 'no abre — revísala en Hoy'];
+        : causaB.vieja ? [puerta.ok ? 'vigilar' : 'mal',
+            (puerta.ok ? 'abría' : 'no abría') + ' · foto del ' +
+            (typeof fechaCortaMenu202 === 'function' ? fechaCortaMenu202(puerta.probada) : localDateTime(puerta.probada)) + ' (foto vieja)']
+        : [linea230.estado, linea230.texto];
       dot.dataset.state = filaB[0];
       txt.textContent = 'Puerta del SAT: ' + filaB[1];
     }

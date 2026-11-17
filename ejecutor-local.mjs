@@ -84,9 +84,9 @@ import { BUZON_LOGIN_URL } from './sat-tributario.mjs';
 import { createSatDeclFetch } from './sat-declaraciones.mjs';
 import { createSatTribFetch } from './sat-tributario.mjs';
 import { SAT_EXECUTOR_PROTOCOL_VERSION } from './sat-executor.mjs';
-import { asegurarResidencia } from './registro-windows.mjs';
+import { asegurarResidencia, estadoResidencia } from './registro-windows.mjs';
 
-export const EJECUTOR_VERSION = '2.0.1';
+export const EJECUTOR_VERSION = '2.3.0';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const URL_BASE = String(process.env.PACOSAT_URL || '').replace(/\/$/, '');
@@ -363,7 +363,7 @@ async function ejecutarIntento(job, m, onStep) {
         const result = await m.decl({ rfc }, query, { onStep, sesionViva: { page: sesion.page } });
         /* accesoOk (1.32.1): como en el buzón, un corredor que
            completa bajo la sesión acredita acceso real. */
-        return { accesoOk: true,
+        const salida = { accesoOk: true,
           operations: job.kind === 'declaracion-folio' ? ['entrar-con-efirma', 'reimprimir-acuse-por-folio', 'descargar-pdf']
             : ['entrar-con-efirma', 'consultar-transacciones', 'descargar-pdf'],
           documents: (result.documents || []).map(doc => ({ tipo: query.tipo === 'anual' ? 'anual' : 'mensual',
@@ -371,6 +371,29 @@ async function ejecutarIntento(job, m, onStep) {
             fechaPresentacion: doc.fechaPresentacion || '', operacion: doc.operacion || '',
             contentBase64: toB64(doc.content) })),
           transactions: result.transactions || [], warnings: result.warnings || [] };
+        /* «Seguir» real (2.3.0, pieza 6): SOLO declaraciones-
+           recuperar lo honra — declaracion-folio y
+           declaraciones-transacciones son atómicos y su
+           resultado no cambia. Con soloFaltantes, los
+           documentos de operaciones que ya tienen acuse se
+           descartan aquí y el resultado solo lleva lo que
+           faltaba; el progreso nombra las operaciones que
+           ESTA corrida dejó con acuse, para que el servidor
+           pueda reanudar sin repetir las que ya constan. */
+        if (job.kind === 'declaraciones-recuperar') {
+          const seguir = aplicarSeguir230(salida.documents, job.payload || {});
+          salida.documents = seguir.documents;
+          salida.progreso = seguir.progreso;
+          if (seguir.saltadas.length) {
+            onStep('Seguir', 'se saltan ' + seguir.saltadas.length +
+              (seguir.saltadas.length === 1 ? ' operación que ya tenía acuse' : ' operaciones que ya tenían acuse'));
+            salida.warnings = [...salida.warnings,
+              'Seguir: ' + seguir.saltadas.length +
+              (seguir.saltadas.length === 1 ? ' operación ya tenía acuse' : ' operaciones ya tenían acuse') +
+              ' y no se repitió su documento.'];
+          }
+        }
+        return salida;
       }
       if (job.kind === 'documento-sat') {
         throw Object.assign(new Error('Este ejecutor aún no descarga documentos sueltos del SAT: el trabajo queda registrado y el documento se pide desde su pantalla de siempre.'), { code: 'sin-manejador' });
@@ -480,6 +503,84 @@ async function ejecutar(job) {
   return { status: 'failed', result: { steps, error: String(ultimoError?.message || ultimoError || 'Sin resultado'), errorKind: String(ultimoError?.code || '') } };
 }
 
+/* ================================================================
+   RONDA 2.3.0 — piezas 5 y 6 (el sello EJECUTOR_VERSION no se
+   toca aquí: la subida de versión es central, al empaquetar).
+   ================================================================ */
+
+/* ---------- Pieza 5: residencia e instancias VERIFICABLES ----------
+   El latido deja de mandar {} y pasa a declarar la residencia
+   LEÍDA de este equipo en cada pulso: estadoResidencia (en
+   registro-windows.mjs, la misma pieza que asegura la
+   residencia al arrancar — se reutiliza, no se duplica) dice
+   si la clave Run apunta a este lanzador (registrada), si el
+   protocolo pacosat:// apunta a este lanzador (protocolo) y
+   si el marcador de rechazo de Paco manda (rechazada).
+   Instancias: la instancia única de este ejecutor NO es un
+   cerrojo dentro de este proceso — la garantiza el lanzador
+   despertar.vbs, que antes de arrancar consulta por WMI si ya
+   corre un node con el ejecutor-local.mjs de ESTA carpeta y,
+   si corre, no arranca otro. El dato que se reporta es el de
+   ESTE proceso: el que está latiendo es la instancia que
+   ocupa el hueco, así que instancias = 1 — también fuera de
+   Windows, donde el lanzador no corre y la forma se conserva
+   con los hechos de registro a false. La lectura jamás tumba
+   el ciclo: si algo falla, viaja la forma en false y el
+   latido sigue. */
+export const INSTANCIAS_ESTE_PROCESO230 = 1;
+export async function residenciaLatido230({ dir } = {}) {
+  const estado = await estadoResidencia(dir ? { dir } : {}).catch(() => null);
+  return {
+    registrada: estado?.registrada === true,
+    protocolo: estado?.protocolo === true,
+    rechazada: estado?.rechazada === true,
+    instancias: INSTANCIAS_ESTE_PROCESO230,
+  };
+}
+
+/* ---------- Pieza 6: «Seguir» real en declaraciones ----------
+   Funciones puras: la suite las juzga sin portal. La
+   comparación de operaciones es por su forma sin espacios
+   (la misma normalización que el protocolo del servidor
+   aplica a los números de operación): «123 456» y «123456»
+   son la misma operación. */
+const operacionClave230 = valor => String(valor || '').replace(/\s+/g, '');
+export function operacionesConAcuse230(payload = {}) {
+  const lista = Array.isArray(payload?.operacionesConAcuse) ? payload.operacionesConAcuse : [];
+  return [...new Set(lista.map(operacionClave230).filter(Boolean))];
+}
+/* Aplica el payload de «Seguir» a los documentos de UNA
+   corrida de declaraciones-recuperar:
+   - soloFaltantes !== true: los documentos pasan tal cual
+     (la corrida es completa, como siempre);
+   - soloFaltantes === true: se descartan los documentos de
+     las operaciones que ya tienen acuse (las de la lista) y
+     solo viaja lo que faltaba.
+   En ambos casos el progreso nombra, sin repetir y en el
+   orden en que quedaron, las operaciones que ESTA corrida
+   dejó con acuse (documentos de clase «acuse» del resultado
+   ya filtrado): ni las saltadas ni las de corridas ajenas. */
+export function aplicarSeguir230(documents = [], payload = {}) {
+  const yaConAcuse = new Set(operacionesConAcuse230(payload));
+  const soloFaltantes = payload?.soloFaltantes === true;
+  const saltadas = [];
+  const quedan = [];
+  for (const doc of documents || []) {
+    const clave = operacionClave230(doc?.operacion);
+    if (soloFaltantes && clave && yaConAcuse.has(clave)) {
+      if (!saltadas.includes(clave)) saltadas.push(clave);
+      continue;
+    }
+    quedan.push(doc);
+  }
+  const completadas = [];
+  for (const doc of quedan) {
+    const clave = operacionClave230(doc?.operacion);
+    if (doc?.clase === 'acuse' && clave && !completadas.includes(clave)) completadas.push(clave);
+  }
+  return { documents: quedan, saltadas, progreso: { operacionesCompletadas: completadas } };
+}
+
 /* O7 (tanda 5, 2.0): modo ráfaga al reconectar. El servidor dice
    en el latido y en el reclamo cuántos trabajos quedan pendientes
    (`pendientes`); mientras la cola sea >0 el siguiente sondeo
@@ -498,7 +599,11 @@ async function ciclo() {
      que Paco canceló mientras tanto — también los que este
      ciclo aún no reclamó y, sobre todo, el que puede estar
      corriéndose ahora mismo en este proceso. */
-  const latido = await api('/api/executor/heartbeat', {});
+  /* Residencia verificable (2.3.0, pieza 5): cada latido lee
+     el estado real de este equipo y lo manda en `residencia`;
+     el servidor lo guarda tal cual. */
+  const residencia = await residenciaLatido230();
+  const latido = await api('/api/executor/heartbeat', { residencia });
   if (Array.isArray(latido?.cancelados)) {
     for (const id of latido.cancelados) {
       if (id != null && id !== '') canceladosRemotos.add(String(id));

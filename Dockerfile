@@ -15,7 +15,7 @@ ENV PACOSAT_CHROMIUM_PATH=/usr/bin/chromium
 # versión y huella) y viajan dentro del paquete de despliegue; no
 # viven en el árbol de código. Si algún día se construye la imagen
 # fuera de ese paquete, hay que generarlos antes del build.
-COPY local-server.mjs sat-direct.mjs sat-monitor.mjs sat-lists.mjs sat-doc-fetch.mjs sat-doc-browser.mjs sat-declaraciones.mjs sat-tributario.mjs sat-ciec.mjs sat-executor.mjs ejecutor-local.mjs pagos.mjs xml-core.mjs salidas-doc.mjs qr-cfdi.mjs pdf-invoice.mjs backup-core.mjs bank-statement.mjs news-mail.mjs mail-layout.mjs tanda200g.mjs secret-box.mjs push.mjs Faro-Fiscal.html capacidades.json lazy.json ejecutor-bundle.zip ejecutor-bundle.json ./
+COPY local-server.mjs sat-direct.mjs sat-monitor.mjs sat-lists.mjs sat-doc-fetch.mjs sat-doc-browser.mjs sat-declaraciones.mjs sat-tributario.mjs sat-ciec.mjs sat-executor.mjs ejecutor-local.mjs pagos.mjs xml-core.mjs salidas-doc.mjs qr-cfdi.mjs pdf-invoice.mjs backup-core.mjs bank-statement.mjs news-mail.mjs mail-layout.mjs tanda200g.mjs secret-box.mjs push.mjs licencia.mjs Faro-Fiscal.html capacidades.json lazy.json ejecutor-bundle.zip ejecutor-bundle.json ./
 USER node
 EXPOSE 43729
 CMD ["node", "local-server.mjs"]

@@ -23,10 +23,14 @@ function registroGuardarFiltro1310() {
   catch { /* Sin almacenamiento local, el filtro dura la sesión. */ }
 }
 const REGISTRO_CLASE = { conexion: ['ok', 'Conexión'], accion: ['dim', 'Acción'], fallo: ['bad', 'Fallo'] };
-/* Búsqueda de texto (2.0.1 · nº 17): además de los filtros de
-   RFC y de clase que ya viajaban al servidor, la pantalla
-   busca por texto sobre el payload que ya llegó. */
+/* Búsqueda de texto (2.0.1 · nº 17; 2.3.0 · pieza 8): el texto
+   VIAJA al servidor (texto= en GET /api/registro) y busca en
+   TODO el historial, no solo en las 300 entradas cargadas;
+   se combina con los filtros de RFC y de clase, que también
+   viajan. La tecla espera su debounce (300 ms) antes de
+   pedir: teclear no lanza una petición por letra. */
 let registroTexto201 = '';
+let registroTextoTimer230 = null;
 /* Compartir el Registro (1.32.1, A3 — petición de Paco del
    14 nov): copiar lo visible como texto limpio y poder
    limpiarlo sin miedo, con Deshacer. */
@@ -61,15 +65,18 @@ function registroScreen() {
   const body = n('div');
   head.append(body);
   wrap.append(head);
+  let pintarSeq230 = 0;
   const pintar = async () => {
+    const seq = ++pintarSeq230;
     body.replaceChildren(n('p', 'Leyendo el registro…', 'muted'));
     let data = null;
     try {
       data = await satApi('registro?limit=300' +
         (registroFiltro.rfc ? '&rfc=' + encodeURIComponent(registroFiltro.rfc) : '') +
-        (registroFiltro.clase ? '&clase=' + encodeURIComponent(registroFiltro.clase) : ''));
-    } catch (error) { body.replaceChildren(n('p', error.message, 'error-text')); return; }
-    if (!body.isConnected) return;
+        (registroFiltro.clase ? '&clase=' + encodeURIComponent(registroFiltro.clase) : '') +
+        (registroTexto201 ? '&texto=' + encodeURIComponent(registroTexto201) : ''));
+    } catch (error) { if (seq === pintarSeq230) body.replaceChildren(n('p', error.message, 'error-text')); return; }
+    if (!body.isConnected || seq !== pintarSeq230) return;
     body.replaceChildren();
     const filtros = n('div', undefined, 'actions');
     const selRfc = select([['', 'Todos los contribuyentes'], ...people.map(person => [person.id, person.id])],
@@ -82,12 +89,17 @@ function registroScreen() {
     buscarTexto.setAttribute('aria-label', 'Buscar en el Registro');
     buscarTexto.oninput = () => {
       registroTexto201 = buscarTexto.value.trim().toLocaleLowerCase('es-MX');
-      /* Se repinta solo la lista; el foco vuelve al buscador
-         para seguir tecleando sin perder el hilo. */
-      pintar().then(() => {
-        const el = body.querySelector('input[type="search"]');
-        if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
-      });
+      /* Debounce de 300 ms (pieza 8): la búsqueda va al
+         servidor y teclear no paga una petición por letra.
+         Al repintar, el foco vuelve al buscador para seguir
+         tecleando sin perder el hilo. */
+      clearTimeout(registroTextoTimer230);
+      registroTextoTimer230 = setTimeout(() => {
+        pintar().then(() => {
+          const el = body.querySelector('input[type="search"]');
+          if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+        });
+      }, 300);
     };
     filtros.append(buscarTexto);
     /* Imprimir lo visible (2.0.1 · nº 2): con los filtros en
@@ -96,9 +108,9 @@ function registroScreen() {
       const imprimirBtn = n('button', 'Imprimir', 'soft');
       imprimirBtn.type = 'button';
       imprimirBtn.onclick = () => {
-        const visiblesImp = registroTexto201
-          ? data.items.filter(item => (item.texto + ' ' + (item.rfc || '')).toLocaleLowerCase('es-MX').includes(registroTexto201))
-          : data.items;
+        /* Lo devuelto YA viene filtrado por el servidor
+           (RFC, clase y texto): imprimir usa eso mismo. */
+        const visiblesImp = data.items;
         imprimirVista201('Registro', 'Lo visible con los filtros en curso: ' + number.format(visiblesImp.length) + ' suceso(s).',
           ['Fecha', 'Clase', 'Suceso', 'RFC'],
           visiblesImp.map(item => [fmtFechaHora(item.at), REGISTRO_CLASE[item.clase]?.[1] || 'Acción', item.texto, item.rfc || '']));
@@ -148,12 +160,11 @@ function registroScreen() {
     body.append(n('p', number.format(data.total) + ' suceso(s)' +
       (registroFiltro.rfc ? ' de ' + registroFiltro.rfc : '') +
       (registroFiltro.clase ? ' · ' + (REGISTRO_CLASE[registroFiltro.clase]?.[1] || registroFiltro.clase) : '') +
+      (registroTexto201 ? ' · con el texto «' + registroTexto201 + '» en todo el historial' : '') +
       ' · lo más reciente primero.', 'muted'));
-    /* La búsqueda de texto filtra el payload ya llegado
-       (nº 17): la lista de abajo pinta SOLO lo que coincide. */
-    const itemsVisibles201 = registroTexto201
-      ? data.items.filter(item => (item.texto + ' ' + (item.rfc || '')).toLocaleLowerCase('es-MX').includes(registroTexto201))
-      : data.items;
+    /* La búsqueda ya la hizo el servidor sobre todo el
+       historial (pieza 8): lo que llegó ES lo visible. */
+    const itemsVisibles201 = data.items;
     if (!itemsVisibles201.length) {
       body.append(empty('Sin sucesos con ese filtro', 'Cambia el contribuyente, la clase o el texto buscado: el registro completo sigue estando, solo está filtrado.'));
       return;
@@ -225,7 +236,8 @@ function registroScreen() {
 async function downloadRegistroCsv() {
   try {
     const params = [registroFiltro.rfc ? 'rfc=' + encodeURIComponent(registroFiltro.rfc) : '',
-      registroFiltro.clase ? 'clase=' + encodeURIComponent(registroFiltro.clase) : ''].filter(Boolean).join('&');
+      registroFiltro.clase ? 'clase=' + encodeURIComponent(registroFiltro.clase) : '',
+      registroTexto201 ? 'texto=' + encodeURIComponent(registroTexto201) : ''].filter(Boolean).join('&');
     download(await satApiBlob('registro/csv' + (params ? '?' + params : '')), 'registro-pacosat.csv');
     toast('Registro exportado en CSV.', 'ok');
   } catch (error) { toast(error.message, 'error'); }

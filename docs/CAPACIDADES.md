@@ -1,8 +1,8 @@
 # PacoSAT — Qué incluye (documento vivo)
 
-**Versión del software que describe este documento: 2.0.0**
+**Versión del software que describe este documento: 2.3.0**
 
-**Última modificación: 15 nov 2026**
+**Última modificación: 16 nov 2026**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del repositorio (la FUENTE del listado: la app lo muestra dentro, en la pantalla «Qué incluye PacoSAT», generada desde él en cada build) y `~/workspace/pacosat-capacidades.md` (copia de trabajo). Al tocar una, se toca la otra en el mismo cambio. Se actualiza en cada ronda y cada despliegue, junto con el sello de versión.
@@ -311,6 +311,24 @@ Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del reposito
 - ✅ Multi-RFC: color asignable por contribuyente, selector con buscador y salud por RFC, y panel general de contribuyentes ordenado por urgencia.
 - ✅ Bancos: un solo botón sube el estado de cuenta (detecta banco, cuenta y periodo, lo aplica con Deshacer), recordatorio de estados del día 1 al 10 por cuenta, conciliación banco↔facturas y pantalla de contrapartes.
 - ✅ Cierre de mes guiado, el mes en un ZIP y «Enviar al despacho», candado de ejercicio cerrado, restauración guiada con respaldo de seguridad previo, panel de valor, webhooks firmados, calendario fiscal por RFC (ICS), invitado de solo lectura por RFC y buscador global que busca en todo.
+
+## 21. Ronda 2.3.0 — lo que faltaba, visible y con su Seguir (16 nov 2026)
+- ✅ El menú enseña también el estado de la puerta en su propia línea («abre · foto de hoy» / «no abre · foto del…»), como ya lo tenían Listas, Buzón y Declaraciones; y Declaraciones enseña su conteo por ejercicio («13 de 2026 · al día») leído del cruce real, sin peticiones nuevas al SAT.
+- ✅ Hoy suma «Qué cambió desde ayer» — una línea por cambio real, sin ruido ni repetidos — y «Tus empresas»: la foto por RFC con su semáforo (puerta, buzón, declaraciones y listas) para cuando convivan varios contribuyentes.
+- ✅ «Seguir» real en los trabajos cancelados o a medias: en declaraciones baja solo lo que falta, sin repetir lo ya bajado; en los demás tipos, relanzamiento limpio con el progreso conservado. El barrido tiene por fin su tiempo estimado, desde su propio historial real.
+- ✅ Aviso ANTES de quemar un criterio: si la ventana de descarga ya se pidió una vez, la confirmación lo dice con su fecha antes de gastar el intento (antes el aviso llegaba después, con el 409).
+- ✅ La Opinión de cumplimiento pulsa por fin su botón de generar, como la Constancia: falló dos veces el 16 nov con la sesión abierta porque el conductor solo esperaba y nunca pulsaba; el lector del PDF del portal acepta además más formas de entrega.
+- ✅ Línea de vida de cada declaración: presentada (fecha y nº de operación), su acuse (verlo, o bajarlo si falta) y dónde vive el PDF de la declaración; la fecha de presentación queda guardada en el folio.
+- ✅ El día 18 de cada mes, el acuse de la declaración del mes anterior baja solo, una vez por RFC, y el aviso llega con los datos: qué se guardó, de qué periodo y de cuántas operaciones; si no se guarda nada, no hay aviso.
+- ✅ La conciliación de Bancos tiene por fin su PDF y su Excel propios dentro de Reportes, salidos del mismo cálculo de la pantalla, sin totales nuevos.
+- ✅ El Registro se busca por texto libre en todo el historial (además de por tipo y RFC), y la búsqueda vale también para su CSV.
+- ✅ Salud enseña la residencia del ejecutor leída de su propio reporte («residente: sí/no · instancias: 1»), la tarjeta de avisos push con su estado real (suscrito o no, y cuántos aparatos) y el ensayo de restauración ejecutable en un toque; sin contraseña guardada, lo dice en llano como gesto pendiente.
+- ✅ Paperless gana «Probar conexión» en su panel, con la comprobación en el acto al guardar y al pulsar; el token nunca sale del servidor.
+- ✅ Elemental Denim nace con su color propio de la paleta en cuanto se prepara su alta; su gesto nombrado sigue siendo subir su e.firma (o dar su CIEC).
+- ✅ Ronda visual en todas las pantallas: escala de tipos con nombre, tarjetas con aire y sombra propia, estados vacíos diseñados como un solo patrón, foco de teclado visible en el menú, toques de 44 px en móvil y el oscuro correcto también cuando el oscuro viene del sistema, sin tema elegido.
+- ✅ La batería permanente incluye la prueba del camino de entrada (los orígenes legítimos de su casa) y el portal del SAT simulado en un Chromium real; la prueba contra el SAT real sigue siendo la prueba de verdad, con Paco y su e.firma.
+- ✅ Base comercial construida y apagada: verificación de licencia por máquina (huella irreversible por componentes, con tolerancia por mayoría) leyendo un documento firmado. Sin la clave pública de Paco — que aún no existe — ninguna licencia puede validarse, y nada se activa para terceros sin su palabra.
+- ✅ Corrección de camino: cancelar una descarga de CFDI devolvía un error 502 después de haber guardado (una llamada a una función que ya no existía); el resto quedó retirado y la cancelación probada.
 
 ## Fuera de alcance (decidido por Paco)
 - Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT).

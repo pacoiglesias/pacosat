@@ -359,8 +359,15 @@ const seedInvoices = async (h, specs) => {
   const h = makeHarness({ dbFile });
   /* Sin respaldo configurado: la verdad. */
   const sinRespaldo = await h.call('POST', '/api/backup/restore-test', {});
-  assert.ok(sinRespaldo.status >= 400 && /no está configurado/.test(sinRespaldo.json?.error || ''),
-    'sin respaldo, el ensayo lo dice — no finge una resurrección');
+  /* Re-base 2.3.0 (pieza 19 de Servidor-1): el ensayo sin
+     respaldo configurado ya NO responde un error técnico — el
+     contrato nuevo es 200 { ok:false, pendienteDePaco:true }
+     con el detalle en llano (la contraseña de respaldo la
+     teclea Paco; el sistema no finge una resurrección ni
+     bloquea la pantalla con un 400). */
+  assert.ok(sinRespaldo.status === 200 && sinRespaldo.json?.ok === false &&
+    sinRespaldo.json?.pendienteDePaco === true && /contraseña de respaldo/.test(sinRespaldo.json?.detail || ''),
+    'sin respaldo, el ensayo lo dice en llano y queda pendiente de Paco — no finge una resurrección');
 
   await unlock(h, OWN);
   await seedInvoices(h, [
@@ -401,8 +408,15 @@ const seedInvoices = async (h, specs) => {
      por Paco): el Buzón Tributario ya NO es renglón del menú ni lleva
      contador de inventario — vive dentro del Centro SAT y se llega
      desde su tarjeta; la pantalla sigue existiendo y resolviéndose. */
-  assert.ok(!html.includes('data-view="tributario"'), 'el menú ya no tiene el destino Buzón Tributario (vive en Centro SAT)');
-  assert.ok(!html.includes('id="tributario-badge"'), 'ni su contador de sin abrir en el menú');
+  /* RE-BASIFICADO en la 2.0.2 (orden directa de Paco: «¿Dónde está
+     el Buzón?»): el Buzón Tributario RECUPERA su renglón propio en
+     el menú, con su estado en texto (span buzon-menu-estado202) —
+     sigue sin contador de inventario: el distintivo
+     tributario-badge no existe; lo que la entrada enseña es el
+     estado llano de su pantalla. */
+  assert.ok(html.includes('data-view="tributario"'), 'el menú tiene el destino Buzón Tributario (entrada propia, 2.0.2)');
+  assert.ok(html.includes('id="buzon-menu-estado202"'), 'su entrada enseña su estado en texto');
+  assert.ok(!html.includes('id="tributario-badge"'), 'sin contador de inventario en el menú');
   assert.ok(html.includes("tributario: ['Buzón Tributario'"), 'la pantalla consta en el mapa');
   assert.ok(html.includes('tributario: tributarioScreen'), 'y se resuelve en el render');
   assert.ok(html.includes('function satApiLectura'), 'Hoy comparte sus lecturas por pintado');
@@ -441,7 +455,7 @@ const seedInvoices = async (h, specs) => {
      ordenado + 45 mejoras + reportes): la página crece a
      659.787 B; el techo de la casa sube a 663.000 B con la
      contabilidad en el anexo 1.31.0 de ronda1110. */
-  assert.ok(pesoInicial < 800000, 'la primera pintura bajo el techo de la casa (800.000 B, re-basificado en la fase 2 de cliente de la 2.0.1: el artefacto mide 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 775.000 de la limpieza de esta misma ronda): ' + pesoInicial + ' B');
+  assert.ok(pesoInicial < 822500, 'la primera pintura bajo el techo de la casa (822.500 B, re-basificado en la 2.3.0: el artefacto mide 820.999 B (+20.350 B sobre los 800.649 B de la 2.0.2: +15.278 B de las piezas funcionales de cliente de las 20 mejoras, +2.739 B de la ronda visual, +1.607 B de los gemelos de oscuro por sistema y +726 B de la nota de novedades 2.3.0); en la 2.0.2 medía 800.649 B — +1.739 B de las entradas propias del menú con sus estados —; contabilidad anterior: fase 2 de cliente de la 2.0.1: el artefacto medía 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 775.000 de la limpieza de esta misma ronda): ' + pesoInicial + ' B');
   /* El servicio sirve las partes tras la misma puerta del proxy. */
   const h = makeHarness({ lazyParts: lazy });
   const parte = await h.call('GET', '/parte/pagos');
