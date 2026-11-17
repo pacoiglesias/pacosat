@@ -170,6 +170,19 @@ function docCmdCard(kind, profile) {
   renovar.type = 'button';
   renovar.onclick = event => { event.stopPropagation(); satQuickRunDoc(kind, profile.rfc, renovar, line); };
   acts.append(renovar, line);
+  /* Archivar visible en la propia tarjeta (2.0.1): junto a Ver
+     y Renovar, sin depender del ⋯. Actúa sobre la entrada del
+     expediente que es este documento (su id es el fileId que
+     el servidor archiva); sin entrada que case, no se pinta. */
+  if (doc?.fileId && typeof docArchivar1311 === 'function' && typeof documents !== 'undefined') {
+    const entrada = documents.find(item => item.id === doc.fileId && !item.archived);
+    if (entrada) {
+      const arch = n('button', 'Archivar', 'soft small');
+      arch.type = 'button';
+      arch.onclick = event => { event.stopPropagation(); docArchivar1311(entrada); };
+      acts.append(arch);
+    }
+  }
   /* Menú ⋯ universal (1.31.2) en la tarjeta del documento:
      su secundaria real es ver las versiones guardadas en
      Documentos (la sección de siempre, con su historial). */
@@ -438,9 +451,15 @@ function commandCenter() {
          (o del único que haya). */
       const profiles = satdocs?.profiles || [];
       const objetivo = profiles.find(row => row.rfc === scope) || (profiles.length === 1 ? profiles[0] : null);
+      void objetivo;
+      /* Cero duplicados (2.0.1): la Constancia y la Opinión viven
+         SOLO en Documentos — este centro ya no pinta sus
+         tarjetas (docCmdCard); su hueco enlaza a Documentos,
+         donde están con su fecha, su sentido y su Archivar. */
       const sDocC = slot('satdocs-c'), sDocO = slot('satdocs-o');
-      if (sDocC) sDocC.replaceChildren(docCmdCard('constancia', objetivo));
-      if (sDocO) sDocO.replaceChildren(docCmdCard('opinion', objetivo));
+      if (sDocC) sDocC.replaceChildren(cmdCard('satdocs', 'gris', 'Constancia y Opinión',
+        'Viven en Documentos, con su fecha y su vigencia', '', null, () => navigate('docs')));
+      if (sDocO) sDocO.remove();
       /* Pieza 2 + N5 + N6: el estado del servidor se pide FRESCO
          en cada entrada a Hoy (sin la caché de 30 s) y repinta
          Vigilancia, Descarga, Documentos y Pagos. */
@@ -636,7 +655,7 @@ function healthCard() {
     else if (check.id === 'respaldo') gesto = action('Ir a Respaldos', () => navigate('backup'), 'soft');
     else if (check.id === 'documentos') gesto = action('Ir a Documentos', () => navigate('docs'), 'soft');
     else if (check.id === 'vigilancia') gesto = action('Revisar ahora', () => monitorCheckNow(), 'soft');
-    else if (check.id === 'listados') gesto = action('Ir a Listas 69-B', () => { satTab = 'listas'; navigate('sat'); }, 'soft');
+    else if (check.id === 'listados') gesto = action('Ir a Listas 69-B', () => navigate('lists'), 'soft');
     else if (check.id === 'correo') gesto = action('Ir a Ajustes › Correo', () => { ajustesSection = 'correo'; navigate('settings'); }, 'soft');
     wrap.append(problemCard(spec, gesto));
   }

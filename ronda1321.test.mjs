@@ -86,12 +86,12 @@ const unlock = async (h, rfc = OWN) => {
 /* ===== 1 · ESTÁTICAS + cabecera honesta (A1) ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.0.0', 'la ronda es la 2.0.0');
+  assert.equal(pkg.version, '2.0.1', 'la ronda es la 2.0.1');
   const ejecutor = read('ejecutor-local.mjs');
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.0.0'"), 'el ejecutor declara 2.0.0');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.0.1'"), 'el ejecutor declara 2.0.1');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.0.0"'), 'el artefacto se sella 2.0.0');
-  assert.ok(html.length <= 737000 || Buffer.byteLength(html) <= 751000, 'techo del artefacto (737.000 caracteres / 751.000 B, re-basificado en la 2.0 tanda 7B en AUDITORIA.md (anexo por pieza de la 7B; la 7A lo dejó en 743.000): ganchos diferidos de Ajustes y de Documentos/Facturas, detalle en AUDITORIA.md; venía de 740.000 B de la tanda 4)');
+  assert.ok(html.includes('"version":"2.0.1"'), 'el artefacto se sella 2.0.1');
+  assert.ok(html.length <= 795000 || Buffer.byteLength(html) <= 800000, 'techo del artefacto (795.000 caracteres / 800.000 B, re-basificado en la fase 2 de cliente de la 2.0.1: el artefacto mide 794.528 caracteres / 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 771.000 / 775.000 de la limpieza de esta misma ronda)');
 
   /* Cabecera ↔ despacho: para cada pantalla tocada por la
      auditoría, la etiqueta que primaryLabel promete y el gesto
@@ -229,8 +229,8 @@ const unlock = async (h, rfc = OWN) => {
   assert.equal(error.code, 'ruta-muerta', 'ante la 404 la clase es «ruta-muerta», no «enlace no encontrado»');
   assert.ok(error.message.includes(URL404), 'el mensaje NOMBRA la URL muerta');
   assert.ok(error.diag && String(error.diag.html).includes('Página no encontrada'), 'viaja la página final (la 404)');
-  assert.ok(error.diagDecision, 'y viaja la página de decisión (el aterrizaje tras el acceso)');
-  console.log('OK 1.32.1 · B1 — el corredor clasifica la 404 como ruta muerta y guarda decisión+final.');
+  assert.ok(!error.diagDecision, 'y NO viaja página de decisión (re-basificado en la 2.0.1: la doble solo enseña la 404, así que la captura de decisión ES la página muerta y la fábrica la deja en null — el diario dirá honestamente que solo hay página final; con una captura viva sí viajaría)');
+  console.log('OK 1.32.1 · B1 — el corredor clasifica la 404 como ruta muerta y guarda la página final (la decisión muerta no viaja: 2.0.1).');
 }
 
 /* ===== 4 · A3 Registro: borrar lo visible y deshacer ===== */

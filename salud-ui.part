@@ -93,7 +93,7 @@ function saludTarjetasPintar200d(body, data) {
         toast('Código nuevo: ' + r.codigo + ' — teclealo en tu PC en los próximos 10 minutos; el anterior ya no sirve.', 'ok');
         render();
       }));
-      add(saludBoton200d('Ir al Centro SAT › Ejecutor', () => { satTab = 'ejecutor'; navigate('sat'); }));
+      add(saludBoton200d('Abrir el panel del ejecutor', () => navigate('ejecutor')));
       const extra = n('p', 'Trabajos en cola ahora: ' + (ex.enCola ?? 0) +
         '. Versión que reporta tu ejecutor: ' + (tarjeta.datos.versionReportada || 'no consta — su señal no la trae') +
         (tarjeta.datos.bundleVersion ? '. El paquete guardado en el servidor es la ' + tarjeta.datos.bundleVersion + '.' : '.'), 'muted');
@@ -189,12 +189,97 @@ function saludTarjetasPintar200d(body, data) {
     grid.append(card);
   }
   body.append(grid);
+  /* Autorreparación semanal (2.0.1 · nº 7): la foto que el
+     servidor deja en ESTA misma lectura (auto201). */
+  body.append(saludAutoPanel201(data.auto201));
+  /* Centro de Deshacer (nº 8) y duplicados sospechosos
+     (nº 14): se leen al entrar, cada uno de su contrato. */
+  body.append(saludDeshacerPanel201());
+  body.append(saludDuplicadosPanel201());
+  /* Listas con su foto y su fecha, como las demás piezas (2.0.1). */
+  body.append(saludListasLinea201());
   body.append(revisionPanel200e());
+  body.append(saludEnlaces201());
   if (data.humo) {
     const humo = panel('Arranque de esta versión');
     humo.append(n('p', data.humo.texto + ' (Registrado el ' + fmtFechaHora(data.humo.at) + '.)'));
     body.append(humo);
   }
+}
+/* Todo lo que ya no está en el menú, a un toque desde Salud
+   (2.0.1): el menú quedó en 9 entradas por orden de Paco y
+   ninguna función puede quedar inalcanzable ni a más de dos
+   toques. Cada enlace abre la vista enrutada de siempre; las
+   vistas no cambian, cambia desde dónde se llega. */
+function saludEnlaces201() {
+  const card = panel('Todas las demás pantallas',
+    'Lo que no vive en el menú corto cuelga de aquí o de su pantalla natural: cada botón abre su pantalla, sin rodeos.');
+  const fila = n('div', undefined, 'actions');
+  const enlace = (texto, ir) => {
+    const b = n('button', texto, 'soft');
+    b.type = 'button';
+    b.onclick = ir;
+    fila.append(b);
+  };
+  enlace('Recibidos', () => navigate('buzon'));
+  enlace('Buzón Tributario', () => navigate('tributario'));
+  enlace('Declaraciones', () => navigate('declaraciones'));
+  enlace('Descargar del SAT', () => navigate('descargar'));
+  enlace('Vigilancia de CFDI', () => navigate('monitor'));
+  enlace('Descargados del SAT', () => navigate('coverage'));
+  enlace('Tu ejecutor', () => navigate('ejecutor'));
+  enlace('Pagos al banco', () => navigate('pagos'));
+  enlace('Cierre del mes', () => navigate('salidas'));
+  enlace('Contribuyentes', () => navigate('contribuyentes'));
+  enlace('Registro', () => navigate('registro'));
+  enlace('Archivo', () => navigate('archivo'));
+  card.append(fila);
+  return card;
+}
+/* Línea de Listas en Salud (2.0.1): el servidor de Salud no
+   trae tarjeta de listas, así que la línea se compone en el
+   cliente con la misma lectura de siempre (satApi('lists')) y
+   el mismo resumen de la vista de Listas (listsResumen201, en
+   la parte principal): UNA línea con su resultado y su fecha —
+   la descarga más reciente de los listados, nombrada como tal
+   en la propia vista de Listas — y el acceso a un toque. */
+function saludListasLinea201() {
+  const card = panel('Listas 69-B');
+  card.dataset.destino200b = 'listas';
+  const fila = n('div', undefined, 'cp-row');
+  fila.append(n('span', 'Leyendo las listas…', 'muted'));
+  card.append(fila);
+  const ir = () => navigate('lists');
+  satApi('lists').then(data => {
+    if (!card.isConnected) return;
+    const resumen = typeof listsResumen201 === 'function' ? listsResumen201(data) : null;
+    fila.replaceChildren();
+    if (!resumen || !resumen.ultima) {
+      fila.append(statusPill('dim', 'Sin comprobar'),
+        n('span', 'Listas 69-B: todavía no se ha comprobado — ningún listado consta descargado.'));
+    } else if (resumen.senaladas.length) {
+      const grave = resumen.senaladas.some(cp => cp.severity === 'bad');
+      fila.append(statusPill(grave ? 'bad' : 'warn', resumen.senaladas.length + ' señalada(s)'),
+        n('span', 'Listas 69-B: ' + resumen.senaladas.length + ' contraparte(s) señalada(s) en tu padrón' +
+          ' · última comprobación: ' + localDateTime(resumen.ultima) + '.'));
+    } else {
+      fila.append(statusPill('ok', 'Limpio'),
+        n('span', 'Listas 69-B: ninguna contraparte de tu padrón aparece en los listados' +
+          ' · última comprobación: ' + localDateTime(resumen.ultima) + '.'));
+    }
+    const ver = n('button', 'Ver las Listas', 'soft small');
+    ver.type = 'button';
+    ver.onclick = ir;
+    fila.append(ver);
+  }).catch(error => {
+    if (!card.isConnected) return;
+    fila.replaceChildren(n('span', 'Listas 69-B: no se pudo leer su estado (' + error.message + ').', 'muted'));
+    const ver = n('button', 'Ver las Listas', 'soft small');
+    ver.type = 'button';
+    ver.onclick = ir;
+    fila.append(ver);
+  });
+  return card;
 }
 function saludConfigPintar200d(body, data) {
   const lista = n('div', undefined, 'steps');
@@ -218,6 +303,110 @@ function saludConfigPintar200d(body, data) {
   body.append(lista);
   body.append(n('p', 'Un paso se marca «Hecho» solo cuando su comprobación real lo confirma: no hay casillas que marcar a mano.', 'muted'));
 }
+/* ===== Autorreparación semanal (2.0.1 · nº 7) =====
+   La pasada automática de los lunes (desde las 07:00): qué
+   reparó sola y qué quedó roto, con su fecha — la foto que el
+   servidor guarda en auto201. Sin pasada todavía, la tarjeta
+   lo dice y no inventa ninguna. */
+function saludAutoPanel201(auto) {
+  const card = panel('Autorreparación semanal',
+    'Cada lunes, desde las 07:00, el sistema se revisa y repara solo lo seguro. Esto es lo que hizo en su última pasada.');
+  if (!auto) {
+    card.append(n('p', 'Aún no ha corrido ninguna pasada: la primera será el próximo lunes desde las 07:00.', 'muted'));
+    return card;
+  }
+  card.append(n('p', 'Última pasada: semana del ' + (auto.semana || '—') +
+    (auto.at ? ' · corrida el ' + fmtFechaHora(auto.at) : '') + '.'));
+  for (const hecha of auto.hechas || []) card.append(n('p', '✓ Reparado: ' + hecha, 'today-line'));
+  for (const rota of auto.rotas || []) card.append(n('p', '✗ Quedó roto: ' + rota, 'today-line'));
+  if (!(auto.hechas || []).length && !(auto.rotas || []).length)
+    card.append(n('p', 'La pasada no encontró nada que reparar.', 'muted'));
+  return card;
+}
+/* ===== Centro de «Deshacer» (2.0.1 · nº 8) =====
+   La lista del servidor (GET /api/deshacer201): archivar un
+   CFDI, importar un estado de cuenta y cerrar un ejercicio,
+   cada una con su botón de deshacer — el gesto llama al MISMO
+   endpoint que el servidor dejó por entrada. Sin caducidad
+   inventada: el servidor declara limite 0 y aquí se dice tal
+   cual — se puede deshacer cuando quieras, desde la 2.0.1. */
+function saludDeshacerPanel201() {
+  const card = panel('Deshacer',
+    'Lo último que se hizo y se puede deshacer: archivar un comprobante, importar un estado de cuenta o cerrar un ejercicio. Sin límite de tiempo: se puede deshacer cuando quieras (desde la 2.0.1).');
+  const body = n('div');
+  body.append(n('p', 'Leyendo lo que se puede deshacer…', 'muted'));
+  card.append(body);
+  satApi('deshacer201').then(data => {
+    if (!card.isConnected) return;
+    const acciones = (data?.acciones || []).filter(a => !a.deshecha);
+    body.replaceChildren();
+    if (!acciones.length) {
+      body.append(n('p', 'Nada que deshacer todavía: aquí aparecerán los archiveros, las importaciones de estados y los cierres de ejercicio desde la 2.0.1.', 'muted'));
+      return;
+    }
+    for (const accion of acciones) {
+      const fila = n('div', undefined, 'cp-row');
+      fila.append(n('span', accion.texto + (accion.at ? ' · ' + fmtFechaHora(accion.at) : '')));
+      const btn = n('button', 'Deshacer', 'soft small');
+      btn.type = 'button';
+      btn.onclick = async () => {
+        btn.disabled = true;
+        try {
+          const payload = { ...(accion.payload || {}) };
+          if (accion.tipo === 'cerrar-ejercicio') payload.confirmar = true;
+          await satApi(accion.accion.replace(/^\/api\//, ''), payload);
+          toast('Deshecho: ' + accion.texto, 'ok');
+          render();
+        } catch (error) { toast(error.message, 'error'); btn.disabled = false; }
+      };
+      fila.append(btn);
+      body.append(fila);
+    }
+    /* La nota cruda del servidor NO se pinta: habla de campos
+       («limite 0») y el subtítulo de esta tarjeta ya declara
+       lo mismo en llano — desde la 2.0.1 y sin caducidad. */
+  }).catch(error => { if (card.isConnected) body.replaceChildren(n('p', 'No se pudo leer: ' + error.message, 'error-text')); });
+  return card;
+}
+/* ===== Duplicados sospechosos (2.0.1 · nº 14) =====
+   Solo lectura (GET /api/duplicados201): mismo importe y
+   fecha con folios distintos, o el mismo folio en dos RFC.
+   La tarjeta enseña el patrón y los comprobantes; el gesto
+   es revisarlos en Facturas — aquí no se toca nada. */
+function saludDuplicadosPanel201() {
+  const card = panel('Duplicados sospechosos',
+    'Comprobantes que podrían estar duplicados. Es solo una lista de revisión: nada se borra ni se corrige desde aquí.');
+  const body = n('div');
+  body.append(n('p', 'Buscando duplicados sospechosos…', 'muted'));
+  card.append(body);
+  satApi('duplicados201' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(data => {
+    if (!card.isConnected) return;
+    const sospechosos = data?.sospechosos || [];
+    body.replaceChildren();
+    if (!sospechosos.length) {
+      body.append(n('p', 'Sin duplicados sospechosos: ningún importe+fecha se repite con folios distintos, ni hay un folio en dos RFC.', 'muted'));
+      return;
+    }
+    for (const s of sospechosos) {
+      body.append(n('p', s.detalle || (s.tipo === 'mismo-folio-dos-rfc'
+        ? 'El mismo folio aparece en dos RFC.' : 'Mismo importe y fecha con folios distintos.'), 'strong-line'));
+      for (const c of s.comprobantes || []) {
+        const fila = n('div', undefined, 'cp-row');
+        fila.append(n('span', (c.fecha || '') + ' · folio ' + (c.folio || '—') + ' · $' + (c.importe || '') +
+          ' · ' + (c.emisor || '') + (c.receptor ? ' → ' + c.receptor : '')));
+        const revisar = n('button', 'Revisar', 'soft small');
+        revisar.type = 'button';
+        revisar.onclick = () => {
+          if (typeof setInvoiceTerm === 'function') setInvoiceTerm(c.uuid);
+          navigate('invoices');
+        };
+        fila.append(revisar);
+        body.append(fila);
+      }
+    }
+  }).catch(error => { if (card.isConnected) body.replaceChildren(n('p', 'No se pudo leer: ' + error.message, 'error-text')); });
+  return card;
+}
 /* ===== Ayuda por pantalla (20#20, primera mitad) =====
    Qué es, para qué sirve y qué hacer en cada vista principal,
    en llano y sin texto técnico. Describe lo que la pantalla
@@ -230,9 +419,9 @@ const AYUDA_TEXTOS200D = {
   invoices: { q: 'Es la tabla de todos tus CFDI: emitidos y recibidos, con su estado en el SAT (vigente, cancelado, sin revisar) y su PDF vinculado.',
     p: 'Sirve para encontrar cualquier comprobante, ver si sigue vigente y abrir su detalle completo con sus impuestos y su timbre.',
     h: 'Filtra por contribuyente, sentido o estado; toca un comprobante para verlo entero, copiar su UUID o imprimirlo. «Descargar del SAT» trae los que falten.' },
-  sat: { q: 'Es el Centro SAT: desde aquí se descargan tus facturas, tu constancia y tu opinión, se consultan los listados 69-B y se ve lo ya descargado y tu ejecutor.',
-    p: 'Sirve para todo lo que PacoSAT pide al SAT por ti, con la puerta de cada RFC y su causa viva cuando algo no abre.',
-    h: 'Elige la pestaña según el trámite. Si la puerta no abre, la tarjeta dice de quién es la causa —tu equipo, tu e.firma o el SAT— y el único gesto que toca.' },
+  sat: { q: 'Es «Descargar del SAT»: desde aquí se descargan tus facturas del SAT por periodo, con la puerta de cada RFC a la vista.',
+    p: 'Sirve para traer tus comprobantes del SAT sin bajarlos a mano, con la causa viva cuando algo no abre.',
+    h: 'Elige el periodo y despacha la descarga. Si la puerta no abre, la tarjeta dice de quién es la causa —tu equipo, tu e.firma o el SAT— y el único gesto que toca. Tu constancia y tu opinión viven en Documentos; los listados, en Listas del SAT; y tu ejecutor, en Salud.' },
   tributario: { q: 'Es el Buzón Tributario de este RFC: las notificaciones del SAT listadas sin abrir ninguna, con su fecha y su plazo.',
     p: 'Sirve para saber qué te ha notificado el SAT y cuándo se tiene por notificada cada una, sin que PacoSAT abra nada por ti.',
     h: 'Pulsa «Consultar ahora» para listar de nuevo desde tu equipo. Abrir una notificación es gesto tuyo, en el portal del SAT.' },
@@ -241,7 +430,7 @@ const AYUDA_TEXTOS200D = {
     h: 'Toca un mes para ver su detalle y «Descargar declaraciones del SAT» para recuperar las que falten, con tu ejecutor.' },
   docs: { q: 'Es tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados, cada uno con su «Ver» de un clic.',
     p: 'Sirve para encontrar cualquier papel guardado sin cazarlo entre carpetas, y para subir los que tengas fuera.',
-    h: 'Filtra por RFC o por tipo, abre el documento con «Ver» y usa «Subir PDF» para archivar uno nuevo en su sitio.' },
+    h: 'Filtra por RFC o por tipo, abre el documento con «Ver» y usa «Subir PDF» para archivar uno nuevo en su sitio. Cada documento lleva su «Archivar» visible junto a «Descargar»: archivar no borra — el documento vive en Archivo y se recupera cuando quieras. De la constancia y la opinión, la más reciente es la «vigente» y las demás quedan marcadas «anterior».' },
   dinero: { q: 'Es la pantalla de saldos: cuánto debes, cuánto te deben y qué ya se movió, con la conciliación contra tus estados de cuenta.',
     p: 'Sirve para saber qué falta por pagar o por cobrar, comprobante a comprobante, y enlazar cada pago con su factura.',
     h: 'Revisa «Por pagar» y «Por cobrar»; cuando un pago ya se hizo, enlázalo o márcalo aquí y el aviso de su factura se cierra solo.' },
@@ -259,7 +448,25 @@ const AYUDA_TEXTOS200D = {
     h: 'Recorre las tarjetas: cada una dice qué es, cómo está y su arreglo cuando lo hay. En «Configurar» ves qué pasos faltan y el botón que lleva a hacerlos.' },
   settings: { q: 'Son los Ajustes: contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema, la API y el acerca de.',
     p: 'Sirve para dejar la casa en orden: quiénes son tus RFC, cómo te avisa el sistema y cómo se guarda tu expediente.',
-    h: 'Elige la sección en la franja de arriba y usa el botón principal de la cabecera para guardar o ejecutar lo de esa sección.' }
+    h: 'Elige la sección en la franja de arriba y usa el botón principal de la cabecera para guardar o ejecutar lo de esa sección.' },
+  /* Los cinco textos que faltaban (2.0.1 · nº 18): reportes,
+     listas, bancos, cumplimiento y salidas — dos líneas en
+     llano por pantalla, como los demás. */
+  reportes: { q: 'Es la pantalla de Reportes: todos los informes del sistema en un solo sitio, cada uno con su periodo.',
+    p: 'Sirve para sacar el papel que necesites — totales, una contraparte, un mes, declaraciones, saldos o avisos — sin cazarlo pantalla por pantalla.',
+    h: 'Elige el reporte, ajusta su periodo y usa su botón de PDF, Excel o Imprimir: el documento sale con las cifras del cálculo único.' },
+  lists: { q: 'Son las Listas del SAT: los listados oficiales (69-B y demás) cruzados con tu padrón de contrapartes, con la fecha de la última comprobación.',
+    p: 'Sirve para saber de un vistazo quién de tus contrapartes aparece en un listado, en cuál y desde cuándo, y validar a cualquier empresa.',
+    h: 'Mira el resumen de arriba; para comprobar a una empresa, escribe su RFC o nombre en «Validar una empresa». Los listados se actualizan solos cada día.' },
+  bancos: { q: 'Es Bancos: tus cuentas y sus estados de cuenta por mes, con los saldos leídos del propio documento y la conciliación contra tus facturas.',
+    p: 'Sirve para archivar cada estado en su cuenta, ver la posición total y cruzar movimientos con facturas: qué se pagó, qué falta y qué quedó sin rastro.',
+    h: 'Usa «Subir estado de cuenta»: PacoSAT detecta el banco, la cuenta y el periodo, te lo enseña y, con tu toque, lo aplica. También puedes arrastrar el PDF sobre la pantalla.' },
+  cumplimiento: { q: 'Es el calendario fiscal: los vencimientos de tus RFC — pago provisional y DIOT el día 17, la anual el 31 de marzo — con los días que faltan.',
+    p: 'Sirve para no perder ningún plazo: cada vencimiento dice de quién es y cuándo cae, y la misma fuente alimenta la tira de vencimientos de Hoy y el archivo para tu calendario.',
+    h: 'Revisa los próximos vencimientos de arriba abajo; con «Descargar calendario» te llevas el archivo ICS para tu calendario de siempre.' },
+  salidas: { q: 'Es Cierre y reportes: el cierre del mes paso a paso, el calendario de vencimientos y las salidas para tu contadora.',
+    p: 'Sirve para cerrar el mes sin olvidar ningún paso y entregar a tu contadora el paquete completo, con las cifras del cálculo único.',
+    h: 'Sigue la lista del cierre en orden: cada paso dice su estado y su botón. Al final, genera la exportación completa desde la cabecera.' }
 };
 
 /* ===== Tanda 5 (2.0) · Revisión programada y «Ponte al día» =====

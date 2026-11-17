@@ -343,7 +343,7 @@ server.close();
    valores y la secuencia legada confinada a la prueba ===== */
 {
   const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '2.0.0', 'la versión de la ronda (re-basificado en la 2.0.0)');
+  assert.equal(pkg.version, '2.0.1', 'la versión de la ronda (re-basificado en la 2.0.1: motores reconstruidos contra el mapa real del portal)');
   const browser = readFileSync(new URL('./sat-doc-browser.mjs', import.meta.url), 'utf8');
   assert.ok(browser.includes('fillFielForm({ cer, key, password, rfc, step })'),
     'satBrowserLogin pasa el RFC y la traza al relleno');
@@ -360,9 +360,14 @@ server.close();
   assert.ok(ini > 0 && fin > ini, 'la sonda existe en su bloque único');
   const sonda = browser.slice(ini, fin);
   const usosValue = (sonda.match(/\.value/g) || []).length;
-  const usosMedidos = (sonda.match(/\.value( ==|\)\.length)/g) || []).length;
+  /* Re-basificado en la 2.0.1: la higiene DyP compara el RFC
+     del formulario con el del perfil DENTRO de la página y de
+     la sonda solo sale el booleano (coincide) — el valor sigue
+     sin salir jamás —; la forma ).trim() alimenta ese ===
+     booleano y se suma a las formas medidas sancionadas. */
+  const usosMedidos = (sonda.match(/\.value( ==|\)\.length|\)\.trim\(\))/g) || []).length;
   assert.equal(usosValue, usosMedidos,
-    'en la sonda, todo .value se mide (== o .length), nunca se devuelve');
+    'en la sonda, todo .value se mide (==, .length o la comparación booleana de la 2.0.1), nunca se devuelve');
   /* La secuencia vieja vive solo como opción interna del
      driver, y ningún módulo de producción la activa. */
   const produccion = readdirSync(new URL('.', import.meta.url))

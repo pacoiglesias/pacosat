@@ -93,6 +93,23 @@ function dineroScreen() {
   const cancNumero = dineroCanceladasSrv ? dineroCanceladasSrv.count : canceladasLocal.length;
   const cancImporte = dineroCanceladasSrv ? moneyCents(dineroCanceladasSrv.total)
     : canceladasLocal.reduce((acc, row) => acc + totalCents(row), 0n);
+  /* «Imprimir» visible de la vista (2.0.1): los saldos abiertos
+     tal cual se ven — por cobrar y por pagar — en la plantilla
+     de impresión de siempre. */
+  const imprimirDinero = n('div', undefined, 'actions');
+  const btnImprimirDinero = n('button', 'Imprimir saldos', 'soft');
+  btnImprimirDinero.type = 'button';
+  btnImprimirDinero.onclick = () => {
+    if (typeof imprimirVista201 !== 'function') { window.print(); return; }
+    const filasImp = [];
+    for (const item of receivable) filasImp.push(['Por cobrar', item.row.to.name || item.row.to.rfc, dateLabel(item.row.date), amount(item.row), '$' + centsLabel(item.balance)]);
+    for (const item of payable) filasImp.push(['Por pagar', item.row.from.name || item.row.from.rfc, dateLabel(item.row.date), amount(item.row), '$' + centsLabel(item.balance)]);
+    imprimirVista201('Dinero · saldos abiertos', 'Por cobrar: $' + centsLabel(sum(receivable)) +
+      ' · Por pagar: $' + centsLabel(sum(payable)) + '. Las canceladas no entran en los saldos.',
+      ['Sentido', 'Contraparte', 'Fecha', 'Total del CFDI', 'Saldo'], filasImp);
+  };
+  imprimirDinero.append(btnImprimirDinero);
+  wrap.append(imprimirDinero);
   /* Resumen */
   const summary = panel('El dinero, de un vistazo', 'Saldos abiertos calculados desde tus complementos de pago: si una factura PPD no tiene complemento, su saldo es el total; las PUE nacen pagadas.');
   const strip = n('div', undefined, 'traffic-strip');
@@ -129,6 +146,7 @@ function dineroScreen() {
     dineroAntiguedadPanel1310(), dineroFlujoPanel1310(), dineroMonthPanel(receivable, payable));
   wrap.append(graficasFold);
   wrap.append(dineroForecastPanel());
+  wrap.append(dineroMesPanel201());
   wrap.append(expectedPanel());
   wrap.append(counterpart360Panel(paidBy));
   wrap.append(reconcilePanel(paidBy));
@@ -351,6 +369,22 @@ function dineroAgeChart(receivable, payable) {
   }
   return wrap;
 }
+/* Nombre del mes para la gráfica de Dinero (2.0.1): la función
+   existía solo en el servidor (news-mail.mjs) y la gráfica del
+   cliente la llamaba sin tenerla — Dinero entero dejaba de
+   pintarse en cuanto había saldos por mes. Misma forma que la
+   del servidor: «marzo de 2026». */
+const MESES_GRAFICA_DINERO = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+const monthName = key => /^\d{4}-\d{2}$/.test(key || '') ?
+  MESES_GRAFICA_DINERO[Number(key.slice(5, 7)) - 1] + ' de ' + key.slice(0, 4) : '';
+/* Su pareja en la misma gráfica: importe corto de barra, sin el
+   signo (la gráfica lo antepone). La de ui.part es local de su
+   propia gráfica y devuelve el signo puesto: no servía aquí. */
+const shortMoney = cents => {
+  const pesos = Number(cents) / 100;
+  return pesos >= 100000 ? number.format(Math.round(pesos / 1000)) + ' mil' : centsLabel(cents);
+};
 /* Saldos abiertos por mes (1.26.0, Ronda Visual): Dinero no
    tenía ninguna gráfica — la única vivía escondida en
    Cobertura y la de Hoy enseña emitidos/recibidos, no saldos.
@@ -615,6 +649,62 @@ function expectedPanel() {
   }
   return panelEl;
 }
+/* ===== Vista «Mes» (2.0.1 · nº 12) =====
+   El mes de un vistazo con lo que YA consta, cada cifra con
+   su origen nombrado en la propia línea: las facturas del mes
+   (de tus CFDI guardados, con el criterio de siempre —
+   canceladas fuera), los impuestos pagados registrados (la
+   línea de impuestos que tus preparaciones de pago traen
+   marcada pagada, la misma que cruza Declaraciones) y los
+   movimientos de los estados de cuenta cargados en Bancos.
+   Nada se estima: lo que no consta, se dice que no consta. */
+function dineroMesPanel201() {
+  const panelEl = panel('El mes de un vistazo', 'Facturas, impuestos pagados y movimientos del banco del mes elegido, cada uno con su origen.');
+  const mes = input('month', { value: new Date().toISOString().slice(0, 7) });
+  const body = n('div');
+  const pintar = async () => {
+    const monthKey = mes.value;
+    if (!monthKey) return;
+    body.replaceChildren(n('p', 'Leyendo el mes…', 'muted'));
+    const lineas = [];
+    /* Facturas del mes, de los CFDI guardados en esta copia. */
+    const delMes = invoices.filter(row => row.date.startsWith(monthKey) && row.kind === 'I' &&
+      (!scope || row.from.rfc === scope || row.to.rfc === scope) && !rowCancelled(row));
+    const recibidas = delMes.filter(row => scope ? row.to.rfc === scope : people.some(p => p.id === row.to.rfc));
+    const emitidas = delMes.filter(row => scope ? row.from.rfc === scope : people.some(p => p.id === row.from.rfc));
+    const suma = rows => rows.reduce((s, row) => s + totalCents(row), 0n);
+    lineas.push('Facturas del mes (de tus CFDI guardados): recibidas ' + number.format(recibidas.length) +
+      ' · $' + centsLabel(suma(recibidas)) + ' — emitidas ' + number.format(emitidas.length) + ' · $' + centsLabel(suma(emitidas)) + '.');
+    body.replaceChildren(...lineas.map(texto => n('p', texto, 'today-line')));
+    if (typeof satToken !== 'undefined' && satToken && scope) {
+      /* Impuestos pagados registrados: la línea que el cruce
+         de Declaraciones ya conoce para ese mes. */
+      try {
+        const decl = await satApi('declaraciones?rfc=' + encodeURIComponent(scope) +
+          '&ejercicio=' + monthKey.slice(0, 4));
+        const celda = (decl?.mapa?.meses || []).find(m => m.periodo === monthKey);
+        if (celda?.lineaImpuestos)
+          body.append(n('p', 'Impuestos del mes: pagados según la línea «' + celda.lineaImpuestos.concepto +
+            '» de tu preparación de pagos, marcada pagada el ' + localDate(celda.lineaImpuestos.pagadaEn) +
+            ' (registrado en Pagos).', 'today-line'));
+        else body.append(n('p', 'Impuestos del mes: sin línea de impuestos marcada pagada en tus preparaciones de pago.', 'today-line'));
+      } catch { body.append(n('p', 'Impuestos del mes: no se pudieron leer las preparaciones registradas.', 'today-line')); }
+      /* Movimientos de los estados cargados en Bancos. */
+      try {
+        const [movs, bancos] = await Promise.all([satApi('banks/movements'), satApi('banks')]);
+        const cuentasPropias = new Set((bancos?.accounts || []).filter(a => !a.rfc || a.rfc === scope).map(a => a.id));
+        const delMesBanco = (movs?.movements || []).filter(m => String(m.date || '').startsWith(monthKey) && cuentasPropias.has(m.accountId));
+        const sumaBanco = delMesBanco.reduce((s, m) => s + (moneyCents(m.amount) || 0n), 0n);
+        body.append(n('p', 'Movimientos del mes (de los estados de cuenta cargados en Bancos): ' +
+          number.format(delMesBanco.length) + ' · neto $' + centsLabel(sumaBanco) + '.', 'today-line'));
+      } catch { body.append(n('p', 'Movimientos del mes: no se pudieron leer los estados cargados.', 'today-line')); }
+    }
+  };
+  mes.onchange = pintar;
+  panelEl.append(fieldWrap('Mes', mes), body);
+  pintar();
+  return panelEl;
+}
 function counterpart360Panel(paidBy) {
   const panelEl = panel('Expediente 360 por contraparte', 'Todo lo de una empresa en una tarjeta: sus CFDI, pagos, saldos, su situación en listas y sus documentos.');
   const select = n('select');
@@ -652,6 +742,37 @@ function counterpart360Panel(paidBy) {
       n('span', 'Saldo abierto: $' + centsLabel(openBalance)),
       n('span', 'Documentos en Expedientes: ' + docs.length));
     body.append(grid);
+    /* Contraparte nueva (2.0.1 · nº 10): si el servidor dejó
+       la marca «emisor-nuevo» en alguna factura de esta
+       contraparte, la ficha lo enseña suave, una sola vez —
+       la marca solo existe para la primera. */
+    const duenio201 = scope || (people.find(p => mine.some(row => row.from.rfc === p.id || row.to.rfc === p.id)) || {}).id || '';
+    if (satToken && duenio201) {
+      const uuidsMios = new Set(mine.map(row => row.id));
+      satApi('marcas200h?rfc=' + encodeURIComponent(duenio201)).then(data => {
+        const marca = (data?.marcas || []).find(m => m.marca === 'emisor-nuevo' && uuidsMios.has(m.uuid));
+        if (!marca || !body.isConnected) return;
+        const filaNueva = n('div', undefined, 'traffic-strip');
+        filaNueva.append(statusPill('dim', 'Contraparte nueva'),
+          n('span', (marca.porque || 'Primera vez en tu expediente') + (marca.at ? ' · ' + fmtFechaHora(marca.at) : '')));
+        body.prepend(filaNueva);
+      }).catch(() => { /* Sin lectura de marcas, la ficha queda como estaba: la línea es un aviso suave, no un dato de la ficha. */ });
+    }
+    /* Ficha en PDF (2.0.1 · nº 29 y nº 1): el PDF del servidor
+       para esta contraparte, con su sección de estado en los
+       listados oficiales y el periodo elegido aquí mismo. El
+       mismo generador que usa Reportes: un solo cálculo. */
+    if (satToken && typeof descargarSalida1310 === 'function') {
+      const filaPdf = n('div', undefined, 'actions');
+      const mesPdf = input('month', { value: new Date().toISOString().slice(0, 7) });
+      mesPdf.setAttribute('aria-label', 'Periodo de la ficha en PDF');
+      const btnPdf = n('button', 'Ficha en PDF', 'soft');
+      btnPdf.type = 'button';
+      btnPdf.onclick = () => descargarSalida1310('salidas/pdf',
+        { kind: 'contraparte', rfc: duenio201, contraparte: rfc, month: mesPdf.value || undefined }, btnPdf);
+      filaPdf.append(fieldWrap('Periodo de la ficha', mesPdf), btnPdf);
+      body.append(filaPdf);
+    }
     const listNote = n('p', '', 'muted');
     body.append(listNote);
     if (satToken) satApi('lists/validate', { query: rfc }).then(result => {

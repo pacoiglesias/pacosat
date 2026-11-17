@@ -84,8 +84,9 @@ import { BUZON_LOGIN_URL } from './sat-tributario.mjs';
 import { createSatDeclFetch } from './sat-declaraciones.mjs';
 import { createSatTribFetch } from './sat-tributario.mjs';
 import { SAT_EXECUTOR_PROTOCOL_VERSION } from './sat-executor.mjs';
+import { asegurarResidencia } from './registro-windows.mjs';
 
-export const EJECUTOR_VERSION = '2.0.0';
+export const EJECUTOR_VERSION = '2.0.1';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const URL_BASE = String(process.env.PACOSAT_URL || '').replace(/\/$/, '');
@@ -349,7 +350,8 @@ async function ejecutarIntento(job, m, onStep) {
            la sesión estaba viva dentro del portal. */
         return { operations: ['entrar-con-efirma', 'navegar-a-lista', 'leer-lista'],
           accesoOk: true,
-          notifications: result.notifications || [] };
+          notifications: result.notifications || [],
+          comunicadosNoLeidos: result.comunicadosNoLeidos ?? null };
       }
       if (job.kind === 'declaraciones-recuperar' || job.kind === 'declaracion-folio' || job.kind === 'declaraciones-transacciones') {
         const query = job.kind === 'declaracion-folio'
@@ -527,6 +529,11 @@ export async function runExecutorLoop({ once = false } = {}) {
   if (!existsSync(EFIRMA_DIR)) mkdirSync(EFIRMA_DIR, { recursive: true, mode: 0o700 });
   console.log('[ejecutor] PacoSAT ' + URL_BASE + ' · protocolo ' + SAT_EXECUTOR_PROTOCOL_VERSION +
     ' · ejecutor ' + EJECUTOR_VERSION + ' · e.firma local en ' + EFIRMA_DIR);
+  /* Residencia (2.0.1, nº 31): el ejecutor se asegura SOLO, en su
+     propio equipo, de que el protocolo pacosat:// y su arranque
+     automático con Windows están registrados — idempotente,
+     silencioso y solo en Windows; la e.firma no se mueve de aquí. */
+  await asegurarResidencia().catch(() => {});
   await comprobarActualizacion();
   do {
     let cicloRes = { activos: 0, pendientes: 0 };

@@ -54,7 +54,7 @@ const moneyUi = read('money-ui.part');
 const buzonUi = read('buzon-ui.part');
 
 /* Sello y techos */
-assert.ok(html.includes('"version":"2.0.0"'), 'el artefacto se sella con la versión vigente (2.0.0)');
+assert.ok(html.includes('"version":"2.0.1"'), 'el artefacto se sella con la versión vigente (2.0.1)');
 const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
 /* Techo 598.000 desde la 1.29.0 (ejecutor local, papelera,
    peldaños 1 y 2 y Totales navegable): la página crece a
@@ -71,10 +71,10 @@ const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
    1.31.0 (corrección del 13 nov + menú + 45 mejoras +
    reportes): crece a 659.787 B y el techo sube a 663.000,
    contabilidad en el anexo 1.31.0 de ronda1110. */
-assert.ok(htmlBytes <= 751000, 'la página pesa ' + htmlBytes + ' B (tope 751.000, re-basificado en la 2.0 tanda 7B en AUDITORIA.md (anexo por pieza de la 7B; la 7A lo dejó en 743.000): +2.304 B en total: ganchos de montaje diferido de Ajustes (webhooks/ICS en API, restauración guiada en Respaldos) y ganchos mínimos de Documentos/Facturas (miniaturas, Compartir, Subir un papel); el cliente sustantivo viaja en la parte diferida de Salidas — detalle por pieza en AUDITORIA.md; venía de 740.000 de la tanda 4)');
+assert.ok(htmlBytes <= 800000, 'la página pesa ' + htmlBytes + ' B (tope 800.000, re-basificado en la fase 2 de cliente de la 2.0.1: el artefacto mide 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 775.000 de la limpieza de esta misma ronda)');
 const cssBytes = ['style.part', 'design.part', 'polish.part']
   .reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-assert.ok(cssBytes <= 66500, 'el CSS pesa ' + cssBytes + ' B (tope 66.500, re-basificado en la 2.0 tanda 7B en AUDITORIA.md: +342 B del realce de foco V3; venía de 66.000 de la tanda 2)');
+assert.ok(cssBytes <= 67000, 'el CSS pesa ' + cssBytes + ' B (tope 67.000, re-basificado en la 2.0.1 al asentarse el árbol: el CSS mide 66.916 B tras la parte de cliente completa de esta misma ronda; venía de 66.500 de la 2.0 tanda 7B)');
 
 /* Tokens cerrados */
 for (const token of ['--r-s:8px', '--r-m:12px', '--r-l:16px', '--r-pill:100px',

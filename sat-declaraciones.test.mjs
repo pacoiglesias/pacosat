@@ -5,9 +5,16 @@ import { createSatDeclFetch } from './sat-declaraciones.mjs';
 
 /* Declaraciones y acuses (punto 7 de la 1.9.0): el portal es un
    driver falso que implementa el contrato documentado en
-   sat-declaraciones.mjs (login NIDP, enlaces por texto, búsqueda
-   por ejercicio/periodo, filas con operación y descargas por
-   clase). Ninguna credencial sale a la red. */
+   sat-declaraciones.mjs. RE-BASIFICADO en la 2.0.1 contra el
+   mapa vivo completo del 16 nov 2026: la consulta CLÁSICA del
+   PTSC resultó un callejón sin salida («sin resultados» en
+   todo lo probado) y el pasillo va ahora por el PORTAL NUEVO
+   (menú «Nuevo portal de pagos provisionales» → «Consultas» →
+   «De la declaración» → consulta por ejercicio → cada fila con
+   su «Generar PDF», que es su ACUSE). La doble implementa ESE
+   contrato (portalNuevoResults/clickPortalPdf): por fila solo
+   baja el acuse — la declaración misma no la ofrece esta
+   consulta —. Ninguna credencial sale a la red. */
 const RFC = 'MFI6212158B4';
 const PASSWORD = 'buena-efirma';
 const pdfOf = (label) => Buffer.concat([Buffer.from('%PDF-1.4 ' + label + '\n'),
@@ -17,7 +24,8 @@ const KEY_3DES = privateKey.export({ type: 'pkcs8', format: 'der', cipher: 'des-
 
 class DeclFakePage {
   constructor(script = {}) {
-    Object.assign(this, { rows: [], pdfsByKey: {}, links: ['Declaraciones mensuales', 'Declaración anual'],
+    Object.assign(this, { rows: [], pdfsByKey: {},
+      links: ['Nuevo portal de pagos provisionales', 'Consultas', 'De la declaración'],
       errorText: '', selects: {}, armedPdf: null }, script);
     this.currentUrl = 'about:blank';
   }
@@ -25,14 +33,16 @@ class DeclFakePage {
   url() { return this.currentUrl; }
   async clickButtonFiel() {}
   async fillFielForm(form) { this.filled = form; }
-  async submitFiel() { this.currentUrl = 'https://wwwmat.sat.gob.mx/inicio'; }
+  async submitFiel() { this.currentUrl = 'https://ptscdecprov.clouda.sat.gob.mx/plataforma'; }
   async divError() { return this.errorText; }
   async clickText(text) { return this.links.includes(text); }
   async selectSelector(selector, value) { this.selects[selector] = value; }
   async clickSelector() {}
-  async declResults() { return this.rows; }
-  async clickDeclDownload(kind, index) {
-    const key = kind + ':' + index;
+  /* El contrato del portal nuevo (2.0.1): las filas de «De la
+     declaración» y el clic sobre su «Generar PDF» (el acuse). */
+  async portalNuevoResults() { return this.rows; }
+  async clickPortalPdf(index) {
+    const key = 'acuse:' + index;
     this.armedPdf = this.pdfsByKey[key] || null;
     if (!this.armedPdf) throw new Error('sin descarga ' + key);
   }
@@ -47,38 +57,43 @@ const driverOf = (page, state = { launches: 0 }) => async () => {
 const CREDS = { rfc: RFC, cer: Buffer.from('cer-juguete'), key: KEY_3DES, password: PASSWORD };
 const resolver = async () => CREDS;
 
-/* 1 · Mensuales: declaración y acuse llegan como documentos
-     DISTINTOS, con su operación, periodo y fecha. */
+/* 1 · Mensuales: por cada fila baja su ACUSE («Generar PDF»)
+     con la identidad de la fila: operación, periodo y fecha.
+     La declaración misma no la ofrece esta consulta (2.0.1). */
 {
   const page = new DeclFakePage({
     rows: [
-      { operacion: 'OP-100', fecha: '2026-10-17', tipo: 'Provisional', periodo: '2026-09', acuse: true, declaracion: true },
-      { operacion: 'OP-101', fecha: '2026-09-16', tipo: 'Provisional', periodo: '2026-08', acuse: true, declaracion: false }
+      { operacion: '262620100100', fecha: '17/10/2026', tipo: 'Normal', periodo: '2026-09', pdfIndex: 0 },
+      { operacion: '262620101101', fecha: '16/09/2026', tipo: 'Normal', periodo: '2026-08', pdfIndex: 1 }
     ],
-    pdfsByKey: { 'declaracion:0': pdfOf('decl-sep'), 'acuse:0': pdfOf('acuse-sep'), 'acuse:1': pdfOf('acuse-ago') }
+    pdfsByKey: { 'acuse:0': pdfOf('acuse-sep'), 'acuse:1': pdfOf('acuse-ago') }
   });
   const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
   const result = await fetchDecl({ rfc: RFC }, { tipo: 'mensual', ejercicio: 2026 });
   assert.equal(result.found, 2);
-  assert.equal(result.documents.length, 3);
+  assert.equal(result.documents.length, 2);
   const clases = result.documents.map(d => d.periodo + ':' + d.clase).sort();
-  assert.deepEqual(clases, ['2026-08:acuse', '2026-09:acuse', '2026-09:declaracion']);
-  const decl = result.documents.find(d => d.clase === 'declaracion');
-  assert.equal(decl.operacion, 'OP-100');
-  assert.equal(decl.fechaPresentacion, '2026-10-17');
-  assert.deepEqual(decl.content, pdfOf('decl-sep'));
+  assert.deepEqual(clases, ['2026-08:acuse', '2026-09:acuse']);
+  const acuse = result.documents.find(d => d.periodo === '2026-09');
+  assert.equal(acuse.operacion, '262620100100');
+  assert.equal(acuse.fechaPresentacion, '17/10/2026');
+  assert.equal(acuse.tipoPresentacion, 'Normal');
+  assert.deepEqual(acuse.content, pdfOf('acuse-sep'));
 }
 
-/* 2 · Anual: el PDF de la anual y su acuse, por su conector. */
+/* 2 · Anual: su acuse, por su conector (la fila anual de la
+     misma consulta del portal nuevo). */
 {
   const page = new DeclFakePage({
-    rows: [{ operacion: 'OP-900', fecha: '2026-03-28', tipo: 'Anual', periodo: '2025', acuse: true, declaracion: true }],
-    pdfsByKey: { 'anual:0': pdfOf('anual-2025'), 'acuse:0': pdfOf('acuse-anual-2025') }
+    rows: [{ operacion: '262620900900', fecha: '28/03/2026', tipo: 'Anual', periodo: '2025', pdfIndex: 0 }],
+    pdfsByKey: { 'acuse:0': pdfOf('acuse-anual-2025') }
   });
   const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
   const result = await fetchDecl({ rfc: RFC }, { tipo: 'anual', ejercicio: 2025 });
-  assert.equal(result.documents.length, 2);
-  assert.equal(result.documents.find(d => d.clase === 'declaracion').ejercicio, 2025);
+  assert.equal(result.documents.length, 1);
+  assert.equal(result.documents[0].clase, 'acuse');
+  assert.equal(result.documents[0].ejercicio, 2025);
+  assert.deepEqual(result.documents[0].content, pdfOf('acuse-anual-2025'));
 }
 
 /* 3 · Sin declaraciones presentadas: respuesta honesta con aviso,
@@ -92,13 +107,27 @@ const resolver = async () => CREDS;
   assert.match(result.warnings[0], /no mostró declaraciones/);
 }
 
-/* 4 · El portal no muestra el acceso: respuesta-inesperada. */
+/* 4 · La consulta no se puede leer (sin lector de filas):
+     respuesta-inesperada, no una lista vacía fingida. */
 {
   const page = new DeclFakePage({ links: [] });
+  page.portalNuevoResults = null;
   const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
   const error = await fetchDecl({ rfc: RFC }, { tipo: 'mensual', ejercicio: 2026 }).then(() => null, e => e);
   assert.ok(error instanceof SatDocError);
   assert.equal(error.code, 'respuesta-inesperada');
+}
+
+/* 4b · Ejercicio anterior a 2022: el portal nuevo no llega y
+     el motor lo dice en llano, sin pasear por la consulta
+     clásica muerta. */
+{
+  const page = new DeclFakePage({});
+  const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
+  const error = await fetchDecl({ rfc: RFC }, { tipo: 'mensual', ejercicio: 2021 }).then(() => null, e => e);
+  assert.ok(error instanceof SatDocError);
+  assert.equal(error.code, 'respuesta-inesperada');
+  assert.match(error.message, /solo cubre ejercicios desde 2022/);
 }
 
 /* 5 · La e.firma caducada corta ANTES de abrir el navegador: el
@@ -113,6 +142,6 @@ const resolver = async () => CREDS;
   assert.equal(state.launches, 0);
 }
 
-console.log('OK: declaraciones y acuses — mensuales y anuales por conectores separados, ' +
-  'declaración y acuse como documentos distintos con operación y fecha, ejercicio sin ' +
-  'presentadas con aviso honesto y caducada sin abrir el navegador.');
+console.log('OK: declaraciones y acuses — portal nuevo (2.0.1): mensuales y anuales por ' +
+  'conectores separados, el acuse de cada fila con su operación, periodo y fecha, ejercicio ' +
+  'sin presentadas con aviso honesto, pre-2022 dicho en llano y caducada sin abrir el navegador.');

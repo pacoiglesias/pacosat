@@ -365,8 +365,16 @@ const unlock = async (h, rfc) => {
 {
   const layout = read('layout.part'), trib = read('tributario-ui.part'),
     pagos = read('pagos-ui.part'), ui = read('ui.part');
-  for (const grupo of ['LA MAÑANA', 'EL DINERO', 'EL SAT Y LOS PAPELES', 'LA CASA'])
-    assert.ok(layout.includes(grupo), 'menú reagrupado: ' + grupo);
+  /* RE-BASIFICADO en la 2.0.1 (parte de cliente): el menú
+     reagrupado de la 1.29.0 (cuatro grupos con cabecera)
+     quedó CORTO Y LLANO — una sola cabecera, «LA MAÑANA», y
+     nueve destinos a la vista (nota de la ronda: «El menú
+     quedó corto y llano: nueve entradas») —. */
+  assert.ok(layout.includes('LA MAÑANA'), 'menú llano 2.0.1: la cabecera única');
+  for (const v of ['home', 'invoices', 'dinero', 'docs', 'avisos', 'reportes', 'lists', 'salud', 'settings'])
+    assert.ok(layout.includes('data-view="' + v + '"'), 'menú llano 2.0.1: destino a la vista: ' + v);
+  assert.ok(!layout.includes('EL SAT Y LOS PAPELES') && !layout.includes('LA CASA'),
+    'menú llano 2.0.1: fuera los grupos con cabecera de la 1.29.0');
   assert.ok(layout.includes('Centro SAT'), '«SAT» pasa a «Centro SAT» en el menú');
   const bottom = layout.slice(layout.indexOf('bottombar'));
   for (const v of ['home', 'avisos', 'buzon', 'dinero'])
@@ -387,7 +395,7 @@ const unlock = async (h, rfc) => {
     'Totales por años, meses que se entran y suma del detalle que iguala el total');
   assert.ok(ui.includes('fmtFechaHora'), 'un formato humano único de fecha');
   // 1.29.1: el pineo de «versión actual» se re-apunta en cada ronda.
-  assert.equal(JSON.parse(read('package.json')).version, '2.0.0', 'la versión es 2.0.0 (re-basificado en la 2.0.0)');
+  assert.equal(JSON.parse(read('package.json')).version, '2.0.1', 'la versión es 2.0.1 (re-basificado en la 2.0.1: motores del Buzón y de Declaraciones reconstruidos contra el mapa real del portal)');
   assert.ok(read('docs/CAPACIDADES.md').includes('1.29.0'), 'CAPACIDADES describe la 1.29.0');
   console.log('OK 1.29.0 · diseño — menú, barra móvil, papelera honesta, pagos y totales navegables.');
 }

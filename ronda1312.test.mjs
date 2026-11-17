@@ -72,9 +72,9 @@ function makeHarness(options = {}) {
 /* ===== 1 · ESTÁTICAS ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.0.0', 'la versión vigente es 2.0.0 (las enmiendas anteriores viajan dentro, acumulativas)');
+  assert.equal(pkg.version, '2.0.1', 'la versión vigente es 2.0.1 (las enmiendas anteriores viajan dentro, acumulativas; la 2.0.1 reconstruye los motores contra el mapa real)');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.0.0"'), 'el artefacto se sella con la versión vigente');
+  assert.ok(html.includes('"version":"2.0.1"'), 'el artefacto se sella con la versión vigente');
   const ui = read('ui.part'), sat = read('sat-ui.part'), mon = read('monitor-ui.part'),
     avisos = read('avisos-ui.part'), money = read('money-ui.part'), pagos = read('pagos-ui.part'),
     prob = read('problemas-ui.part'), trib = read('tributario-ui.part'), wf = read('workflows.part'),
@@ -139,7 +139,12 @@ function makeHarness(options = {}) {
 
   /* Punto de salud del menú: anclas en el layout y pintado
      desde conteos veraces del estado global. */
-  assert.ok(layout.includes('data-nav-dot="buzon"') && layout.includes('data-nav-dot="sat"'), 'el menú lateral trae los puntos');
+  /* Re-baseline 2.0.1 LIMPIEZA (orden directa de Paco, 16 nov):
+     el menú corto ya no trae las entradas buzon/sat, así que los
+     puntos de esas entradas salen del layout; la señal visible
+     del menú es ahora el estado de Listas en su propia entrada. */
+  assert.ok(!layout.includes('data-nav-dot="buzon"') && !layout.includes('data-nav-dot="sat"'), 'el menú corto ya no trae los puntos de buzon/sat (limpieza 2.0.1)');
+  assert.ok(layout.includes('id="lists-menu-estado201"'), 'la entrada de Listas del menú enseña su estado y su fecha');
   assert.ok(mon.includes('function paintNavDots1312()'), 'el pintado de puntos existe');
   assert.ok(mon.includes('satData?.buzonUnread') && mon.includes('satData?.tributario'), 'los puntos salen de conteos reales');
 

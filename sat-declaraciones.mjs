@@ -36,10 +36,75 @@ import { satBrowserLogin, prepareKeyForPortal } from './sat-doc-browser.mjs';
      entrega el PDF como descarga o como respuesta del navegador.
    Los selectores viven en OPCIONES (declSelectors) para poder
    ajustarlos en la primera corrida real sin tocar la lógica.
+
+   ACTUALIZACIÓN 2.0.1 (mapa vivo COMPLETO del 16 nov 2026,
+   15:56–16:04): ese contrato era el de la consulta CLÁSICA del
+   PTSC (ConsultaDeclaracion.aspx y hermanas), que en vivo es
+   un CALLEJÓN SIN SALIDA — «sin resultados» para Mano Fil en
+   todo lo probado (2026, oct, sep, 2025, dic-2025, anual) — y
+   queda RETIRADA del camino de mensuales/anuales. La ruta
+   buena es el PORTAL NUEVO de pagos provisionales
+   (pstcdypisr.clouda.sat.gob.mx), al que se entra con la MISMA
+   sesión de DyP: plataforma clásica → menú «Nuevo portal de
+   pagos provisionales» → menú «Consultas» (con clic, el hover
+   no basta) → «De la declaración» → formulario por Ejercicio
+   (SOLO 2022–2026; con solo el ejercicio lista TODO el año,
+   por fecha de presentación descendente) → cada fila trae su
+   enlace «Generar PDF», que ES el acuse de esa fila. El
+   contrato clásico de arriba queda solo donde aún manda: la
+   reimpresión por folio (77792) y la lectura de resultados
+   compartida. El pasillo nuevo vive en fetchPresentadasPortal
+   Nuevo, más abajo, y reutiliza los documentos de siempre
+   ({ejercicio, periodo, fechaPresentacion, operacion,
+   tipoPresentacion, clase, content}).
    ================================================================ */
 
+/* Ruta VIVA de Declaraciones (mapa levantado en sesión viva el
+   16 nov 2026, 15:35–15:48 — sustituye a la entrada por
+   wwwmat/app/seg, que está MUERTA y se abandona como entrada):
+   ruta pública sat.gob.mx → pestaña «Provisionales y
+   definitivas» → acordeón «Pagos de ISR, IVA, Retenciones por
+   salarios y asimilados e IVA Nueva plataforma» → «Ingresa al
+   servicio» → autenticación APARTE en loginda.siat.sat.gob.mx
+   (NO reutiliza la sesión del Buzón): puerta «Acceso por
+   contraseña» (id=ciec) con botón «e.firma» → el formulario
+   NIDP de siempre en su URL fiel (el RFC va DESHABILITADO: lo
+   deriva el portal — el endurecimiento del acceso de la 2.0.1
+   aplica tal cual). Es un SEGUNDO acceso con e.firma dentro de
+   la misma sesión del navegador: este motor hace su propio
+   satBrowserLogin con entryUrl = la URL fiel de loginda,
+   navegando la página viva si la hay (el contexto conserva las
+   cookies del Buzón; la página terminará dentro de DyP y el
+   pasillo del Buzón ya sabe arrancar por su ruta directa). */
+export const DECL_PUBLIC_URL = 'https://www.sat.gob.mx/portal/public/tramites/declaraciones-pm';
+export const DECL_LOGIN_URL = 'https://loginda.siat.sat.gob.mx/nidp/app/login?id=fiel';
+/* La plataforma de Declaraciones y Pagos (persona moral) vive
+   en este host (dato de la sesión viva del 16 nov 2026, 15:55):
+   ahí cae el usuario tras el segundo acceso en loginda — Paco
+   entró manualmente por la puerta de contraseña; el ejecutor
+   entra por e.firma (id=fiel) y cae en la MISMA plataforma —.
+   Tras el satBrowserLogin de loginda, el aterrizaje se
+   comprueba contra este host y se nombra en el diario. La ruta
+   interior quedó mapeada entera el mismo día (16 nov 2026,
+   15:56–16:04): de la plataforma clásica se salta al PORTAL
+   NUEVO de pagos provisionales (pstcdypisr.clouda.sat.gob.mx)
+   por su menú, sin segundo acceso extra — la misma sesión de
+   DyP entra de frente — y allí vive la consulta «De la
+   declaración» que alimenta la recuperación (ver
+   fetchPresentadasPortalNuevo). */
+export const DECL_PLATFORM_HOST = 'ptscdecprov.clouda.sat.gob.mx';
+export const DECL_PLATFORM_URL = 'https://' + DECL_PLATFORM_HOST + '/';
+/* El portal NUEVO de pagos provisionales (mapa vivo completo
+   del 16 nov 2026): «Declaración Provisional o Definitiva de
+   Impuestos Federales», con cabecera «RFC: <RFC> | <razón
+   social>». Su consulta «De la declaración» vive en
+   /Consulta/Consulta?tipoDocumento=1 y su lista de ejercicios
+   empieza en 2022: lo anterior NO se alcanza desde él. */
+export const DECL_NUEVO_PORTAL_URL = 'https://pstcdypisr.clouda.sat.gob.mx/';
+export const DECL_CONSULTA_URL = DECL_NUEVO_PORTAL_URL + 'Consulta/Consulta?tipoDocumento=1';
+export const DECL_EJERCICIO_MIN_PORTAL = 2022;
 export const DECL_DEFAULTS = {
-  entryUrl: 'https://wwwmat.sat.gob.mx/app/seg/faces/pages/lanzador.jsf?tipoLogeo=c&target=principal&hostServer=https://wwwmat.sat.gob.mx',
+  entryUrl: DECL_LOGIN_URL,
   linkMensuales: 'Declaraciones mensuales',
   linkAnuales: 'Declaración anual',
   ejercicio: '#ejercicio',
@@ -78,10 +143,37 @@ async function downloadOne(page, clase, index) {
    espera corta (el menú del portal es un SPA que pinta tarde);
    y si el formulario de búsqueda no aparece como se conoce, el
    error lo dice EN ESE PASO y con esa causa, no en genérico. */
-async function clickTramiteLink(page, candidates) {
+/* Clic del pasillo (2.0.1): SEGURO — elemento visible y clic
+   real — cuando el driver lo ofrece (clickTextSeguro); las
+   dobles antiguas sin él caen al clickText de siempre. Lo que
+   ya no se hace en ningún caso es fiarse del «true» a ciegas:
+   tras CADA clic se comprueba si la página murió (ver
+   clickTramiteLink). */
+async function clicSeguro(page, text) {
+  if (page && typeof page.clickTextSeguro === 'function')
+    return page.clickTextSeguro(text).catch(() => false);
+  if (page && typeof page.clickText === 'function')
+    return page.clickText(text).catch(() => false);
+  return false;
+}
+async function clickTramiteLink(page, candidates, onStep = null) {
   for (let pass = 0; pass < 2; pass++) {
     for (const text of candidates) {
-      if (await page.clickText(text).catch(() => false)) return text;
+      if (await clicSeguro(page, text)) {
+        /* Tras CADA clic, la página puede haber muerto: un
+           clic sobre el elemento equivocado navega la página
+           principal a la ruta degenerada /app/seg/null y mata
+           la página de TODA la tanda (evidencia del 16 nov
+           2026). Si murió, se deja de clicar en el acto y el
+           llamador clasifica — jamás se sigue clicando a
+           ciegas sobre una página muerta. */
+        const muerta = await paginaMuerta(page);
+        if (muerta.muerta) {
+          notifyStep(onStep, 'Ruta muerta', 'un clic del pasillo llevó a «Página no encontrada»: ' + (muerta.url || ''));
+          return '';
+        }
+        return text;
+      }
     }
     if (pass === 0) await sleep(1500);
   }
@@ -132,8 +224,25 @@ function fallaRutaMuerta(url) {
    sale con la página guardada (la fábrica adjunta el diagnóstico)
    y la primera corrida viva enseñará el aterrizaje real. */
 async function enterTramite(page, candidates, onStep, opciones = {}) {
-  const directo = await clickTramiteLink(page, candidates);
+  /* Entrada con la página YA muerta (2.0.1): la clasificación
+     ruta-muerta de la 1.32.1 disparaba 36–78 ms DESPUÉS del
+     paso «Aterrizaje del portal» — la página ya estaba muerta
+     al llegar a la etapa del marco, heredada de la corrida
+     anterior de la tanda —. Si al entrar la página ya es la
+     404, no se clica NADA: se devuelve '' con su paso y el
+     llamador clasifica (ruta-muerta nombrando la URL). */
+  const muertaEntrada = await paginaMuerta(page);
+  if (muertaEntrada.muerta) {
+    notifyStep(onStep, 'Ruta muerta', 'la página ya estaba en «Página no encontrada» al buscar el trámite: ' + (muertaEntrada.url || ''));
+    return '';
+  }
+  const directo = await clickTramiteLink(page, candidates, onStep);
   if (directo) return directo;
+  const muertaTrasClics = await paginaMuerta(page);
+  if (muertaTrasClics.muerta) {
+    notifyStep(onStep, 'Ruta muerta', 'la página quedó en «Página no encontrada» tras los clics del pasillo: ' + (muertaTrasClics.url || ''));
+    return '';
+  }
   /* Etapa de la portada NUEVA (1.31.0, evidencia viva del
      13 nov 2026): el portal aterriza en la portada del Buzón
      y allí el enlace del trámite NO está — está tras
@@ -154,19 +263,29 @@ async function enterTramite(page, candidates, onStep, opciones = {}) {
        conserva la portada desde la que se navegó. */
     if (typeof opciones.marcaDecision === 'function') await opciones.marcaDecision().catch(() => {});
     let abierto = false;
-    try { abierto = await page.clickText('Servicios Disponibles').catch(() => false); } catch { abierto = false; }
+    try { abierto = await clicSeguro(page, 'Servicios Disponibles'); } catch { abierto = false; }
     if (abierto) {
       await sleep(1500);
       const muerta = await paginaMuerta(page);
       if (muerta.muerta) {
+        /* Sin lanzar (2.0.1): se devuelve '' y el llamador
+           clasifica — lanzar aquí dejaba INALCANZABLES los
+           respaldos del llamador (el de la URL directa de la
+           ficha 22513 en fetchTransacciones era código muerto
+           por este throw). */
         notifyStep(onStep, 'Ruta muerta', '«Servicios Disponibles» llevó a «Página no encontrada»: ' + (muerta.url || ''));
-        throw fallaRutaMuerta(muerta.url);
+        return '';
       }
       const ampliados = [...candidates, 'Declaraciones', 'Declaraciones y pagos'];
-      const viaServicios = await clickTramiteLink(page, ampliados);
+      const viaServicios = await clickTramiteLink(page, ampliados, onStep);
       if (viaServicios) {
         notifyStep(onStep, 'Enlace del trámite', 'encontrado tras «Servicios Disponibles»: «' + viaServicios + '»');
         return viaServicios;
+      }
+      const muertaServicios = await paginaMuerta(page);
+      if (muertaServicios.muerta) {
+        notifyStep(onStep, 'Ruta muerta', 'la página quedó en «Página no encontrada» tras «Servicios Disponibles»: ' + (muertaServicios.url || ''));
+        return '';
       }
       notifyStep(onStep, 'Servicios Disponibles', 'se abrió la sección, pero el enlace del trámite no apareció ni con los textos genéricos');
     }
@@ -187,34 +306,26 @@ async function enterTramite(page, candidates, onStep, opciones = {}) {
     const frameUrl = await page.tramiteFrameUrl().catch(() => '');
     if (frameUrl) {
       await sleep(1500);
-      const enMarco = await clickTramiteLink(page, candidates);
+      const enMarco = await clickTramiteLink(page, candidates, onStep);
       if (enMarco) {
         notifyStep(onStep, 'Enlace del trámite', 'encontrado dentro del marco: «' + enMarco + '»');
         return enMarco;
       }
     }
   }
+  /* Chequeo final SIN lanzar (2.0.1): enterTramite devuelve ''
+     y quien clasifica es el llamador — fetchMensuales y
+     fetchAnual re-comprueban paginaMuerta al salir y lanzan
+     fallaRutaMuerta con el mismo texto de siempre; los
+     respaldos por URL directa (22513) dejan de ser código
+     muerto porque ya ningún throw los corta antes. */
   const muertaFinal = await paginaMuerta(page);
   if (muertaFinal.muerta) {
     notifyStep(onStep, 'Ruta muerta', 'la página actual es la 404 del portal: ' + (muertaFinal.url || ''));
-    throw fallaRutaMuerta(muertaFinal.url);
+    return '';
   }
   return '';
 }
-async function fillSearchForm(page, selectors, ejercicio, periodo, tramite) {
-  try {
-    await page.selectSelector(selectors.ejercicio, String(ejercicio));
-    if (periodo) await page.selectSelector(selectors.periodo, periodo);
-    await page.clickSelector(selectors.buscar);
-  } catch {
-    throw failure('respuesta-inesperada',
-      'Tras entrar a ' + tramite + ', el formulario de búsqueda no apareció como PacoSAT lo ' +
-      'conoce (ejercicio, periodo y botón de buscar): el portal enseñó otra pantalla. ' +
-      'La página que enseñó queda guardada en el diario de la corrida.');
-  }
-  await sleep(600);
-}
-
 /* Diario por pasos (1.23.0): el llamante puede pasar onStep(paso,
    detalle) y recibe cada fase en texto corto en español, sin que
    eso cambie selectores ni la navegación. Un onStep que falle no
@@ -224,88 +335,275 @@ const notifyStep = (onStep, paso, detalle = '') => {
   try { onStep(String(paso || ''), String(detalle || '')); } catch { /* el diario nunca tumba la corrida */ }
 };
 
-/* Conector (a): mensuales de un ejercicio (y periodo opcional). */
-export async function fetchMensuales({ page, ejercicio, periodo = '', selectors = DECL_DEFAULTS, onStep = null, opciones = {} }) {
-  const linked = await enterTramite(page,
-    [selectors.linkMensuales, 'Mensuales', 'Declaraciones presentadas'], onStep, opciones);
-  if (linked) {
+/* ================================================================
+   EL PASILLO DEL PORTAL NUEVO (2.0.1, mapa vivo completo del
+   16 nov 2026, 15:56–16:04): sustituye a la consulta clásica
+   del PTSC como camino de declaraciones-recuperar.
+   (1) La página llega de la plataforma clásica (la fábrica ya
+       firmó en loginda y comprobó el aterrizaje).
+   (2) Salto al portal nuevo por su menú («Nuevo portal de
+       pagos provisionales»); si el menú no responde, por su
+       dirección directa — la misma sesión de DyP entra de
+       frente, sin segundo acceso extra —.
+   (3) Menú «Consultas» CON CLIC (el hover no basta) →
+       «De la declaración»; si el menú no responde, la
+       dirección directa de la consulta.
+   (4) Consulta por Ejercicio: el formulario trae el RFC de
+       solo lectura, «Declaración» con su única opción, Tipo,
+       Ejercicio OBLIGATORIO (SOLO 2022–2026), Periodicidad
+       (1-Mensual / 3-Trimestral / 5-Semestral) y Periodo (se
+       habilita tras la periodicidad). Con SOLO el ejercicio
+       lista TODO el año por fecha descendente: el pasillo
+       pide el año entero y filtra el periodo AQUÍ, sin fiar
+       el filtro a un desplegable de postback.
+   (5) Cada fila trae su «Generar PDF» = EL ACUSE de la fila:
+       se guarda con la identidad de la fila (operación,
+       ejercicio, periodo, fecha de presentación y tipo
+       Normal/Complementaria) en el contrato de documentos de
+       siempre, clase 'acuse'. La declaración misma no la
+       ofrece esta consulta: lo que el portal nuevo entrega
+       por fila es su acuse, y el pasillo no inventa otro
+       documento.
+   Ejercicios anteriores a 2022: el portal nuevo NO llega (su
+   lista empieza en 2022) y la consulta clásica no devuelve
+   las presentadas de este RFC (comprobado en vivo): el motor
+   lo dice EN LLANO y no pasea por el callejón.
+   ================================================================ */
+function fallaEjercicioPrevioPortal(ejercicio) {
+  return failure('respuesta-inesperada',
+    'El portal nuevo de Declaraciones y Pagos solo cubre ejercicios desde 2022 (su lista de ' +
+    'ejercicios empieza en 2022): para ' + ejercicio + ' no hay ruta automática. La consulta ' +
+    'clásica del PTSC no devuelve las presentadas de este RFC (comprobado en vivo el 16 nov ' +
+    '2026: «sin resultados» en todo lo probado), así que PacoSAT no pasea por ella.');
+}
+
+/* Entrada al portal nuevo y a su consulta, con la disciplina
+   de la ronda: página muerta a la entrada = clasificación sin
+   clicar; tras cada clic se comprueba si la página murió; el
+   menú y la consulta tienen su dirección directa como respaldo
+   (navegar por direcciones tras el acceso es el patrón que
+   funciona en este portal). */
+async function entrarPortalNuevo(page, onStep, opciones = {}) {
+  const muertaEntrada = await paginaMuerta(page);
+  if (muertaEntrada.muerta) throw fallaRutaMuerta(muertaEntrada.url);
+  let salto = await clicSeguro(page, 'Nuevo portal de pagos provisionales');
+  if (salto) {
     const muerta = await paginaMuerta(page);
-    if (muerta.muerta) throw fallaRutaMuerta(muerta.url);
+    if (muerta.muerta) {
+      notifyStep(onStep, 'Ruta muerta', 'el salto al portal nuevo llevó a «Página no encontrada»: ' + (muerta.url || ''));
+      throw fallaRutaMuerta(muerta.url);
+    }
   }
-  if (!linked) {
-    notifyStep(onStep, 'Enlace del trámite', 'no encontrado');
+  if (!salto) {
+    if (typeof opciones.marcaDecision === 'function') await opciones.marcaDecision().catch(() => {});
+    const fue = typeof page.goto === 'function'
+      ? await page.goto(DECL_NUEVO_PORTAL_URL).then(() => true).catch(() => false) : false;
+    if (fue) {
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) throw fallaRutaMuerta(DECL_NUEVO_PORTAL_URL);
+      salto = true;
+    }
+  }
+  if (!salto) {
+    notifyStep(onStep, 'Portal nuevo de pagos provisionales', 'no encontrado');
     throw failure('respuesta-inesperada',
-      'Tras el acceso, el portal no mostró el acceso a las declaraciones mensuales que PacoSAT ' +
-      'sabe usar. Si el portal cambió su página, habrá que actualizar PacoSAT.');
+      'La plataforma de Declaraciones y Pagos no mostró el salto al «Nuevo portal de pagos ' +
+      'provisionales» que PacoSAT sabe usar. La página que enseñó queda guardada en el diario.');
   }
-  notifyStep(onStep, 'Enlace del trámite', 'encontrado: «' + linked + '»');
-  await fillSearchForm(page, selectors, ejercicio, periodo, 'las declaraciones mensuales');
-  notifyStep(onStep, 'Formulario de búsqueda enviado', 'ejercicio ' + ejercicio + (periodo ? ' · periodo ' + periodo : ''));
-  const rows = await readResults(page);
+  notifyStep(onStep, 'Portal nuevo de pagos provisionales', 'dentro (pstcdypisr), con la misma sesión de DyP');
+  /* El menú «Consultas» hay que CLICARLO (el hover no basta en
+     el portal real); su contenido trae «De la declaración». */
+  await clicSeguro(page, 'Consultas');
+  let consulta = await clicSeguro(page, 'De la declaración');
+  if (!consulta && typeof page.clickTextExactoVisible === 'function')
+    consulta = await page.clickTextExactoVisible('De la declaración').then(v => !!v).catch(() => false);
+  if (consulta) {
+    const muerta = await paginaMuerta(page);
+    if (muerta.muerta) {
+      notifyStep(onStep, 'Ruta muerta', 'la consulta llevó a «Página no encontrada»: ' + (muerta.url || ''));
+      throw fallaRutaMuerta(muerta.url);
+    }
+  }
+  if (!consulta) {
+    const fue = typeof page.goto === 'function'
+      ? await page.goto(DECL_CONSULTA_URL).then(() => true).catch(() => false) : false;
+    if (fue) {
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) throw fallaRutaMuerta(DECL_CONSULTA_URL);
+      consulta = true;
+    }
+  }
+  if (!consulta) {
+    notifyStep(onStep, 'Consulta «De la declaración»', 'no encontrada');
+    throw failure('respuesta-inesperada',
+      'El portal nuevo no mostró su consulta «De la declaración» (menú «Consultas»). La página ' +
+      'que enseñó queda guardada en el diario de la corrida.');
+  }
+  notifyStep(onStep, 'Consulta «De la declaración»', 'abierta');
+}
+
+/* El formulario de la consulta: listas por candidatos (el
+   portal real es ASP.NET y sus ids exactos se confirman en
+   vivo; la réplica de las pruebas implementa el primero de
+   cada lista). Ejercicio manda; la periodicidad se pide
+   cuando el trabajo es mensual y su fracaso no tumba la
+   consulta: con solo el ejercicio el portal lista el año
+   entero igualmente. */
+const DECL_NUEVO_FORM = {
+  ejercicio: ['#Ejercicio', '#ejercicio', 'select[name="Ejercicio"]', 'select[id*="jercicio" i]'],
+  periodicidad: ['#Periodicidad', '#periodicidad', 'select[name="Periodicidad"]', 'select[id*="eriodicidad" i]'],
+  buscar: ['#buscar', '#btnBuscar', '#Consultar', '#consultar', 'button[type="submit"]', 'input[type="submit"]']
+};
+async function selectPrimero(page, candidatos, valores) {
+  if (typeof page.selectSelector !== 'function') return false;
+  for (const sel of candidatos) {
+    for (const val of valores) {
+      try { await page.selectSelector(sel, val); return true; } catch { /* siguiente candidato */ }
+    }
+  }
+  return false;
+}
+async function fillConsultaNueva(page, ejercicio, periodicidadMensual, onStep) {
+  const okEjercicio = await selectPrimero(page, DECL_NUEVO_FORM.ejercicio, [String(ejercicio)]);
+  if (!okEjercicio) {
+    throw failure('respuesta-inesperada',
+      'La consulta «De la declaración» del portal nuevo no enseñó su lista de ejercicios: el ' +
+      'formulario de la consulta no apareció como PacoSAT lo conoce. La página que enseñó ' +
+      'queda guardada en el diario de la corrida.');
+  }
+  if (periodicidadMensual) {
+    const okPer = await selectPrimero(page, DECL_NUEVO_FORM.periodicidad, ['1', '1-Mensual', 'Mensual']);
+    if (!okPer) notifyStep(onStep, 'Periodicidad', 'la lista no respondió; la consulta va con solo el ejercicio, que lista el año entero');
+  }
+  let enviado = false;
+  if (typeof page.clickSelector === 'function') {
+    for (const sel of DECL_NUEVO_FORM.buscar) {
+      if (await page.clickSelector(sel).then(() => true).catch(() => false)) { enviado = true; break; }
+    }
+  }
+  if (!enviado) enviado = (await clicSeguro(page, 'Consultar')) || (await clicSeguro(page, 'Buscar'));
+  if (!enviado) {
+    throw failure('respuesta-inesperada',
+      'La consulta «De la declaración» no enseñó su botón de consulta: el portal mostró otra ' +
+      'pantalla. La página que enseñó queda guardada en el diario de la corrida.');
+  }
+  await sleep(800);
+}
+
+/* Las filas de la consulta, con espera: el portal nuevo puede
+   tardar en pintar la tabla tras el envío (postback). Si la
+   página enseña su «sin resultados», la espera termina con la
+   lista vacía — un año sin presentadas es un desenlace, no un
+   fallo de lectura —. Sin lector de filas en el driver, el
+   paso se nombra y se clasifica: mejor un error claro que una
+   lista vacía fingida. */
+async function leerFilasConsulta(page, onStep) {
+  if (typeof page.portalNuevoResults !== 'function') {
+    throw failure('respuesta-inesperada',
+      'La consulta «De la declaración» no devolvió una tabla legible: el navegador no supo ' +
+      'leer sus filas. La página que enseñó queda guardada en el diario de la corrida.');
+  }
+  const limite = Date.now() + 15_000;
+  for (;;) {
+    const rows = await page.portalNuevoResults().catch(() => []);
+    if (Array.isArray(rows) && rows.length) return rows;
+    let texto = '';
+    try { texto = typeof page.text === 'function' ? await page.text() : ''; } catch { texto = ''; }
+    if (/sin resultados|no se encontraron/i.test(String(texto || ''))) return [];
+    if (Date.now() >= limite) return [];
+    await sleep(1200);
+  }
+}
+
+/* La fila cruda del portal nuevo a la identidad del contrato:
+   operación, fecha de presentación tal como la enseña, tipo
+   (Normal / Complementaria / …) y periodo normalizado a
+   'AAAA-MM' cuando la celda nombra el mes (el portal enseña
+   el mes por su nombre) o el ejercicio cuando la fila es la
+   anual («Del ejercicio»). */
+function normalizaFilaPortal(row, ejercicio, indice) {
+  const operacion = String(row?.operacion || '').replace(/\s+/g, ' ').trim();
+  if (!operacion) return null;
+  const tipo = String(row?.tipo || '').replace(/\s+/g, ' ').trim();
+  let periodo = String(row?.periodo || '').replace(/\s+/g, ' ').trim();
+  if (/^\d{4}[-/]\d{2}$/.test(periodo)) periodo = periodo.replace('/', '-');
+  else {
+    const mes = MESES_TX[cleanTx(periodo)];
+    if (mes) periodo = ejercicio + '-' + mes;
+    else if (/ejercicio|anual/i.test(periodo)) periodo = String(ejercicio);
+  }
+  return { operacion, fechaPresentacion: String(row?.fecha || '').trim(), tipo, periodo,
+    esAnual: /anual/i.test(tipo) || periodo === String(ejercicio),
+    pdfIndex: Number.isInteger(row?.pdfIndex) ? row.pdfIndex : indice };
+}
+
+async function downloadPortalPdf(page, pdfIndex) {
+  if (typeof page.clickPortalPdf !== 'function') return null;
+  const clic = await page.clickPortalPdf(pdfIndex).then(() => true).catch(() => false);
+  if (!clic) return null;
+  const pdf = await page.waitForPdf(30_000).catch(() => null);
+  return pdf && isPdfBuffer(pdf) ? pdf : null;
+}
+
+/* El tramo común: entrada, consulta por ejercicio y descarga
+   de los acuses de las filas que queden tras el filtro del
+   llamador (periodo, o la marca anual). */
+async function fetchPresentadasPortalNuevo({ page, ejercicio, periodicidadMensual = false,
+  filtro = null, onStep = null, opciones = {} }) {
+  await entrarPortalNuevo(page, onStep, opciones);
+  await fillConsultaNueva(page, ejercicio, periodicidadMensual, onStep);
+  notifyStep(onStep, 'Formulario de búsqueda enviado',
+    'ejercicio ' + ejercicio + (periodicidadMensual ? ' · periodicidad mensual' : '') +
+    ' · el listado del año se filtra en PacoSAT');
+  const crudas = await leerFilasConsulta(page, onStep);
+  let rows = (crudas || []).map((row, i) => normalizaFilaPortal(row, ejercicio, i)).filter(Boolean);
+  if (typeof filtro === 'function') rows = rows.filter(filtro);
   notifyStep(onStep, 'Resultados leídos', rows.length + (rows.length === 1 ? ' fila' : ' filas'));
   const documents = [];
   const warnings = [];
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const base = { ejercicio: Number(ejercicio), periodo: row.periodo || periodo,
-      fechaPresentacion: row.fechaPresentacion, operacion: row.operacion,
-      tipoPresentacion: row.tipo };
-    if (row.tieneDeclaracion) {
-      const content = await downloadOne(page, 'declaracion', i);
-      notifyStep(onStep, 'Descarga de documento', 'declaracion · ' + base.periodo + (content ? ' · ok' : ' · sin PDF'));
-      if (content) documents.push({ ...base, clase: 'declaracion', content });
-      else warnings.push('La declaración del periodo ' + base.periodo + ' apareció en la lista pero su PDF no llegó.');
-    }
-    if (row.tieneAcuse) {
-      const content = await downloadOne(page, 'acuse', i);
-      notifyStep(onStep, 'Descarga de documento', 'acuse · ' + base.periodo + (content ? ' · ok' : ' · sin PDF'));
-      if (content) documents.push({ ...base, clase: 'acuse', content });
-      else warnings.push('El acuse del periodo ' + base.periodo + ' apareció en la lista pero su PDF no llegó.');
+  for (const row of rows) {
+    const content = await downloadPortalPdf(page, row.pdfIndex);
+    notifyStep(onStep, 'Descarga de documento',
+      'acuse · ' + (row.periodo || ejercicio) + ' · operación ' + row.operacion + (content ? ' · ok' : ' · sin PDF'));
+    if (content) {
+      documents.push({ ejercicio: Number(ejercicio), periodo: row.periodo || String(ejercicio),
+        fechaPresentacion: row.fechaPresentacion, operacion: row.operacion,
+        tipoPresentacion: row.tipo, clase: 'acuse', content });
+    } else {
+      warnings.push('El acuse de la operación ' + row.operacion + ' apareció en la lista pero su PDF no llegó.');
     }
   }
   return { documents, warnings, found: rows.length };
 }
 
-/* Conector (b): la anual de un ejercicio (PDF + acuse). */
+/* Conector (a): mensuales de un ejercicio (y periodo opcional).
+   Desde la 2.0.1 va por el portal nuevo: consulta por ejercicio
+   con periodicidad 1-Mensual y filtro del periodo en casa. La
+   consulta clásica quedó retirada del camino (callejón sin
+   salida comprobado en vivo el 16 nov 2026). */
+export async function fetchMensuales({ page, ejercicio, periodo = '', selectors = DECL_DEFAULTS, onStep = null, opciones = {} }) {
+  void selectors; /* el formulario del portal nuevo trae sus propios candidatos (DECL_NUEVO_FORM) */
+  if (Number(ejercicio) < DECL_EJERCICIO_MIN_PORTAL) {
+    notifyStep(onStep, 'Ejercicio fuera del portal nuevo', String(ejercicio));
+    throw fallaEjercicioPrevioPortal(ejercicio);
+  }
+  return fetchPresentadasPortalNuevo({ page, ejercicio, periodicidadMensual: true,
+    filtro: periodo ? (row => row.periodo === periodo) : null, onStep, opciones });
+}
+
+/* Conector (b): la anual de un ejercicio. Mismo portal nuevo y
+   misma consulta, sin periodicidad y con el filtro de la marca
+   anual de la fila. Si el portal nuevo no lista la anual entre
+   las del ejercicio, la corrida vuelve con found 0 y la
+   fábrica lo dice con su aviso honesto de siempre. */
 export async function fetchAnual({ page, ejercicio, selectors = DECL_DEFAULTS, onStep = null, opciones = {} }) {
-  const linked = await enterTramite(page,
-    [selectors.linkAnuales, 'Anual', 'Declaración anual presentada'], onStep, opciones);
-  if (linked) {
-    const muerta = await paginaMuerta(page);
-    if (muerta.muerta) throw fallaRutaMuerta(muerta.url);
+  void selectors;
+  if (Number(ejercicio) < DECL_EJERCICIO_MIN_PORTAL) {
+    notifyStep(onStep, 'Ejercicio fuera del portal nuevo', String(ejercicio));
+    throw fallaEjercicioPrevioPortal(ejercicio);
   }
-  if (!linked) {
-    notifyStep(onStep, 'Enlace del trámite', 'no encontrado');
-    throw failure('respuesta-inesperada',
-      'Tras el acceso, el portal no mostró el acceso a la declaración anual que PacoSAT sabe ' +
-      'usar. Si el portal cambió su página, habrá que actualizar PacoSAT.');
-  }
-  notifyStep(onStep, 'Enlace del trámite', 'encontrado: «' + linked + '»');
-  await fillSearchForm(page, selectors, ejercicio, '', 'la declaración anual');
-  notifyStep(onStep, 'Formulario de búsqueda enviado', 'ejercicio ' + ejercicio);
-  const rows = await readResults(page);
-  notifyStep(onStep, 'Resultados leídos', rows.length + (rows.length === 1 ? ' fila' : ' filas'));
-  const documents = [];
-  const warnings = [];
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    const base = { ejercicio: Number(ejercicio), periodo: String(ejercicio),
-      fechaPresentacion: row.fechaPresentacion, operacion: row.operacion,
-      tipoPresentacion: row.tipo || 'Anual' };
-    if (row.tieneDeclaracion) {
-      const content = await downloadOne(page, 'anual', i);
-      notifyStep(onStep, 'Descarga de documento', 'declaracion · ' + base.periodo + (content ? ' · ok' : ' · sin PDF'));
-      if (content) documents.push({ ...base, clase: 'declaracion', content });
-      else warnings.push('La declaración anual de ' + ejercicio + ' apareció pero su PDF no se generó o no llegó.');
-    }
-    if (row.tieneAcuse) {
-      const content = await downloadOne(page, 'acuse', i);
-      notifyStep(onStep, 'Descarga de documento', 'acuse · ' + base.periodo + (content ? ' · ok' : ' · sin PDF'));
-      if (content) documents.push({ ...base, clase: 'acuse', content });
-      else warnings.push('El acuse de la anual de ' + ejercicio + ' apareció pero su PDF no llegó.');
-    }
-  }
-  return { documents, warnings, found: rows.length };
+  return fetchPresentadasPortalNuevo({ page, ejercicio, periodicidadMensual: false,
+    filtro: row => row.esAnual, onStep, opciones });
 }
 
 /* ================================================================
@@ -453,10 +751,11 @@ export async function fetchAcusePorFolio({ page, folio, tipoDeclaracion = '', ej
 export const DECL_TRANSACCIONES_DEFAULTS = {
   linkTextos: ['Consulta de transacciones', 'Transacciones', 'Mis transacciones'],
   /* La dirección pública de la ficha 22513, tal como consta en
-     la ficha oficial leída en la investigación (S8): es el
-     respaldo de entrada cuando los textos no aparecen, como el
-     77792 en la reimpresión — una dirección de aplicación del
-     PTSC, no el src de un marco. */
+     la ficha oficial leída en la investigación (S8): desde la
+     2.0.1 es la ruta PRINCIPAL de entrada (goto directo, como
+     el 77792 en la reimpresión) — una dirección de aplicación
+     del PTSC, no el src de un marco — y los textos del portal
+     quedan como respaldo. */
   appUrl: 'https://wwwmat.sat.gob.mx/aplicacion/22513/transacciones-de-declaraciones-y-pagos-que-haz-realizado-para-cubrir-tus-obligaciones-fiscales'
 };
 const MESES_TX = { enero: '01', febrero: '02', marzo: '03', abril: '04', mayo: '05', junio: '06',
@@ -487,14 +786,21 @@ function cleanTx(value) {
 
 export async function fetchTransacciones({ page, ejercicio = 0, selectors = DECL_DEFAULTS,
   transaccionesSelectors = DECL_TRANSACCIONES_DEFAULTS, onStep = null, opciones = {} }) {
-  let linked = await enterTramite(page, transaccionesSelectors.linkTextos, onStep, opciones);
-  if (!linked && transaccionesSelectors.appUrl && typeof page.goto === 'function') {
-    /* Respaldo por la dirección de la ficha (1.32.1): como en
-       la reimpresión 77792, si los textos del portal no
-       enseñan la entrada, se entra por la dirección pública
-       que la ficha oficial del servicio publica — con su
-       página de decisión refrescada antes del salto y su
-       clasificación de ruta muerta si ya no responde. */
+  /* Ruta PRINCIPAL (2.0.1): la dirección pública de la ficha
+     22513 va PRIMERO, por goto directo — es el patrón que hoy
+     funciona en Constancia/Opinión y en la reimpresión 77792:
+     navegar por direcciones directas tras el acceso, no
+     clicando la portada —. Hasta la 2.0.0 esta dirección era
+     el respaldo tras enterTramite, y era CÓDIGO MUERTO:
+     enterTramite lanzaba fallaRutaMuerta en su chequeo final
+     y el respaldo nunca se alcanzaba; además un clic ciego de
+     la portada podía matar la página de toda la tanda antes
+     de llegar aquí. Ahora: marca de decisión antes del salto
+     y clasificación de ruta muerta si la 22513 misma devuelve
+     la 404. El enterTramite por textos queda como respaldo,
+     solo si el goto directo falla SIN dejar la página muerta. */
+  let linked = '';
+  if (transaccionesSelectors.appUrl && typeof page.goto === 'function') {
     if (typeof opciones.marcaDecision === 'function') await opciones.marcaDecision().catch(() => {});
     const fue = await page.goto(transaccionesSelectors.appUrl).then(() => true).catch(() => false);
     if (fue) {
@@ -504,6 +810,20 @@ export async function fetchTransacciones({ page, ejercicio = 0, selectors = DECL
         throw fallaRutaMuerta(transaccionesSelectors.appUrl);
       }
       linked = 'la dirección pública de la ficha (22513)';
+    } else {
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) throw fallaRutaMuerta(muerta.url || transaccionesSelectors.appUrl);
+    }
+  }
+  if (!linked) {
+    linked = await enterTramite(page, transaccionesSelectors.linkTextos, onStep, opciones);
+    if (linked) {
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) throw fallaRutaMuerta(muerta.url);
+    }
+    if (!linked) {
+      const muerta = await paginaMuerta(page);
+      if (muerta.muerta) throw fallaRutaMuerta(muerta.url);
     }
   }
   if (!linked) {
@@ -551,7 +871,7 @@ export async function fetchTransacciones({ page, ejercicio = 0, selectors = DECL
    { documents: [...], warnings: [...], found }.
    Una sesión a la vez, como en constancia/opinión. */
 export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () => Date.now(),
-  selectors = DECL_DEFAULTS, folioSelectors = DECL_FOLIO_DEFAULTS, transaccionesSelectors = DECL_TRANSACCIONES_DEFAULTS, entryUrl = DECL_DEFAULTS.entryUrl, onStep = null } = {}) {
+  selectors = DECL_DEFAULTS, folioSelectors = DECL_FOLIO_DEFAULTS, transaccionesSelectors = DECL_TRANSACCIONES_DEFAULTS, entryUrl = DECL_DEFAULTS.entryUrl, publicUrl = DECL_PUBLIC_URL, onStep = null } = {}) {
   void now;
   let chain = Promise.resolve();
   /* Diario por pasos (1.23.0): onStep puede venir de la fábrica o
@@ -582,10 +902,12 @@ export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () 
     }
     const creds = await resolveCredentials(profile); // valida ANTES de abrir el navegador
     notifyStep(step, 'Credenciales validadas', String(profile?.rfc || ''));
-    /* Sesión viva (1.30.0): como en el Buzón, el ejecutor puede
-       entregar la página YA abierta de este RFC y aquí no se
-       lanza navegador ni se vuelve a firmar; sin ella, el camino
-       de siempre queda intacto. */
+    /* Sesión viva (1.30.0; ajustada al mapa vivo en la 2.0.1):
+       el ejecutor puede entregar la página YA abierta de este
+       RFC y aquí no se lanza navegador — pero Declaraciones SÍ
+       vuelve a firmar: su autenticación (loginda/DyP) es
+       aparte de la del Buzón y no la reutiliza. La página viva
+       se usa como navegador del segundo acceso. */
     const paginaViva = options?.sesionViva?.page || null;
     let driver = null;
     if (!paginaViva) {
@@ -606,31 +928,93 @@ export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () 
        nada; el que viaja es este, con la URL de la portada
        desde la que se intentó entrar al trámite. */
     let diagDecision = null;
+    /* ¿Una captura ES la página muerta del portal? Su URL es
+       la ruta degenerada /app/seg/null o su HTML es la 404
+       genérica («Página no encontrada», 156 B en producción). */
+    const esDiagMuerto = (diag) => {
+      if (!diag) return false;
+      if (/\/app\/seg\/null/.test(String(diag.url || ''))) return true;
+      return typeof diag.html === 'string' && /Página no encontrada/i.test(diag.html);
+    };
     try {
       if (paginaViva) {
         page = paginaViva;
-        notifyStep(step, 'Sesión reutilizada', 'la puerta ya estaba abierta para este RFC: no se vuelve a firmar');
+        notifyStep(step, 'Sesión reutilizada', 'la página de la tanda se reutiliza como navegador: Declaraciones hace su propio acceso en loginda');
       } else {
-      page = await driver.newPage();
+        page = await driver.newPage();
+      }
+      /* Ruta pública + SEGUNDO acceso (2.0.1, mapa vivo): se
+         camina la ruta pública de Declaraciones (pestaña
+         «Provisionales y definitivas» → acordeón de la Nueva
+         plataforma → «Ingresa al servicio») a modo de
+         orientación — cada clic es seguro y su fracaso no
+         tumba nada: la entrada que manda es la URL fiel de
+         loginda — y DESPUÉS se firma en loginda con
+         satBrowserLogin, también sobre la página viva si la
+         hay: la autenticación de DyP es APARTE de la del Buzón
+         y no la reutiliza (el contexto conserva las cookies;
+         la página terminará dentro de DyP). */
+      if (page && typeof page.goto === 'function' && publicUrl) {
+        const fuePublica = await page.goto(publicUrl).then(() => true).catch(() => false);
+        if (fuePublica) {
+          notifyStep(step, 'Ruta pública de declaraciones', 'portal del SAT → Declaraciones de personas morales');
+          await clicSeguro(page, 'Provisionales y definitivas').catch(() => false);
+          await clicSeguro(page, 'Pagos de ISR, IVA, Retenciones por salarios y asimilados e IVA Nueva plataforma').catch(() => false);
+          await clicSeguro(page, 'Ingresa al servicio').catch(() => false);
+        }
+      }
       const keyMaterial = prepareKeyForPortal(creds.key, creds.password);
       await satBrowserLogin(page, { cer: creds.cer, key: keyMaterial.buffer,
         password: creds.password, rfc: creds.rfc, entryUrl });
-      notifyStep(step, 'Acceso al portal OK', '');
+      notifyStep(step, 'Acceso al portal OK', 'segundo acceso con e.firma, en loginda (la puerta de Declaraciones)');
+      /* Aterrizaje en la plataforma (dato vivo del 16 nov
+         2026): tras loginda se cae en la plataforma de
+         Declaraciones y Pagos de ptscdecprov.clouda.sat.gob.mx.
+         Se comprueba y se NOMBRA en el diario; si el portal
+         dejara la página en otro sitio, el paso lo dice tal
+         cual y el pasillo salta después al portal nuevo de
+         pagos provisionales (mapa vivo completo del 16 nov
+         2026): ver fetchPresentadasPortalNuevo. */
+      let urlAterrizaje = '';
+      try { urlAterrizaje = typeof page.url === 'function' ? String(page.url() || '') : ''; } catch { /* en transición */ }
+      if (urlAterrizaje.includes(DECL_PLATFORM_HOST)) {
+        notifyStep(step, 'Plataforma de Declaraciones y Pagos', 'aterrizaje en ' + DECL_PLATFORM_HOST + ', el host esperado tras loginda');
+      } else if (urlAterrizaje) {
+        notifyStep(step, 'Aterrizaje tras el acceso', urlAterrizaje.slice(0, 160));
       }
-      if (page && typeof page.diagnostics === 'function') {
+      /* Captura de decisión sin envenenar (2.0.1): la sesión
+         reutilizada de la tanda podía llegar YA en la 404 por
+         la corrida anterior, y esa captura muerta era la que
+         viajaba como «decisión» en todas las corridas del
+         16 nov 2026. La marca se refresca antes de cada salto
+         (opciones.marcaDecision, que los conectores ya
+         invocaban) con la regla de las dos orillas: una
+         captura viva REEMPLAZA a una muerta guardada, y una
+         muerta jamás desplaza a una viva. Y al adjuntar
+         (catch), si la captura que queda es la página muerta,
+         NO viaja: diagDecision queda null y el diario dice
+         honestamente que solo hay página final. */
+      const capturarDecision = async () => {
+        if (!page || typeof page.diagnostics !== 'function') return;
         try {
           const diag = await page.diagnostics();
-          if (diag) diagDecision = diag;
+          if (!diag) return;
+          if (!diagDecision) { diagDecision = diag; return; }
+          if (esDiagMuerto(diagDecision) && !esDiagMuerto(diag)) { diagDecision = diag; return; }
+          if (!esDiagMuerto(diagDecision) && esDiagMuerto(diag)) return;
+          if (!esDiagMuerto(diag)) diagDecision = diag;
         } catch { /* el diagnóstico nunca tumba la corrida */ }
-      }
+      };
+      await capturarDecision();
+      const opcionesMotor = { marcaDecision: capturarDecision };
       const result = esFolio
         ? await fetchAcusePorFolio({ page, folio: String(query.folio), tipoDeclaracion: String(query.tipoDeclaracion || ''),
-            ejercicio, periodo: String(query.periodo || ''), selectors, folioSelectors, onStep: step })
+            ejercicio, periodo: String(query.periodo || ''), selectors, folioSelectors, onStep: step, opciones: opcionesMotor })
         : esTransacciones
-        ? await fetchTransacciones({ page, ejercicio: ejercicio || 0, selectors, transaccionesSelectors, onStep: step })
+        ? await fetchTransacciones({ page, ejercicio: ejercicio || 0, selectors, transaccionesSelectors, onStep: step, opciones: opcionesMotor })
         : tipo === 'anual'
-        ? await fetchAnual({ page, ejercicio, selectors, onStep: step })
-        : await fetchMensuales({ page, ejercicio, periodo: String(query?.periodo || ''), selectors, onStep: step });
+        ? await fetchAnual({ page, ejercicio, selectors, onStep: step, opciones: opcionesMotor })
+        : await fetchMensuales({ page, ejercicio, periodo: String(query?.periodo || ''), selectors, onStep: step, opciones: opcionesMotor });
       if (esTransacciones) return result;
       if (!result.found) {
         return { documents: [], warnings: ['El portal no mostró declaraciones ' +
@@ -663,7 +1047,13 @@ export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () 
           if (actual) error.diag = actual;
         } catch { /* sin diagnóstico final no se rompe nada: el error manda */ }
       }
-      if (error && typeof error === 'object' && diagDecision && !error.diagDecision)
+      /* Decisión muerta no viaja (2.0.1): si la captura de
+         decisión que queda es la página muerta, diagDecision
+         queda null a propósito — adjuntarla como «decisión»
+         fue lo que envenenó la evidencia del 16 nov 2026,
+         con los artefactos de decisión byte-idénticos a los
+         finales (la misma 404) en todas las corridas. */
+      if (error && typeof error === 'object' && diagDecision && !esDiagMuerto(diagDecision) && !error.diagDecision)
         error.diagDecision = diagDecision;
       throw error;
     } finally {

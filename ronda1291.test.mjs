@@ -331,7 +331,11 @@ const filasDe = (el, clase) => {
   context.__mudo = { emparejado: true, enLinea: false, ultimoVisto: TS, nombre: 'Equipo de Paco' };
   const guiaMuda = vm.runInContext('executorGuiaCard(__mudo, null)', context);
   const textoMudo = textoDe(guiaMuda);
-  assert.ok(textoMudo.includes('Tu equipo no responde'), 'D5: emparejado sin latido, lo dice así');
+  /* RE-BASE 2.0.1 · nº 31: el estado se dice con el vocabulario
+     de la jerarquía del ejecutor residente — «está dormido» —
+     y la tarjeta lleva el gesto «Ejecutar aquí» en ella. */
+  assert.ok(textoMudo.includes('Tu ejecutor está dormido'), 'D5·2.0.1: emparejado sin latido, lo dice así: está dormido');
+  assert.ok(textoMudo.includes('Ejecutar aquí'), 'D5·2.0.1: el gesto de despertarlo vive en la misma tarjeta');
   const esperada = vm.runInContext('fmtFechaHora(' + TS + ')', context);
   assert.ok(textoMudo.includes(esperada), 'D5: la guía enseña la hora de la última señal');
   context.__enLinea = { emparejado: true, enLinea: true, ultimoVisto: TS, nombre: 'Equipo de Paco' };
@@ -376,7 +380,7 @@ const filasDe = (el, clase) => {
   assert.ok(!decl.includes("n('span', DECL_ESTADO_TEXTO[mes.estado]"), 'D3: la celda ya no pinta la frase entera');
   /* D5: la guía y el emparejar compartidos; el servidor la alimenta. */
   assert.ok(trib.includes('Todavía no has emparejado ningún equipo'), 'D5: el panel dice el estado sin equipo');
-  assert.ok(trib.includes('Tu equipo no responde'), 'D5: el panel dice el estado sin latido');
+  assert.ok(trib.includes('Tu ejecutor está dormido'), 'D5·2.0.1: el panel dice el estado sin latido: está dormido (nº 31)');
   assert.ok(trib.includes('function executorGuiaCard') && trib.includes('function executorPairBoton'),
     'D5: guía y emparejar viven en un solo sitio');
   assert.ok(decl.includes('executorGuiaCard(view.ejecutor'), 'D5: Declaraciones consume la guía con el estado de su vista');
@@ -480,16 +484,25 @@ const filasDe = (el, clase) => {
   assert.ok(textoDe(panelSolo).includes('Emparejar un ejecutor en mi equipo'),
     'D6: el panel que monta la pestaña «Ejecutor local» pinta el emparejamiento');
   /* D7: los contadores de Avisos cuentan la lista VISIBLE. */
-  const avisoFalso = (id, clase, rfc) => ({ id, ref: 'semilla:' + id, kind: 'semilla', clase,
+  /* RE-BASE 2.0.1 · nº 9: las secciones de Avisos ya no son las
+     tres clases — son los DOS GRUPOS POR GESTO («Necesita tu
+     gesto» / «Informativos», por gesto.de que ya viaja en cada
+     aviso) y el distintivo del menú cuenta SOLO los de gesto
+     de Paco. Las pastillas por clase se conservan como foto y
+     siguen contando lo visible. La semilla trae el gesto que
+     el servidor real adjunta (avisoGesto): los «mal» son del
+     SAT, el «necesita» es de Paco. */
+  const avisoFalso = (id, clase, rfc, gestoDe = 'sat') => ({ id, ref: 'semilla:' + id, kind: 'semilla', clase,
     estado: 'abierto', severidad: 'media', titulo: 'Aviso ' + id, detalle: '', contraparte: 'C' + id,
     nombre: '', importe: '', enlace: '', baseline: false, creado: Date.now(), resuelto: null,
-    resolucion: '', direccion: '', fileId: '', rfc, responsable: 'Paco', vence: null, accion: '', actualizado: 0 });
+    resolucion: '', direccion: '', fileId: '', rfc, responsable: 'Paco', vence: null, accion: '', actualizado: 0,
+    gesto: { de: gestoDe, texto: gestoDe === 'paco' ? 'tuyo' : 'del SAT' } });
   const datos = { counts: { total: 11, mal: 7, falta: 3, necesita: 1, porConfirmar: 0 },
     porRfc: { MFI6212158B4: 3, AAA010101AAA: 8 }, grupos: [], historial: [],
     avisos: [avisoFalso(1, 'mal', 'MFI6212158B4'), avisoFalso(2, 'mal', 'MFI6212158B4'),
-      avisoFalso(3, 'necesita', 'MFI6212158B4'),
+      avisoFalso(3, 'necesita', 'MFI6212158B4', 'paco'),
       ...[4, 5, 6, 7, 8].map(id => avisoFalso(id, 'mal', 'AAA010101AAA')),
-      ...[9, 10, 11].map(id => avisoFalso(id, 'falta', 'AAA010101AAA'))] };
+      ...[9, 10, 11].map(id => avisoFalso(id, 'falta', 'AAA010101AAA', 'sistema'))] };
   context.__datos = datos;
   vm.runInContext('avisosCache = __datos; avisosRfcFiltro = ""; scope = "MFI6212158B4";', context);
   const pantalla = vm.runInContext('avisosScreen()', context);
@@ -497,10 +510,11 @@ const filasDe = (el, clase) => {
   const textoAvisos = pantalla.map(textoDe).join(' ');
   assert.ok(textoAvisos.includes('Lo que está mal: 2'), 'D7: la pastilla cuenta lo visible (2), no el total (7)');
   assert.ok(!textoAvisos.includes('Lo que está mal: 7'), 'D7: el total global ya no se anuncia como filtro');
-  assert.ok(textoAvisos.includes('Lo que está mal (2)'), 'D7: pastilla y sección dicen el mismo número');
+  assert.ok(textoAvisos.includes('Necesita tu gesto (1)'), 'D7·2.0.1: la sección de gesto cuenta lo visible de gesto (1)');
+  assert.ok(textoAvisos.includes('Informativos (2)'), 'D7·2.0.1: la sección informativa cuenta el resto visible (2)');
   assert.ok(textoAvisos.includes('Lo que falta: 0'), 'D7: la clase sin visibles se anuncia a 0, como su (ausente) sección');
-  assert.equal(vm.runInContext('avisosBadgeCount(__datos)', context), 3,
-    'D7: el distintivo del menú cuenta el mismo RFC que la pantalla enseña (3), no el total (11)');
+  assert.equal(vm.runInContext('avisosBadgeCount(__datos)', context), 1,
+    'D7·2.0.1: el distintivo del menú cuenta los de gesto de Paco del RFC en pantalla (1), no su total (3) ni el global (11)');
   /* Re-baseline 1.32.1 (auditoría A3): el botón se llama
      «Revisar avisos ahora» — sigue diciendo la verdad de lo
      que hace (recalcular al momento), en la palabra llana. */
@@ -536,8 +550,15 @@ const filasDe = (el, clase) => {
   const avisos = read('avisos-ui.part');
   const ejecutor = read('ejecutor-local.mjs');
   const server = read('local-server.mjs');
-  assert.ok(ui.includes("['ejecutor', 'Ejecutor local']"), 'D6: Centro SAT tiene la pestaña «Ejecutor local»');
-  assert.ok(ui.includes("satTab === 'ejecutor') parts.push(executorPanel())"), 'D6: la pestaña monta el panel real');
+  /* RE-BASIFICADO en la 2.0.1 (parte de cliente): el Centro
+     SAT con pestañas se retiró («Ya no hay un Centro SAT con
+     pestañas escondidas», nota de la ronda) y el Ejecutor
+     local se resuelve como destino propio en el mapa de
+     pantallas, montando el mismo panel real de siempre. */
+  assert.ok(ui.includes("ejecutor: typeof executorPanel === 'function' ? () => [executorPanel()] : null"),
+    'D6: el Ejecutor local se resuelve en el mapa de pantallas (2.0.1)');
+  assert.ok(!ui.includes("['ejecutor', 'Ejecutor local']"),
+    'D6: fuera la pestaña «Ejecutor local» del Centro SAT retirado');
   const pantallaTrib = trib.slice(trib.indexOf('function tributarioScreen'));
   assert.ok(pantallaTrib.indexOf('wrap.append(executorStatusLine())') < pantallaTrib.indexOf('if (!scope)'),
     'B2: en el Buzón la línea del ejecutor se monta antes del retorno de «sin contribuyente»');

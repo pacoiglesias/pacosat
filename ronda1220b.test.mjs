@@ -794,34 +794,41 @@ const docProfile = async (h, rfc = OWN) => {
     assert.ok(error.message.includes('última pantalla'), 'el error nombra la pantalla vista (la evidencia)');
     assert.equal(page.filled, null, 'sin formulario confirmado, nada de la e.firma se teclea');
   }
-  /* Declaraciones: el acceso viene con el texto CORTO
-     («Mensuales») y el menú pinta tarde (falla la primera
-     pasada): la búsqueda encuentra la fila igualmente. */
+  /* Declaraciones (RE-BASIFICADO en la 2.0.1): el pasillo ya
+     no entra por los textos de la consulta CLÁSICA — el mapa
+     vivo completo del 16 nov 2026 la declaró callejón sin
+     salida («sin resultados» en todo lo probado) —: entra por
+     el portal NUEVO (plataforma clásica → menú «Nuevo portal
+     de pagos provisionales» → «Consultas» → «De la
+     declaración» → consulta por ejercicio) y cada fila trae
+     su acuse en «Generar PDF». La doble implementa ESE
+     contrato (portalNuevoResults/clickPortalPdf). */
   {
     const page = new LoginPage();
-    let pasadas = 0;
-    page.clickText = async text => { pasadas++;
-      return pasadas > 2 && text === 'Mensuales'; };
+    page.clickText = async text => ['Nuevo portal de pagos provisionales', 'Consultas', 'De la declaración'].includes(text);
     page.selectSelector = async () => {};
     page.clickSelector = async () => {};
-    page.declResults = async () => [{ operacion: '123', fecha: '2026-11-17', tipo: 'Mensual',
-      periodo: '2026-10', acuse: true, declaracion: true }];
-    page.clickDeclDownload = async () => {};
+    page.portalNuevoResults = async () => [{ operacion: '262620123123', fecha: '17/11/2026',
+      tipo: 'Normal', periodo: '2026-10', pdfIndex: 0 }];
+    page.clickPortalPdf = async () => {};
     page.waitForPdf = async () => Buffer.concat([Buffer.from('%PDF-1.4 '), Buffer.alloc(600, 0x20)]);
     const result = await fetchMensuales({ page, ejercicio: 2026 });
-    assert.equal(result.found, 1, 'la fila se encontró por la variante de texto');
-    assert.equal(result.documents.length, 2, 'bajaron la declaración y su acuse');
+    assert.equal(result.found, 1, 'la fila se encontró por el pasillo del portal nuevo');
+    assert.equal(result.documents.length, 1, 'bajó el acuse de la fila («Generar PDF»)');
+    assert.equal(result.documents[0].clase, 'acuse');
+    assert.equal(result.documents[0].operacion, '262620123123');
   }
-  /* Declaraciones: el formulario de búsqueda no es el conocido
-     → el error dice el paso y la causa, no un genérico. */
+  /* Declaraciones: el formulario de la consulta no es el
+     conocido → el error dice el paso y la causa, no un
+     genérico. */
   {
     const page = new LoginPage();
     page.clickText = async () => true;
     page.selectSelector = async () => { throw new Error('selector no encontrado'); };
     const error = await fetchMensuales({ page, ejercicio: 2026 }).then(() => null, e => e);
     assert.equal(error.code, 'respuesta-inesperada');
-    assert.ok(error.message.includes('formulario de búsqueda no apareció'),
-      'el fallo nombra el paso exacto que el portal no enseñó');
+    assert.ok(error.message.includes('lista de ejercicios'),
+      'el fallo nombra el paso exacto que el portal no enseñó: ' + error.message);
   }
   console.log('OK 1.22.0b I — piezas 5/6/11 en el motor: recarga, ruta por texto, sonda que manda y pasos nombrados.');
 }

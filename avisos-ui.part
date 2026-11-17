@@ -101,8 +101,8 @@ const AVISOS_CLASES = [
 ];
 const AVISOS_ENLACES = {
   dinero: ['dinero', 'Ir a Dinero'], bancos: ['bancos', 'Ir a Dinero › Bancos'],
-  lists: ['lists', 'Ir a Centro SAT › Listas 69-B'], monitor: ['monitor', 'Ir a Centro SAT › Estado de mis CFDI'],
-  sat: ['sat', 'Ir al Centro SAT'], backup: ['backup', 'Ir a Ajustes › Respaldos'],
+  lists: ['lists', 'Ir a Listas del SAT'], monitor: ['monitor', 'Ir a Vigilancia de CFDI'],
+  sat: ['sat', 'Ir a Descargar del SAT'], backup: ['backup', 'Ir a Ajustes › Respaldos'],
   docs: ['docs', 'Ir a Documentos'], operaciones: ['operations', 'Ir a Ajustes › Sistema'],
   cumplimiento: ['cumplimiento', 'Ir a Cierre y reportes › Calendario']
 };
@@ -129,13 +129,41 @@ function paintAvisosBadge(count) {
   badge.hidden = !count;
   badge.textContent = count ? number.format(count) : '';
 }
-/* Distintivo = la pantalla (1.28.0, P9): con un contribuyente
-   elegido, el contador de Avisos es el de ESE RFC (el payload ya
-   trae el conteo por RFC); sin elección, el total de siempre. */
+/* Distintivo = los que necesitan tu gesto (2.0.1 · nº 9): el
+   contador del menú cuenta SOLO los avisos cuyo gesto es de
+   Paco (la clasificación que ya viaja en cada aviso,
+   gesto.de === 'paco'), del RFC elegido si lo hay. Los
+   informativos se ven dentro de la pantalla, en su grupo:
+   no inflan el distintivo. */
 function avisosBadgeCount(data) {
   if (!data) return 0;
-  if (scope && data.porRfc) return Number(data.porRfc[scope] || 0);
-  return Number(data.counts?.total || 0);
+  const deGesto = (data.avisos || []).filter(aviso => aviso.gesto?.de === 'paco');
+  if (scope) return deGesto.filter(aviso => aviso.rfc === scope).length;
+  return deGesto.length;
+}
+/* Contrapartes nuevas en Avisos (2.0.1 · nº 10): la marca
+   «emisor-nuevo» que el servidor crea UNA sola vez, cuando una
+   contraparte te factura (o le facturas) por primera vez. Se
+   enseña suave, como informativo: su texto es el que el
+   servidor dejó en la marca, con su fecha. */
+function avisosMarcasNuevas201(rfc) {
+  const wrap = panel('Contrapartes nuevas', 'Empresas que aparecen por primera vez en tu expediente: el sistema las marca una sola vez, cuando llegan.');
+  const body = n('div');
+  wrap.append(body);
+  wrap.style.display = 'none';
+  satApi('marcas200h' + (rfc ? '?rfc=' + encodeURIComponent(rfc) : '')).then(data => {
+    if (!wrap.isConnected) return;
+    const marcas = (data?.marcas || []).filter(m => m.marca === 'emisor-nuevo');
+    if (!marcas.length) return;
+    wrap.style.display = '';
+    for (const marca of marcas) {
+      const fila = n('div', undefined, 'cp-row');
+      fila.append(statusPill('dim', 'Nueva'),
+        n('span', (marca.porque || 'Contraparte nueva') + (marca.at ? ' · ' + fmtFechaHora(marca.at) : '')));
+      body.append(fila);
+    }
+  }).catch(() => {});
+  return wrap;
 }
 function avisoFecha(ts) {
   return new Date(ts).toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
@@ -374,7 +402,19 @@ function avisosScreen() {
     resumen.append(vistas);
     /* Barra por lote: selección múltiple sobre los avisos visibles. */
     if (avisosVista === 'activas') resumen.append(avisosBatchBar());
+    /* Imprimir la lista tal cual se ve (2.0.1 · nº 2): con el
+       filtro de RFC en curso, en Carta con membrete, con el
+       mismo patrón de Facturas/Dinero/Documentos. */
+    resumen.querySelector('.panel-head')?.append(action('Imprimir', () => imprimirVista201('Avisos',
+      number.format(visiblesLista.length) + ' aviso(s) abiertos' + (avisosRfcFiltro ? ' de ' + avisosRfcFiltro : '') +
+      ', en el orden de la pantalla: primero los que necesitan tu gesto.',
+      ['Fecha', 'Aviso', 'RFC', 'Importe', 'El gesto es'],
+      [...visiblesLista].sort((a, b) => (b.gesto?.de === 'paco') - (a.gesto?.de === 'paco'))
+        .map(aviso => [avisoFecha(aviso.creado), aviso.titulo, aviso.rfc || '',
+          aviso.importe ? '$' + money(aviso.importe) : '', aviso.gesto?.texto || ''])), 'metric-link', 'print'));
     wrap.append(resumen);
+    /* Contrapartes nuevas (nº 10): suaves, tras el resumen. */
+    wrap.append(avisosMarcasNuevas201(avisosRfcFiltro || scope));
     let algunaSeccion = false;
     const seccionesActivas = n('div');
     /* Agrupados por causa raíz (1.25.0, mejora nº 2): el servidor
@@ -385,17 +425,26 @@ function avisosScreen() {
     const gruposPorClave = new Map((data.grupos || []).map(grupo => [grupo.clave, grupo]));
     const porId = new Map(data.avisos.map(aviso => [aviso.id, aviso]));
     const gruposPintados = new Set();
-    for (const [clase, etiqueta, icono] of AVISOS_CLASES) {
-      const deClase = data.avisos.filter(aviso => aviso.clase === clase && visiblesPorRfc(aviso));
-      if (!deClase.length) continue;
+    /* Dos grupos por gesto (2.0.1 · nº 9): primero «Necesita
+       tu gesto» (gesto.de === 'paco', la clasificación que ya
+       viaja en cada aviso) y después «Informativos» (el gesto
+       es del SAT, de la contadora o del propio sistema). Las
+       tres clases de siempre siguen en las pastillas del
+       resumen, como foto; las secciones mandan por gesto. */
+    for (const [grupo201, etiqueta] of [[true, 'Necesita tu gesto'], [false, 'Informativos']]) {
+      const delGrupo = data.avisos.filter(aviso => (aviso.gesto?.de === 'paco') === grupo201 && visiblesPorRfc(aviso));
+      if (!delGrupo.length) continue;
       algunaSeccion = true;
-      const section = panel(etiqueta + ' (' + number.format(deClase.length) + ')');
-      for (const aviso of deClase) {
+      const section = panel(etiqueta + ' (' + number.format(delGrupo.length) + ')');
+      for (const aviso of delGrupo) {
         const grupo = aviso.grupo ? gruposPorClave.get(aviso.grupo) : null;
         if (grupo) {
-          if (gruposPintados.has(grupo.clave)) continue;
-          gruposPintados.add(grupo.clave);
-          section.append(avisoGrupoCard(grupo, grupo.miembros.map(id => porId.get(id)).filter(Boolean)));
+          const clavePintada = grupo.clave + ':' + etiqueta;
+          if (gruposPintados.has(clavePintada)) continue;
+          gruposPintados.add(clavePintada);
+          const miembros = grupo.miembros.map(id => porId.get(id)).filter(Boolean)
+            .filter(miembro => (miembro.gesto?.de === 'paco') === grupo201 && visiblesPorRfc(miembro));
+          if (miembros.length) section.append(avisoGrupoCard(grupo, miembros));
         } else section.append(avisoCard(aviso));
       }
       seccionesActivas.append(section);

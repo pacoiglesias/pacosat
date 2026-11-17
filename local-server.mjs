@@ -1083,6 +1083,28 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   const mailSendsCols200c = db.prepare('PRAGMA table_info(mail_sends)').all().map(row => row.name);
   if (!mailSendsCols200c.includes('body')) db.exec("ALTER TABLE mail_sends ADD COLUMN body TEXT NOT NULL DEFAULT ''");
   if (!mailSendsCols200c.includes('html')) db.exec("ALTER TABLE mail_sends ADD COLUMN html TEXT NOT NULL DEFAULT ''");
+  /* Pre-vuelo del SAT (2.0.1 · nº 21): la hora del último éxito
+     REAL de la puerta, separada de «probada» — hasta ahora la
+     fila guardaba solo la última prueba y su veredicto, así que
+     un «no abre» fresco pisaba la memoria del último acceso
+     bueno. ultimoExito solo se escribe cuando un acceso real
+     entra; un fallo nunca lo toca. Migración aditiva. */
+  const puertaCols201 = db.prepare('PRAGMA table_info(sat_puerta)').all().map(row => row.name);
+  if (puertaCols201.length && !puertaCols201.includes('ultimoExito'))
+    db.exec('ALTER TABLE sat_puerta ADD COLUMN ultimoExito INTEGER NOT NULL DEFAULT 0');
+  /* Comunicados sin leer (2.0.1): el conteo que el motor del Buzón
+     lee de los encabezados de «Mis comunicados» en cada consulta
+     (sin abrir ninguno) queda guardado con su corrida, para que
+     la vista del Buzón lo enseñe con la fecha de esa consulta.
+     Migración aditiva; null = esa corrida no lo leyó. */
+  const tribCols201 = db.prepare('PRAGMA table_info(trib_runs)').all().map(row => row.name);
+  if (tribCols201.length && !tribCols201.includes('comunicados'))
+    db.exec('ALTER TABLE trib_runs ADD COLUMN comunicados INTEGER');
+  /* Foto del ejercicio al cerrarlo (2.0.1 · nº 23): totales y
+     conteos del cálculo único en el momento del cierre, sellados
+     por RFC+ejercicio. Migración aditiva. */
+  db.exec(`CREATE TABLE IF NOT EXISTS foto_ejercicio201 (rfc TEXT NOT NULL, year TEXT NOT NULL,
+    at INTEGER NOT NULL DEFAULT 0, foto TEXT NOT NULL DEFAULT '{}', PRIMARY KEY(rfc, year));`);
   /* Centro de salud (2.0 · tanda 4): los desacuerdos del cruce de
      coherencia interna se guardan aquí — la foto del último cruce,
      que la tarjeta de Salud enseña tal cual. Detectar y enseñar:
@@ -1090,6 +1112,20 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   db.exec(`CREATE TABLE IF NOT EXISTS salud_desacuerdos (id INTEGER PRIMARY KEY, at INTEGER NOT NULL DEFAULT 0,
     rfc TEXT NOT NULL DEFAULT '', tipo TEXT NOT NULL DEFAULT '', detalle TEXT NOT NULL DEFAULT '',
     enlace TEXT NOT NULL DEFAULT '');`);
+  /* Ronda 2.0.1 · Fase 1 (mejora nº 8): registro común MÍNIMO de
+     acciones deshacibles. Los mecanismos de Deshacer de siempre
+     (archivar un CFDI, retirar un estado de cuenta aplicado y
+     cerrar un ejercicio) NO se reescriben: al ejecutarse, además
+     de su asiento de siempre en el Registro, dejan aquí su fila
+     para que el Centro de «Deshacer» de Salud los liste juntos
+     con su botón y su fecha límite. Solo registra acciones
+     DESDE esta versión: el pasado no se reconstruye. La fila no
+     ejecuta nada por sí misma: «accion» nombra el endpoint de
+     siempre que la pantalla debe llamar para deshacer. */
+  db.exec(`CREATE TABLE IF NOT EXISTS deshacer201 (id TEXT PRIMARY KEY, at INTEGER NOT NULL DEFAULT 0,
+    tipo TEXT NOT NULL DEFAULT '', rfc TEXT NOT NULL DEFAULT '', texto TEXT NOT NULL DEFAULT '',
+    accion TEXT NOT NULL DEFAULT '', payload TEXT NOT NULL DEFAULT '{}',
+    limite INTEGER NOT NULL DEFAULT 0, deshecha INTEGER NOT NULL DEFAULT 0);`);
   /* Tanda 7A (2.0): cierre guiado, candado, webhooks, ICS, informes
      pre-generados, miniaturas y entregas — tablas propias, aditivas. */
   db.exec(`CREATE TABLE IF NOT EXISTS cierres200g (rfc TEXT NOT NULL, month TEXT NOT NULL,
@@ -1483,7 +1519,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           '), el SAT devolvió el código 5002: las solicitudes con ese mismo criterio están agotadas de por vida, ' +
           'aunque el gasto viniera de otra aplicación. El criterio quedó marcado «quemado» en el libro: lo quemado es ' +
           'solo esa combinación exacta — ni el RFC ni la e.firma —. Salidas: el mismo periodo cerrando 1 segundo ' +
-          'más tarde, o el rescate por el portal web (Libro de criterios, en el Centro SAT).', time);
+          'más tarde, o el rescate por el portal web (Libro de criterios, en «Descargar del SAT»).', time);
       }
       throw error;
     }
@@ -1497,7 +1533,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       ', ' + (job.direction === 'received' ? 'recibidos' : 'emitidos') + '), el SAT devolvió el código 5002: las solicitudes ' +
       'con ese mismo criterio están agotadas de por vida, aunque el gasto viniera de otra aplicación. Lo quemado es solo ' +
       'esa combinación exacta — ni el RFC ni la e.firma ni otras fechas —. PacoSAT ya no enviará ese criterio; salidas: ' +
-      'el mismo periodo cerrando 1 segundo más tarde, o el rescate por el portal web (Libro de criterios, en el Centro SAT).', time);
+      'el mismo periodo cerrando 1 segundo más tarde, o el rescate por el portal web (Libro de criterios, en «Descargar del SAT»).', time);
   }
   /* Libro de criterios visible por RFC (ronda anti-5002, componente 5):
      una entrada por criterio exacto con sus envíos (cuándo, con qué
@@ -1725,7 +1761,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           threshold === 0 ? 'PacoSAT · La e.firma de ' + profile.rfc + ' está vencida o vence hoy' :
             'PacoSAT · La e.firma de ' + profile.rfc + ' vence en ' + Math.max(daysLeft, 0) + ' días',
           'El certificado de la e.firma del RFC ' + profile.rfc + ' caduca el ' + day(profile.certExpires) +
-          '. Sin e.firma vigente PacoSAT no puede descargar CFDI del SAT. Renuévala en el SAT y vuelve a desbloquear el perfil en el Centro SAT con el certificado nuevo.', time, profile.rfc);
+          '. Sin e.firma vigente PacoSAT no puede descargar CFDI del SAT. Renuévala en el SAT y vuelve a desbloquear el perfil desde Salud con el certificado nuevo.', time, profile.rfc);
       }
     }
   }
@@ -2147,7 +2183,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (tipo === 'equipo') return { rfc, estado: 'mal', tipo, frescura: probadaMs,
       porque: 'Tu equipo no responde' + (ex.ultimoVisto ? ' desde el ' + fechaHoraCasa(ex.ultimoVisto) : ' (aún no ha dado ninguna señal)') + ': esa es la causa viva. La última prueba de la puerta es del ' + fecha + (vieja ? ' (foto vieja: puede estar desactualizada)' : '') + '; al volver tu equipo, la puerta se prueba sola antes que nada.' };
     if (tipo === 'sin-equipo') return { rfc, estado: 'mal', tipo, frescura: probadaMs,
-      porque: 'No hay ningún equipo emparejado: la puerta no se puede probar. La última foto es del ' + fecha + '. Empareja tu PC en el Centro SAT.' };
+      porque: 'No hay ningún equipo emparejado: la puerta no se puede probar. La última foto es del ' + fecha + '. Empareja tu PC desde Salud, en «Tu ejecutor».' };
     if (tipo === 'efirma') return { rfc, estado: 'mal', tipo, frescura: probadaMs,
       porque: 'La puerta no abre con la e.firma de este RFC (probada el ' + fecha + '): ' + (puerta.error || 'sin motivo registrado') + '. El gesto es revisar su e.firma.' };
     if (tipo === 'vieja') return { rfc, estado: 'vigilar', tipo, frescura: probadaMs,
@@ -2183,7 +2219,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         queEs: 'Es el programa que corre en tu PC y entra al portal del SAT con tu sesión (Buzón, Declaraciones, puerta). Sin equipo emparejado, esos trabajos se quedan en cola esperando.',
         hecho: ex.emparejado, detalle: !ex.emparejado ? 'Ningún equipo emparejado todavía.' :
           'Emparejado' + (ex.nombre ? ' («' + ex.nombre + '»)' : '') + (ex.enLinea ? ' y en línea ahora.' : ', sin señal desde el ' + fechaHoraCasa(ex.ultimoVisto) + '.'),
-        destino: { view: 'sat', tab: 'ejecutor' }, boton: 'Ir al Centro SAT › Ejecutor' },
+        destino: { view: 'sat', tab: 'ejecutor' }, boton: 'Ir a «Tu ejecutor»' },
       { id: 'respaldos', titulo: 'Los respaldos, con su copia fuera',
         queEs: 'La copia cifrada de todo tu expediente. Si el NAS fallara, el respaldo —y su copia fuera del NAS— es lo único que lo resucita. Su contraseña vive en la configuración del servidor.',
         hecho: Boolean(backupJob) && ultimoRespaldo > 0,
@@ -2381,6 +2417,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       estado: 'sin-dato', porque: 'Instalada: PacoSAT ' + VERSION200D + '. Actualización: sin comprobar — no consta ningún manifiesto de actualización en esta instalación' +
         (bundleVersion ? '. El paquete del ejecutor guardado en el servidor es la ' + bundleVersion + '.' : '.'),
       frescura: startedAt, frescuraTexto: 'esta copia arrancó el ' + fechaHoraCasa(startedAt), datos: { version: VERSION200D, bundleVersion } });
+    /* Foto del ejercicio (2.0.1 · nº 23): si un ejercicio cerrado
+       cambió tras su sello, Salud lo dice con su tarjeta. */
+    try {
+      const tocadas = fotoEjercicioEstado201().filter(f => f.tocada);
+      if (tocadas.length) tarjetas.push({ id: 'foto-ejercicio', titulo: 'Ejercicio cerrado que cambió',
+        queEs: 'La foto sellada al cerrar un ejercicio (sus totales y conteos de ese momento) ya no coincide con el expediente de ahora: algo lo tocó después del cierre.',
+        estado: 'mal', porque: tocadas.map(f => 'El ejercicio ' + f.year + ' de ' + f.rfc +
+          ' cambió tras su cierre del ' + fechaHoraCasa(f.selladaAt) + ' en: ' + f.diferencias.join(', ') + '.').join(' '),
+        frescura: time, frescuraTexto: 'comparado el ' + fechaHoraCasa(time), datos: { tocadas } });
+    } catch { /* sin fotos todavía */ }
     const coherenciaAt = Number(getState('coherencia:last') || 0) || null;
     const desacuerdos = (() => { try { return db.prepare('SELECT * FROM salud_desacuerdos ORDER BY id').all(); } catch { return []; } })();
     tarjetas.push({ id: 'coherencia', titulo: 'Coherencia interna',
@@ -2393,6 +2439,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     let humo = null;
     try { humo = JSON.parse(getState('salud:humo') || 'null'); } catch { humo = null; }
     return { at: time, version: VERSION200D, tarjetas, config: saludConfig200d(), humo,
+      /* Autorreparación semanal (2.0.1 · nº 7): la foto de la
+         última pasada — semana, hechas y rotas — o null si aún
+         no ha corrido ninguna. La tarjeta la pinta el cliente. */
+      auto201: saludAutoEstado201(),
       ejecutor: { ...ex, enCola }, puerta: puertaMapa };
   }
   /* Cadencias de Salud dentro del ciclo: el cruce una vez al día
@@ -2856,6 +2906,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       .map(row => ({ id: row.id, started: row.started, finished: row.finished, ok: Boolean(row.ok),
         error: row.error, errorKind: row.errorKind, attempts: row.attempts,
         encontradas: row.encontradas, sinAbrir: row.sinAbrir, origen: row.origen || '',
+        comunicados: row.comunicados === null || row.comunicados === undefined ? null : Number(row.comunicados),
         hasShot: Boolean(row.shotId), hasHtml: Boolean(row.htmlId), ...decisionArtefactos(row.id),
         steps: (() => { try { return JSON.parse(row.steps || '[]'); } catch { return []; } })() }));
     const lastOk = runs.find(run => run.ok);
@@ -2878,6 +2929,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       archivadas: vivas.length - atencion.length,
       total: atencion.length, totalListadas: vivas.length,
       proximaTenida: tribProximaTenida(rfc),
+      /* Comunicados sin leer (2.0.1): el conteo de la ÚLTIMA
+         consulta buena y su fecha; null si ninguna corrida lo
+         ha leído todavía — la vista lo dice en llano. */
+      comunicadosNoLeidos: lastOk ? lastOk.comunicados : null,
+      comunicadosFecha: lastOk ? lastOk.started : 0,
       /* Consulta automática semanal (1.28.0, P3): la cadencia se
          ancla en la ÚLTIMA corrida — de cualquier origen — y la
          pantalla dice cuándo toca la siguiente. */
@@ -2953,9 +3009,25 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     try {
       for (const row of db.prepare('SELECT * FROM sat_puerta').all())
         out[row.rfc] = { ok: Boolean(row.ok), probada: row.probada || null,
-          error: row.error || '', errorKind: row.errorKind || '' };
+          error: row.error || '', errorKind: row.errorKind || '',
+          /* Nº 21: la hora del último éxito REAL. Si la columna
+             aún no trae ninguno (instalación anterior a esta
+             ronda), se deriva del último trabajo del portal
+             terminado bien de ese RFC — también un éxito real,
+             con su hora real —; sin ninguno, null: no se inventa. */
+          ultimoExito: Number(row.ultimoExito) || puertaUltimoExitoDerivado201(row.rfc) };
     } catch { /* sin pruebas todavía */ }
     return out;
+  }
+  function puertaUltimoExitoDerivado201(rfc) {
+    let ultimo = 0;
+    for (const tabla of ['sat_doc_runs', 'ciec_runs', 'decl_runs', 'trib_runs']) {
+      try {
+        const row = db.prepare('SELECT MAX(finished) AS f FROM ' + tabla + ' WHERE rfc=? AND ok=1 AND finished>0').get(rfc);
+        if (row?.f) ultimo = Math.max(ultimo, Number(row.f) || 0);
+      } catch { /* tabla sin corridas todavía */ }
+    }
+    return ultimo || null;
   }
   /* Cadencia de la puerta (1.30.0): una prueba por semana y RFC,
      encolada al ejecutor como cualquier trabajo — sin ejecutor,
@@ -3763,9 +3835,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (!ok && validated?.diag)
       steps.push(...diagCierreSteps(validated.diag, guardado).map(paso => ({ at: paso.at, intento: 1, paso: paso.text, detalle: '' })));
     if (job.kind === 'buzon-listar') {
-      db.prepare('INSERT INTO trib_runs(id,rfc,started,finished,ok,error,errorKind,steps,attempts,encontradas,sinAbrir,shotId,htmlId,origen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      db.prepare('INSERT INTO trib_runs(id,rfc,started,finished,ok,error,errorKind,steps,attempts,encontradas,sinAbrir,shotId,htmlId,origen,comunicados) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
         .run(attemptId, job.rfc, time, time, ok ? 1 : 0, errorText || '', errorKind || '', JSON.stringify(steps), 1,
-          validated?.counts?.total || 0, validated?.counts?.sinAbrir || 0, guardado.shotId, guardado.htmlId, 'ejecutor');
+          validated?.counts?.total || 0, validated?.counts?.sinAbrir || 0, guardado.shotId, guardado.htmlId, 'ejecutor',
+          validated?.comunicadosNoLeidos ?? null);
       pruneRunDiary('trib_runs', job.rfc, time);
     } else if (job.kind.startsWith('declaraciones') || job.kind === 'declaracion-folio') {
       const tipo = job.kind === 'declaracion-folio' ? 'folio' :
@@ -3889,9 +3962,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const accesoRealOk = okFinal || validated.accesoOk === true;
     if (accesoRealOk && job.kind !== 'puerta-probar') {
       const previaPuerta = db.prepare('SELECT * FROM sat_puerta WHERE rfc=?').get(job.rfc);
-      db.prepare('INSERT INTO sat_puerta(rfc,ok,probada,error,errorKind) VALUES (?,?,?,?,?) ' +
-        'ON CONFLICT(rfc) DO UPDATE SET ok=excluded.ok, probada=excluded.probada, error=excluded.error, errorKind=excluded.errorKind')
-        .run(job.rfc, 1, time, '', '');
+      db.prepare('INSERT INTO sat_puerta(rfc,ok,probada,error,errorKind,ultimoExito) VALUES (?,?,?,?,?,?) ' +
+        'ON CONFLICT(rfc) DO UPDATE SET ok=excluded.ok, probada=excluded.probada, error=excluded.error, errorKind=excluded.errorKind, ultimoExito=excluded.ultimoExito')
+        .run(job.rfc, 1, time, '', '', time);
       resumen.puerta = 'abre';
       if (previaPuerta && !previaPuerta.ok)
         auditEvent('sistema', 'La puerta del SAT de ' + job.rfc +
@@ -3942,9 +4015,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
          prueba corre cada semana y no debe llorar en bucle; la
          vuelta a «abre» tras un fallo queda en el Registro. */
       const previa = db.prepare('SELECT * FROM sat_puerta WHERE rfc=?').get(job.rfc);
-      db.prepare('INSERT INTO sat_puerta(rfc,ok,probada,error,errorKind) VALUES (?,?,?,?,?) ' +
-        'ON CONFLICT(rfc) DO UPDATE SET ok=excluded.ok, probada=excluded.probada, error=excluded.error, errorKind=excluded.errorKind')
-        .run(job.rfc, okFinal ? 1 : 0, time, okFinal ? '' : errorText, okFinal ? '' : (validated.errorKind || ''));
+      db.prepare('INSERT INTO sat_puerta(rfc,ok,probada,error,errorKind,ultimoExito) VALUES (?,?,?,?,?,?) ' +
+        'ON CONFLICT(rfc) DO UPDATE SET ok=excluded.ok, probada=excluded.probada, error=excluded.error, errorKind=excluded.errorKind, ultimoExito=excluded.ultimoExito')
+        .run(job.rfc, okFinal ? 1 : 0, time, okFinal ? '' : errorText, okFinal ? '' : (validated.errorKind || ''),
+          okFinal ? time : (Number(previa?.ultimoExito) || 0));
       resumen.puerta = okFinal ? 'abre' : 'no-abre';
       auditEvent('sistema', 'Prueba automática de la puerta del SAT de ' + job.rfc + ': ' +
         (okFinal ? 'abre — la e.firma entra y el portal deja sesión abierta.' : 'NO abre — ' + errorText), job.rfc, okFinal ? 0 : 1);
@@ -4054,10 +4128,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           diagFiles = saveRunDiag(runId, extra.diag, extra.diagDecision);
         if (!ok && extra.diag) steps.push(...diagCierreSteps(extra.diag, diagFiles)
           .map(paso => ({ at: paso.at, intento: attempt, paso: paso.text, detalle: '' })));
-        db.prepare('UPDATE trib_runs SET finished=?,ok=?,error=?,errorKind=?,steps=?,attempts=?,encontradas=?,sinAbrir=?,shotId=?,htmlId=? WHERE id=?')
+        db.prepare('UPDATE trib_runs SET finished=?,ok=?,error=?,errorKind=?,steps=?,attempts=?,encontradas=?,sinAbrir=?,shotId=?,htmlId=?,comunicados=? WHERE id=?')
           .run(now(), ok ? 1 : 0, String(errorText || ''), String(errorKind || ''),
             JSON.stringify(steps), attempt, extra.encontradas || 0, extra.sinAbrir || 0,
-            diagFiles.shotId, diagFiles.htmlId, runId);
+            diagFiles.shotId, diagFiles.htmlId, extra.comunicadosNoLeidos ?? null, runId);
         pruneRunDiary('trib_runs', rfc, now());
       } catch { /* el diario nunca tumba la consulta */ }
     };
@@ -4259,6 +4333,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
          P14): emparejado, en línea y su último latido — Hoy cuenta
          su silencio sin inventarlo. */
       ejecutor: executorEstado(),
+      /* Trabajos esperando + ejecutor dormido (2.0.1 · nº 27):
+         la cola y el silencio reunidos, con el paso exacto. */
+      ejecutorEspera201: ejecutorEspera201(now()),
       revision: revisionOverview200e(),
       satHoy: satHoy200e(now()),
       solicitudesVivas: solicitudesVivas200e(now()),
@@ -5410,7 +5487,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
               job.periodStart + ' a ' + job.periodEnd + ') ya se intentó descargar dos veces sin éxito y el SAT no ' +
               'permite más descargas de ese paquete (error 5008). La solicitud quedó cerrada con este aviso, no ' +
               'pendiente para siempre. Salida: solicita el mismo periodo cerrando un segundo más tarde desde ' +
-              '«Solicitar un periodo» en el Centro SAT.', time);
+              '«Solicitar un periodo» en «Descargar del SAT».', time);
             return false;
           } });
         db.prepare('UPDATE jobs SET error=? WHERE id=?').run('', job.id);
@@ -5590,7 +5667,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     putMetadata('activity', { id: 'coverage:' + hash.toString(36), name: 'Conciliación de cobertura',
       date: new Date(time).toISOString(), added: 0, duplicates: 0, review: gaps.length, issues: [],
       event: 'Se detectaron ' + gaps.length + ' hueco(s) sin descargar: ' + list +
-        '. PacoSAT no pide nada al SAT por su cuenta: para cubrir un tramo, solicítalo desde el Centro SAT (si el criterio exacto ya se envió, desplaza un extremo un segundo).' });
+        '. PacoSAT no pide nada al SAT por su cuenta: para cubrir un tramo, solicítalo desde «Descargar del SAT» (si el criterio exacto ya se envió, desplaza un extremo un segundo).' });
     storageRevision++;
   }
 
@@ -5805,7 +5882,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (state.failures >= 3 && !state.alerted) {
       queueAlert('download-fail', key + ':' + time, 'PacoSAT · La descarga automática está fallando',
         'Las revisiones automáticas del RFC ' + rfc + ' llevan ' + state.failures + ' intentos seguidos con error. ' +
-        'Revisa la conexión y el estado del SAT en el Centro SAT; el detalle del último error aparece junto al RFC.', time);
+        'Revisa la conexión y el estado del SAT en Salud; el detalle del último error aparece junto al RFC.', time);
       db.prepare('UPDATE alert_state SET alerted=1 WHERE key=?').run(key);
     }
   }
@@ -5947,7 +6024,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       queueAlert('silence', 'silence:' + profile.rfc + ':' + last,
         'PacoSAT · Silencio de CFDI en ' + profile.rfc,
         'El RFC ' + profile.rfc + ' lleva ' + Math.floor((time - last) / DAY) + ' días sin CFDI recibidos nuevos y tu umbral de aviso es de ' +
-        threshold + ' días. Puede ser normal (sin operaciones) o la señal de una factura esperada que no llegó: revísalo en el Centro SAT.', time, profile.rfc);
+        threshold + ' días. Puede ser normal (sin operaciones) o la señal de una factura esperada que no llegó: revísalo en «Vigilancia de CFDI», desde Salud.', time, profile.rfc);
     }
   }
 
@@ -6005,7 +6082,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         'La última vuelta completa de la vigilancia fue el ' + day(lastFull) + ' y aún quedan ' + pending +
         ' comprobantes por revisar. Los estados que ves pueden estar viejos: no es que todo esté vigente, es que ' +
         'la revisión no ha terminado de dar la vuelta. Se sigue intentando sola en cada ciclo; si el atasco persiste, ' +
-        'revisa el Centro SAT (puede ser el portal o el descanso de solicitudes).', time);
+        'revisa «Descargar del SAT» (puede ser el portal o el descanso de solicitudes).', time);
   }
   async function sweepLoop() {
     while (sweepState.running) {
@@ -7283,9 +7360,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         { heading: `Por cobrar (${cobrar.length})`, table: { columns, rows: cobrar.map(fila), totals: totales(cobrar) } },
         { heading: `Por pagar (${pagar.length})`, table: { columns, rows: pagar.map(fila), totals: totales(pagar) } }] });
   }
-  function salidaPdfContraparte(rfc, cpRfc) {
+  function salidaPdfContraparte(rfc, cpRfc, monthKey = '') {
     const perfil = salidaPerfil(rfc);
-    const rows = salidaDelRfc(rfc).filter(invoice =>
+    const rows = salidaDelRfc(rfc, monthKey).filter(invoice =>
       (invoice.from?.rfc === cpRfc || invoice.to?.rfc === cpRfc));
     const balances = salidaMapaSaldos();
     const nombre = rows.find(invoice => salidaContraparte(invoice, rfc)?.rfc === cpRfc)
@@ -7320,6 +7397,17 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             saldoNeto > 0n ? `Saldo neto: te debe ${salidaPesos(saldoNeto)} esta contraparte (por cobrar).`
               : `Saldo neto: le debes ${salidaPesos(-saldoNeto)} a esta contraparte (por pagar).`,
           `En letra: ${amountInWords(Number(saldoNeto < 0n ? -saldoNeto : saldoNeto))}`] },
+        /* Ficha de contraparte completa (2.0.1 · nº 29): su estado
+           en los listados oficiales cargados — la misma fuente que
+           enseña la pantalla de Listas y el expediente legal por
+           contraparte (su validaciones.csv). Sin coincidencia se
+           dice tal cual; jamás se afirma una situación que el
+           listado cargado no traiga. */
+        { heading: 'Estado en los listados oficiales', lines: (() => {
+          const hit = (() => { try { return listsOverview().counterparts.find(cp => cp.rfc === cpRfc); } catch { return null; } })();
+          if (!hit?.hits?.length) return ['Sin coincidencia en los listados oficiales cargados en PacoSAT a la fecha de generación.'];
+          return hit.hits.map(h => (h.label || h.listId || 'Listado') + (h.detail ? ' — ' + h.detail : ''));
+        })() },
         { heading: 'Movimientos', table: { columns, rows: rows.map(invoice => {
           const balance = balances.get(invoice.id);
           return [String(invoice.date || '').slice(0, 10), folioLabel(invoice),
@@ -9268,13 +9356,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     '/api/reports/checklist', '/api/guest/config', '/api/buscar200h', '/api/vida200h',
     '/api/cancelacion-efecto200h', '/api/marcas200h', '/api/precruce200h', '/api/totales200h',
     '/api/antiguedad200h', '/api/semana200h', '/api/vistas200h', '/api/esperados200h',
-    '/api/ayuda-ejemplo200h', '/api/descarga-rango200h', '/api/rfc-nuevo200h'];
+    '/api/ayuda-ejemplo200h', '/api/descarga-rango200h', '/api/rfc-nuevo200h',
+    '/api/duplicados201', '/api/a-medias201', '/api/tiempos201'];
   function selfTest() {
     const checks = [];
     try { db.prepare('SELECT 1').get(); checks.push({ id: 'db', label: 'Base de datos local', state: 'ok', detail: 'Responde y guarda los datos.' }); }
     catch (error) { checks.push({ id: 'db', label: 'Base de datos local', state: 'bad', detail: message(error) }); }
     if (mail) checks.push({ id: 'mail', label: 'Correo de avisos', state: 'ok', detail: 'Configurado para ' + mail.recipient + '.' });
-    else checks.push({ id: 'mail', label: 'Correo de avisos', state: 'warn', detail: 'Sin configurar: los avisos no saldrán. Actívalo en el Centro SAT.' });
+    else checks.push({ id: 'mail', label: 'Correo de avisos', state: 'warn', detail: 'Sin configurar: los avisos no saldrán. Actívalo en Ajustes.' });
     const lists = listsOverview();
     const stale = lists.sources.filter(source => !source.fetched || now() - source.fetched > 48 * 3600 * 1000);
     checks.push({ id: 'lists', label: 'Listados oficiales al día', state: stale.length ? 'warn' : 'ok',
@@ -9443,6 +9532,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       });
       db.prepare('UPDATE bank_statements SET movements=? WHERE id=?').run(applied, id);
     });
+    /* Centro de Deshacer (2.0.1 · nº 8): la aplicación del estado
+       queda apuntada en el registro común; su Deshacer es el
+       borrado de siempre (/api/banks/statements/delete). */
+    deshacerRegistrar201('importar-estado', account.rfc || '',
+      'Estado de ' + account.bank + ' · ' + account.name + ' de ' + month + ' aplicado (' + applied + ' movimiento(s)).',
+      { id }, now());
     return { id, applied, skipped };
   }
   /* Detección del estado subido (pieza 1): SOLO lo impreso en el
@@ -10021,6 +10116,68 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     for (const [key, token] of declLive) if (key.startsWith(rfc + ':')) { token.cancelled = true; found = true; }
     return found;
   }
+  /* ===== «Ponte al día» de DECLARACIONES (2.0.1 · mejora nº 3) =====
+     El cruce, por RFC y ejercicio, entre lo PRESENTADO que el
+     sistema conoce y los acuses que faltan en el expediente:
+     · «operaciones conocidas» = la unión, sin duplicar por número
+       de operación, de (a) los folios de decl_folios — los que
+       enseñó la Consulta de transacciones del SAT (ficha 22513),
+       los aprendidos de documentos archivados y los capturados a
+       mano — y (b) las operaciones de los documentos ya guardados
+       en «declaraciones».
+     · un acuse «consta» solo si hay un documento clase=acuse con
+       fileId guardado para esa operación (o el folio ya quedó
+       marcado «con-acuse» al archivarse su acuse).
+     Es un dato ADITIVO: vive en declaracionesOverview como
+     «cruce201» y lo reutiliza el resumen dominical (nº 20) para
+     su sección «lo que falta». Ninguna cifra se estima: lo que
+     no consta como operación no entra, y lo que no tiene acuse
+     guardado se dice que falta, sin afirmar incumplimiento. */
+  function declCruce201(rfc, ejercicio) {
+    const docs = (() => { try {
+      return db.prepare("SELECT * FROM declaraciones WHERE rfc=? AND ejercicio=? AND fileId<>'' ORDER BY created").all(rfc, ejercicio);
+    } catch { return []; } })();
+    const folios = (() => { try {
+      return db.prepare('SELECT * FROM decl_folios WHERE rfc=? AND ejercicio=? ORDER BY periodo, folio').all(rfc, ejercicio);
+    } catch { return []; } })();
+    const porOperacion = new Map();
+    const entrada = operacion => {
+      const key = String(operacion || '').trim();
+      if (!key) return null;
+      if (!porOperacion.has(key)) porOperacion.set(key, { operacion: key, tipo: '', periodo: '',
+        fechaPresentacion: '', estadoFolio: '', origen: '', tieneAcuse: false, tieneDeclaracion: false,
+        documentoAcuseId: '', documentoDeclaracionId: '' });
+      return porOperacion.get(key);
+    };
+    for (const doc of docs) {
+      const e = entrada(doc.operacion); if (!e) continue;
+      e.origen = e.origen || 'documento';
+      if (!e.tipo && doc.tipo) e.tipo = doc.tipo;
+      if (!e.periodo && doc.periodo) e.periodo = doc.periodo;
+      if (!e.fechaPresentacion && doc.fechaPresentacion) e.fechaPresentacion = doc.fechaPresentacion;
+      if (doc.clase === 'acuse') { e.tieneAcuse = true; e.documentoAcuseId = doc.id; }
+      if (doc.clase === 'declaracion') { e.tieneDeclaracion = true; e.documentoDeclaracionId = doc.id; }
+    }
+    for (const folio of folios) {
+      const e = entrada(folio.folio); if (!e) continue;
+      e.origen = e.origen === 'documento' ? 'documento-y-transacciones' : 'transacciones';
+      if (!e.tipo && folio.tipo) e.tipo = folio.tipo;
+      if (!e.periodo && folio.periodo) e.periodo = folio.periodo;
+      e.estadoFolio = folio.estado || '';
+      if (folio.estado === 'con-acuse') e.tieneAcuse = true;
+    }
+    const operacionesConocidas = [...porOperacion.values()]
+      .sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)) || a.operacion.localeCompare(b.operacion));
+    const faltanAcuses = operacionesConocidas.filter(e => !e.tieneAcuse);
+    return { rfc, ejercicio,
+      operacionesConocidas, faltanAcuses,
+      guardados: { documentos: docs.length,
+        acuses: docs.filter(d => d.clase === 'acuse').length,
+        declaraciones: docs.filter(d => d.clase === 'declaracion').length },
+      resumen: { conocidas: operacionesConocidas.length,
+        conAcuse: operacionesConocidas.length - faltanAcuses.length,
+        faltanAcuses: faltanAcuses.length } };
+  }
   function declaracionesOverview(rfc, ejercicio, time) {
     reconcileOnRead(time);
     const rows = db.prepare("SELECT * FROM declaraciones WHERE rfc=? AND fileId<>'' ORDER BY created DESC").all(rfc);
@@ -10120,6 +10277,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
     const mapa = { meses: mapaMeses, anual: mapaAnual, resumen: mapaResumen };
     return { rfc, ejercicio, configured: Boolean(satDeclFetch || remoteExecutor), mensuales, mapa,
+      cruce201: declCruce201(rfc, ejercicio),
       anual: { declaracion: anualDocs.some(row => row.clase === 'declaracion'),
         acuse: anualDocs.some(row => row.clase === 'acuse'),
         estado: anualDocs.length ? 'recuperada' : 'sin-recuperar' },
@@ -10888,7 +11046,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (latest && docLevel(latest.issuedAt, time, kind) === 'bad')
           queueAlert('satdoc-old', 'satdoc-old:' + profile.rfc + ':' + kind + ':' + Math.floor(time / (7 * DAY)),
             'PacoSAT · ' + DOC_KIND_LABEL[kind] + ' de ' + profile.rfc + ' ya no se considera reciente',
-            'La última emisión archivada es del ' + day(latest.issuedAt) + '. Ojo: no es que el documento haya caducado — la constancia no caduca —; es la política de recencia de PacoSAT (verde menos de 60 días, ámbar hasta 90, rojo después) para que ningún cliente te pida uno más fresco. Renueva el documento: si la descarga automática está activa, PacoSAT lo intenta solo; si no, súbelo en el Centro SAT.', time);
+            'La última emisión archivada es del ' + day(latest.issuedAt) + '. Ojo: no es que el documento haya caducado — la constancia no caduca —; es la política de recencia de PacoSAT (verde menos de 60 días, ámbar hasta 90, rojo después) para que ningún cliente te pida uno más fresco. Renueva el documento: si la descarga automática está activa, PacoSAT lo intenta solo; si no, súbelo en Documentos.', time);
       }
       if (!item?.enabled) continue;
       const date = new Date(time);
@@ -10959,11 +11117,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       { id: 'perfil', label: 'Perfil de descarga creado', done: true, gesto: '' },
       { id: 'credencial', label: access === 'ciec' ? 'Contraseña CIEC guardada' : 'e.firma guardada',
         done: access === 'efirma' || access === 'ciec',
-        gesto: 'Desbloquea el perfil con su e.firma (o guarda su CIEC) en el Centro SAT.' },
+        gesto: 'Desbloquea el perfil con su e.firma (o guarda su CIEC) desde Salud.' },
       { id: 'descarga', label: 'Primera descarga de CFDI hecha',
         done: Boolean(db.prepare("SELECT 1 FROM jobs WHERE rfc=? AND status='finished' LIMIT 1").get(rfc)) ||
           Boolean(db.prepare('SELECT 1 FROM packages WHERE rfc=? LIMIT 1').get(rfc)),
-        gesto: 'Lanza la primera descarga desde Vigilancia o espera a la mensual automática.' },
+        gesto: 'Lanza la primera descarga desde «Descargar del SAT» o espera a la mensual automática.' },
       { id: 'constancia', label: 'Constancia de situación fiscal archivada', done: hasDoc('constancia'),
         gesto: 'Descárgala desde su tarjeta en Documentos o sube el PDF.' },
       { id: 'opinion', label: 'Opinión de cumplimiento archivada', done: hasDoc('opinion'),
@@ -11303,7 +11461,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   function monthlyEntryLine(rfc, entry) {
     const sentidos = entry.method === 'ciec' ? 'por CIEC' : 'con e.firma';
     if (entry.status === 'esperando-gesto')
-      return rfc + ' (' + sentidos + '): esperando tu gesto — el portal pide tu captcha; el mes se baja desde su tarjeta en el Centro SAT.';
+      return rfc + ' (' + sentidos + '): esperando tu gesto — el portal pide tu captcha; el mes se baja desde su tarjeta de Declaraciones en Hoy.';
     if (entry.status === 'fallida')
       return rfc + ' (' + sentidos + '): no terminó' + (entry.error ? ' — ' + errorLlano(entry.error) : '') + '.';
     return rfc + ' (' + sentidos + '): ' + entry.found + ' CFDI · ' + entry.added + ' nuevos · ' + entry.duplicates +
@@ -11396,7 +11554,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             queueAlert('monthly-zombie', 'monthly-zombie:' + run.month + ':' + rfc,
               'PacoSAT · Una solicitud del SAT quedó muerta y el mes se liberó',
               'La solicitud de ' + monthLabel(run.month) + ' para ' + rfc + ' llevaba más de 72 horas «en curso» en el SAT sin avanzar. ' +
-              'PacoSAT la ha declarado muerta: el mes cierra como parcial y lo que falte se puede pedir desde Cobertura, en el Centro SAT. ' +
+              'PacoSAT la ha declarado muerta: el mes cierra como parcial y lo que falte se puede pedir desde «Descargados del SAT». ' +
               'La corrida del mes siguiente ya no espera detrás de esta.', time);
           }
           if (states.some(state => state === 'pending')) { blocked = true; continue; }
@@ -11434,7 +11592,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             entry.dudosa = reconciliacion.motivo;
             queueAlert('descarga-dudosa', 'descarga-dudosa:' + run.month + ':' + rfc,
               'PacoSAT · La descarga de ' + monthLabel(run.month) + ' de ' + rfc + ' no cuadra y no se da por hecha',
-              reconciliacion.motivo + ' El mes queda «parcial»: lo que falte se puede pedir desde Cobertura, en el Centro SAT. ' +
+              reconciliacion.motivo + ' El mes queda «parcial»: lo que falte se puede pedir desde «Descargados del SAT». ' +
               'PacoSAT no marca un mes como hecho sin la cuenta cuadrada.', time, rfc);
           }
         }
@@ -11472,7 +11630,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (run.status !== 'hecha')
       queueAlert('monthly-fail', 'monthly:' + run.month,
         'PacoSAT · La descarga automática de ' + monthLabel(run.month) + ' no quedó completa',
-        resumen + '. ' + body + ' Lo que falta se puede pedir desde Cobertura, en el Centro SAT; el mes no se vuelve a bajar solo.', time);
+        resumen + '. ' + body + ' Lo que falta se puede pedir desde «Descargados del SAT»; el mes no se vuelve a bajar solo.', time);
     return true;
   }
   /* Reparación única de los meses ya cerrados (1.27.0): las
@@ -11502,7 +11660,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         queueAlert('descarga-dudosa', 'descarga-dudosa:' + run.month + ':' + rfc,
           'PacoSAT · La descarga de ' + monthLabel(run.month) + ' de ' + rfc + ' no cuadra y no se da por hecha',
           'Al revisar los meses ya cerrados con la regla nueva (1.27.0), este mes no supera la reconciliación: ' +
-          reconciliacion.motivo + ' Queda «parcial»: lo que falte se puede pedir desde Cobertura, en el Centro SAT.', time, rfc);
+          reconciliacion.motivo + ' Queda «parcial»: lo que falte se puede pedir desde «Descargados del SAT».', time, rfc);
         changed = true;
       }
       if (changed) {
@@ -11655,7 +11813,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT. La reconciliación de ese periodo se reintentará en el siguiente ciclo diario de metadatos.' :
           'La solicitud del RFC ' + job.rfc + ' para el periodo ' + job.periodStart + ' a ' + job.periodEnd + ' quedó ' +
           (jobStateLabel[job.afterStatus] || job.afterStatus) + ' en el SAT y no entregará paquetes. Crea una solicitud nueva para un periodo ' +
-          'distinto desde el Centro SAT; no reintentes la misma, porque el SAT limita las solicitudes por periodo.', time);
+          'distinto desde «Descargar del SAT»; no reintentes la misma, porque el SAT limita las solicitudes por periodo.', time);
     }
     const scheduleAttempted = profile.nextRun <= time;
     if (scheduleAttempted) await schedule(profile, active.connector, time);
@@ -11711,7 +11869,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const jobsMes = db.prepare("SELECT COUNT(*) n FROM jobs WHERE rfc=? AND status='finished' AND (periodStart LIKE ? OR periodEnd LIKE ?)").get(rfc, month + '%', month + '%')?.n || 0;
     const coberturaOk = invoices.length > 0 && !huecos && (mesConDatos || jobsMes > 0);
     pasos.push({ id: 'descarga', label: 'Descarga del mes completa (cobertura)', ok: coberturaOk,
-      detalle: coberturaOk ? 'El mes consta en el expediente sin huecos de cobertura.' : 'Falta cobertura del mes: revisa Cobertura y pide el tramo que falta desde el Centro SAT.',
+      detalle: coberturaOk ? 'El mes consta en el expediente sin huecos de cobertura.' : 'Falta cobertura del mes: revisa «Descargados del SAT» y pide el tramo que falta desde ahí.',
       enlace: 'coverage' });
     let metaOk = false, metaDetalle = '';
     try {
@@ -11719,7 +11877,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       const sinMeta = invoices.filter(inv => !db.prepare('SELECT 1 FROM metadata_records WHERE uuid=?').get(inv.id)).length;
       metaOk = invoices.length > 0 && (meta > 0 || sinMeta < invoices.length);
       metaDetalle = metaOk ? 'Hay metadatos cruzados del mes (' + Math.max(meta, invoices.length - sinMeta) + ' comprobante(s) con metadato).'
-        : 'No consta cruce de metadatos del mes: pide la Metadata del periodo desde el Centro SAT.';
+        : 'No consta cruce de metadatos del mes: pide la Metadata del periodo desde «Descargar del SAT».';
     } catch { metaDetalle = 'No consta cruce de metadatos del mes.'; }
     pasos.push({ id: 'metadatos', label: 'Metadatos cruzados', ok: metaOk, detalle: metaDetalle, enlace: 'sat' });
     const canceladas = invoices.filter(inv => salidaCancelado(inv));
@@ -12150,7 +12308,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (imp.includes(id)) hitos.push({ tipo: 'descargado', at: Number(job.created) || 0,
         texto: 'Descargado con la solicitud ' + (job.requestId || job.id) + ' (' + job.direction + ', ' +
           job.periodStart + ' a ' + job.periodEnd + ').', fecha: fechaHoraCasa(Number(job.created) || 0),
-        enlace: 'sat' });
+        enlace: 'sat', documento: { tipo: 'solicitud-sat', id: String(job.requestId || job.id) } });
     } } catch {}
     try { for (const row of db.prepare('SELECT ni.*, nn.kind AS avisoKind, nn.due FROM news_items ni JOIN news_notices nn ON nn.id=ni.notice WHERE ni.uuid=? ORDER BY nn.due').all(id))
       hitos.push({ tipo: 'aviso', at: Number(row.due) || 0,
@@ -12166,14 +12324,39 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         fecha: fechaHoraCasa(Number(nota.at) || 0) }); } catch {}
     try { for (const m of db.prepare("SELECT * FROM bank_matches WHERE estado='activo'").all()) {
       let lista = []; try { lista = JSON.parse(m.invoices || '[]'); } catch {}
-      if (lista.some(x => String(x.uuid).toUpperCase() === id))
+      if (lista.some(x => String(x.uuid).toUpperCase() === id)) {
+        /* El documento del paso «pagada»: el movimiento bancario
+           enlazado, con su estado de cuenta cuando consta. */
+        const mov = (() => { try { return db.prepare('SELECT statementId FROM bank_movements WHERE id=?').get(m.movementId); } catch { return null; } })();
         hitos.push({ tipo: 'pago', at: Number(m.created) || 0,
           texto: 'Enlazado a un movimiento del banco (' + (m.why || 'vínculo activo') + ').',
-          fecha: fechaHoraCasa(Number(m.created) || 0), enlace: 'bancos' });
+          fecha: fechaHoraCasa(Number(m.created) || 0), enlace: 'bancos',
+          documento: { tipo: 'movimiento-banco', movementId: String(m.movementId || ''),
+            statementId: String(mov?.statementId || '') } });
+      }
     } } catch {}
     try { const manual = db.prepare('SELECT * FROM manual_payments WHERE uuid=?').get(id);
       if (manual) hitos.push({ tipo: 'pago', at: Number(manual.at) || 0,
-        texto: 'Marcado pagado a mano: ' + (manual.nota || ''), fecha: fechaHoraCasa(Number(manual.at) || 0) }); } catch {}
+        texto: 'Marcado pagado a mano: ' + (manual.nota || ''), fecha: fechaHoraCasa(Number(manual.at) || 0),
+        documento: { tipo: 'marca-manual', uuid: id } }); } catch {}
+    /* Hito «cancelada» explícito (2.0.1 · mejora nº 6): la línea
+       de vida de la 2.0 enseñaba la última consulta de estado,
+       pero no nombraba la cancelación como hito con su fecha y
+       su respaldo. La fecha sale del registro real que la vio
+       primero (cancellation_seen, del monitor) o, si no consta,
+       de la última consulta de cfdi_watch; el documento del paso
+       es esa consulta de estado. Sin registro, no hay hito: no
+       se fabrica ninguna fecha. */
+    try { if (inv && salidaCancelado(inv)) {
+      const seen = (() => { try { return db.prepare('SELECT at FROM cancellation_seen WHERE id=?').get(id); } catch { return null; } })();
+      const watchRow = (() => { try { return db.prepare('SELECT checked FROM cfdi_watch WHERE id=?').get(id); } catch { return null; } })();
+      const atCanc = Number(seen?.at || watchRow?.checked || 0);
+      hitos.push({ tipo: 'cancelada', at: atCanc,
+        texto: 'Cancelada: así consta en la consulta de estado del SAT' +
+          (atCanc ? ' (vista el ' + fechaHoraCasa(atCanc) + ')' : ' (sin fecha de vista registrada)') + '.',
+        fecha: atCanc ? fechaHoraCasa(atCanc) : '', enlace: 'vigilancia',
+        documento: { tipo: 'estado-sat', uuid: id } });
+    } } catch {}
     try { const w = db.prepare('SELECT * FROM cfdi_watch WHERE id=?').get(id);
       if (w?.checked) { let res = {}; try { res = JSON.parse(w.result || '{}'); } catch {}
         hitos.push({ tipo: 'estado-sat', at: Number(w.checked) || 0,
@@ -12393,6 +12576,470 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     } } catch {}
     return { desde, hasta, hoy: iso(new Date(time)), puntos: puntos.sort((a, b) => a.fecha.localeCompare(b.fecha)) };
   }
+  /* ===== RONDA 2.0.1 · FASE 1 (servidor) =====
+     Piezas: duplicados sospechosos (nº 14), registro común de
+     Deshacer (nº 8), trabajos «a medias» (nº 16), autorreparación
+     semanal de Salud (nº 7) y resumen dominical único (nº 20).
+     Todo sale de los registros reales y de los mecanismos que ya
+     existen: nada de esto crea una segunda lógica de cálculo. */
+
+  /* ---- Nº 14 · Duplicados sospechosos (solo lectura) ----
+     Dos patrones, sobre los CFDI guardados (records invoices):
+     (a) mismo dueño + mismo importe + misma fecha de emisión con
+     folios (serie+folio) DISTINTOS y UUID distinto — el patrón de
+     una emisión repetida —; (b) el mismo folio (emisor+serie+
+     folio) en dos RFC dueños distintos. Se lista para revisión:
+     no se borra ni se toca nada. Los archivados quedan fuera,
+     como en las vistas de trabajo. */
+  function duplicados201(rfcPedido = '') {
+    const archivadas = archivedInvoiceIds();
+    const gruposImporte = new Map(), gruposFolio = new Map();
+    const folioDe = inv => String((inv.fiscal?.series || '') + '|' + (inv.fiscal?.folio || '')).toUpperCase();
+    for (const inv of recordInvoices()) {
+      if (!inv?.id || archivadas.has(inv.id)) continue;
+      const duenio = duenio200h(inv); if (!duenio) continue;
+      if (rfcPedido && duenio !== rfcPedido) continue;
+      const fecha = String(inv.date || '').slice(0, 10);
+      const total = centsOf(inv.total);
+      if (fecha && total !== 0n) {
+        const key = duenio + '|' + fecha + '|' + total.toString();
+        if (!gruposImporte.has(key)) gruposImporte.set(key, []);
+        gruposImporte.get(key).push(inv);
+      }
+      const folio = folioDe(inv);
+      if (folio !== '|') {
+        const key = String(inv.from?.rfc || '').toUpperCase() + '|' + folio;
+        if (!gruposFolio.has(key)) gruposFolio.set(key, new Map());
+        const porDuenio = gruposFolio.get(key);
+        if (!porDuenio.has(duenio)) porDuenio.set(duenio, []);
+        porDuenio.get(duenio).push(inv);
+      }
+    }
+    const breve = inv => ({ uuid: inv.id, fecha: String(inv.date || '').slice(0, 10),
+      folio: folioLabel(inv), importe: moneyText(centsOf(inv.total)),
+      emisor: inv.from?.rfc || '', receptor: inv.to?.rfc || '' });
+    const sospechosos = [];
+    for (const [key, lista] of gruposImporte) {
+      if (lista.length < 2) continue;
+      if (new Set(lista.map(folioDe)).size < 2) continue;
+      const [rfc, fecha, total] = key.split('|');
+      sospechosos.push({ tipo: 'mismo-importe-fecha', rfc, fecha, importe: moneyText(BigInt(total)),
+        comprobantes: lista.map(breve),
+        detalle: lista.length + ' comprobantes del mismo importe y la misma fecha con folios distintos: a revisar, sin borrar nada.' });
+    }
+    for (const [key, porDuenio] of gruposFolio) {
+      if (porDuenio.size < 2) continue;
+      const [emisor, folio] = key.split('|');
+      const comprobantes = [...porDuenio.values()].flat().map(breve);
+      sospechosos.push({ tipo: 'mismo-folio-dos-rfc', rfc: '', emisor, folio: folio.replace('|', '-'),
+        comprobantes,
+        detalle: 'El mismo folio del emisor ' + emisor + ' aparece en el expediente de ' +
+          porDuenio.size + ' RFC distintos (' + [...porDuenio.keys()].join(', ') + '): a revisar, sin borrar nada.' });
+    }
+    sospechosos.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+    return { sospechosos, total: sospechosos.length,
+      nota: 'Análisis de solo lectura sobre los CFDI guardados: nada se borra ni se corrige desde aquí.' };
+  }
+
+  /* ---- Nº 8 · Registro común de Deshacer ----
+     Ventana de deshacer por tipo (la fecha límite que la tarjeta
+     enseña): archivar y cerrar ejercicio no caducan por tiempo
+     en sus mecanismos de siempre (restaurar / desbloquear siguen
+     vivos), así que su límite es 0 = «sin límite de tiempo»;
+     retirar un estado aplicado tampoco caduca (el estado puede
+     volver a subirse), límite 0 igualmente. El límite viaja como
+     dato para que el cliente pinte la verdad de cada mecanismo,
+     no una caducidad inventada. */
+  const DESHACER201_ACCIONES = {
+    'archivar-cfdi': { endpoint: '/api/cfdi/archivar', limiteMs: 0 },
+    'importar-estado': { endpoint: '/api/banks/statements/delete', limiteMs: 0 },
+    'cerrar-ejercicio': { endpoint: '/api/ejercicios200g/desbloquear', limiteMs: 0 } };
+  function deshacerRegistrar201(tipo, rfc, texto, payload, time) {
+    try {
+      const spec = DESHACER201_ACCIONES[tipo]; if (!spec) return;
+      db.prepare('INSERT INTO deshacer201(id,at,tipo,rfc,texto,accion,payload,limite,deshecha) VALUES (?,?,?,?,?,?,?,?,0)')
+        .run(randomUUID(), time, tipo, String(rfc || '').toUpperCase(), String(texto || ''),
+          spec.endpoint, JSON.stringify(payload || {}), spec.limiteMs ? time + spec.limiteMs : 0);
+    } catch { /* el registro nunca tumba la acción registrada */ }
+  }
+  function deshacerMarcar201(tipo, payload) {
+    try {
+      const filas = db.prepare('SELECT * FROM deshacer201 WHERE tipo=? AND deshecha=0 ORDER BY at DESC').all(tipo);
+      for (const fila of filas) {
+        let p = {}; try { p = JSON.parse(fila.payload || '{}'); } catch { p = {}; }
+        const casa = Object.entries(payload || {}).every(([k, v]) => String(p[k] ?? '') === String(v ?? ''));
+        if (casa) { db.prepare('UPDATE deshacer201 SET deshecha=1 WHERE id=?').run(fila.id); return; }
+      }
+    } catch { /* sin registro: el deshacer de siempre ya ocurrió */ }
+  }
+  function deshacerLista201() {
+    let filas = [];
+    try { filas = db.prepare('SELECT * FROM deshacer201 ORDER BY at DESC LIMIT 50').all(); } catch { filas = []; }
+    return { acciones: filas.map(f => ({ id: f.id, at: Number(f.at) || 0, tipo: f.tipo,
+        rfc: f.rfc || '', texto: f.texto || '', accion: f.accion || '',
+        payload: (() => { try { return JSON.parse(f.payload || '{}'); } catch { return {}; } })(),
+        limite: Number(f.limite) || 0, deshecha: Boolean(f.deshecha) })),
+      nota: 'Solo constan las acciones hechas desde la versión 2.0.1: el registro no reconstruye el pasado. ' +
+        '«Sin límite» (limite 0) es la verdad de esos mecanismos: restaurar, volver a subir el estado o desbloquear siguen vivos.' };
+  }
+
+  /* ---- Nº 16 · «A medias»: trabajos interrumpidos ----
+     Tres estados que YA existen, reunidos sin crear ninguno:
+     (a) descargas/trabajos cancelados o fallidos recientes del
+     ejecutor y solicitudes del SAT canceladas (jobs), con su
+     «Seguir» = reintento/repetición de siempre; (b) estados de
+     cuenta aplicados cuyos movimientos aún tienen pagos sin
+     factura o facturas sin pago visto en la conciliación por
+     cuenta (conciliacion200f); (c) cierres de mes sin terminar
+     (cierreEstado200g con completo=false y algún paso hecho) y
+     ejercicios no cerrados del año anterior en curso — solo el
+     mes anterior y el corriente, para no listar la historia. */
+  function aMedias201(time) {
+    const items = [];
+    try { for (const row of db.prepare("SELECT * FROM sat_executor_jobs WHERE estado IN ('cancelado','fallido') ORDER BY actualizado DESC LIMIT 10").all())
+      items.push({ tipo: 'trabajo-interrumpido', rfc: row.rfc || '', at: Number(row.actualizado) || 0,
+        texto: 'Trabajo ' + trabajoHumano(row.kind) + ' de ' + row.rfc + ' quedó ' + row.estado +
+          (row.error ? ': ' + row.error : '') + '.',
+        seguir: { vista: 'salud', accion: '/api/salud/trabajo', jobId: row.id } }); } catch {}
+    try { for (const job of db.prepare("SELECT * FROM jobs WHERE status='cancelled' ORDER BY created DESC LIMIT 10").all())
+      items.push({ tipo: 'descarga-cancelada', rfc: job.rfc || '', at: Number(job.created) || 0,
+        texto: 'Descarga cancelada de ' + job.rfc + ' (' + job.periodStart + ' a ' + job.periodEnd + ').',
+        seguir: { vista: 'sat' } }); } catch {}
+    try {
+      const conc = conciliacion200f({});
+      for (const cuenta of conc.porCuenta || []) {
+        const n = (cuenta.conteos?.pagosSinFactura || 0) + (cuenta.conteos?.facturasSinPagoVisto || 0);
+        if (!n) continue;
+        items.push({ tipo: 'estado-sin-conciliar', rfc: cuenta.account?.rfc || '',
+          at: 0, texto: 'La cuenta ' + (cuenta.account?.banco || '') + ' · ' + (cuenta.account?.nombre || '') +
+            ' tiene ' + n + ' movimiento(s)/factura(s) sin conciliar.',
+          seguir: { vista: 'bancos', accountId: cuenta.account?.id || '' } });
+      }
+    } catch {}
+    try {
+      const meses = [prevMonthKey(time), mxParts(time).monthKey];
+      for (const profile of db.prepare('SELECT rfc FROM profiles').all())
+        for (const month of meses) {
+          const est = cierreEstado200g(profile.rfc, month);
+          if (est.cerrado || est.completo) continue;
+          if (!est.pasos.some(p => p.ok)) continue;
+          items.push({ tipo: 'cierre-sin-terminar', rfc: profile.rfc, at: 0,
+            texto: 'El cierre de ' + month + ' de ' + profile.rfc + ' va a medias: falta ' +
+              est.faltan.map(f => f.label).join('; ') + '.',
+            seguir: { vista: 'salidas', month } });
+        }
+    } catch {}
+    return { items, total: items.length };
+  }
+
+  /* ---- Nº 7 · Autorreparación semanal de Salud ----
+     Una pasada semanal (la primera del lunes, en la cadencia del
+     tick de siempre) que recorre las comprobaciones de Salud EN
+     ORDEN y ejecuta SOLO las reparaciones seguras que ya existen
+     como gesto en un toque, reutilizándolas, sin duplicar su
+     lógica: (1) el cruce de coherencia (saludCoherencia200d —
+     detecta y enseña; no corrige datos) y (2) la re-prueba de la
+     puerta de cada RFC cuya tarjeta sale «mal» por causa de
+     e.firma o de puerta y cuyo equipo está en línea — el mismo
+     encolado de POST /api/salud/puerta, con su dedupe —.
+     Los trabajos atascados NO se re-encolan solos: su gesto mueve
+     una cola que Paco puede estar mirando, así que quedan como
+     «quedó roto» en el aviso. Solo se avisa por correo si se
+     arregló algo o si algo quedó roto; una semana limpia no
+     manda nada. El estado queda en automation_state
+     ('salud-auto201') y viaja en /api/salud como «auto201». */
+  function saludAutoEstado201() {
+    try { return JSON.parse(getState('salud-auto201') || 'null'); } catch { return null; }
+  }
+  async function saludAutoTick201(time) {
+    try {
+      const mx = mxParts(time);
+      if (mx.weekday !== 1 || mx.hour < 7) return;
+      const semana = day(time - ((mx.weekday + 6) % 7) * DAY);
+      if (saludAutoEstado201()?.semana === semana) return;
+      const resumen = saludResumen200d(time);
+      const hechas = [], rotas = [];
+      try {
+        const cruce = saludCoherencia200d(time, false);
+        if (cruce.desacuerdos.length) rotas.push('Coherencia: ' + cruce.desacuerdos.length + ' desacuerdo(s) sin corregir (el cruce detecta y enseña; no corrige datos).');
+        else hechas.push('Coherencia revisada: todo cuadra.');
+      } catch { rotas.push('Coherencia: la revisión no pudo correr.'); }
+      const ex = executorEstado();
+      for (const tarjeta of resumen.tarjetas || []) {
+        if (!tarjeta.id.startsWith('puerta:')) continue;
+        if (tarjeta.estado !== 'mal') continue;
+        const tipo = tarjeta.datos?.tipo || '';
+        if ((tipo === 'efirma' || tipo === 'puerta') && remoteExecutor && ex.emparejado && ex.enLinea) {
+          try {
+            const { repetido } = enqueueExecutorJob({ rfc: tarjeta.datos.rfc, kind: 'puerta-probar', payload: {}, origen: 'salud-auto' });
+            hechas.push('Puerta de ' + tarjeta.datos.rfc + ': re-prueba ' + (repetido ? 'ya estaba en cola' : 'encolada') + ' para tu equipo.');
+          } catch { rotas.push('Puerta de ' + tarjeta.datos.rfc + ': la re-prueba no se pudo encolar.'); }
+        } else rotas.push('Puerta de ' + tarjeta.datos.rfc + ': ' + tarjeta.porque);
+      }
+      const atascada = (resumen.tarjetas || []).find(t => t.id === 'atascados');
+      if (atascada && atascada.estado === 'mal')
+        rotas.push('Trabajos atascados: ' + atascada.porque + ' (No se re-encolan solos: su gesto es tuyo, en Salud.)');
+      const estado = { semana, at: time, hechas, rotas };
+      setState('salud-auto201', JSON.stringify(estado));
+      auditEvent('sistema', 'Autorreparación semanal de Salud: ' + hechas.length + ' hecha(s), ' +
+        rotas.length + ' rota(s).', '', rotas.length ? 0 : 1, time);
+      if ((hechas.length || rotas.length) && mail && mailAlertsOn()) {
+        const lineas = ['La autorreparación semanal de Salud recorrió las comprobaciones en orden.', '',
+          ...(hechas.length ? ['ARREGLADO / HECHO:', ...hechas.map(h => '· ' + h), ''] : []),
+          ...(rotas.length ? ['QUEDÓ ROTO O PENDIENTE DE TU GESTO:', ...rotas.map(r => '· ' + r), ''] : []),
+          'El detalle está en PacoSAT, en Salud.'];
+        const texto = lineas.join('\n');
+        try { await sendAppMail({ subject: 'PacoSAT · Autorreparación semanal de Salud · semana del ' + semana,
+          text: texto, html: htmlWrap200c({ titulo: 'Autorreparación semanal de Salud', text: texto,
+            button: { vista: 'salud', params: {}, label: 'Abrir en Salud' } }) }, 'salud-auto', time); } catch {}
+      }
+    } catch { /* la autorreparación nunca tumba el ciclo */ }
+  }
+
+  /* ---- Nº 20 · Resumen semanal del domingo ----
+     UN solo correo por semana, el domingo a la hora fijada (la
+     del resumen de Informes si está configurada; si no, las 20:00),
+     a los destinatarios del resumen semanal de Informes o, en su
+     defecto, al destinatario del correo de avisos. Un correo por
+     RFC (la doctrina de no mezclar contribuyentes), con cuatro
+     secciones y sus datos completos — o su línea de «sin
+     novedades» —:
+     · LO NUEVO: las altas REALES de la semana (news_items de los
+       avisos de novedades ya despachados, el criterio único de la
+       1.32.3: jamás se repite como nuevo lo ya presente, porque
+       news_items solo nace en el alta), con fecha, contraparte,
+       folio e importe, y su total.
+     · LO CANCELADO: las cancelaciones vistas por la vigilancia
+       en la semana (cancellation_seen), con contraparte, fecha e
+       importe de su fila de cfdi_watch.
+     · LO QUE VENCE: los eventos del calendario fiscal de los
+       próximos 7 días (fiscalEvents, la misma fuente del ICS).
+     · LO QUE FALTA: el cruce nº 3 (declCruce201) del ejercicio
+       en curso y el anterior: operaciones conocidas sin acuse.
+     Decisión de envío implementada: sale aunque todo sea «sin
+     novedades» (es el parte dominical que Paco pidió, no una
+     alerta), una sola vez por semana y RFC (marca en
+     reports-state, domingo201), y solo si hay correo configurado
+     y el interruptor de avisos por correo está encendido. */
+  function domingoDatos201(rfc, time) {
+    const desde = time - 7 * DAY;
+    let nuevos = [];
+    try { nuevos = db.prepare('SELECT ni.* FROM news_items ni JOIN news_notices nn ON nn.id=ni.notice ' +
+      'WHERE nn.rfc=? AND nn.sent IS NOT NULL AND nn.due>=? AND nn.due<? ORDER BY ni.fecha').all(rfc, desde, time); } catch { nuevos = []; }
+    const nuevosTotal = nuevos.reduce((acc, row) => acc + centsOf(row.total), 0n);
+    let cancelados = [];
+    try { cancelados = db.prepare('SELECT s.at, w.emitter, w.receiver, w.total FROM cancellation_seen s ' +
+      'LEFT JOIN cfdi_watch w ON w.id=s.id WHERE s.at>=? AND s.at<? ORDER BY s.at').all(desde, time)
+      .filter(row => row.emitter === rfc || row.receiver === rfc)
+      .map(row => { const names = peopleNames();
+        const cpRfc = row.emitter === rfc ? row.receiver : row.emitter;
+        return { at: row.at, contraparteRfc: cpRfc || '', contraparteNombre: names.get(cpRfc) || '',
+          total: row.total || '' }; }); } catch { cancelados = []; }
+    const vence = fiscalEvents(time).filter(e => e.rfc === rfc &&
+      e.date >= day(time) && e.date <= day(time + 7 * DAY));
+    const faltan = [];
+    for (const ejercicio of [Number(day(time).slice(0, 4)), Number(day(time).slice(0, 4)) - 1]) {
+      const cruce = declCruce201(rfc, ejercicio);
+      for (const op of cruce.faltanAcuses) faltan.push({ ejercicio, ...op });
+    }
+    return { nuevos, nuevosTotal, cancelados, vence, faltan };
+  }
+  async function domingoTick201(time) {
+    try {
+      if (!mail || !mailAlertsOn()) return;
+      const mx = mxParts(time);
+      if (mx.weekday !== 0) return;
+      const config = reportsConfig();
+      const hora = Number.isInteger(config.weekly?.hour) ? config.weekly.hour : 20;
+      if (mx.hour < hora) return;
+      const state = (() => { try { return JSON.parse(getState('reports-state') || '{}'); } catch { return {}; } })();
+      state.domingo201 = state.domingo201 || {};
+      const semana = day(time - ((mx.weekday + 6) % 7) * DAY);
+      const destinatarios = String(config.weekly?.recipients || '').trim();
+      for (const profile of db.prepare('SELECT rfc FROM profiles').all()) {
+        const rfc = profile.rfc;
+        if (state.domingo201[rfc] === semana) continue;
+        const d = domingoDatos201(rfc, time);
+        const lineas = ['Resumen semanal del domingo · semana del ' + semana + ' · RFC ' + rfc, '',
+          'LO NUEVO (' + d.nuevos.length + '):'];
+        if (d.nuevos.length) {
+          for (const row of d.nuevos.slice(0, NEWS_MAIL_LIMIT))
+            lineas.push('· ' + (row.fecha || 'sin fecha') + ' · ' + (row.counterpartName || 'Sin nombre registrado') +
+              ' (' + (row.counterpartRfc || '—') + ') · ' + (row.folio ? 'folio ' + (row.serie ? row.serie + '-' : '') + row.folio : 'sin folio') +
+              ' · $' + importeShow(row.total) + (row.estado ? ' · ' + row.estado : ''));
+          if (d.nuevos.length > NEWS_MAIL_LIMIT) lineas.push('· …y ' + (d.nuevos.length - NEWS_MAIL_LIMIT) + ' más, en Facturas.');
+          lineas.push('Importe total de lo nuevo: $' + moneyShow(d.nuevosTotal) + '.');
+        } else lineas.push('Sin novedades: ningún comprobante nuevo esta semana.');
+        lineas.push('', 'LO CANCELADO (' + d.cancelados.length + '):');
+        if (d.cancelados.length) for (const row of d.cancelados.slice(0, NEWS_MAIL_LIMIT))
+          lineas.push('· Visto el ' + day(row.at) + ' · ' + (row.contraparteNombre || 'Sin nombre registrado') +
+            ' (' + (row.contraparteRfc || '—') + ')' + (row.total ? ' · $' + importeShow(row.total) : ''));
+        else lineas.push('Sin novedades: ninguna cancelación vista esta semana.');
+        lineas.push('', 'LO QUE VENCE (próximos 7 días):');
+        if (d.vence.length) for (const e of d.vence) lineas.push('· ' + e.date + ' · ' + e.title);
+        else lineas.push('Sin novedades: nada vence en los próximos 7 días.');
+        lineas.push('', 'LO QUE FALTA (acuses sin guardar de operaciones conocidas):');
+        if (d.faltan.length) for (const op of d.faltan.slice(0, NEWS_MAIL_LIMIT))
+          lineas.push('· ' + op.ejercicio + ' · ' + (op.periodo || 'sin periodo') + ' · operación ' + op.operacion +
+            ' (' + (op.tipo || 'declaración') + '): falta su acuse en el expediente.');
+        else lineas.push('Sin novedades: ninguna operación conocida sin su acuse.');
+        lineas.push('', 'El detalle completo está en PacoSAT.');
+        const texto = lineas.join('\n');
+        try {
+          await sendAppMail({ to: destinatarios, subject: 'PacoSAT · Resumen del domingo · ' + rfc + ' · semana del ' + semana,
+            text: texto, html: htmlWrap200c({ titulo: 'Resumen del domingo · ' + rfc, text: texto, rfc,
+              button: { vista: 'hoy', params: { rfc }, label: 'Abrir en PacoSAT' } }), rfc }, 'domingo', time);
+          state.domingo201[rfc] = semana;
+          setState('reports-state', JSON.stringify(state));
+        } catch (error) {
+          queueAlert('domingo-fail', 'domingo201:' + rfc + ':' + semana,
+            'PacoSAT · El resumen del domingo no pudo enviarse', message(error), time, rfc);
+        }
+      }
+    } catch { /* el resumen dominical nunca tumba el ciclo */ }
+  }
+
+  /* ---- Nº 22 · Tiempo estimado por trabajo, del historial real ----
+     La duración típica (mediana) por tipo de trabajo, calculada
+     SOLO de trabajos terminados reales de los últimos 90 días:
+     los intentos del ejecutor (sat_executor_attempts unidos a su
+     trabajo) y los diarios de motor (trib/decl/sat-doc/ciec).
+     Con menos de 3 muestras el tipo NO sale: sin historial
+     suficiente no se enseña estimación — nada de números
+     inventados. */
+  function tiempos201(time) {
+    const desde = time - 90 * DAY;
+    const muestras = new Map();
+    const add = (tipo, duracion) => {
+      if (!tipo || !Number.isFinite(duracion) || duracion <= 0) return;
+      if (!muestras.has(tipo)) muestras.set(tipo, []);
+      muestras.get(tipo).push(duracion);
+    };
+    try { for (const row of db.prepare('SELECT j.kind AS kind, a.started AS started, a.finished AS finished ' +
+      'FROM sat_executor_attempts a JOIN sat_executor_jobs j ON j.id=a.jobId WHERE a.finished>=? AND a.finished>a.started').all(desde))
+      add(row.kind, row.finished - row.started); } catch {}
+    const diarios = [['trib_runs', 'buzon-listar'], ['decl_runs', 'declaraciones'], ['ciec_runs', 'descarga-ciec']];
+    for (const [tabla, tipo] of diarios) {
+      try { for (const row of db.prepare('SELECT started, finished FROM ' + tabla + ' WHERE finished>=? AND finished>started').all(desde))
+        add(tipo, row.finished - row.started); } catch {}
+    }
+    try { for (const row of db.prepare('SELECT kind, started, finished FROM sat_doc_runs WHERE finished>=? AND finished>started').all(desde))
+      add('documento-sat:' + (row.kind || ''), row.finished - row.started); } catch {}
+    const textoDe = ms => {
+      const min = ms / 60000;
+      if (min < 1) return 'menos de un minuto';
+      if (min < 90) return '~' + Math.round(min) + ' min';
+      return '~' + (Math.round(min / 6) / 10).toString().replace('.', ',') + ' h';
+    };
+    const porTipo = {};
+    for (const [tipo, lista] of muestras) {
+      if (lista.length < 3) continue;
+      const orden = [...lista].sort((a, b) => a - b);
+      const mediana = orden[Math.floor(orden.length / 2)];
+      porTipo[tipo] = { medianaMs: mediana, medianaTexto: textoDe(mediana), muestras: lista.length };
+    }
+    return { porTipo, nota: 'Mediana de los trabajos terminados de los últimos 90 días, por tipo. ' +
+      'Un tipo con menos de 3 trabajos terminados no sale: sin historial suficiente no se enseña estimación.' };
+  }
+
+  /* ---- Nº 23 · Foto del ejercicio al cerrarlo ----
+     Al cerrar el ejercicio con el candado de siempre
+     (/api/ejercicios200g/cerrar) se sella su foto: los totales
+     del cálculo único (apiTotales del año) y los conteos del
+     expediente en ese momento. La detección de «algo lo tocó
+     después» NO depende de que cada camino de escritura respete
+     el candado: un tick compara la foto sellada contra la foto
+     de ahora y, si difieren, deja UN aviso por cambio (su ref
+     lleva la huella de la diferencia) y el estado consumible
+     fotoEjercicioEstado201() para Hoy/Salud. */
+  function fotoEjercicioCapturar201(rfc, year) {
+    const t = apiTotales(rfc, year + '-01', year + '-12');
+    let cfdi = 0;
+    const archivadas = archivedInvoiceIds();
+    for (const inv of recordInvoices()) {
+      if (!inv?.id || archivadas.has(inv.id)) continue;
+      if (String(inv.date || '').slice(0, 4) !== String(year)) continue;
+      if (inv.from?.rfc === rfc || inv.to?.rfc === rfc) cfdi++;
+    }
+    let estados = 0;
+    try { estados = db.prepare('SELECT COUNT(*) AS n FROM bank_statements s JOIN bank_accounts a ON a.id=s.accountId ' +
+      "WHERE a.rfc=? AND s.month LIKE ?").get(rfc, year + '-%')?.n || 0; } catch { estados = 0; }
+    const cruce = declCruce201(rfc, Number(year));
+    return { totales: t.totales, cfdi,
+      declaraciones: { documentos: cruce.guardados.documentos, acuses: cruce.guardados.acuses,
+        conocidas: cruce.resumen.conocidas },
+      estados };
+  }
+  function fotoEjercicioSellar201(rfc, year, time) {
+    try {
+      const foto = fotoEjercicioCapturar201(rfc, year);
+      db.prepare('INSERT INTO foto_ejercicio201(rfc,year,at,foto) VALUES (?,?,?,?) ' +
+        'ON CONFLICT(rfc,year) DO UPDATE SET at=excluded.at, foto=excluded.foto')
+        .run(rfc, String(year), time, JSON.stringify(foto));
+      return foto;
+    } catch { return null; }
+  }
+  function fotoEjercicioEstado201() {
+    const out = [];
+    let selladas = [];
+    try { selladas = db.prepare('SELECT * FROM foto_ejercicio201 ORDER BY rfc, year').all(); } catch { selladas = []; }
+    for (const fila of selladas) {
+      let foto = {}; try { foto = JSON.parse(fila.foto || '{}'); } catch { foto = {}; }
+      const actual = fotoEjercicioCapturar201(fila.rfc, fila.year);
+      const claves = ['totales', 'cfdi', 'declaraciones', 'estados'];
+      const diferencias = claves.filter(clave => JSON.stringify(foto[clave] ?? null) !== JSON.stringify(actual[clave] ?? null));
+      out.push({ rfc: fila.rfc, year: fila.year, selladaAt: Number(fila.at) || 0,
+        foto, actual, tocada: diferencias.length > 0, diferencias });
+    }
+    return out;
+  }
+  function fotoEjercicioTick201(time) {
+    try {
+      if (time - (Number(getState('foto201:last') || 0)) < HOUR_MS) return;
+      setState('foto201:last', String(time));
+      for (const estado of fotoEjercicioEstado201()) {
+        if (!estado.tocada) continue;
+        const huella = createHash('sha256').update(JSON.stringify(estado.actual)).digest('hex').slice(0, 10);
+        avisoEnsure({ ref: 'foto-tocada:' + estado.rfc + ':' + estado.year + ':' + huella,
+          kind: 'foto-ejercicio', clase: 'mal', estado: 'abierto', severidad: 'media',
+          titulo: 'El ejercicio cerrado ' + estado.year + ' de ' + estado.rfc + ' cambió tras su cierre',
+          detalle: 'La foto sellada al cerrar el ejercicio ' + estado.year + ' de ' + estado.rfc +
+            ' (del ' + fechaHoraCasa(estado.selladaAt) + ') ya no coincide en: ' + estado.diferencias.join(', ') +
+            '. Algo tocó ese ejercicio después del cierre. Revisa el Registro para ver qué fue; la foto sellada no se ha tocado.',
+          enlace: 'salud', rfc: estado.rfc, responsable: 'Paco',
+          accion: 'Revisar en el Registro qué cambió en el ejercicio cerrado',
+          datos: { year: estado.year, diferencias: estado.diferencias } }, time, 0);
+      }
+    } catch { /* la vigilancia de la foto nunca tumba el ciclo */ }
+  }
+
+  /* ---- Nº 27 · Trabajos esperando y ejecutor dormido, para Hoy ----
+     El dato ya existía partido: executorEstado() (emparejado, en
+     línea, último latido) en /api/status y el conteo de la cola
+     en Salud. Esto lo reúne en UN campo aditivo de /api/status
+     con el paso exacto en llano — el botón «Ejecutar aquí»
+     (pacosat://) como paso principal y arrancar.bat solo como
+     reserva si el botón no responde (2.0.1, auditoría) — sin
+     tecnicismos. */
+  function ejecutorEspera201(time) {
+    const ex = executorEstado();
+    let enCola = 0, enCurso = 0;
+    try {
+      enCola = db.prepare("SELECT COUNT(*) AS n FROM sat_executor_jobs WHERE estado='en-cola'").get()?.n || 0;
+      enCurso = db.prepare("SELECT COUNT(*) AS n FROM sat_executor_jobs WHERE estado IN ('reclamado','en-curso')").get()?.n || 0;
+    } catch { /* sin ejecutor todavía */ }
+    const sinSenalMs = ex.ultimoVisto ? time - ex.ultimoVisto : null;
+    const dormido = Boolean(ex.emparejado && !ex.enLinea && sinSenalMs !== null && sinSenalMs > DAY);
+    return { enCola, enCurso, esperando: enCola + enCurso,
+      emparejado: ex.emparejado, enLinea: ex.enLinea,
+      ultimoVisto: ex.ultimoVisto || null,
+      diasSinSenal: sinSenalMs !== null ? Math.floor(sinSenalMs / DAY) : null,
+      dormido,
+      paso: !ex.emparejado ? 'Empareja tu PC desde Salud, en «Tu ejecutor»: sin equipo, los trabajos del portal no pueden correr.' :
+        dormido || (enCola + enCurso > 0 && !ex.enLinea) ?
+          'Pulsa «Ejecutar aquí» en PacoSAT para despertar tu ejecutor: recoge los trabajos solo, sin que teclees nada más. Si el botón no responde, ábrelo con arrancar.bat en tu equipo.' : '' };
+  }
+
   /* (6)+(8)+(9)+(10)+(21) Vigilancia de la tanda, en el tick. */
   function tick200h(time) {
     /* (6) Dos fallos seguidos EN LA ENTRADA del portal, el mismo
@@ -12583,6 +13230,28 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       return J(semana200h(ambito.rfc, now()));
     }
     if (req.method === 'GET' && P === '/api/avisos-tono200h') return J({ avisos: avisosTono200h(now()) });
+    /* ===== Ronda 2.0.1 · Fase 1: endpoints nuevos (aditivos) ===== */
+    if (req.method === 'GET' && P === '/api/duplicados201') {
+      const pedido = String(url.searchParams.get('rfc') || '').toUpperCase();
+      if (guest && pedido) { const ambito = ambitoInvitado(pedido);
+        if (ambito.error) return J({ error: 'Fuera de tu alcance.' }, 403); }
+      const ambito = guest ? ambitoInvitado(pedido) : { rfc: pedido };
+      return J(duplicados201(guest ? ambito.rfc : pedido));
+    }
+    if (req.method === 'GET' && P === '/api/deshacer201') {
+      if (guest) return J({ error: 'El Centro de Deshacer es del administrador.' }, 403);
+      return J(deshacerLista201());
+    }
+    if (req.method === 'GET' && P === '/api/tiempos201') {
+      return J(tiempos201(now()));
+    }
+    if (req.method === 'GET' && P === '/api/a-medias201') {
+      const data = aMedias201(now());
+      if (guest) { const s = guestScopeRfcs();
+        data.items = data.items.filter(item => !item.rfc || s.has(String(item.rfc).toUpperCase()));
+        data.total = data.items.length; }
+      return J(data);
+    }
     if (req.method === 'GET' && P === '/api/esperados200h') {
       let rows = []; try { rows = db.prepare('SELECT * FROM esperados200h ORDER BY rfc, dia').all(); } catch {}
       return J({ esperados: rows.filter(e => enAlcance(e.rfc)) });
@@ -12672,13 +13341,13 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           (() => { try { return db.prepare("SELECT 1 FROM records WHERE store='people' AND id=?").get(rfc); } catch { return null; } })() ? true : false,
           gesto: 'Dar de alta el contribuyente en Contribuyentes.' },
         { id: 'efirma', etiqueta: 'e.firma o CIEC', ok: Boolean(perfil?.certExpires),
-          gesto: 'Subir la e.firma en el Centro SAT (o activar la CIEC).' },
+          gesto: 'Subir la e.firma desde Salud (o activar la CIEC).' },
         { id: 'ejecutor', etiqueta: 'Ejecutor en tu equipo', ok: executorOnline(),
           gesto: 'Abrir el ejecutor en tu equipo para los trabajos del portal.' },
         { id: 'correo', etiqueta: 'Correo de avisos', ok: Boolean(mail),
           gesto: 'Configurar el correo de avisos en Ajustes.' },
         { id: 'descarga', etiqueta: 'Primera descarga', ok: primeraDescarga,
-          gesto: 'Pedir la primera descarga desde el Centro SAT («Descargar del SAT»).' }];
+          gesto: 'Pedir la primera descarga desde «Descargar del SAT».' }];
       return J({ rfc, pasos, listo: pasos.every(p => p.ok) });
     }
     if (req.method === 'POST' && P === '/api/repetir-pago200h') {
@@ -12783,7 +13452,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     }
     if (req.method === 'GET' && P === '/api/ejercicios200g') {
       const rows = (() => { try { return db.prepare('SELECT * FROM ejercicios200g ORDER BY rfc, year').all(); } catch { return []; } })();
-      return json200g(res, { ejercicios: rows.map(r => ({ rfc: r.rfc, year: r.year, cerrado: Boolean(r.cerrado), at: r.at, por: r.por })) });
+      /* Foto del ejercicio (2.0.1 · nº 23): campos aditivos por
+         fila — la foto sellada y si algo la tocó después. */
+      const fotos201 = (() => { try { return fotoEjercicioEstado201(); } catch { return []; } })();
+      const fotoDe = (rfc, year) => fotos201.find(f => f.rfc === rfc && String(f.year) === String(year)) || null;
+      return json200g(res, { ejercicios: rows.map(r => { const f = fotoDe(r.rfc, r.year);
+        return { rfc: r.rfc, year: r.year, cerrado: Boolean(r.cerrado), at: r.at, por: r.por,
+          foto201: f ? { selladaAt: f.selladaAt, foto: f.foto } : null,
+          fotoTocada201: f ? f.tocada : false,
+          fotoDiferencias201: f ? f.diferencias : [] }; }) });
     }
     if (req.method === 'POST' && P === '/api/ejercicios200g/cerrar') {
       const x = await body(req);
@@ -12793,6 +13470,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       db.prepare('INSERT INTO ejercicios200g(rfc,year,cerrado,at,por) VALUES (?,?,1,?,?) ON CONFLICT(rfc,year) DO UPDATE SET cerrado=1, at=excluded.at, por=excluded.por')
         .run(rfc, year, now(), 'Paco');
       auditEvent('accion', 'Ejercicio ' + year + ' de ' + rfc + ' marcado cerrado a mano en Cierre: sus escrituras quedan bloqueadas.', rfc, 1, now());
+      /* Centro de Deshacer (2.0.1 · nº 8): el cierre se apunta en
+         el registro común; su Deshacer es el desbloqueo de siempre. */
+      deshacerRegistrar201('cerrar-ejercicio', rfc, 'Ejercicio ' + year + ' de ' + rfc + ' cerrado.', { rfc, year }, now());
+      /* Foto del ejercicio (2.0.1 · nº 23): el cierre sella los
+         totales y conteos del cálculo único en este momento. */
+      fotoEjercicioSellar201(rfc, year, now());
       return json200g(res, { ok: true, rfc, year, cerrado: true });
     }
     if (req.method === 'POST' && P === '/api/ejercicios200g/desbloquear') {
@@ -12803,6 +13486,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         .run(rfc, year, now(), 'Paco (desbloqueo)');
       marcarInformesDesactualizados200g(rfc, year);
       auditEvent('accion', 'Ejercicio ' + year + ' de ' + rfc + ' DESBLOQUEADO en Cierre: sus datos se pueden tocar otra vez y sus informes pre-generados quedan marcados desactualizados.', rfc, 1, now());
+      /* Centro de Deshacer (2.0.1 · nº 8): el desbloqueo ES el
+         deshacer del cierre — su fila queda marcada deshecha. */
+      deshacerMarcar201('cerrar-ejercicio', { rfc, year });
+      /* Foto del ejercicio (2.0.1 · nº 23): al desbloquear, el
+         sello deja de mandar — la foto se retira con el candado. */
+      try { db.prepare('DELETE FROM foto_ejercicio201 WHERE rfc=? AND year=?').run(rfc, year); } catch {}
       return json200g(res, { ok: true, rfc, year, cerrado: false });
     }
     if (req.method === 'POST' && P === '/api/salidas200g/zip-mes') {
@@ -13098,7 +13787,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           'PacoSAT · El ciclo automático lleva más de 10 minutos en curso',
           'Un ciclo de descarga y verificación sigue abierto desde hace más de 10 minutos. Las llamadas al SAT ' +
           'tienen un límite de 60 segundos, así que algo va mal (red del NAS o el propio SAT). Si el ciclo no ' +
-          'termina solo, reinicia el contenedor de PacoSAT y revisa el Centro SAT.', now());
+          'termina solo, reinicia el contenedor de PacoSAT y revisa Salud.', now());
       return;
     }
     busy = true;
@@ -13145,6 +13834,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         solicitudesVivasTick200e(time);
         opinionVigenciaTick200e(time);
         await reportsTick(time);
+        /* Ronda 2.0.1: autorreparación semanal de Salud (nº 7) y
+           resumen dominical único (nº 20), en la cadencia del tick. */
+        await saludAutoTick201(time);
+        await domingoTick201(time);
+        fotoEjercicioTick201(time);
         moneyTick(time);
         fiscalTick(time);
         watchStaleTick(time);
@@ -13999,7 +14693,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (!ex.emparejado) {
           auditEvent('accion', 'Salud: la re-prueba de la puerta de ' + rfc + ' no se encoló: no hay ningún equipo emparejado.', rfc, 0);
           return json(res, { encolado: false,
-            motivo: 'No hay ningún equipo emparejado: la prueba no se puede encargar. Empareja tu PC en el Centro SAT y vuelve a intentarlo.' });
+            motivo: 'No hay ningún equipo emparejado: la prueba no se puede encargar. Empareja tu PC desde Salud, en «Tu ejecutor», y vuelve a intentarlo.' });
         }
         if (!ex.enLinea) {
           auditEvent('accion', 'Salud: la re-prueba de la puerta de ' + rfc + ' no se encoló: tu equipo no responde.', rfc, 0);
@@ -15211,6 +15905,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            asienta la retirada, no se reescribe la historia. */
         if (previo) auditEvent('accion', 'Se retiró el estado de ' + previo.bank + ' · ' + previo.name +
           ' de ' + previo.month + ' (Deshacer de la subida): sus movimientos aplicados salieron con él.', previo.rfc || '', 1, now());
+        /* Centro de Deshacer (2.0.1 · nº 8): este borrado ES el
+           deshacer de la subida — su fila del registro común
+           queda marcada deshecha. */
+        deshacerMarcar201('importar-estado', { id: String(x.id || '') });
         return json(res, banksOverview());
       }
       /* ===== Tanda 6 (2.0) · Bancos: detección y subida única ===== */
@@ -15532,6 +16230,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(info.changes > 0, 'Ese comprobante no está en el expediente.', 404);
         auditEvent('accion', (archivar ? 'Comprobante archivado (fuera de las vistas de trabajo): '
           : 'Comprobante restaurado desde el Archivo: ') + uuid + '.', '', 1);
+        /* Centro de Deshacer (2.0.1 · nº 8): el archivado se
+           apunta en el registro común y la restauración lo marca
+           deshecho — el mecanismo (esta misma ruta) no cambia. */
+        if (archivar) deshacerRegistrar201('archivar-cfdi', '', 'Comprobante archivado: ' + uuid + '.', { uuid }, now());
+        else deshacerMarcar201('archivar-cfdi', { uuid });
         return json(res, { ok: true, uuid, archivado: archivar });
       }
       if (req.method === 'POST' && url.pathname === '/api/money/mark-paid') {
@@ -16556,7 +17259,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            en el propio cuerpo el nombre de remitente (senderName)
            que verán los destinatarios. */
         await body(req);
-        need(mail, 'El correo de avisos no está activo: configúralo primero en el Centro SAT.', 409);
+        need(mail, 'El correo de avisos no está activo: configúralo primero en Ajustes.', 409);
         const remitente200c = displayFrom(mail.from);
         const ejemplo200c = composeMailPair({
           titulo: 'EJEMPLO · Así se ven los avisos de PacoSAT',
@@ -16886,7 +17589,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             const cp = String(x.contraparte || '').toUpperCase();
             need(cp, 'Falta la contraparte del reporte.', 422);
             salidaMark('pdf:contraparte');
-            return enviar(`contraparte-${cp}-${rfc}.pdf`, salidaPdfContraparte(rfc, cp), 'application/pdf');
+            /* Periodo opcional (2.0.1 · nº 29): «sus facturas del
+               periodo» — sin mes, la ficha es de todo el expediente,
+               como hasta ahora. */
+            const mkCp = mesValido(x.month) ? String(x.month) : '';
+            return enviar(`contraparte-${cp}-${rfc}.pdf`, salidaPdfContraparte(rfc, cp, mkCp), 'application/pdf');
           }
           if (kind === 'declaraciones') {
             const ejercicio = /^\d{4}$/.test(String(x.year || '')) ? String(x.year) : String(now()).slice(0, 4);

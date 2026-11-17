@@ -271,8 +271,14 @@ function harness(service, proxyKey = '') {
   /* Re-baseline 1.32.1 (S3): la parrilla sigue abriendo la
      vista y la barra va detrás como franja secundaria — el
      aserto sigue el nuevo cableado de dos pasos. */
-  assert.ok(html.indexOf('parts = [satCardGrid(), tabsEl]') > 0 &&
-    html.includes("tabsEl.classList.add('tabbar-secundaria')"), 'satView abre con la parrilla de tarjetas (1.29.2) y la barra secundaria (1.32.1)');
+  /* Re-baseline 2.0.1 (parte de cliente de esta misma ronda):
+     satView ya no compone parrilla + barra — despacha a la
+     pantalla guía de importación sin token y a la de
+     sincronización directa con token —. El aserto sigue el
+     nuevo despacho, leído del artefacto asentado. */
+  assert.ok(html.includes('return satGuideScreen();') &&
+    html.includes('return satDownloadScreen();'),
+    'satView despacha: guía de importación sin token y sincronización directa con token (2.0.1)');
   assert.ok(!html.includes('function satPortada('), 'la portada vieja del SAT ya no existe (1.18.0)');
   /* A · el botón por factura y su repintado en sitio. */
   assert.ok(html.includes("'Revisar ahora'") || html.includes('"Revisar ahora"') || html.includes('Revisar ahora'),

@@ -41,12 +41,12 @@ const read = name => readFileSync(join(ROOT, name), 'utf8');
 /* ===== 1 · Versión y sellos de la pieza ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.0.0', 'la ronda es la 2.0.0');
-  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.0.0'"), 'el ejecutor declara 2.0.0 (solo el sello)');
+  assert.equal(pkg.version, '2.0.1', 'la ronda es la 2.0.1');
+  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.0.1'"), 'el ejecutor declara 2.0.1 (solo el sello)');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.0.0"'), 'el artefacto se sella 2.0.0');
-  assert.ok(html.includes("version: '2.0.0'"), 'la nota de novedades es la de esta versión');
-  assert.ok(html.includes('ya solo anuncia lo que de verdad entra nuevo'), 'la nota cuenta la corrección en llano');
+  assert.ok(html.includes('"version":"2.0.1"'), 'el artefacto se sella 2.0.1');
+  assert.ok(html.includes("version: '2.0.1'"), 'la nota de novedades es la de esta versión');
+  assert.ok(html.includes('reconstruidos contra el portal real del SAT'), 'la nota cuenta la corrección en llano (re-basificado en la 2.0.1: la nota de esta ronda cuenta en llano la reconstrucción de los pasillos del Buzón y de Declaraciones contra el portal real)');
   console.log('OK 1.32.3 · versión y sellos.');
 }
 
