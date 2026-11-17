@@ -714,6 +714,15 @@ function paintActivity() {
         const label = String(entry.label || '').replace(/\s+/g, ' ').trim().replace(/\s*·$/, '');
         body.append(n('strong', label + (detail ? ' · ' : '')),
           n('small', detail, 'activity-detail'));
+        /* Tiempo estimado (2.0.1 · nº 22): junto a la barra,
+           SOLO cuando el servidor devuelve estimación para
+           este tipo de trabajo (su mediana con mínimo de
+           muestras). Sin estimación, no se pinta nada. */
+        if (entry.kind && typeof tiempoEstimado201 === 'function')
+          tiempoEstimado201(entry.kind).then(texto => {
+            if (texto && body.isConnected)
+              body.append(n('small', ' · suele tardar ' + texto, 'activity-detail'));
+          }).catch(() => {});
         rowEl.append(body);
         const acts = n('div', undefined, 'actions');
         if (entry.canPause) acts.append(activityControlButton(entry, entry.enPausa ? 'Reanudar' : 'Pausar', entry.enPausa ? 'reanudar' : 'pausar'));

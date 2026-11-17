@@ -22,6 +22,172 @@ function ivaRows(month) {
       balance: issuedIva - receivedIva };
   }).filter(row => row.issuedCount || row.receivedCount);
 }
+/* ===== Reportes (2.0.1, orden de Paco: «no veo las funciones
+   de imprimir reportes de forma clara y bien y fácil») =====
+   Pantalla propia con entrada de menú: la lista llana de los
+   reportes del sistema, cada uno con su periodo y sus botones
+   PDF · Excel · Imprimir a un toque. No crea motores: agrupa
+   los generadores que YA existen — los artefactos de la capa
+   de salidas (descargarSalida1310, en la parte principal) y las
+   impresiones de cliente de siempre (printPeriodReport y
+   imprimirVista201). Si un reporte no tiene generador real, no
+   se pinta su PDF/Excel: la conciliación de Bancos no tiene
+   artefacto de salidas, así que su entrada es honesta — lleva
+   a Bancos, donde la conciliación se ve y se imprime tal cual
+   (auditoría de salida 2.0.1) — nada de botones muertos. */
+function reportesScreen201() {
+  const wrap = n('div');
+  const rfc = () => scope || people[0]?.id || '';
+  const hoy = new Date();
+  const anioDef = hoy.getFullYear();
+  const mesDef = anioDef + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+  const lista = panel('Los reportes, en un solo sitio',
+    'Cada reporte con su periodo y su salida: PDF para papel, Excel para trabajar e Imprimir para la vista en pantalla. Todo sale del cálculo único, como en sus pantallas.');
+  const filaReporte = (titulo, detalle, periodoEl, botones) => {
+    const fila = n('div', undefined, 'cp-row');
+    const main = n('div', undefined, 'cp-main');
+    main.append(n('strong', titulo), n('span', detalle, 'muted'));
+    if (periodoEl) main.append(periodoEl);
+    fila.append(main);
+    const acts = n('div', undefined, 'actions');
+    for (const [etiqueta, hacer, clase] of botones) {
+      const b = n('button', etiqueta, clase || 'soft');
+      b.type = 'button';
+      b.onclick = () => hacer(b);
+      acts.append(b);
+    }
+    fila.append(acts);
+    lista.append(fila);
+    return fila;
+  };
+  const inputAnio = valor => {
+    const el = input('number', { value: valor, min: 2019, max: anioDef + 1, 'aria-label': 'Ejercicio' });
+    el.style.maxWidth = '110px';
+    return el;
+  };
+  /* Totales del ejercicio (PDF y Excel de salidas, kind totales). */
+  const anioTotales = inputAnio(anioDef);
+  filaReporte('Totales', 'Emitidos y recibidos del ejercicio, mes a mes, con sus totales.', anioTotales, [
+    ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'totales', rfc: rfc(), year: Number(anioTotales.value) || anioDef }, b), 'primary'],
+    ['Excel', b => descargarSalida1310('salidas/xlsx', { kind: 'totales', rfc: rfc(), year: Number(anioTotales.value) || anioDef }, b)],
+    ['Imprimir', () => {
+      const anio = Number(anioTotales.value) || anioDef;
+      const filas = [];
+      for (let m = 1; m <= 12; m++) {
+        const clave = anio + '-' + String(m).padStart(2, '0');
+        let em = 0n, re = 0n, nEm = 0, nRe = 0;
+        for (const row of outMonthInvoices(clave)) {
+          if (row.currency && row.currency !== 'MXN') continue;
+          const role = roles(row);
+          if (role.issued) { em += totalCents(row); nEm++; }
+          if (role.received) { re += totalCents(row); nRe++; }
+        }
+        if (nEm || nRe) filas.push([DECL_MES_REP201[m - 1] + ' ' + anio, number.format(nEm), '$' + centsLabel(em), number.format(nRe), '$' + centsLabel(re)]);
+      }
+      imprimirVista201('Totales ' + anio, 'Emitidos y recibidos por mes, sin contar cancelados en los totales.',
+        ['Mes', 'Emitidos', 'Total emitidos', 'Recibidos', 'Total recibidos'], filas);
+    }]
+  ]);
+  /* Por contraparte (PDF de salidas, kind contraparte). Sin
+     Excel real para este reporte: no se pinta botón de Excel. */
+  const cps = new Map();
+  for (const row of invoices) {
+    if (scope && row.from.rfc !== scope && row.to.rfc !== scope) continue;
+    const cp = row.from.rfc === scope ? row.to : row.from;
+    if (cp?.rfc && cp.rfc !== scope) cps.set(cp.rfc, cp.name || cp.rfc);
+  }
+  if (cps.size) {
+    const picker = select([...cps.entries()].map(([value, label]) => [value, label + ' · ' + value]), [...cps.keys()][0], 'Contraparte del reporte');
+    filaReporte('Por contraparte', 'Los movimientos con una contraparte: su PDF lleva folio y saldo neto en letra.', picker, [
+      ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'contraparte', rfc: rfc(), contraparte: picker.value }, b), 'primary'],
+      ['Imprimir', () => {
+        const filas = invoices.filter(row => row.from.rfc === picker.value || row.to.rfc === picker.value)
+          .map(row => [dateLabel(row.date), row.fiscal ? ((row.fiscal.serie ? row.fiscal.serie + '-' : '') + (row.fiscal.folio || '')) || '—' : '—',
+            (row.from.name || row.from.rfc) + ' → ' + (row.to.name || row.to.rfc), amount(row)]);
+        imprimirVista201('Reporte por contraparte · ' + (cps.get(picker.value) || picker.value),
+          number.format(filas.length) + ' comprobante(s).', ['Fecha', 'Folio', 'Emisor → receptor', 'Total'], filas);
+      }]
+    ]);
+  }
+  /* Por mes: el reporte del periodo (PDF periodo, Excel de
+     facturas del mes e Imprimir con la plantilla de siempre). */
+  const mesInput = input('month', { value: mesDef, 'aria-label': 'Mes del reporte' });
+  filaReporte('Por mes', 'El reporte del periodo: totales por sentido y por contraparte, con su IVA.', mesInput, [
+    ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'periodo', rfc: rfc(), month: mesInput.value || mesDef }, b), 'primary'],
+    ['Excel', b => descargarSalida1310('salidas/xlsx', { kind: 'facturas', rfc: rfc(), month: mesInput.value || mesDef }, b)],
+    ['Imprimir', () => {
+      const clave = mesInput.value || mesDef;
+      const rowsMes = outMonthInvoices(clave);
+      let issuedTotal = 0n, receivedTotal = 0n, issuedIva = 0n, receivedIva = 0n;
+      for (const row of rowsMes) {
+        if (row.currency && row.currency !== 'MXN') continue;
+        const role = roles(row), iva = invoiceIvaCents(row);
+        if (role.issued) { issuedTotal += totalCents(row); if (iva !== null) issuedIva += iva; }
+        if (role.received) { receivedTotal += totalCents(row); if (iva !== null) receivedIva += iva; }
+      }
+      printPeriodReport(clave, rowsMes, { issuedTotal, receivedTotal, issuedIva, receivedIva });
+    }]
+  ]);
+  /* Declaraciones del ejercicio (PDF y Excel de salidas). */
+  const anioDecl = inputAnio(anioDef);
+  filaReporte('Declaraciones', 'El mapa del ejercicio: qué consta presentado, qué falta y qué se recuperó.', anioDecl, [
+    ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'declaraciones', rfc: rfc(), year: Number(anioDecl.value) || anioDef }, b), 'primary'],
+    ['Excel', b => descargarSalida1310('salidas/xlsx', { kind: 'declaraciones', rfc: rfc(), year: Number(anioDecl.value) || anioDef }, b)],
+    ['Imprimir', async b => {
+      b.disabled = true;
+      try {
+        const data = await satApi('declaraciones?rfc=' + encodeURIComponent(rfc()) + '&ejercicio=' + (Number(anioDecl.value) || anioDef));
+        const filas = (data?.mapa?.meses || []).map(m => [DECL_MES_REP201[Number(m.periodo.slice(5, 7)) - 1],
+          (typeof DECL_ESTADO_TEXTO !== 'undefined' ? DECL_ESTADO_TEXTO[m.estado] : m.estado) || m.estado,
+          m.fechaPresentacion ? dateLabel(m.fechaPresentacion) : '—', m.operacion || '—']);
+        imprimirVista201('Declaraciones ' + (Number(anioDecl.value) || anioDef),
+          'Presentadas: ' + number.format(data?.resumen?.presentadas || 0) + ' · pendientes: ' + number.format(data?.resumen?.pendientes || 0) + '.',
+          ['Mes', 'Estado', 'Presentada', 'Operación'], filas);
+      } catch (error) { toast(error.message, 'error'); }
+      b.disabled = false;
+    }]
+  ]);
+  /* Dinero y saldos (PDF de saldos y Excel de dinero). */
+  filaReporte('Dinero y saldos', 'Lo que debes y lo que te deben, con el saldo de cada factura.', null, [
+    ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'saldos', rfc: rfc() }, b), 'primary'],
+    ['Excel', b => descargarSalida1310('salidas/xlsx', { kind: 'dinero', rfc: rfc() }, b)],
+    ['Imprimir', () => {
+      const paidBy = paidByMap();
+      const own = new Set(people.map(person => person.id));
+      const open = invoices.filter(row => row.kind === 'I').map(row => ({ row, ...balanceOf(row, paidBy), state: invoiceStateOf(row) }))
+        .filter(item => item.balance > 0n && item.state !== 'Cancelado');
+      const filas = [];
+      for (const item of open.filter(i => own.has(i.row.from.rfc))) filas.push(['Por cobrar', item.row.to.name || item.row.to.rfc, dateLabel(item.row.date), '$' + centsLabel(item.balance)]);
+      for (const item of open.filter(i => own.has(i.row.to.rfc))) filas.push(['Por pagar', item.row.from.name || item.row.from.rfc, dateLabel(item.row.date), '$' + centsLabel(item.balance)]);
+      imprimirVista201('Dinero · saldos abiertos', 'Las canceladas no entran en los saldos.', ['Sentido', 'Contraparte', 'Fecha', 'Saldo'], filas);
+    }]
+  ]);
+  /* Conciliación de Bancos (2.0.1, auditoría de salida): NO
+     hay generador PDF/Excel de conciliación en la capa de
+     salidas, y esta fila no finge que lo hay. Su único botón
+     lleva a Bancos, donde la conciliación del mes se ve y se
+     imprime tal cual con su botón «Imprimir conciliación». */
+  filaReporte('Conciliación de Bancos', 'Sin PDF ni Excel propios: la conciliación se ve y se imprime en Bancos, tal cual se ve.', null, [
+    ['Ver e imprimir en Bancos', () => navigate('bancos'), 'primary']
+  ]);
+  /* Avisos (PDF y Excel de salidas, kind avisos). */
+  filaReporte('Avisos', 'El parte de avisos del RFC: lo que está mal, lo que falta y lo que vence.', null, [
+    ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'avisos', rfc: scope }, b), 'primary'],
+    ['Excel', b => descargarSalida1310('salidas/xlsx', { kind: 'avisos', rfc: scope }, b)]
+  ]);
+  wrap.append(lista);
+  /* El resto de salidas (cierre, ZIP del mes, destinos) sigue
+     en su pantalla: Reportes agrupa los reportes, no entierra
+     el cierre. */
+  const cierreLink = panel('Cierre del mes y salidas por destino',
+    'El cierre guiado, el ZIP del mes y las salidas para tu contadora y para el banco viven en su pantalla, a un toque.');
+  cierreLink.append(action('Abrir Cierre y reportes', () => navigate('salidas'), 'primary', 'check'));
+  wrap.append(cierreLink);
+  return [wrap];
+}
+const DECL_MES_REP201 = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+
 function salidasScreen() {
   const wrap = n('div');
   /* IVA del mes */
@@ -46,10 +212,10 @@ function salidasScreen() {
   const faltanDesglose = rows.reduce((acc, row) => acc + (row.missing || 0), 0);
   if (faltanDesglose) {
     const aviso = n('div', undefined, 'cp-row');
-    aviso.append(n('span', number.format(faltanDesglose) + ' CFDI sin desglose de IVA: su reproceso vive en Centro SAT › Estado de mis CFDI.'));
-    const ir = n('button', 'Ir a Estado de mis CFDI', 'soft');
+    aviso.append(n('span', number.format(faltanDesglose) + ' CFDI sin desglose de IVA: su reproceso vive en Vigilancia de CFDI.'));
+    const ir = n('button', 'Ir a Vigilancia de CFDI', 'soft');
     ir.type = 'button';
-    ir.onclick = () => { satTab = 'monitor'; navigate('sat'); };
+    ir.onclick = () => navigate('monitor');
     aviso.append(ir);
     ivaPanel.append(aviso);
   }
@@ -800,6 +966,28 @@ if (typeof window !== 'undefined' && !window.__papel200gDnD) {
     if (!files.length) return;
     const xmls = files.filter(f => /\.(xml|zip)$/i.test(f.name));
     const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || /^image\//.test(f.type));
+    if (xmls.length && typeof importBatch === 'function')
+      importBatch(xmls).catch(error => announce(error.message, true));
+    for (const f of pdfs) papelClasificar200g(f).catch(error => toast(error.message, 'error'));
+  });
+  /* Pegar un archivo (2.0.1 · nº 25): el MISMO enrutado que
+     soltar — el PDF o la imagen van a la tarjeta de
+     clasificación y confirmación de siempre
+     (papelClasificar200g), nunca a una subida directa. En
+     Bancos no actúa: allí el pegado es del panel de estados,
+     con su propia confirmación. */
+  document.addEventListener('paste', e => {
+    if (typeof page !== 'undefined' && page === 'dinero' &&
+        typeof dineroTab !== 'undefined' && dineroTab === 'bancos') return;
+    if (document.querySelector('dialog[open]')) return;
+    const destino = e.target;
+    if (destino && (destino.tagName === 'INPUT' || destino.tagName === 'TEXTAREA' || destino.isContentEditable)) return;
+    const files = [...(e.clipboardData?.files || [])];
+    if (!files.length) return;
+    const xmls = files.filter(f => /\.(xml|zip)$/i.test(f.name));
+    const pdfs = files.filter(f => /\.pdf$/i.test(f.name) || /^image\//.test(f.type));
+    if (!xmls.length && !pdfs.length) return;
+    e.preventDefault();
     if (xmls.length && typeof importBatch === 'function')
       importBatch(xmls).catch(error => announce(error.message, true));
     for (const f of pdfs) papelClasificar200g(f).catch(error => toast(error.message, 'error'));

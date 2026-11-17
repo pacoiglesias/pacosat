@@ -222,7 +222,15 @@ const ponerSatData = (context, data) => {
     'M1: con causa de equipo, ningún gesto manda a la e.firma');
 
   /* Solo con ejecutor vivo y prueba fresca la e.firma es el gesto. */
-  const puertaFresca = { ...PUERTA_EFIRMA, probada: AHORA - 3600000 };
+  /* La frescura de la prueba se mide DOS veces: causaP200
+     recibe el AHORA congelado del arnés, pero gestosLista1311
+     llama a causaP200 SIN tercer argumento y manda el reloj
+     REAL (Date.now()): con la foto congelada del 15 nov, al
+     correr la batería otro día la prueba «fresca» envejecía
+     más de 24 h y el gesto salía «foto vieja» — la suite era
+     una bomba de tiempo —. La foto fresca nace del reloj real
+     menos una hora: fresca para los dos relojes. */
+  const puertaFresca = { ...PUERTA_EFIRMA, probada: Date.now() - 3600000 };
   context.__p2 = puertaFresca; context.__e2 = EJECUTOR_VIVO;
   assert.equal(vm.runInContext('causaP200(__p2, __e2, __a).tipo', context), 'efirma',
     'M1: causa de e.firma + prueba fresca + equipo vivo ⇒ causa e.firma');

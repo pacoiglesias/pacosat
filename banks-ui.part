@@ -42,6 +42,7 @@ function bancosScreen() {
     /* Tanda 6: el botón único protagonista y las vistas nuevas. */
     body.append(bancosAutoPanel200f(draw, data));
     body.append(bancosConciliacionPanel200f());
+    body.append(bancosSinRastroPanel201());
     body.append(bancosContrapartesPanel200f());
     if (!data.accounts.length) {
       const empty = panel('Tus cuentas', 'Da de alta la primera cuenta con un toque o con el formulario. Después sube el PDF de cada mes y PacoSAT lee los saldos.');
@@ -276,7 +277,7 @@ async function bancosSaldoVivo1310(box, account, panelEl) {
 const MESES200F = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const mesTexto200f = key => /^\d{4}-\d{2}$/.test(key || '') ? MESES200F[Number(key.slice(5, 7)) - 1] + ' de ' + key.slice(0, 4) : (key || '');
 function bancosAutoPanel200f(draw, data) {
-  const panelEl = panel('Subir estado de cuenta', 'Un solo botón: eliges el PDF (o lo capturas con la cámara) y PacoSAT detecta el banco, la cuenta y el periodo del propio documento, te lo enseña y, con tu toque, lo archiva en su cuenta, aplica los movimientos y corre la conciliación.');
+  const panelEl = panel('Subir estado de cuenta', 'Un solo botón: eliges el PDF (o lo capturas con la cámara) y PacoSAT detecta el banco, la cuenta y el periodo del propio documento, te lo enseña y, con tu toque, lo archiva en su cuenta, aplica los movimientos y corre la conciliación. En escritorio también puedes arrastrar el archivo sobre este panel o pegarlo.');
   const file = input('file', { accept: 'application/pdf,image/*' });
   file.setAttribute('capture', 'environment');
   file.hidden = true;
@@ -284,16 +285,84 @@ function bancosAutoPanel200f(draw, data) {
   btn.onclick = () => file.click();
   const box = n('div');
   panelEl.append(btn, file, box);
-  file.onchange = async () => {
-    if (!file.files?.[0]) return;
+  /* UN solo camino de entrada (2.0.1 · nº 25): el botón, el
+     arrastre y el pegado pasan por la MISMA lectura y la
+     MISMA tarjeta de confirmación (bancosAutoTarjeta200f).
+     Nada se archiva sin esa confirmación, venga de donde
+     venga el archivo. */
+  const procesarArchivo = async archivo => {
+    if (!archivo) return;
     box.replaceChildren(n('p', 'Leyendo el documento…', 'muted'));
     try {
-      const content = encode64(new Uint8Array(await file.files[0].arrayBuffer()));
+      const content = encode64(new Uint8Array(await archivo.arrayBuffer()));
       const r = await satApi('banks/detect', { content });
       bancosAutoTarjeta200f(box, content, r.deteccion, draw, data);
     } catch (error) { box.replaceChildren(n('p', 'No se pudo leer el documento: ' + error.message, 'error-text')); }
+  };
+  file.onchange = async () => {
+    if (!file.files?.[0]) return;
+    await procesarArchivo(file.files[0]);
     file.value = '';
   };
+  panelEl.addEventListener('dragover', event => { event.preventDefault(); });
+  panelEl.addEventListener('drop', event => {
+    event.preventDefault();
+    const archivo = event.dataTransfer?.files?.[0];
+    if (archivo) procesarArchivo(archivo);
+  });
+  if (typeof document !== 'undefined' && !window.__bancosPegar201) {
+    window.__bancosPegar201 = true;
+    document.addEventListener('paste', event => {
+      if (!panelEl.isConnected || typeof page === 'undefined' || page !== 'dinero' ||
+          typeof dineroTab === 'undefined' || dineroTab !== 'bancos') return;
+      if (document.querySelector('dialog[open]')) return;
+      const archivo = [...(event.clipboardData?.files || [])][0];
+      if (archivo) { event.preventDefault(); procesarArchivo(archivo); }
+    });
+  }
+  return panelEl;
+}
+/* ===== «Sin rastro» (2.0.1 · nº 30) =====
+   Las facturas del periodo sin movimiento que las respalde,
+   desde facturasSinPagoVisto de la conciliación del servidor.
+   SOLO LECTURA: una lista de revisión — no enlaza, no marca,
+   no toca el cálculo ni la conciliación; su único gesto es
+   abrir la factura para mirarla. */
+function bancosSinRastroPanel201() {
+  const panelEl = panel('Sin rastro', 'Facturas del periodo sin ningún movimiento que las respalde en sus cuentas. Solo revisión: esta lista no cambia la conciliación.');
+  const mes = input('month', { value: previousMonthKey() });
+  const out = n('div');
+  const cargar = n('button', 'Ver las facturas sin rastro', 'soft');
+  cargar.type = 'button';
+  cargar.onclick = async () => {
+    out.replaceChildren(n('p', 'Buscando facturas sin rastro…', 'muted'));
+    try {
+      const data = await satApi('banks/conciliacion?month=' + encodeURIComponent(mes.value));
+      out.replaceChildren();
+      let total = 0;
+      for (const vista of data.porCuenta || []) {
+        const sinRastro = vista.facturasSinPagoVisto || [];
+        if (!sinRastro.length) continue;
+        total += sinRastro.length;
+        out.append(n('h3', vista.account.banco + ' · ' + vista.account.nombre +
+          (vista.account.last4 ? ' ····' + vista.account.last4 : '')));
+        for (const inv of sinRastro) {
+          const row = n('div', undefined, 'cp-row');
+          row.append(statusPill('warn', 'Sin rastro'),
+            n('span', (typeof localDate === 'function' ? localDate(inv.date) : inv.date) + ' · ' + (inv.from?.name || inv.from?.rfc || '') + ' · $' + inv.total +
+              ' · ' + inv.uuid.slice(0, 8) + '…'));
+          const ver = n('button', 'Ver factura', 'soft small');
+          ver.type = 'button';
+          ver.onclick = () => { const target = invoices.find(r => r.id === inv.uuid); if (target) invoiceDetail(target); };
+          row.append(ver);
+          out.append(row);
+        }
+      }
+      if (!total) out.append(n('p', 'Sin facturas sin rastro en ' + mesTexto200f(mes.value) +
+        ': toda factura del periodo tiene su movimiento, o no hay facturas del periodo en las cuentas.', 'muted'));
+    } catch (error) { out.replaceChildren(n('p', 'No se pudo leer: ' + error.message, 'error-text')); }
+  };
+  panelEl.append(fieldWrap('Periodo', mes), cargar, out);
   return panelEl;
 }
 function bancosAutoTarjeta200f(box, content, det, draw, data) {
@@ -383,10 +452,43 @@ function bancosConciliacionPanel200f() {
   const out = n('div');
   const cargar = n('button', 'Ver la conciliación de este mes', 'soft');
   const mes = input('month', { value: previousMonthKey() });
+  /* Imprimir la conciliación tal cual se ve (2.0.1, auditoría
+     de salida): la vista de Bancos no tenía ningún «Imprimir»
+     visible. Este imprime las filas de la conciliación cargada
+     —cuenta, periodo, movimiento y su estado— por el ayudante
+     único imprimirVista201; si aún no se ha cargado, la carga
+     primero con el mismo cruce de siempre. */
+  let vista201 = null, vista201Mes = '';
+  const imprimir = n('button', 'Imprimir conciliación', 'soft');
+  imprimir.type = 'button';
+  imprimir.onclick = async () => {
+    if (!vista201 || vista201Mes !== mes.value) await cargar.onclick();
+    if (!vista201) return;
+    const filas = [];
+    for (const vista of vista201.porCuenta || []) {
+      const cuenta = vista.account.banco + ' · ' + vista.account.nombre +
+        (vista.account.last4 ? ' ····' + vista.account.last4 : '');
+      for (const inv of vista.facturasSinPagoVisto || [])
+        filas.push([cuenta, mes.value, (inv.date || '') + ' · ' + (inv.from?.name || inv.from?.rfc || '') +
+          ' · ' + String(inv.uuid || '').slice(0, 8) + '…', '$' + inv.total, 'Sin pago visto en esta cuenta']);
+      for (const pago of vista.pagosSinFactura || [])
+        filas.push([cuenta, mes.value, (pago.movement?.date || '') + ' · ' + (pago.movement?.concept || ''),
+          '$' + (pago.movement?.amount || ''), 'Pago sin factura']);
+      for (const link of vista.enlazados || [])
+        filas.push([cuenta, mes.value, (link.movement?.date || '') + ' · factura ' +
+          String(link.uuid || '').slice(0, 8) + '…', '$' + (link.movement?.amount || ''), 'Enlazado']);
+    }
+    if (typeof imprimirVista201 === 'function')
+      imprimirVista201('Conciliación de Bancos · ' + mes.value,
+        (vista201.regla || '') + ' ' + number.format(filas.length) + ' fila(s) tal cual se ven en pantalla.',
+        ['Cuenta', 'Periodo', 'Movimiento', 'Importe', 'Estado de conciliación'], filas);
+    else window.print();
+  };
   cargar.onclick = async () => {
     out.replaceChildren(n('p', 'Cruzando movimientos y facturas…', 'muted'));
     try {
       const data = await satApi('banks/conciliacion?month=' + encodeURIComponent(mes.value));
+      vista201 = data; vista201Mes = mes.value;
       out.replaceChildren();
       out.append(n('p', data.regla, 'muted'));
       for (const vista of data.porCuenta) {
@@ -465,7 +567,7 @@ function bancosConciliacionPanel200f() {
       }
     } catch (error) { out.replaceChildren(n('p', 'No se pudo cruzar: ' + error.message, 'error-text')); }
   };
-  panelEl.append(fieldWrap('Periodo', mes), cargar, out);
+  panelEl.append(fieldWrap('Periodo', mes), cargar, imprimir, out);
   return panelEl;
 }
 /* Pieza 5 · Contrapartes: totales reales por empresa, con su

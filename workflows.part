@@ -668,11 +668,18 @@ function invoiceDetail(row) {
         const data = await satApi('invoice-history?id=' + encodeURIComponent(row.id));
         for (const event of data.events || []) if (event.kind !== 'emission' && event.kind !== 'pdf') events.push(event);
         /* Tanda 7B (2): la línea de vida completa del servidor
-           (descubierto, avisos, notas, marcas, pagos, archivo). */
+           (descubierto, avisos, notas, marcas, pagos, archivo).
+           2.0.1 · nº 6: el hito «cancelada» se pinta como lo
+           que es — con su fecha y su documento (la consulta de
+           estado que la vio) — y los pasos que dejaron
+           documento (descargada → su solicitud; pagada → su
+           movimiento o su marca manual) llevan su enlace al
+           documento, no solo el texto. */
         const vida200h = await satApi('vida200h?uuid=' + encodeURIComponent(row.id)).catch(() => null);
         for (const hito of vida200h?.hitos || [])
           events.push({ at: hito.at ? new Date(hito.at).toISOString() : null,
-            label: 'Línea de vida · ' + hito.tipo, detail: hito.texto });
+            label: hito.tipo === 'cancelada' ? 'Cancelada' : 'Línea de vida · ' + hito.tipo,
+            detail: hito.texto, hito201: hito });
       } catch { /* sin servidor o sin historia remota: se muestra la local */ }
     }
     events.sort((a, b) => (a.at || '9999').localeCompare(b.at || '9999'));
@@ -680,6 +687,24 @@ function invoiceDetail(row) {
       const item = n('div', undefined, 'timeline-item');
       item.append(n('strong', event.label),
         n('small', (event.at ? localDateTime(Date.parse(event.at)) + ' · ' : '') + (event.detail || '')));
+      const hito = event.hito201;
+      if (hito?.documento) {
+        const destinoCrudo = hito.enlace ||
+          (hito.documento.tipo === 'solicitud-sat' ? 'sat'
+            : hito.documento.tipo === 'movimiento-banco' ? 'bancos' : '');
+        /* El enlace del hito de cancelación nombra la
+           vigilancia; su pantalla en el cliente es «monitor». */
+        const destino = destinoCrudo === 'vigilancia' ? 'monitor' : destinoCrudo;
+        if (destino) {
+          const ver = n('button', 'Ver el documento', 'soft small');
+          ver.type = 'button';
+          ver.onclick = () => {
+            if (destino === 'bancos') { dineroTab = 'bancos'; navigate('money'); }
+            else navigate(destino);
+          };
+          item.append(ver);
+        }
+      }
       return item;
     }));
   })();
@@ -1031,6 +1056,30 @@ $('primary').onclick = handle(async () => {
        en la propia pantalla de bajar del SAT. */
     if (typeof downloadSheet === 'function' && scope) { downloadSheet(scope); return; }
     showSatDownload(); return;
+  }
+  /* Las ex-pestañas del Centro SAT como vistas propias (2.0.1):
+     su primario despacha lo mismo que despachaba su pestaña. */
+  if (page === 'lists') { await satApi('lists/refresh', {}); await loadLists(); toast('Listados actualizados y cruzados con tu padrón.', 'ok'); return; }
+  if (page === 'monitor') { await pollMonitor(); return; }
+  if (page === 'coverage') { await pollSat(); render(); return; }
+  if (page === 'ejecutor') {
+    const exP = satData?.ejecutor;
+    if (exP?.emparejado) {
+      render();
+      announce(exP.enLinea ? 'Tu ejecutor está en línea en tu equipo.' :
+        'Tu equipo no responde' + (exP.ultimoVisto ? ' desde el ' + localDateTime(exP.ultimoVisto) : '') + ': abre el ejecutor en tu PC.');
+      return;
+    }
+    document.querySelector('.executor-pair')?.click(); return;
+  }
+  if (page === 'descargar') {
+    if (typeof downloadSheet === 'function' && scope) { downloadSheet(scope); return; }
+    showSatDownload(); return;
+  }
+  if (page === 'reportes') {
+    await ensureLazyPart('salidas');
+    if (typeof exportFull === 'function') { await exportFull(''); return; }
+    toast('La parte de reportes no se pudo cargar: inténtalo otra vez.', 'error'); return;
   }
   if (page === 'buzon') {
     /* «Marcar todo leído» (1.32.1, R1): la cabecera pulsa el

@@ -636,11 +636,11 @@ function problemSpec(source, info = {}) {
   if (source === 'descarga') {
     if (info.status === 'expired') return spec('gris', 'Una solicitud al SAT venció sin recogerse',
       'El SAT guardó el paquete un tiempo y lo borró antes de que se recogiera.',
-      'Pide el periodo de nuevo desde el Centro SAT: se solicita y se recoge solo.');
+      'Pide el periodo de nuevo desde «Descargar del SAT»: se solicita y se recoge solo.');
     if (info.status === 'rejected') return spec('ambar', 'El SAT rechazó una solicitud de descarga',
-      'El SAT no aceptó la solicitud de ese periodo.', 'Revisa el periodo pedido y vuelve a solicitarlo desde el Centro SAT.');
+      'El SAT no aceptó la solicitud de ese periodo.', 'Revisa el periodo pedido y vuelve a solicitarlo desde «Descargar del SAT».');
     return spec('ambar', 'Una solicitud de descarga falló en el SAT',
-      'El SAT no pudo preparar el paquete de ese periodo.', 'Vuelve a solicitarlo desde el Centro SAT; si se repite, espera unas horas.');
+      'El SAT no pudo preparar el paquete de ese periodo.', 'Vuelve a solicitarlo desde «Descargar del SAT»; si se repite, espera unas horas.');
   }
   if (source === 'revision') return spec('ambar', 'La revisión se detuvo a mitad',
     'El servicio local no respondió mientras se revisaban tus comprobantes. Lo ya revisado quedó guardado.',
@@ -736,6 +736,10 @@ function downloadShortcutRange(kind, today) {
   }
   if (kind === '7d') return { start: dlShift(today, -6), end: today };
   if (kind === '30d') return { start: dlShift(today, -29), end: today };
+  /* «Año en curso» (2.0.1 · nº 28): la plantilla del año — del
+     1 de enero a hoy. Es solo un rango: el despacho sigue el
+     flujo normal de la hoja, con su confirmación (nº 5). */
+  if (kind === 'anio') return { start: today.slice(0, 4) + '-01-01', end: today };
   return { start: today.slice(0, 8) + '01', end: today };
 }
 function dlFechaLarga(iso) {

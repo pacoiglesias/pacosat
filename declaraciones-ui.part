@@ -24,6 +24,119 @@
    periodo, o abrir sus documentos). */
 const DECL_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+/* ===== Grupo de Declaraciones del expediente vivo (2.0.1) =====
+   En Documentos, las declaraciones viven en su grupo, por
+   ejercicio y con sus meses — no mezcladas en la lista plana
+   (que las excluye cuando este grupo se pinta: cada documento,
+   una sola vez). La señal de FALTANTES sale SOLO del cruce del
+   servidor (cruce201, en la misma lectura): operaciones
+   conocidas contra acuses guardados. Un mes sin acuse NO es
+   un faltante por calendario: solo lo es si su operación
+   consta conocida y sin acuse. Si la lectura falla, el grupo
+   lo dice y no señala nada. */
+function declaracionesGrupo201() {
+  const wrap = panel('Declaraciones por ejercicio',
+    'Lo presentado, ejercicio por ejercicio. Si en el SAT constan operaciones que aquí no tienen acuse, la pantalla lo dice y las baja.');
+  const body = n('div');
+  body.append(n('p', 'Leyendo tus declaraciones…', 'muted'));
+  wrap.append(body);
+  const rfc = scope;
+  if (!rfc || typeof satToken === 'undefined' || !satToken) {
+    body.replaceChildren(n('p', 'Elige un contribuyente para ver sus declaraciones.', 'muted'));
+    return wrap;
+  }
+  const anioActual = new Date().getFullYear();
+  (async () => {
+    try {
+      const vistas = [];
+      for (const ejercicio of [anioActual, anioActual - 1]) {
+        const data = await satApi('declaraciones?rfc=' + encodeURIComponent(rfc) + '&ejercicio=' + ejercicio)
+          .catch(() => null);
+        if (data) vistas.push([ejercicio, data]);
+      }
+      if (!wrap.isConnected) return;
+      body.replaceChildren();
+      if (!vistas.length) {
+        body.append(n('p', 'No se pudieron leer las declaraciones de este RFC.', 'muted'));
+        return;
+      }
+      for (const [ejercicio, data] of vistas) {
+        const bloque = n('div', undefined, 'decl-grupo201');
+        bloque.append(n('h3', 'Ejercicio ' + ejercicio));
+        const meses = data?.mapa?.meses || [];
+        const conAcuse = meses.filter(m => m.estado === 'presentada');
+        bloque.append(n('p', conAcuse.length
+          ? 'Con acuse en tu expediente: ' + conAcuse.map(m => DECL_MESES[Number(m.periodo.slice(5, 7)) - 1]).join(', ') + '.'
+          : 'Sin acuses de este ejercicio en tu expediente todavía.', 'muted'));
+        /* Acuses del ejercicio, cada uno con sus acciones. */
+        const acuses = (data?.documentos || []).filter(d => d.clase === 'acuse');
+        for (const doc of acuses) {
+          const fila = n('div', undefined, 'cp-row');
+          const main = n('div', undefined, 'cp-main');
+          main.append(n('strong', doc.label || ('Acuse ' + (doc.periodo || ''))),
+            n('span', (doc.fechaPresentacion ? 'Presentada el ' + dateLabel(doc.fechaPresentacion) : '') +
+              (doc.operacion ? ' · operación ' + doc.operacion : ''), 'muted'));
+          fila.append(main);
+          const entrada = (documents || []).find(d => d.id === doc.fileId);
+          if (entrada) {
+            const acts = n('div', undefined, 'actions');
+            acts.append(action('Ver', () => viewDocOnline(entrada)),
+              action('Descargar', () => downloadDocOnline(entrada)),
+              action('Archivar', () => docArchivar1311(entrada)));
+            fila.append(acts);
+          }
+          bloque.append(fila);
+        }
+        /* Faltantes con fuente ÚNICA (2.0.1 · nº 3): el cruce
+           del servidor (cruce201 de la misma lectura) — las
+           operaciones conocidas (folios de la Consulta de
+           transacciones + documentos guardados, sin duplicar
+           por nº de operación) contra los acuses que constan
+           guardados. La señal sale de ESE cruce, no de contar
+           folios contra documentos en el cliente. El botón
+           despacha la recuperación de mensuales del ejercicio,
+           que es la que baja exactamente esos acuses. */
+        const cruce = data?.cruce201;
+        const faltan = cruce?.faltanAcuses || [];
+        if (cruce && faltan.length) {
+          const aviso = n('div', undefined, 'cp-row');
+          aviso.append(n('span', 'Ponte al día: de las ' + cruce.resumen.conocidas + ' operaciones conocidas de ' +
+            ejercicio + ', ' + cruce.resumen.conAcuse + ' tienen su acuse guardado y faltan ' + faltan.length +
+            ' por bajar (operaciones ' + faltan.map(f => f.operacion).join(', ') + ').'));
+          const bajar = n('button', 'Bajar los que faltan', 'primary small');
+          bajar.type = 'button';
+          bajar.onclick = () => {
+            /* Confirmación con pre-vuelo (nº 5 + nº 21) antes
+               de despachar la recuperación. */
+            if (typeof confirmarDespacho201 === 'function') {
+              confirmarDespacho201({
+                titulo: 'Bajar los acuses que faltan',
+                lineas: ['Se recuperarán del portal los ' + faltan.length + ' acuse(s) que faltan del ejercicio ' +
+                  ejercicio + ' de ' + rfc + ' (operaciones ' + faltan.map(f => f.operacion).join(', ') +
+                  ') y quedarán archivados en Documentos.'],
+                rfc, boton: 'Bajar los que faltan',
+                alConfirmar: () => {
+                  declEjercicio = ejercicio;
+                  declRun('mensuales', () => { if (page === 'docs') render(); }, bajar);
+                } });
+            } else {
+              declEjercicio = ejercicio;
+              declRun('mensuales', () => { if (page === 'docs') render(); }, bajar);
+            }
+          };
+          aviso.append(bajar);
+          bloque.append(aviso);
+        }
+        const verMapa = n('button', 'Ver el mapa del ejercicio', 'soft small');
+        verMapa.type = 'button';
+        verMapa.onclick = () => { declEjercicio = ejercicio; navigate('declaraciones'); };
+        bloque.append(verMapa);
+        body.append(bloque);
+      }
+    } catch { if (wrap.isConnected) body.replaceChildren(n('p', 'No se pudieron leer las declaraciones de este RFC.', 'muted')); }
+  })();
+  return wrap;
+}
 const DECL_MESES_MIN = DECL_MESES.map(nombre => nombre.toLowerCase());
 /* N11 (1.22.0): sin documento recuperado, el mapa ya no dice
    «Vencida» — dice la verdad de los registros: «Sin recuperar ·

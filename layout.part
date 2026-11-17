@@ -53,14 +53,22 @@
   <div class="brand"><span class="logo"><svg id="brand-mark"><use href="#i-logo"/></svg><img id="brand-logo" alt="" hidden src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></span><span><span id="brand-name">PacoSAT</span><small>ESPACIO DE TRABAJO</small></span></div>
   <button id="side-search" class="side-search" type="button" title="Buscador global (Ctrl+K)"><svg><use href="#i-search"/></svg> <span>Buscar en todo PacoSAT</span></button>
   <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button><div class="puerta-line"><span id="puerta-dot" class="puerta-dot" data-state="sin-dato" aria-hidden="true"></span><span id="puerta-txt">Puerta del SAT: sin probar todavía</span></div></div>
-  <!-- Menú por tarea (1.18.0): lo de cada día arriba —Hoy, Dinero,
-       Facturas, Documentos—, el trabajo en medio y lo técnico
-       agrupado como Sistema. Documentos tiene entrada propia y
-       visible; ningún destino lleva a otra pantalla disfrazado. -->
+  <!-- Menú corto y llano (2.0.1, orden directa de Paco): Hoy,
+       Facturas, Dinero, Documentos, Avisos, Reportes, Listas del
+       SAT, Salud, Ajustes. Listas del SAT enseña su resultado y su
+       fecha en la propia entrada (span lists-menu-estado201, lo
+       pinta lists-ui.part con el mismo resumen de la pantalla). -->
   <nav aria-label="Navegación principal">
     <span class="nav-caption">LA MAÑANA</span>
     <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span><span id="gestos-badge" class="news-badge gestos-badge" hidden></span></button>
+    <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
+    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
+    <button data-view="docs"><svg><use href="#i-folder"/></svg> Documentos</button>
     <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
+    <button data-view="reportes"><svg><use href="#i-print"/></svg> Reportes</button>
+    <button data-view="lists"><svg><use href="#i-shield"/></svg> Listas del SAT <span id="lists-menu-estado201" class="nav-estado201"></span></button>
+    <button data-view="salud"><svg><use href="#i-shield"/></svg> Salud</button>
+    <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
     <!-- Trabajos en curso (1.31.0): renglón SOLO visible cuando
          hay un trabajo vivo (lo pinta paintActivity en
          monitor-ui.part); su Cancelar aparece cuando hay
@@ -71,20 +79,11 @@
          Dinero contaban existencias, no pendientes): se quedan
          Hoy y Avisos, que cuentan lo que te necesita. -->
     <div id="nav-jobs" class="nav-jobs nav-jobs-vacio" aria-hidden="true"><button data-view="home" class="nav-jobs-main" tabindex="-1"><svg><use href="#i-sync"/></svg> Trabajos en curso <span id="nav-jobs-count" class="news-badge"></span></button><span id="nav-jobs-cancel"></span></div>
-    <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Recibidos <span class="nav-dot" data-nav-dot="buzon" hidden></span></button>
-    <span class="nav-caption nav-divider">EL DINERO</span>
-    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
-    <button data-view="pagos"><svg><use href="#i-bank"/></svg> Pagos al banco</button>
-    <button data-view="salidas"><svg><use href="#i-check"/></svg> Cierre y reportes</button>
-    <span class="nav-caption nav-divider">EL SAT Y LOS PAPELES</span>
-    <button data-view="sat"><svg><use href="#i-shield"/></svg> Centro SAT <span class="nav-dot" data-nav-dot="sat" hidden></span></button>
-    <button data-view="declaraciones"><svg><use href="#i-pdf"/></svg> Declaraciones</button>
-    <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
-    <button data-view="docs"><svg><use href="#i-folder"/></svg> Documentos</button>
-    <span class="nav-caption nav-divider">LA CASA</span>
-    <button data-view="registro"><svg><use href="#i-clock"/></svg> Registro</button>
-    <button data-view="archivo"><svg><use href="#i-box"/></svg> Archivo</button>
-    <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
+    <!-- Menú corto (2.0.1, orden directa de Paco): 9 destinos y
+         nada más. El resto de vistas sigue enrutado y cuelga de su
+         pantalla natural o de Salud: Recibidos y Declaraciones de
+         las tarjetas de Hoy; Pagos de Dinero; Cierre de Reportes;
+         Registro y Archivo de Salud. -->
   </nav>
   <button id="side-collapse" class="side-collapse" type="button" aria-label="Plegar la barra lateral"><svg><use href="#i-arrow"/></svg> <span>Plegar barra</span></button>
   <!-- Actividad del sistema en el propio menú (1.18.0): el punto y

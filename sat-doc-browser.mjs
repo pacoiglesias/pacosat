@@ -44,6 +44,10 @@ import { SatDocError, CSF_ENTRY_URL, OPINION_ENTRY_URL, isPdfBuffer, failure } f
              campos que la página deriva del certificado y
              verificación previa al envío),
            submitFiel(), divError(), clickText(texto),
+           clickTextSeguro(texto) y clickTextExactoVisible(texto)
+             (2.0.1: clics reales sobre elementos visibles; el
+             exacto es el primario del Buzón y nunca entra en
+             tablas),
            fielEmptyFields() -> [campo, ...] (opcional, 1.29.2:
              ids de los campos del formulario que quedaron vacíos,
              para nombrarlos en el portal-rechaza),
@@ -286,11 +290,21 @@ export async function satBrowserLogin(page, { cer, key, password, rfc, entryUrl,
   if (!fielOpened) {
     let lastUrl = '';
     try { lastUrl = page.url(); } catch { /* página en transición */ }
-    throw failure('respuesta-inesperada', 'El portal del SAT no mostró el acceso con e.firma que ' +
+    const sinAcceso = failure('respuesta-inesperada', 'El portal del SAT no mostró el acceso con e.firma que ' +
       'PacoSAT sabe usar ni recargando su entrada ni buscándolo por su texto' +
       (lastUrl ? ' (última pantalla: ' + lastUrl + ')' : '') +
       '. Nada de tu e.firma salió de este equipo; si el portal cambió su página, ' +
       'habrá que actualizar PacoSAT.');
+    /* Diagnóstico adjunto (2.0.1): el error de acceso viaja con
+       la foto y el HTML de la pantalla para que el diario la
+       guarde de verdad — las cadenas del ejecutor (diagDe) y
+       del servidor ya propagan error.diag si existe. Sin
+       diagnostics() en la doble de turno, el error sale solo. */
+    if (page && typeof page.diagnostics === 'function') {
+      const diag = await page.diagnostics().catch(() => null);
+      if (diag) sinAcceso.diag = diag;
+    }
+    throw sinAcceso;
   }
   /* Relleno 1.29.2: el driver carga el certificado, ESPERA a que
      la página derive sus campos (el RFC lo rellena ella desde el
@@ -307,12 +321,26 @@ export async function satBrowserLogin(page, { cer, key, password, rfc, entryUrl,
   const relleno = await page.fillFielForm({ cer, key, password, rfc, step });
   const faltan = Array.isArray(relleno?.faltan) ? relleno.faltan : [];
   if (faltan.length) {
-    throw failure('respuesta-inesperada', 'El acceso no se envió: ' +
+    const sinEnviar = failure('respuesta-inesperada', 'El acceso no se envió: ' +
       (faltan.length === 1
         ? 'el portal no rellenó el campo ' + faltan[0] + ' de su propio formulario'
         : 'el portal no rellenó los campos ' + faltan.join(', ') + ' de su propio formulario') +
-      ' y quedó vacío al ir a firmar. Nada se envió al SAT en esta corrida; la captura ' +
-      'y el HTML de la pantalla quedan en el diario para ajustar PacoSAT.');
+      ' y quedó vacío al ir a firmar ni reintentando el relleno. Nada se envió al SAT en esta ' +
+      'corrida; la captura y el HTML de la pantalla quedan en el diario para ajustar PacoSAT.');
+    /* Diagnóstico adjunto (2.0.1, evidencia e9c2a9de del
+       16 nov 2026): en esta ruta el texto de arriba PROMETÍA la
+       captura y el HTML en el diario y era falso — la corrida
+       quedó con hasShot=false/hasHtml=false porque nadie
+       adjuntaba la página al error. Ahora viaja error.diag y
+       la promesa es verdad: los motores conservan el diag que
+       ya trae el error (su catch solo rellena si falta) y el
+       ejecutor y el servidor lo propagan con diagDe y los
+       cierres de diario que ya existen. */
+    if (page && typeof page.diagnostics === 'function') {
+      const diag = await page.diagnostics().catch(() => null);
+      if (diag) sinEnviar.diag = diag;
+    }
+    throw sinEnviar;
   }
   try {
     await page.submitFiel();
@@ -598,7 +626,7 @@ const FIEL_FORM = {
   sondeoMs: 250
 };
 
-function sondaFielFormEnPagina() {
+function sondaFielFormEnPagina(rfcEsperado) {
   const inputs = Array.from(document.querySelectorAll('input, select, textarea'));
   const idDe = (el) => el.id ? '#' + el.id
     : (el.name ? '[name="' + el.name + '"]'
@@ -627,7 +655,20 @@ function sondaFielFormEnPagina() {
     espejoKeyVacio: textoKey ? vacio(textoKey) : null,
     rfc: rfcEl ? { id: idDe(rfcEl), vacio: vacio(rfcEl),
       editable: !rfcEl.readOnly && !rfcEl.disabled && !esArchivo(rfcEl) &&
-        String(rfcEl.type || 'text').toLowerCase() !== 'hidden' } : null,
+        String(rfcEl.type || 'text').toLowerCase() !== 'hidden',
+      /* Higiene DyP (2.0.1): el valor jamás sale de la página —
+         solo sale el BOLEANO de si coincide con el RFC del
+         perfil. En la puerta viva de Declaraciones el
+         navegador autocompletó el campo RFC con un nombre de
+         archivo .key: un campo «no vacío» pero equivocado no
+         es un campo válido, y la verificación campo a campo
+         de satBrowserLogin lo trata como faltante. Sin RFC
+         esperado (sondas sueltas), coincide queda null y no
+         se juzga nada. */
+      coincide: rfcEsperado
+        ? String(rfcEl.value).trim().toUpperCase() ===
+          String(rfcEsperado).trim().toUpperCase()
+        : null } : null,
     requeridosVacios
   };
 }
@@ -643,7 +684,7 @@ function fielFaltanDesde(estado, { conEspejos = false } = {}) {
   if (estado.certVacio) faltan.push(FIEL_FORM.cert);
   if (estado.keyVacio) faltan.push(FIEL_FORM.key);
   if (estado.passVacio) faltan.push(FIEL_FORM.password);
-  if (estado.rfc && estado.rfc.vacio) faltan.push(estado.rfc.id);
+  if (estado.rfc && (estado.rfc.vacio || estado.rfc.coincide === false)) faltan.push(estado.rfc.id);
   for (const id of estado.requeridosVacios || []) faltan.push(id);
   if (conEspejos) {
     if (estado.espejoCertVacio) faltan.push(FIEL_FORM.textoCert);
@@ -715,7 +756,8 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
     context.on('page', wirePage);
     /* Sonda del formulario de e.firma (bloque FIEL_FORM, arriba):
        null si la página está en transición y no se puede leer. */
-    const sondaFiel = async () => page.evaluate(sondaFielFormEnPagina).catch(() => null);
+    const sondaFiel = async (rfcEsperado) =>
+      page.evaluate(sondaFielFormEnPagina, rfcEsperado ?? null).catch(() => null);
     const wrapper = {
       async goto(url) { await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45_000 }); },
       url: () => page.url(),
@@ -764,24 +806,79 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         if (!legado1291) {
           const limite = Date.now() + Math.max(0,
             Number.isFinite(esperaDerivadosMs) ? esperaDerivadosMs : FIEL_FORM.esperaDerivadosMs);
-          let estado = await sondaFiel();
+          let estado = await sondaFiel(rfc);
           const rfcEstabaVacio = !!(estado && estado.rfc && estado.rfc.vacio);
-          const derivadosListos = (e) => !!e && (!e.rfc || !e.rfc.vacio) &&
+          /* El RFC está LISTO solo si tiene el valor del perfil:
+             vacío o con un valor equivocado (el autocompletado
+             con un nombre de archivo .key de la puerta viva de
+             DyP) son la misma falta a efectos de firmar. */
+          const rfcListo = (e) => !!e && !!e.rfc && !e.rfc.vacio && e.rfc.coincide !== false;
+          const derivadosListos = (e) => !!e && (!e.rfc || rfcListo(e)) &&
             !e.espejoCertVacio && !e.espejoKeyVacio &&
             !(e.requeridosVacios || []).length;
           while (!derivadosListos(estado) && Date.now() < limite) {
             await page.waitForTimeout(FIEL_FORM.sondeoMs);
-            estado = await sondaFiel();
+            estado = await sondaFiel(rfc);
           }
           if (estado && estado.rfc) {
-            if (!estado.rfc.vacio) {
+            if (rfcListo(estado)) {
               if (rfcEstabaVacio) avisa('el portal rellenó el RFC desde tu certificado');
-            } else if (estado.rfc.editable && rfc &&
-              (estado.rfc.id.startsWith('#') || estado.rfc.id.startsWith('[name='))) {
-              await page.locator(estado.rfc.id).first()
-                .fill(String(rfc), { timeout: 10_000 }).catch(() => {});
-              avisa('rellenando el RFC que el portal dejó vacío');
-              estado = await sondaFiel();
+            } else if (rfc && (estado.rfc.id.startsWith('#') || estado.rfc.id.startsWith('[name='))) {
+              /* Refuerzo del RFC (2.0.1, evidencia e9c2a9de del
+                 16 nov 2026): el relleno de la 1.29.2 era
+                 silencioso y sin verificar — si el .fill no
+                 prendía, el campo quedaba vacío y nadie lo
+                 sabía hasta el aborto —; y si el campo NO era
+                 editable (la página lo deriva con su JS al
+                 elegir el .cer y su JS no corrió), nadie podía
+                 rellenarlo y la derivación jamás se re-disparaba.
+                 Ahora: (a) editable → rellenar y VERIFICAR con
+                 una sonda nueva; si sigue vacío, fijarlo por
+                 evaluate (value + eventos input/change) y
+                 verificar otra vez; (b) NO editable → volver a
+                 adjuntar el certificado para RE-DISPARAR la
+                 derivación del portal y esperar una segunda
+                 ventana de derivados (8 s), verificando al
+                 salir. Solo si tras los reintentos sigue vacío
+                 manda la verificación final de abajo. */
+              const fijarRfcPorEvaluate = async () => {
+                await page.evaluate(([sel, valor]) => {
+                  const el = document.querySelector(sel);
+                  if (!el) return;
+                  el.value = valor;
+                  el.dispatchEvent(new Event('input', { bubbles: true }));
+                  el.dispatchEvent(new Event('change', { bubbles: true }));
+                }, [estado.rfc.id, String(rfc)]).catch(() => {});
+                avisa('fijando el RFC en el formulario del portal');
+                estado = await sondaFiel(rfc);
+              };
+              const rellenarRfcEditable = async () => {
+                await page.locator(estado.rfc.id).first()
+                  .fill(String(rfc), { timeout: 10_000 }).catch(() => {});
+                avisa('rellenando el RFC que el portal dejó vacío');
+                estado = await sondaFiel(rfc);
+                if (estado && estado.rfc && !rfcListo(estado)) await fijarRfcPorEvaluate();
+              };
+              if (estado.rfc.editable) {
+                await rellenarRfcEditable();
+              } else {
+                avisa('el portal no derivó el RFC y su campo no se puede escribir: vuelvo a adjuntar el certificado');
+                await page.locator(FIEL_FORM.cert).setInputFiles(
+                  { name: 'certificado.cer', mimeType: 'application/octet-stream', buffer: cer },
+                  { timeout: 30_000 }).catch(() => {});
+                const limite2 = Date.now() + 8_000;
+                while (Date.now() < limite2) {
+                  await page.waitForTimeout(FIEL_FORM.sondeoMs);
+                  estado = await sondaFiel(rfc);
+                  if (!estado || !estado.rfc || rfcListo(estado)) break;
+                }
+                if (rfcListo(estado)) {
+                  avisa('el portal rellenó el RFC desde tu certificado al volver a adjuntarlo');
+                } else if (estado && estado.rfc && estado.rfc.editable &&
+                  (estado.rfc.id.startsWith('#') || estado.rfc.id.startsWith('[name='))) {
+                  await rellenarRfcEditable();
+                }
+              }
             }
           }
         }
@@ -790,7 +887,7 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
           { timeout: 30_000 });
         await page.locator(FIEL_FORM.password).fill(password, { timeout: 15_000 });
         if (legado1291) return { faltan: [] };
-        const final = await sondaFiel();
+        const final = await sondaFiel(rfc);
         /* Sin sonda legible no se bloquea el envío (manda el
            comportamiento de siempre); con sonda, lo que falte se
            devuelve y el envío NO se produce. */
@@ -905,6 +1002,81 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         }
         return false;
       },
+      /* Clic SEGURO (2.0.1): como clickText pero sin ceguera —
+         el clickText de siempre devuelve true si el elemento
+         EXISTE (count>0) aunque el clic falle o el elemento sea
+         invisible, y esa ceguera mató páginas enteras de la
+         tanda del 16 nov 2026 (un clic sobre el elemento
+         equivocado navegó la página principal a /app/seg/null).
+         Aquí solo cuenta un clic REAL sobre un elemento
+         VISIBLE: si el clic no se produce, se prueba el
+         siguiente candidato y al final se devuelve false. Los
+         pasillos endurecidos (Declaraciones) comprueban además
+         la página tras cada clic. */
+      async clickTextSeguro(text) {
+        for (const frame of page.frames()) {
+          const porEtiqueta = frame.locator(
+            'a, button, [role="link"], [role="button"]').filter({ hasText: text });
+          const candidatos = [];
+          const nEtiqueta = await porEtiqueta.count().catch(() => 0);
+          for (let i = 0; i < nEtiqueta; i++) candidatos.push(porEtiqueta.nth(i));
+          if (!candidatos.length) {
+            const porTexto = frame.getByText(text, { exact: false });
+            const nTexto = await porTexto.count().catch(() => 0);
+            for (let i = 0; i < nTexto; i++) candidatos.push(porTexto.nth(i));
+          }
+          for (const el of candidatos) {
+            if (!(await el.isVisible().catch(() => false))) continue;
+            try {
+              await el.click({ timeout: 8_000 });
+              await page.waitForTimeout(800);
+              return true;
+            } catch { /* candidato inservible: se prueba el siguiente */ }
+          }
+        }
+        return false;
+      },
+      /* Clic EXACTO y VISIBLE (2.0.1, primario del Buzón): el
+         elemento clicable (a, button, [role="link"],
+         [role="button"], li, span o div — en ese orden de
+         preferencia) cuyo texto normalizado sea EXACTAMENTE el
+         pedido, visible y FUERA de cualquier tabla (dentro de
+         la bandeja viven las notificaciones: jamás se clica
+         nada ahí). Es un CLIC de verdad, no un goto al href:
+         en la portada real del Buzón el elemento «Mis
+         notificaciones» es un ancla gobernada por el JS de la
+         app del portal (su href no es una URL seguible) y solo
+         el clic deja que ese JS enrute a la bandeja. Devuelve
+         true solo si el clic se produjo. */
+      async clickTextExactoVisible(text) {
+        const objetivo = String(text || '').toLowerCase()
+          .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+        if (!objetivo) return false;
+        const normaliza = (valor) => String(valor || '').toLowerCase()
+          .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+        for (const frame of page.frames()) {
+          for (const sel of ['a, button, [role="link"], [role="button"]', 'li', 'span', 'div']) {
+            const loc = frame.locator(sel);
+            const n = await loc.count().catch(() => 0);
+            for (let i = 0; i < n; i++) {
+              const el = loc.nth(i);
+              if (!(await el.isVisible().catch(() => false))) continue;
+              const dentroTabla = await el.evaluate(
+                e => Boolean(e.closest && e.closest('table'))).catch(() => false);
+              if (dentroTabla) continue;
+              const txt = await el.evaluate(
+                e => String(e.innerText || e.textContent || '')).catch(() => '');
+              if (normaliza(txt) !== objetivo) continue;
+              try {
+                await el.click({ timeout: 8_000 });
+                await page.waitForTimeout(800);
+                return true;
+              } catch { /* candidato inservible: se prueba el siguiente */ }
+            }
+          }
+        }
+        return false;
+      },
       async waitForPdf(ms) {
         const end = Date.now() + Math.max(0, ms);
         while (Date.now() < end) {
@@ -1004,6 +1176,79 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         }, [kind, index]).catch(() => false);
         if (!clicked) throw new Error('La fila no ofreció la descarga pedida (' + kind + ').');
         await page.waitForTimeout(500);
+      },
+      /* Filas de la consulta «De la declaración» del portal
+         NUEVO de pagos provisionales (pstcdypisr, mapa vivo del
+         16 nov 2026): la tabla se reconoce por sus cabeceras
+         (fecha / tipo / periodo / operación / ejercicio) y cada
+         fila trae su enlace «Generar PDF», que ES el acuse de
+         esa fila. Se recorren los marcos como en transacciones()
+         y cada fila lleva pdfIndex: la posición de su enlace
+         entre TODOS los «Generar PDF» de la página, en el mismo
+         orden en que clickPortalPdf los cuenta. La lectura es
+         genérica y honesta: sin tabla reconocible, la lista
+         vuelve vacía y el motor lo declara. */
+      async portalNuevoResults() {
+        const rows = [];
+        let desplazamiento = 0;
+        for (const frame of page.frames()) {
+          const found = await frame.evaluate(() => {
+            const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+              .toLowerCase().replace(/\s+/g, ' ').trim();
+            const esPdf = el => norm(el.textContent) === 'generar pdf';
+            const anchors = [...document.querySelectorAll('a, button')].filter(esPdf);
+            const filas = [];
+            for (const table of document.querySelectorAll('table')) {
+              const trs = [...table.querySelectorAll('tr')];
+              if (!trs.length) continue;
+              const head = [...trs[0].querySelectorAll('th, td')].map(td => norm(td.textContent));
+              const idx = { fecha: head.findIndex(h => /fecha/.test(h)),
+                tipo: head.findIndex(h => /tipo/.test(h)),
+                periodo: head.findIndex(h => /periodo/.test(h)),
+                operacion: head.findIndex(h => /operacion/.test(h)),
+                ejercicio: head.findIndex(h => /ejercicio/.test(h)) };
+              if (idx.operacion < 0 && idx.fecha < 0 && idx.periodo < 0) continue;
+              for (const tr of trs.slice(1)) {
+                const tds = [...tr.querySelectorAll('td')];
+                if (!tds.length) continue;
+                const pdf = [...tr.querySelectorAll('a, button')].find(esPdf);
+                if (!pdf) continue;
+                const get = i => (i >= 0 && tds[i])
+                  ? (tds[i].textContent || '').replace(/\s+/g, ' ').trim() : '';
+                filas.push({ operacion: get(idx.operacion), fecha: get(idx.fecha),
+                  tipo: get(idx.tipo), periodo: get(idx.periodo),
+                  ejercicio: get(idx.ejercicio), pdfIndex: anchors.indexOf(pdf) });
+              }
+            }
+            return { filas, totalPdf: anchors.length };
+          }).catch(() => null);
+          if (!found) continue;
+          for (const fila of found.filas) rows.push({ ...fila, pdfIndex: fila.pdfIndex + desplazamiento });
+          desplazamiento += found.totalPdf || 0;
+        }
+        return rows;
+      },
+      /* Clic sobre el «Generar PDF» número index de la página
+         (el mismo conteo que portalNuevoResults): el acuse de
+         la fila llega como descarga o como respuesta del
+         navegador y lo recoge waitForPdf, como en las demás
+         descargas del portal. */
+      async clickPortalPdf(index) {
+        let restante = Math.max(0, Number(index) || 0);
+        for (const frame of page.frames()) {
+          const hecho = await frame.evaluate((i) => {
+            const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+              .toLowerCase().replace(/\s+/g, ' ').trim();
+            const anchors = [...document.querySelectorAll('a, button')]
+              .filter(el => norm(el.textContent) === 'generar pdf');
+            if (i >= anchors.length) return anchors.length;
+            anchors[i].click();
+            return -1;
+          }, restante).catch(() => 0);
+          if (hecho === -1) { await page.waitForTimeout(500); return true; }
+          restante -= (typeof hecho === 'number' && hecho > 0) ? hecho : 0;
+        }
+        throw new Error('La fila no ofreció su «Generar PDF».');
       },
       /* ===== Primitivas del portal de consulta por CIEC (1.12.0) =====
          El contrato de campos es el documentado para portalcfdi:

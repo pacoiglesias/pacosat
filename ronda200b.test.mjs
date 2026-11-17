@@ -220,11 +220,24 @@ const TERCERO = 'XEXX010101000';
   assert.ok(!textoHoy.includes('Últimos comprobantes'), 'M5: últimos comprobantes viven en Facturas');
   const ids = bloques.map(b => b.dataset?.bloque200b).filter(Boolean);
   assert.equal(new Set(ids).size, ids.length, 'M5: cada bloque marcado aparece UNA vez (' + ids.join(',') + ')');
-  assert.ok(ids.includes('acciones'), 'O1: la franja de acciones del día está en Hoy');
-  assert.ok(ids.includes('salud-linea'), 'M5: la salud queda como UNA línea-resumen con enlace');
-  assert.ok(textoHoy.includes('Descargar este mes'), 'O1: «Descargar este mes» en la franja (hoja a 1 toque más)');
+  /* RE-BASE 2.0.1 (limpieza visible, orden directa de Paco del
+     16 nov): la estructura de Hoy de la 2.0 — franja de botones
+     «Acciones del día» (bloque200b 'acciones') y línea-resumen
+     de salud ('salud-linea') — queda sustituida por el mando
+     único corto: una línea de estado por pieza con su fecha,
+     «Lo que te necesita» y las 4 acciones grandes que HACEN la
+     cosa desde Hoy. La salud sale de Hoy: es entrada propia
+     del menú. Lo que esta aserción fija desde la 2.0.1 es la
+     composición nueva, no la vieja. */
+  assert.ok(textoHoy.includes('Puerta del SAT') && textoHoy.includes('Última descarga'),
+    '2.0.1: Hoy abre con el estado de las piezas, cada uno con su fecha');
+  assert.ok(textoHoy.includes('Lo que te necesita'), '2.0.1: los gestos se llaman «Lo que te necesita»');
+  for (const titulo of ['Descargar facturas', 'Buzón Tributario', 'Declaraciones', 'Documentos'])
+    assert.ok(textoHoy.includes(titulo), '2.0.1: la acción grande «' + titulo + '» está en Hoy');
+  assert.ok(!textoHoy.includes('Salud del sistema y respaldo'), '2.0.1: la línea de salud salió de Hoy (Salud es menú propio)');
+  assert.ok(textoHoy.includes('Descargar este mes'), 'O1: «Descargar este mes» en la tarjeta grande (hoja a 1 toque más)');
   assert.ok(html.includes("downloadSheet(scope, { start: rango.start, end: rango.end })"),
-    'O1: la franja abre la hoja con el periodo del mes precargado');
+    'O1: la tarjeta abre la hoja con el periodo del mes precargado');
   /* Las novedades viven en Ajustes › Acerca de. */
   const acerca = vm.runInContext('capacidadesScreen()', context);
   const textoAcerca = acerca.map(textoDe).join(' ');

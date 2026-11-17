@@ -316,6 +316,13 @@ class DeclFakePage1270 {
   async selectSelector(selector, value) { this.selects[selector] = value; }
   async clickSelector() {}
   async declResults() { return this.rows; }
+  /* El contrato del portal nuevo (2.0.1): las filas de «De la
+     declaración» y el clic sobre su «Generar PDF» (el acuse). */
+  async portalNuevoResults() { return this.rows; }
+  async clickPortalPdf(index) {
+    this.armedPdf = this.pdfsByKey['acuse:' + index] || null;
+    if (!this.armedPdf) throw new Error('sin descarga');
+  }
   async transacciones() { return this.transaccionesFilas; }
   async clickDeclDownload(kind, index) {
     this.armedPdf = this.pdfsByKey[kind + ':' + index] || null;
@@ -329,20 +336,28 @@ class DeclFakePage1270 {
 const driverOf = page => async () => ({ newPage: async () => page, close: async () => {} });
 const pdfOf = label => Buffer.concat([Buffer.from('%PDF-1.4 ' + label + '\n'), Buffer.alloc(1024, 0x2e), Buffer.from('\n%%EOF')]);
 {
-  /* El portal aterriza en el Buzón (sin el enlace en la
-     portada, como la corrida viva del 11 nov): el motor entra
-     por el marco del trámite y baja igual. */
+  /* RE-BASIFICADO en la 2.0.1 (mapa vivo completo del 16 nov
+     2026): el viaje clásico por el marco del trámite
+     (SessionBroker) quedó RETIRADO — la consulta clásica del
+     PTSC es un callejón sin salida («sin resultados» en todo
+     lo probado) —. El viaje vigente de declaraciones-recuperar:
+     plataforma clásica → salto al portal nuevo por su menú →
+     «Consultas» → «De la declaración» → consulta por ejercicio
+     → el acuse de cada fila por «Generar PDF». La lección B1
+     se mantiene intacta: la URL del marco jamás se navega
+     como página (el pasillo nuevo ni la consulta). */
   const page = new DeclFakePage1270({
     marco: 'https://wwwmat.sat.gob.mx/applications/sessionbroker/SessionBroker?llave=prueba',
-    rows: [{ operacion: 'OP-100', fecha: '2026-10-17', tipo: 'Provisional', periodo: '2026-09', acuse: true, declaracion: true }],
-    pdfsByKey: { 'declaracion:0': pdfOf('decl-sep'), 'acuse:0': pdfOf('acuse-sep') } });
+    links: ['Nuevo portal de pagos provisionales', 'Consultas', 'De la declaración'],
+    rows: [{ operacion: '262620100100', fecha: '17/10/2026', tipo: 'Normal', periodo: '2026-09', pdfIndex: 0 }],
+    pdfsByKey: { 'acuse:0': pdfOf('acuse-sep') } });
   const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
   const result = await fetchDecl({ rfc: 'MFI6212158B4' }, { tipo: 'mensual', ejercicio: 2026 });
-  assert.equal(result.documents.length, 2, 'por el marco del trámite la bajada llega');
-  /* Re-baseline 1.32.1 (B1): la URL del marco ya NO se visita
-     como página — el enlace se encuentra dentro del marco. */
+  assert.equal(result.documents.length, 1, 'por el portal nuevo baja el acuse de la fila');
+  assert.equal(result.documents[0].clase, 'acuse', 'el documento es el acuse («Generar PDF» de la fila)');
+  assert.equal(result.documents[0].operacion, '262620100100');
   assert.ok(!page.visitas.some(u => u.includes('sessionbroker')), 'la URL del marco no se navega como página (B1)');
-  console.log('OK 1.27.0 · C2b — aterrizaje en el Buzón: el motor entra por el marco del trámite (SessionBroker).');
+  console.log('OK 1.27.0 · C2b — declaraciones-recuperar por el portal nuevo (2.0.1): menú, consulta por ejercicio y acuse de la fila.');
 }
 {
   /* La consulta de transacciones por el motor entero. */
@@ -358,8 +373,12 @@ const pdfOf = label => Buffer.concat([Buffer.from('%PDF-1.4 ' + label + '\n'), B
   console.log('OK 1.27.0 · C2 — la Consulta de transacciones devuelve las operaciones interpretadas.');
 }
 {
-  /* Sin trámite ni marco: el error trae la página guardada. */
+  /* Sin trámite ni marco: el error trae la página guardada.
+     (2.0.1: con las direcciones directas del pasillo nuevo,
+     «no hay acceso» se modela como la consulta ilegible — sin
+     lector de filas —: el error es el mismo y trae su página.) */
   const page = new DeclFakePage1270({ links: [] });
+  page.portalNuevoResults = null;
   const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
   const error = await fetchDecl({ rfc: 'MFI6212158B4' }, { tipo: 'mensual', ejercicio: 2026 }).then(() => null, e => e);
   assert.ok(error instanceof SatDocError);

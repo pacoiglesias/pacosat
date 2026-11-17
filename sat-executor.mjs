@@ -333,7 +333,13 @@ export function validateBuzonResult(result = {}) {
     .map(row => ({ fecha: String(row?.fecha || '').slice(0, 40), asunto: redactExecutorText(String(row?.asunto || '').slice(0, 300)),
       remitente: redactExecutorText(String(row?.remitente || '').slice(0, 200)), estado: String(row?.estado || '').slice(0, 80),
       abierta: Boolean(row?.abierta) }));
-  return { notifications,
+  /* Conteo de comunicados sin leer (2.0.1): el motor lo lee de los
+     encabezados de grupo de «Mis comunicados», sin abrir ninguno;
+     viaja como número saneado o null si no consta. */
+  const comunicadosNoLeidos = result.comunicadosNoLeidos === null || result.comunicadosNoLeidos === undefined ||
+    !Number.isFinite(Number(result.comunicadosNoLeidos)) ? null :
+    Math.max(0, Math.floor(Number(result.comunicadosNoLeidos)));
+  return { notifications, comunicadosNoLeidos,
     counts: { total: notifications.length, sinAbrir: notifications.filter(row => !row.abierta).length } };
 }
 
@@ -444,6 +450,7 @@ export function validateExecutorResult(job = {}, result = {}) {
     const buzon = validateBuzonResult(result);
     out.notifications = buzon.notifications;
     out.counts = buzon.counts;
+    out.comunicadosNoLeidos = buzon.comunicadosNoLeidos;
   }
   if (job.kind === 'puerta-probar') {
     /* La puerta solo declara «abre» y la operación de entrar:

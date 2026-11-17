@@ -380,6 +380,151 @@ export function pickBuzonNotificadosLink(links) {
   return null;
 }
 
+/* ¿Una captura de diagnóstico ES la página muerta del portal?
+   (2.0.1): su URL es la ruta degenerada /app/seg/null o su HTML
+   es la 404 genérica estática del SAT («Página no encontrada»,
+   156 B en producción, la misma en todas las corridas muertas
+   del 16 nov 2026). */
+export function buzonDiagEsMuerto(diag) {
+  if (!diag) return false;
+  if (/\/app\/seg\/null/.test(String(diag.url || ''))) return true;
+  return typeof diag.html === 'string' && /Página no encontrada/i.test(diag.html);
+}
+/* ¿La página ACTUAL es la página muerta del portal? Por su URL
+   (/app/seg/null), por su diagnóstico o por su texto visible,
+   con guardas: una doble sin diagnostics()/text() no clasifica
+   nada que su URL no diga. */
+async function buzonPaginaMuerta(page) {
+  try {
+    let url = '';
+    if (page && typeof page.url === 'function') {
+      try { url = String(page.url() || ''); } catch { /* página en transición */ }
+    }
+    if (url && /\/app\/seg\/null/.test(url)) return { muerta: true, url };
+    if (page && typeof page.diagnostics === 'function') {
+      const d = await page.diagnostics().catch(() => null);
+      if (d) {
+        const du = String(d.url || '');
+        if (/\/app\/seg\/null/.test(du)) return { muerta: true, url: du || url };
+        if (typeof d.html === 'string' && /Página no encontrada/i.test(d.html))
+          return { muerta: true, url: du || url };
+        if (du) url = du;
+      }
+    }
+    if (page && typeof page.text === 'function') {
+      const t = await page.text().catch(() => '');
+      if (typeof t === 'string' && /Página no encontrada/i.test(t)) return { muerta: true, url };
+    }
+  } catch { /* la detección nunca tumba la corrida */ }
+  return { muerta: false, url: '' };
+}
+function buzonFallaRutaMuerta(url) {
+  return failure('ruta-muerta',
+    'El portal devolvió «Página no encontrada» en la dirección ' + (url || '(sin dirección legible)') +
+    ': esa ruta del portal ya no responde. La página desde la que se navegó (la de decisión) y la ' +
+    'final quedan guardadas en el diario de la corrida. No se abrió ninguna notificación.');
+}
+
+/* ================================================================
+   MAPA REAL DEL PORTAL (levantado en sesión viva el 16 nov 2026,
+   15:35–15:48, con la e.firma de Paco en su Chrome — sustituye
+   al mapa inferido de artefactos):
+   - Tras el acceso, el aterrizaje es https://wwwmat.sat.gob.mx/buzon
+     («BUZÓN TRIBUTARIO») con el cuerpo principal EN BLANCO: la
+     navegación vive en la CABECERA (botón «Mis expedientes» que
+     despliega «Mis documentos», «Mis notificaciones», «Mis
+     comunicados»; también «Servicios Disponibles» y «Cerrar
+     sesión»). Por eso el buscador viejo no encontraba destino:
+     buscaba en una portada vacía y el inventario de enlaces que
+     leía venía de la cabecera/nav.
+   - «Mis notificaciones» = /iniciar-expediente/mis-notificaciones/
+     (BUZON_ENTRY_URL): su contenido vive en un IFRAME central
+     que tarda ~30 s en cargar. Dentro: «Destinatario: <RFC>»,
+     «Total de notificaciones pendientes: N» y la tabla de
+     columnas EXACTAS de abajo. Vacía = «No se encontraron
+     resultados» (Mano Fil: 0 pendientes ese día).
+   - «Mis comunicados» = /iniciar-expediente/mis-comunicados/,
+     también en iframe, con grupos «Mensajes no leídos (n)» y
+     «Mensajes leídos (n)»: solo se leen los CONTEOS, jamás se
+     abre un mensaje.
+   - «Mis documentos»: su iframe a veces no carga (queda gris,
+     «Se ha restablecido la conexión»): es flakiness del portal
+     → portal-caido con reintento, NUNCA ruta-muerta. Esta
+     corrida no visita «Mis documentos»; si el aviso de
+     reconexión aparece en la bandeja, se clasifica igual.
+   ================================================================ */
+export const BUZON_COMUNICADOS_URL = 'https://wwwmat.sat.gob.mx/iniciar-expediente/mis-comunicados/';
+
+/* La firma de la bandeja REAL en el texto completo (página +
+   marcos del mismo origen): sin ella, la bandeja no se da por
+   cargada — el iframe puede tardar ~30 s y su ausencia a los
+   pocos segundos no es un fracaso. */
+export function buzonFirmaReal(text) {
+  const t = norm(text);
+  return /destinatario\s*:/.test(t) ||
+    /total de notificaciones pendientes/.test(t) ||
+    /no se encontraron resultados/.test(t);
+}
+/* Bandeja VACÍA probada: la firma está presente Y la página
+   dice que no hay nada (el texto de vacío o el total a cero).
+   Es un éxito con 0 filas, distinguible de «no cargó». */
+export function buzonBandejaVacia(text) {
+  const t = norm(text);
+  if (!buzonFirmaReal(text)) return false;
+  return /no se encontraron resultados/.test(t) ||
+    /total de notificaciones pendientes\s*:\s*0\b/.test(t);
+}
+/* Extractor de la tabla REAL de pendientes (mapa vivo): fecha
+   ← «Fecha de aviso»; asunto ← «Acto administrativo»;
+   remitente ← «Autoridad emisora»; y la fila lleva su «Folio
+   del acto administrativo» (campo folio). Esta lista ES la de
+   pendientes: estado «Pendiente» y abierta=false en cada fila.
+   Lectura pura del DOM ya cargado: los enlaces de las columnas
+   Aviso/Documento jamás se siguen ni se clican. Devuelve null
+   si ninguna tabla trae las columnas reales (manda entonces
+   el extractor clásico de respaldo). */
+export function extractBuzonRowsReales(tables) {
+  for (const table of Array.isArray(tables) ? tables : []) {
+    const headers = (table?.headers || []).map(norm);
+    if (!headers.length) continue;
+    const ci = {
+      folio: headers.findIndex(h => /folio del acto/.test(h) || h === 'folio'),
+      autoridad: headers.findIndex(h => /autoridad emisora/.test(h)),
+      /* «Folio del acto administrativo» también contiene «acto
+         administrativo»: el asunto es la columna cuyo encabezado
+         es EXACTAMENTE ese o no menciona el folio. */
+      acto: headers.findIndex(h => h === 'acto administrativo' ||
+        (/acto administrativo/.test(h) && !/folio/.test(h))),
+      fecha: headers.findIndex(h => /fecha de aviso/.test(h))
+    };
+    if (ci.acto < 0 || ci.fecha < 0 || ci.autoridad < 0) continue;
+    const rows = [];
+    for (const cells of table.rows || []) {
+      const get = i => i >= 0 ? String(cells?.[i] || '').replace(/\s+/g, ' ').trim() : '';
+      const asunto = get(ci.acto);
+      if (!asunto) continue;
+      const m = fechaRe.exec(get(ci.fecha));
+      const fecha = m ? (m[1] ? `${m[3]}-${m[2]}-${m[1]}` : `${m[4]}-${m[5]}-${m[6]}`) : '';
+      rows.push({ fecha, asunto: asunto.slice(0, 300),
+        remitente: get(ci.autoridad).slice(0, 160),
+        estado: 'Pendiente', abierta: false, folio: get(ci.folio).slice(0, 80) });
+      if (rows.length >= BUZON_MAX_NOTIFICATIONS) break;
+    }
+    return rows;
+  }
+  return null;
+}
+/* Los conteos de «Mis comunicados» desde sus encabezados de
+   grupo («Mensajes no leídos (n)» / «Mensajes leídos (n)»):
+   SOLO conteos — ningún mensaje se abre ni se lee. */
+export function buzonConteosComunicados(text) {
+  const t = norm(text);
+  const no = /mensajes no leidos\s*\((\d+)\)/.exec(t);
+  const si = /mensajes leidos\s*\((\d+)\)/.exec(t);
+  if (!no && !si) return null;
+  return { noLeidos: no ? Number(no[1]) : 0, leidos: si ? Number(si[1]) : 0 };
+}
+
 const sleepMs = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /* Espera de estabilidad de la página (1.29.2): tras el acceso
@@ -406,7 +551,8 @@ async function esperaPaginaEstable(leerTexto, { plazoMs = 8000, intervaloMs = 40
    corridas (una sesión de portal cada vez) y acepta el diario
    por corrida en el tercer argumento { onStep }. */
 export function createSatTribFetch({ resolveCredentials, launchDriver,
-  entryUrl = BUZON_ENTRY_URL, loginUrl = BUZON_LOGIN_URL } = {}) {
+  entryUrl = BUZON_ENTRY_URL, loginUrl = BUZON_LOGIN_URL,
+  esperaBandejaMs = 60_000, comunicadosUrl = BUZON_COMUNICADOS_URL } = {}) {
   let chain = Promise.resolve();
   const run = async (profile, _query, options = {}) => {
     const step = typeof options?.onStep === 'function' ? options.onStep : null;
@@ -457,6 +603,22 @@ export function createSatTribFetch({ resolveCredentials, launchDriver,
         hooks: { step: text => notifyStep(step, 'Acceso: ' + text) } });
       notifyStep(step, 'Acceso al portal OK', '');
       }
+      /* Entrada con sesión MUERTA (2.0.1): si la página
+         reutilizada de la tanda ya está en la URL muerta
+         (/app/seg/null — la corrida anterior la dejó en la 404
+         y la siguiente paseaba por ella inventariando una
+         página de error), la corrida falla RÁPIDO con su paso
+         claro para que el ejecutor descarte la sesión y
+         reintente con un acceso fresco, sin clicar ni navegar
+         nada sobre la página muerta. */
+      if (paginaViva) {
+        const muertaReutilizada = await buzonPaginaMuerta(page);
+        if (muertaReutilizada.muerta) {
+          notifyStep(step, 'la sesión reutilizada quedó en la página muerta del portal; se descarta',
+            muertaReutilizada.url || '');
+          throw buzonFallaRutaMuerta(muertaReutilizada.url);
+        }
+      }
       /* El texto de la página ENTERA (principal + marcos del
          mismo origen): las dobles de prueba sin evaluate caen
          al text() de siempre. */
@@ -476,103 +638,142 @@ export function createSatTribFetch({ resolveCredentials, launchDriver,
         if (!page || typeof page.diagnostics !== 'function') return;
         try {
           const diag = await page.diagnostics();
-          if (diag) diagDecision = diag;
+          if (!diag) return;
+          /* Sin envenenar (2.0.1): en producción la primera
+             captura — sobre una página reutilizada ya muerta —
+             envenenaba todas las demás y los artefactos «de
+             decisión» salieron byte-idénticos a los finales
+             (la misma 404). Regla de las dos orillas: si la
+             guardada es la página muerta y la actual NO lo es,
+             la actual la REEMPLAZA; y jamás se guarda como
+             decisión una página muerta si ya hay una viva. */
+          if (!diagDecision) { diagDecision = diag; return; }
+          if (buzonDiagEsMuerto(diagDecision) && !buzonDiagEsMuerto(diag)) { diagDecision = diag; return; }
+          if (!buzonDiagEsMuerto(diagDecision) && buzonDiagEsMuerto(diag)) return;
+          if (!buzonDiagEsMuerto(diag)) diagDecision = diag;
         } catch { /* el diagnóstico nunca tumba la corrida */ }
       };
       /* Hasta la bandeja SIN tocar ninguna notificación
-         (rehecho 1.29.2 con la página REAL post-acceso, guardada
-         por el diario y confirmada por el diagnóstico del NAS
-         del 12 nov a las 21:05): tras el «Acceso OK» el portal
-         aterriza en su portada «Portal de trámites y servicios»
-         — SIN lista alguna —, con los enlaces de régimen que
-         llevan a /iniciar-expediente/mis-notificaciones/ y un
-         iframe lanzador. La bandeja NO está en la portada: se
-         llega siguiendo SU enlace. Orden: (1) esperar a que la
-         portada se estabilice; (2) si ya es la bandeja, leer;
-         (3) si no, probar los candidatos del inventario de la
-         PROPIA portada por puntuación (buzonRescueCandidates,
-         con las exclusiones duras de H-2.1 y dedupe por href),
-         hasta tres destinos distintos; (4) de repliegue, la
-         ruta directa mis-notificaciones y sus propios
-         candidatos. «Ser la bandeja» se acepta por el texto O
-         por una tabla de notificaciones reconocible — la ruta
-         confirmada manda sobre la plantilla del titular —. Si
-         nada lleva, el error lleva el INVENTARIO de textos de
-         enlace de la última página inventariada.
-         PASO PRIMARIO (1.31.0, evidencia viva del 13 nov 2026):
-         la portada NUEVA ya no es la de trámites y servicios:
-         tras el acceso el portal aterriza en la PROPIA portada
-         del Buzón, cuyos enlaces son «Buzón Tributario de Mano
-         Fil · Mis documentos · Mis notificaciones · Mis
-         comunicados · Servicios Disponibles · Cerrar sesión ·
-         Buzón Tributario de MFI6212158B4». La bandeja se alcanza
-         por «Mis notificaciones»: si en la portada hay un enlace
-         de etiqueta EXACTA con ese texto que pase las
-         exclusiones duras (buzonLinkSafeParts, sin relajar
-         ninguna), se navega a su href ANTES que al rescate por
-         puntuación — la puntuación y la ruta directa quedan
-         como rescate y último recurso, no como camino. */
+         (RECONSTRUCCIÓN contra el MAPA REAL, 2.0.1): tras el
+         acceso el portal aterriza en /buzon con el cuerpo en
+         blanco y la navegación en la cabecera; la bandeja vive
+         en /iniciar-expediente/mis-notificaciones/ dentro de un
+         iframe central que tarda ~30 s. Orden del pasillo:
+         (1) si la firma de la bandeja ya está en el texto
+         completo (página + marcos), leer; (2) dirección DIRECTA
+         de Mis notificaciones + espera larga del iframe
+         (esperarBandeja, hasta esperaBandejaMs — 60 s por
+         defecto — con el paso «Esperando la bandeja del
+         portal…»); (3) el CLIC de la cabecera (desplegable
+         «Mis expedientes» → «Mis notificaciones») si la directa
+         no llevó; (4) el rescate por puntuación de la 1.29.2
+         como último recurso, con sus exclusiones duras
+         intactas. Si la página queda muerta en cualquier salto,
+         se clasifica ruta-muerta nombrando la URL, sin seguir
+         probando a ciegas. Si nada lleva, el error lleva el
+         INVENTARIO de textos de enlace de la última página
+         inventariada. */
       await esperaPaginaEstable(leerTexto);
       await capturarDiagDecision();
+      const esperaMs = Number.isFinite(Number(options?.esperaBandejaMs))
+        ? Number(options.esperaBandejaMs) : esperaBandejaMs;
       const tablasReconocibles = async () => {
         if (typeof page.evaluate !== 'function') return false;
         const tablas = await page.evaluate(readTablesSource).catch(() => null);
-        return tablas ? extractBuzonRows(tablas, false) !== null : false;
+        return tablas ? (extractBuzonRowsReales(tablas) !== null ||
+          extractBuzonRows(tablas, false) !== null) : false;
       };
-      const esBandeja = async () => buzonBandejaVisible(await leerTexto()) || await tablasReconocibles();
-      /* En la PORTADA solo manda el texto: la página real no
-         trae ninguna lista, y no se lee ninguna tabla de la
-         página de aterrizaje — las tablas solo acreditan la
-         bandeja tras navegar a un candidato o a la ruta. */
-      let enBandeja = buzonBandejaVisible(await leerTexto());
+      /* En la página de ATERRIZAJE solo manda el texto (la real
+         no trae ninguna lista; una tabla leída ahí no acredita
+         la bandeja): firma real o titular clásico. */
+      const esBandejaTexto = async () => {
+        const texto = await leerTexto();
+        return buzonBandejaVisible(texto) || buzonFirmaReal(texto);
+      };
+      const esBandeja = async () => await esBandejaTexto() || await tablasReconocibles();
+      /* La espera del iframe de la bandeja: sondea la firma en
+         TODOS los marcos (leerTexto ya compone página + marcos
+         del mismo origen) hasta el plazo, con su paso de
+         progreso. Sale antes si la página muere (la
+         clasificación ruta-muerta la hace el llamador) o si la
+         URL no es la de la bandeja pasados unos segundos (ahí
+         no va a cargar ningún iframe de bandeja: manda la
+         siguiente vía del pasillo). */
+      const esperarBandeja = async (plazoMs) => {
+        const limite = Date.now() + Math.max(0, plazoMs);
+        const inicio = Date.now();
+        let avisado = 0;
+        for (;;) {
+          const texto = await leerTexto();
+          if (buzonBandejaVisible(texto) || buzonFirmaReal(texto) || await tablasReconocibles())
+            return 'bandeja';
+          let urlActual = '';
+          try { urlActual = typeof page.url === 'function' ? String(page.url() || '') : ''; } catch { /* en transición */ }
+          if (/\/app\/seg\/null/.test(urlActual) || /página no encontrada/i.test(texto))
+            return 'muerta:' + urlActual;
+          const ahora = Date.now();
+          if (ahora >= limite) return 'plazo';
+          if (!/mis-notificaciones/.test(urlActual) && ahora - inicio >= 3000) return 'fuera-de-ruta';
+          if (!avisado || ahora - avisado >= 10000) {
+            notifyStep(step, 'Esperando la bandeja del portal…', 'su contenido vive en un marco central que puede tardar en cargar');
+            avisado = ahora;
+          }
+          await sleepMs(400);
+        }
+      };
+      const probarCandidatos = async (links, tope, aterrizaje) => {
+        for (const target of buzonRescueCandidates(links).slice(0, tope)) {
+          if (!target?.href) continue;
+          /* La página cuyos enlaces se acaban de inventariar es
+             la que manda en la foto de decisión: se refresca
+             ANTES de seguir cada candidato. */
+          await capturarDiagDecision();
+          await page.goto(target.href).catch(() => {});
+          await esperaPaginaEstable(leerTexto);
+          if (await esBandeja()) return true;
+          if (aterrizaje && typeof page.url === 'function' && page.url() !== aterrizaje) {
+            await page.goto(aterrizaje).catch(() => {});
+            await esperaPaginaEstable(leerTexto);
+          }
+        }
+        return false;
+      };
+      let enBandeja = await esBandejaTexto();
       let ultimosLinks = [];
       if (!enBandeja) {
-        notifyStep(step, 'Busco la bandeja', 'sigo el enlace de notificaciones de la propia portada, sin abrir ninguna');
-        const aterrizaje = typeof page.url === 'function' ? page.url() : '';
-        const probarCandidatos = async (links, tope) => {
-          for (const target of buzonRescueCandidates(links).slice(0, tope)) {
-            if (!target?.href) continue;
-            /* La página cuyos enlaces se acaban de inventariar
-               es la que manda en la foto de decisión: se
-               refresca ANTES de seguir cada candidato, no
-               después de aterrizar en su destino. */
+        notifyStep(step, 'Busco la bandeja', 'voy a la dirección directa de «Mis notificaciones», sin abrir ninguna');
+        /* (2) Dirección directa + espera larga del iframe. Si
+           la página ya está en esa dirección (la sesión viva
+           aterrizó ahí), no se vuelve a navegar: se espera. */
+        if (entryUrl && typeof page.goto === 'function') {
+          const yaEnRuta = typeof page.url === 'function' && page.url() === entryUrl;
+          if (!yaEnRuta) {
             await capturarDiagDecision();
-            await page.goto(target.href).catch(() => {});
-            await esperaPaginaEstable(leerTexto);
-            if (await esBandeja()) return true;
-            if (aterrizaje && typeof page.url === 'function' && page.url() !== aterrizaje) {
-              await page.goto(aterrizaje).catch(() => {});
-              await esperaPaginaEstable(leerTexto);
-            }
+            await page.goto(entryUrl).catch(() => {});
           }
-          return false;
-        };
-        ultimosLinks = await page.evaluate(readLinksSource).catch(() => []);
-        /* Paso PRIMARIO (1.31.0): etiqueta exacta «Mis
-           notificaciones» + exclusiones duras intactas. Ni un
-           enlace dentro de tabla ni uno con pinta de detalle
-           puede ser este: buzonLinkSafeParts devuelve null
-           para ambos y aquí no se sigue. */
-        const enlaceMisNotificaciones = (Array.isArray(ultimosLinks) ? ultimosLinks : [])
-          .find(link => norm(link?.text || '') === 'mis notificaciones' && buzonLinkSafeParts(link));
-        if (enlaceMisNotificaciones?.href) {
-          notifyStep(step, 'Sigo «Mis notificaciones»', 'enlace exacto de la portada del Buzón: voy a su bandeja sin abrir ninguna notificación');
-          await capturarDiagDecision();
-          await page.goto(enlaceMisNotificaciones.href).catch(() => {});
-          await esperaPaginaEstable(leerTexto);
-          enBandeja = await esBandeja();
+          const espera = await esperarBandeja(esperaMs);
+          if (espera === 'bandeja') enBandeja = true;
+          else if (espera.startsWith('muerta:')) throw buzonFallaRutaMuerta(espera.slice('muerta:'.length));
         }
-        if (!enBandeja) enBandeja = await probarCandidatos(ultimosLinks, 3);
-        if (!enBandeja && entryUrl && typeof page.goto === 'function' &&
-          (typeof page.url !== 'function' || page.url() !== entryUrl)) {
-          await page.goto(entryUrl).catch(() => {});
-          await esperaPaginaEstable(leerTexto);
-          enBandeja = await esBandeja();
-          if (!enBandeja) {
-            const linksRuta = await page.evaluate(readLinksSource).catch(() => []);
-            if (linksRuta.length) ultimosLinks = linksRuta;
-            enBandeja = await probarCandidatos(linksRuta, 2);
+        /* (3) El clic de la cabecera: desplegable «Mis
+           expedientes» → «Mis notificaciones» (clic real sobre
+           el elemento exacto y visible, fuera de tablas). */
+        if (!enBandeja && typeof page.clickTextExactoVisible === 'function') {
+          await capturarDiagDecision();
+          await page.clickTextExactoVisible('Mis expedientes').catch(() => false);
+          const clic = await page.clickTextExactoVisible('Mis notificaciones').catch(() => false);
+          if (clic) {
+            notifyStep(step, 'Sigo «Mis notificaciones»', 'clic real en la cabecera del Buzón (desplegable «Mis expedientes»): su propio JS enruta a la bandeja, sin abrir ninguna notificación');
+            const espera = await esperarBandeja(Math.min(esperaMs, 20_000));
+            if (espera === 'bandeja') enBandeja = true;
+            else if (espera.startsWith('muerta:')) throw buzonFallaRutaMuerta(espera.slice('muerta:'.length));
           }
+        }
+        /* (4) Rescate por puntuación (legado, último recurso). */
+        if (!enBandeja) {
+          ultimosLinks = await page.evaluate(readLinksSource).catch(() => []);
+          const aterrizaje = typeof page.url === 'function' ? page.url() : '';
+          enBandeja = await probarCandidatos(ultimosLinks, 3, aterrizaje);
         }
         if (!enBandeja) {
           const inventario = buzonInventarioTextos(ultimosLinks);
@@ -585,50 +786,99 @@ export function createSatTribFetch({ resolveCredentials, launchDriver,
         }
       }
       notifyStep(step, 'Bandeja a la vista', 'leo las listas sin abrir ninguna notificación');
-      /* Bandeja de aterrizaje = «Pendientes» según el mapa:
-         todo lo que enseña está sin abrir. */
       const claveDe = row => [row.fecha || '', norm(row.asunto), norm(row.remitente)].join('|');
       const vistas = new Map();
       const tablasEntrada = await page.evaluate(readTablesSource);
-      const pendientes = extractBuzonRows(tablasEntrada, false);
-      if (!pendientes)
-        throw failure('respuesta-inesperada', 'La bandeja no enseñó una tabla de notificaciones reconocible ' +
-          '(fecha, asunto y estado): no se lista nada antes que arriesgar una apertura.');
-      for (const row of pendientes) vistas.set(claveDe(row), row);
-      notifyStep(step, 'Bandeja «Pendientes» leída', pendientes.length + ' sin abrir');
-      /* Segunda bandeja: «Notificados» (ya abiertas). Se llega
-         por su enlace visible — navegación entre listas, nunca
-         un clic sobre una notificación — elegido con las
-         exclusiones del rescate (pickBuzonNotificadosLink,
-         H-4.1): fuera enlaces dentro de tabla y destinos con
-         pinta de detalle, aunque su texto nombre la bandeja.
-         Y lo que no case con la plantilla no tumba la corrida:
-         queda lo ya leído. */
-      try {
-        const links = await page.evaluate(readLinksSource);
-        const notificados = pickBuzonNotificadosLink(links);
-        if (notificados?.href) {
-          await page.goto(notificados.href);
-          const tablasNotif = await page.evaluate(readTablesSource);
-          const abiertas = extractBuzonRows(tablasNotif, true);
-          if (abiertas) {
-            let nuevas = 0;
-            for (const row of abiertas) {
-              if (!vistas.has(claveDe(row))) { vistas.set(claveDe(row), row); nuevas += 1; }
-            }
-            notifyStep(step, 'Bandeja «Notificados» leída', abiertas.length + ' abiertas (' + nuevas + ' nuevas en la lista)');
-          } else {
-            notifyStep(step, 'Bandeja «Notificados» sin tabla reconocible', 'se conserva lo leído en «Pendientes»');
-          }
-        } else {
-          notifyStep(step, 'Sin enlace visible a «Notificados»', 'se lista la bandeja de aterrizaje');
+      const textoEntrada = await leerTexto();
+      const reales = extractBuzonRowsReales(tablasEntrada);
+      let plantillaReal = false;
+      if (reales || buzonBandejaVacia(textoEntrada)) {
+        /* Plantilla REAL (mapa vivo): la lista es la de
+           pendientes — cada fila sin abrir, con su folio — y
+           la bandeja vacía probada es un éxito con 0 filas. */
+        plantillaReal = true;
+        const filas = reales || [];
+        for (const row of filas) vistas.set(claveDe(row), row);
+        notifyStep(step, 'Bandeja «Pendientes» leída', filas.length + ' sin abrir');
+      } else {
+        const pendientes = extractBuzonRows(tablasEntrada, false);
+        if (!pendientes) {
+          /* El aviso de reconexión del portal (el iframe gris
+             del mapa vivo): flakiness del SAT → portal-caido
+             con reintento, jamás ruta-muerta. */
+          if (/se ha restablecido la conexion/.test(norm(textoEntrada)))
+            throw failure('portal-caido', 'El portal enseñó su aviso de reconexión («Se ha restablecido la conexión») ' +
+              'y la bandeja no cargó: es inestabilidad del SAT, no una ruta muerta. Inténtalo de nuevo en unos ' +
+              'minutos. No se abrió ninguna notificación.');
+          throw failure('respuesta-inesperada', 'La bandeja no enseñó una tabla de notificaciones reconocible ' +
+            '(fecha, asunto y estado): no se lista nada antes que arriesgar una apertura.');
         }
-      } catch (error) {
-        notifyStep(step, 'La segunda bandeja no se pudo leer', String(error?.message || error).slice(0, 140) + ' — se conserva lo leído en «Pendientes»');
+        for (const row of pendientes) vistas.set(claveDe(row), row);
+        notifyStep(step, 'Bandeja «Pendientes» leída', pendientes.length + ' sin abrir');
+        /* Segunda bandeja clásica: «Notificados» (ya abiertas)
+           — solo la trae la plantilla clásica; la real no: su
+           segundo tramo es «Mis comunicados». Se llega por su
+           enlace visible con las exclusiones del rescate
+           (pickBuzonNotificadosLink, H-4.1); lo que no case no
+           tumba la corrida: queda lo ya leído. */
+        try {
+          const links = await page.evaluate(readLinksSource);
+          const notificados = pickBuzonNotificadosLink(links);
+          if (notificados?.href) {
+            await page.goto(notificados.href);
+            const tablasNotif = await page.evaluate(readTablesSource);
+            const abiertas = extractBuzonRows(tablasNotif, true);
+            if (abiertas) {
+              let nuevas = 0;
+              for (const row of abiertas) {
+                if (!vistas.has(claveDe(row))) { vistas.set(claveDe(row), row); nuevas += 1; }
+              }
+              notifyStep(step, 'Bandeja «Notificados» leída', abiertas.length + ' abiertas (' + nuevas + ' nuevas en la lista)');
+            } else {
+              notifyStep(step, 'Bandeja «Notificados» sin tabla reconocible', 'se conserva lo leído en «Pendientes»');
+            }
+          } else {
+            notifyStep(step, 'Sin enlace visible a «Notificados»', 'se lista la bandeja de aterrizaje');
+          }
+        } catch (error) {
+          notifyStep(step, 'La segunda bandeja no se pudo leer', String(error?.message || error).slice(0, 140) + ' — se conserva lo leído en «Pendientes»');
+        }
+      }
+      /* «Mis comunicados» (solo en la plantilla real): se leen
+         los CONTEOS de sus grupos sin abrir ningún mensaje. Si
+         este tramo falla, la corrida NO falla: queda su aviso
+         en el diario y el conteo viaja como null. El campo
+         comunicadosNoLeidos se emite siempre en esta plantilla
+         (si el protocolo del ejecutor o del servidor lo pela
+         al integrar, el motor ya lo entrega). */
+      let comunicadosNoLeidos = null;
+      if (plantillaReal && comunicadosUrl && typeof page.goto === 'function') {
+        try {
+          await capturarDiagDecision();
+          await page.goto(comunicadosUrl).catch(() => {});
+          const limiteCom = Date.now() + Math.min(esperaMs, 15_000);
+          let conteos = null;
+          for (;;) {
+            conteos = buzonConteosComunicados(await leerTexto());
+            if (conteos) break;
+            let urlCom = '';
+            try { urlCom = typeof page.url === 'function' ? String(page.url() || '') : ''; } catch { /* en transición */ }
+            if (/\/app\/seg\/null/.test(urlCom) || Date.now() >= limiteCom) break;
+            await sleepMs(400);
+          }
+          if (conteos) {
+            comunicadosNoLeidos = conteos.noLeidos;
+            notifyStep(step, 'Comunicados leídos', conteos.noLeidos + ' sin leer · ' + conteos.leidos + ' leídos (solo los conteos: no se abrió ningún mensaje)');
+          } else {
+            notifyStep(step, 'Comunicados sin conteo legible', 'la corrida sigue con las notificaciones ya leídas');
+          }
+        } catch {
+          notifyStep(step, 'Comunicados sin conteo legible', 'la corrida sigue con las notificaciones ya leídas');
+        }
       }
       const rows = [...vistas.values()].slice(0, BUZON_MAX_NOTIFICATIONS);
-      notifyStep(step, 'Lista leída', rows.length + ' notificación(es) entre las dos bandejas');
-      return { notifications: rows };
+      notifyStep(step, 'Lista leída', rows.length + ' notificación(es) en la bandeja de pendientes');
+      return { notifications: rows, comunicadosNoLeidos };
     } catch (error) {
       /* Diario con la página guardada (1.27.0, bloque C): el
          error viaja con la foto y el HTML del momento — la

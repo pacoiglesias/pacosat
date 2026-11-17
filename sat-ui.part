@@ -189,7 +189,7 @@ function vigil200(ahora = Date.now()) {
   const causa = causaP200(puerta, ejV, ahora);
   const mal = (nivel, pata, detalle) => ({ nivel, titulo: '⚠ Vigilando con un problema: ' + pata, detalle });
   if (causa.tipo === 'efirma') return mal('bad', 'la puerta del SAT',
-    'La puerta no abre con la e.firma de este RFC: revísala en el Centro SAT.');
+    'La puerta no abre con la e.firma de este RFC: revísala en Descargar del SAT.');
   if (causa.tipo === 'equipo') return mal('warn', 'tu equipo no responde',
     'Sin señal desde el ' + localDateTime(ejV.ultimoVisto) +
       ': las consultas esperan a que abras el ejecutor.');
@@ -1188,7 +1188,7 @@ function downloadSheet(rfc, preset = {}) {
   const status = n('div', '', 'dl-status');
   const refreshSummary = () => { summary.textContent = downloadSummaryText(person?.name || '', chosenRfc, direction.value, start.value, end.value); };
   const chips = n('div', undefined, 'actions');
-  for (const [kind, label] of [['mes', 'Este mes hasta hoy'], ['mes-pasado', 'Mes pasado completo'], ['7d', 'Últimos 7 días'], ['30d', 'Últimos 30 días']]) {
+  for (const [kind, label] of [['mes', 'Este mes hasta hoy'], ['mes-pasado', 'Mes pasado completo'], ['anio', 'Año en curso'], ['7d', 'Últimos 7 días'], ['30d', 'Últimos 30 días']]) {
     const chip = action(label, () => {
       const range = downloadShortcutRange(kind, today);
       start.value = range.start; end.value = range.end; refreshSummary();
@@ -1220,8 +1220,47 @@ function downloadSheet(rfc, preset = {}) {
   const buttons = n('div', undefined, 'actions'); buttons.append(send, cancel);
   form.append(fieldWrap('Atajos de un toque', chips), fieldWrap('Desde', start), fieldWrap('Hasta', end),
     fieldWrap('Comprobantes', direction), summary, status, buttons);
-  form.onsubmit = async event => {
+  form.onsubmit = event => {
     event.preventDefault();
+    /* Confirmación ANTES de despachar (2.0.1 · nº 5 + nº 21):
+       el resumen de lo que se pedirá (RFC, ventana, tipo y
+       sentido, con el texto de siempre de la hoja) y el estado
+       de la puerta con su último éxito real. «Cancelar» no
+       envía nada: no se gasta ningún criterio del SAT. */
+    status.replaceChildren();
+    /* El resumen (RFC, ventana, tipo y sentido) ya lo enseña
+       la propia hoja en su línea de resumen, justo encima:
+       aquí no se repite — la confirmación añade el pre-vuelo
+       de la puerta y los dos botones. */
+    status.append(n('p', 'Confirma antes de pedir: si la ventana o el sentido no son los que querías, cancela y corrígelos — no se gastará ningún criterio.', 'strong-line'));
+    const pv = typeof puertaTexto201 === 'function' ? puertaTexto201(chosenRfc) : null;
+    if (pv) status.append(n('p', pv.texto, pv.ok ? 'muted' : 'error-text'));
+    const filaConf = n('div', undefined, 'actions');
+    if (pv && !pv.ok) {
+      const probar = n('button', 'Probar la puerta ahora', 'soft');
+      probar.type = 'button';
+      probar.onclick = async () => {
+        probar.disabled = true;
+        try {
+          const r = await satApi('salud/puerta', { rfc: chosenRfc });
+          toast(r.encolado ? 'Prueba de la puerta pedida: tu equipo la corre al recogerla.'
+            : (r.motivo || 'La prueba no se encoló.'), r.encolado ? 'ok' : 'error');
+        } catch (error) { toast(error.message, 'error'); }
+        probar.disabled = false;
+      };
+      filaConf.append(probar);
+    }
+    const confirmar = n('button', 'Confirmar y pedir al SAT', 'primary');
+    confirmar.type = 'button';
+    confirmar.onclick = () => { status.replaceChildren(); despachar(); };
+    const cancelarConf = n('button', 'Cancelar', 'soft');
+    cancelarConf.type = 'button';
+    cancelarConf.onclick = () => status.replaceChildren(
+      n('p', 'Solicitud no enviada: la cancelaste en la confirmación. No se gastó ningún criterio.'));
+    filaConf.append(confirmar, cancelarConf);
+    status.append(filaConf);
+  };
+  const despachar = async () => {
     send.disabled = true; send.textContent = 'Pidiendo al SAT…';
     status.replaceChildren(n('p', 'Enviando la solicitud al SAT…', 'muted'));
     const payload = { rfc: chosenRfc, direction: direction.value, start: start.value, end: end.value, type: 'cfdi' };

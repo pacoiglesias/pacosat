@@ -23,13 +23,112 @@ const listStatePill = source => {
 };
 async function loadLists() {
   LISTS_VIEW.data = await satApi('lists');
+  /* Listas es vista propia con entrada de menú (2.0.1): al
+     cargar, repinta su pantalla si es la visible y deja su
+     resultado y su fecha en la entrada del menú, para que se
+     vean sin entrar. */
+  const menuTxt = document.getElementById('lists-menu-estado201');
+  if (menuTxt) menuTxt.textContent = listsResumen201(LISTS_VIEW.data).corto;
   if (page === 'lists') render();
   return LISTS_VIEW.data;
+}
+/* ===== Resumen claro de Listas (2.0.1) =====
+   La vista abre con la foto de un vistazo: por cada RFC propio,
+   limpio o señalado (y en qué listado), y la fecha de la última
+   comprobación. Esa fecha NO la guarda el cruce por RFC: sale
+   de `fetched`, la descarga más reciente de los listados
+   cargados — la pantalla lo dice en llano junto a la fecha, sin
+   presentarla como otra cosa. Sin ninguna descarga, la vista
+   dice «Todavía no se ha comprobado» y ofrece el gesto. La
+   misma lectura alimenta la línea de Listas en Salud. */
+function listsResumen201(data) {
+  const sources = data?.sources || [];
+  const cargadas = sources.filter(source => source.fetched);
+  const ultima = cargadas.length ? Math.max(...cargadas.map(source => Number(source.fetched) || 0)) : null;
+  const senaladas = (data?.counterparts || []).filter(cp => (cp.hits || []).length);
+  const propios = (data?.counterparts || []).filter(cp => cp.source === 'perfil' || cp.kind === 'Propio');
+  /* Texto llano del resultado con su fecha, para la línea de
+     Hoy y la entrada del menú (2.0.1): el mismo resumen, dicho
+     corto, sin otra fuente que esta. */
+  const texto = !ultima ? 'todavía no se ha comprobado'
+    : (senaladas.length ? senaladas.length + ' contraparte(s) señalada(s)' : 'sin contrapartes señaladas') +
+      ' · última comprobación el ' + localDateTime(ultima);
+  const corto = !ultima ? 'sin comprobar'
+    : (senaladas.length ? senaladas.length + ' señalada(s)' : 'limpio') + ' · ' + localDate(ultima);
+  return { sources, cargadas, ultima, senaladas, propios, texto, corto,
+    etiquetasCargadas: cargadas.map(source => source.label) };
+}
+/* Comprobar ahora: la actualización de siempre (lists/refresh,
+   que cruza TODOS los listados con el padrón), esperando a que
+   el progreso del servidor termine antes de repintar — el mismo
+   patrón de sondeo de las tarjetas de cada listado. */
+async function listsComprobarAhora201(boton) {
+  const texto = boton ? boton.textContent : '';
+  if (boton) { boton.disabled = true; boton.textContent = 'Comprobando…'; }
+  try {
+    await satApi('lists/refresh', {});
+    for (let i = 0; i < 200; i++) {
+      await new Promise(resolve => setTimeout(resolve, 1200));
+      const progress = await satApi('lists/progress').catch(() => null);
+      if (!progress || !progress.running) break;
+    }
+    await loadLists();
+    toast('Listados actualizados y cruzados con tu padrón.', 'ok');
+  } catch (error) {
+    toast(error.message, 'error');
+    if (boton && boton.isConnected) { boton.disabled = false; boton.textContent = texto; }
+  }
+}
+function listsResumenPanel201(data) {
+  const resumen = listsResumen201(data);
+  const panelEl = panel('Tus listas de un vistazo',
+    'Quién está limpio y quién señalado, y cuándo se comprobó por última vez. El detalle de cada listado y de cada contraparte sigue abajo, como siempre.');
+  const actualizar = n('button', 'Actualizar listados', 'primary');
+  actualizar.type = 'button';
+  actualizar.onclick = () => listsComprobarAhora201(actualizar);
+  if (!resumen.ultima) {
+    panelEl.append(n('p', 'Todavía no se ha comprobado: ningún listado consta descargado, así que aún no hay cruce con tu padrón.', 'empty'));
+    const fila = n('div', undefined, 'actions');
+    fila.append(actualizar);
+    panelEl.append(fila);
+    return panelEl;
+  }
+  const grave = resumen.senaladas.some(cp => cp.severity === 'bad');
+  const strip = n('div', undefined, 'traffic-strip');
+  strip.append(statusPill(resumen.senaladas.length ? (grave ? 'bad' : 'warn') : 'ok',
+      resumen.senaladas.length ? resumen.senaladas.length + ' contraparte(s) señalada(s)' : 'Sin contrapartes señaladas'),
+    statusPill('dim', 'Última comprobación: ' + localDateTime(resumen.ultima) +
+      ' · ' + resumen.cargadas.length + ' de ' + resumen.sources.length + ' listados cargados'));
+  panelEl.append(strip);
+  for (const cp of resumen.propios) {
+    const hits = cp.hits || [];
+    const row = n('div', undefined, 'cp-row');
+    const listados = hits.length ? [...new Set(hits.map(hit => hit.label))].join(' · ') : '';
+    row.append(n('strong', (cp.name || cp.rfc) + ' · ' + cp.rfc),
+      n('span', (hits.length ? 'Señalado en: ' + listados :
+          'Comprobado contra los ' + resumen.cargadas.length + ' listados cargados') +
+        ' · Última comprobación: ' + localDateTime(resumen.ultima), 'muted'),
+      statusPill(hits.length ? (cp.severity === 'bad' ? 'bad' : 'warn') : 'ok',
+        hits.length ? 'Señalado' : 'Limpio'));
+    panelEl.append(row);
+  }
+  if (!resumen.propios.length)
+    panelEl.append(n('p', 'En el padrón: ' + resumen.senaladas.length + ' de ' + (data.counterparts || []).length +
+      ' contrapartes aparecen en algún listado. Tus RFC propios aún no constan en el padrón: se agregan solos al darlos de alta.', 'today-line'));
+  panelEl.append(n('p', 'La fecha de la última comprobación es la descarga más reciente de los listados cargados: ' +
+    'el cruce no guarda una fecha propia por RFC. La fecha de cada listado está en su tarjeta, justo abajo.', 'muted'));
+  const fila = n('div', undefined, 'actions');
+  fila.append(actualizar);
+  panelEl.append(fila);
+  return panelEl;
 }
 function listsScreen() {
   if (!LISTS_VIEW.data) { loadLists(); return [panel('Listas negras', 'Cargando los listados y tu padrón…')]; }
   const data = LISTS_VIEW.data;
   const wrap = n('div');
+  /* Resumen de un vistazo (2.0.1): la foto con su fecha abre la
+     vista; las fuentes, el validador y el padrón quedan debajo. */
+  wrap.append(listsResumenPanel201(data));
   /* Fuentes oficiales */
   const sourcesPanel = panel('Listados oficiales del SAT', 'Se descargan solos cada día. Si uno lleva más de 48 horas sin actualizar, PacoSAT avisa: vigilar con datos viejos es peor que no vigilar.');
   const grid = n('div', undefined, 'sat-grid');
@@ -160,6 +259,22 @@ function listsScreen() {
     statusPill('ok', counts.clean + ' sin coincidencias'),
     statusPill('dim', data.counterparts.length + ' en el padrón'));
   registry.append(summary);
+  /* Imprimir el padrón tal cual se ve (2.0.1 · nº 2): el mismo
+     patrón de imprimirVista201 — membrete y la lista en
+     pantalla, con su estado en los listados y su exposición. */
+  if (typeof imprimirVista201 === 'function') {
+    const imprimirPadron = n('button', 'Imprimir el padrón', 'soft');
+    imprimirPadron.type = 'button';
+    imprimirPadron.onclick = () => imprimirVista201('Listas del SAT · padrón de contrapartes',
+      'El padrón cruzado con los listados oficiales cargados, tal cual se ve en pantalla.',
+      ['Contraparte', 'RFC', 'Estado en los listados', 'En qué lista consta', 'Te ha facturado'],
+      data.counterparts.map(cp => [cp.name || cp.rfc, cp.rfc,
+        cp.severity === 'bad' ? 'En lista · grave' : cp.severity === 'warn' ? 'En lista' :
+          cp.severity === 'dim' ? 'En lista · menor' : cp.severity === 'ok' ? 'Regularizada' : 'Limpia',
+        (cp.hits || []).map(hit => hit.label + ': ' + hit.detail).join(' · '),
+        cp.exposure?.receivedCount ? money(cp.exposure.received) + ' en ' + cp.exposure.receivedCount + ' CFDI' : '']));
+    registry.append(imprimirPadron);
+  }
   const addRow = n('div', undefined, 'filterbar');
   const addBtn = n('button', 'Agregar contraparte', 'soft');
   addBtn.onclick = () => counterpartDialog();

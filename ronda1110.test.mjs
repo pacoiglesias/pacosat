@@ -64,8 +64,20 @@ try {
      Registro — el menú pasa a 13 destinos; esta aserción
      sustituye a la de los 12 de la 1.31.0 por orden expresa de
      la pasada de diseño y operación. */
-  assert.deepEqual(views, ['home', 'avisos', 'buzon', 'dinero', 'pagos', 'salidas', 'sat', 'declaraciones', 'invoices', 'docs', 'registro', 'archivo', 'settings'],
-    'el menú lateral tiene exactamente los 13 destinos del plan ordenado (1.31.1)');
+  /* 2.0.1 (LIMPIEZA VISIBLE, orden directa de Paco del 16 nov:
+     «sigo viendo algo enredado el sistema, podría ser más
+     limpio y práctico»): el menú pasa a 9 destinos — Hoy,
+     Facturas, Dinero, Documentos, Avisos, Reportes, Listas del
+     SAT, Salud, Ajustes —, el Centro SAT desaparece como
+     destino (sus pestañas son vistas enrutadas propias:
+     descargar/monitor/lists/coverage/ejecutor) y el resto
+     cuelga de Salud o de su pantalla natural. RE-BASE por orden
+     directa, como los sellos de versión: esta aserción
+     sustituye a la de los 13 destinos de la 1.31.1. Las 21
+     vistas históricas siguen alcanzables (canónicas o alias),
+     como comprueba la aserción siguiente. */
+  assert.deepEqual(views, ['home', 'invoices', 'dinero', 'docs', 'avisos', 'reportes', 'lists', 'salud', 'settings'],
+    'el menú lateral tiene exactamente los 9 destinos de la limpieza 2.0.1 (orden directa de Paco)');
   const bottomAt = layout.indexOf('bottombar');
   const bottom = layout.slice(bottomAt, bottomAt + 1200);
   for (const view of ['home', 'avisos', 'buzon', 'dinero']) assert.ok(bottom.includes('data-view="' + view + '"'), 'barra inferior: ' + view);
@@ -396,9 +408,9 @@ try {
      ancho y a enseñar su Cancelar entero dentro del menú (en la
      primera captura se le cortaba la última letra); el techo
      CSS se re-basifica a 48.500 y el HTML queda en 663.000. */
-  assert.ok(htmlBytes <= 751000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 751.000, re-basificado en la 2.0 tanda 7B en AUDITORIA.md (anexo por pieza de la 7B; la 7A lo dejó en 743.000): +2.304 B: ganchos diferidos de Ajustes y ganchos mínimos de Documentos/Facturas (detalle por pieza en AUDITORIA.md); venía de 740.000 de la tanda 4)');
+  assert.ok(htmlBytes <= 800000, 'Faro-Fiscal.html pesa ' + htmlBytes + ' B (tope 800.000, RE-BASE de la fase 2 de cliente de la 2.0.1: el artefacto mide 798.249 B — las piezas de cliente de las 30 mejoras (y la nº 31, el botón «Ejecutar aquí») que viven en la parte principal (confirmación y pre-vuelo de despachos nº 5/21, modo urgente y tira fiscal de Hoy nº 4/15, a medias nº 16, espera y foto tocada nº 27/23, búsqueda por importe y concepto nº 24, selector de contraparte y orden por importe nº 13/26, comparativo de Totales nº 11, Avisos en dos grupos con su Imprimir y contrapartes nuevas nº 9/2/10, cruce201 en Documentos nº 3, confirmación en la hoja de descarga y plantilla de año nº 5/28, línea de vida con documento nº 6, tiempo estimado nº 22, Mes de Dinero y ficha PDF nº 12/29, imprimir en Listas y Contribuyentes nº 2) suman +23.742 B medidos sobre los 774.507 B de la limpieza; venía de 780.000)');
   const cssBytes = ['style.part', 'design.part', 'polish.part'].reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-  assert.ok(cssBytes <= 66500, 'el CSS pesa ' + cssBytes + ' B (tope 66.500, re-basificado en la 2.0 tanda 7B en AUDITORIA.md: +342 B del realce de foco V3 de las tarjetas que piden el gesto; venía de 66.000 de la tanda 2)');
+  assert.ok(cssBytes <= 67000, 'el CSS pesa ' + cssBytes + ' B (tope 67.000, RE-BASE de la limpieza 2.0.1 por orden directa de Paco: el CSS medía ya 66.546 B tras la parte de cliente anterior de esta ronda —46 B sobre el tope anterior— y las reglas propias de la limpieza (marco del mando de Hoy, estado de Listas en el menú, grupo de Declaraciones, efecto de canceladas) añaden +370 B medidos: 66.916 B en total; venía de 66.500 de la 2.0 tanda 7B)');
 
   const defined = [...layout.matchAll(/<symbol id="(i-[a-z]+)"/g)].map(match => match[1]);
   assert.ok(defined.length >= 20, 'la hoja de símbolos existe');

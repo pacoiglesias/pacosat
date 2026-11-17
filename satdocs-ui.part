@@ -196,13 +196,36 @@ function satDocsSection() {
           (profile.opinion.vigencia ? ' · vigente hasta el ' + profile.opinion.vigencia : '')));
         verButton(profile.opinion, 'Opinión', 'Opinión de cumplimiento');
       }
+      /* Archivar visible junto a «Ver» (2.0.1): el documento
+         vigente también se puede archivar sin cazarlo en un
+         menú. El gesto es el de siempre (docArchivar1311, con
+         su Deshacer) y actúa sobre la entrada del expediente
+         que ES este documento: se localiza por su id, que es
+         el fileId que el servidor archiva (archiveSatDoc guarda
+         la entrada de documents con id = fileId). Sin entrada
+         que case, no se pinta botón: nada de archivar a ciegas. */
+      for (const [docSrv, kindDoc] of [[profile.constancia, 'constancia'], [profile.opinion, 'opinion']]) {
+        if (!docSrv?.fileId || typeof docArchivar1311 !== 'function') continue;
+        const entrada = (versiones.get(profile.rfc + '|' + kindDoc) || []).find(doc => doc.id === docSrv.fileId);
+        if (!entrada) continue;
+        const arch = n('button', 'Archivar', 'soft small');
+        arch.type = 'button';
+        arch.title = 'Archivar este documento: sale de Documentos y vive en Archivo, recuperable';
+        arch.onclick = () => docArchivar1311(entrada);
+        meta.append(arch);
+      }
       if (profile.lastAttempt) meta.append(n('span', 'Último intento de descarga: ' + localDateTime(profile.lastAttempt)));
       card.append(meta);
       /* F5 · la lista de versiones (1.31.0): solo cuando hay
          más de una archivada de la misma clase — la primera
          (la más reciente del grupo) con su «Vigente» y las
-         anteriores con su fecha y sin pastilla, para que se
-         vea cuál manda sin borrar la historia. */
+         anteriores con su fecha, para que se vea cuál manda
+         sin borrar la historia. 2.0.1: las anteriores llevan
+         también su pastilla «Anterior» (antes iban sin marca
+         y no se distinguían de un vistazo) y CADA fila lleva
+         su «Archivar» visible junto a «Descargar» — archivar
+         las viejas para no llenarse de constancias queda a un
+         toque, con el Deshacer de siempre (docArchivar1311). */
       for (const [kindDoc, etiquetaDoc] of [['constancia', 'Constancia'], ['opinion', 'Opinión']]) {
         const grupo = versiones.get(profile.rfc + '|' + kindDoc) || [];
         if (grupo.length < 2) continue;
@@ -213,6 +236,7 @@ function satDocsSection() {
           fila.append(n('span', (doc.name || etiquetaDoc) + ' · ' +
             (typeof doc.date === 'string' && doc.date.length >= 10 ? dateLabel(doc.date) : localDate(doc.date))));
           if (indice === 0) fila.append(statusPill('ok', 'Vigente'));
+          else fila.append(statusPill('dim', 'Anterior'));
           /* Cada versión se abre y se baja desde su fila
              (1.32.1, Do3): antes la fila era un elemento muerto. */
           const verV = n('button', 'Ver', 'soft small');
@@ -220,6 +244,13 @@ function satDocsSection() {
           const bajarV = n('button', 'Descargar', 'soft small');
           bajarV.onclick = () => downloadDocOnline(doc);
           fila.append(verV, bajarV);
+          if (typeof docArchivar1311 === 'function') {
+            const archV = n('button', 'Archivar', 'soft small');
+            archV.type = 'button';
+            archV.title = 'Archivar esta versión: sale de Documentos y vive en Archivo, recuperable';
+            archV.onclick = () => docArchivar1311(doc);
+            fila.append(archV);
+          }
           boxVersiones.append(fila);
         });
         card.append(boxVersiones);

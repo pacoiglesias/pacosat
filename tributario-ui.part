@@ -97,10 +97,21 @@ function executorGuiaCard(estado, alTerminar) {
     box.append(executorPairBoton(box, alTerminar, 'Emparejar mi equipo'));
     return box;
   }
-  box.append(n('strong', 'Tu equipo no responde'),
+  /* El estado manda (2.0.1 · nº 31): «está dormido», y el
+     gesto de despertarlo EN ESTA tarjeta — «Ejecutar aquí»,
+     el enlace local a su equipo. Lo normal es que esté
+     despierto solo (residente, con arranque automático):
+     esta tarjeta solo existe cuando no responde. */
+  box.append(n('strong', 'Tu ejecutor está dormido'),
     n('p', estado.ultimoVisto
-      ? 'El ejecutor' + (estado.nombre ? ' «' + estado.nombre + '»' : '') + ' dio señales por última vez el ' + fmtFechaHora(estado.ultimoVisto) + '. Abre el ejecutor en tu PC y los trabajos en cola saldrán solos.'
-      : 'Tu equipo está emparejado, pero el ejecutor aún no ha dado señales: ábrelo en tu PC con su llave de emparejamiento y los trabajos en cola saldrán solos.'));
+      ? 'El ejecutor' + (estado.nombre ? ' «' + estado.nombre + '»' : '') + ' dio señales por última vez el ' + fmtFechaHora(estado.ultimoVisto) + '. Despiértalo aquí y los trabajos en cola saldrán solos.'
+      : 'Tu equipo está emparejado, pero el ejecutor aún no ha dado señales. Despiértalo aquí y los trabajos en cola saldrán solos.'));
+  if (typeof ejecutarAqui201 === 'function') {
+    const actos = n('div', undefined, 'actions');
+    actos.append(ejecutarAqui201(true),
+      n('span', 'Si el botón no responde, ábrelo con arrancar.bat en tu equipo.', 'muted'));
+    box.append(actos);
+  }
   return box;
 }
 /* Línea de estado del ejecutor para el Buzón (1.32.1, B2):
@@ -116,10 +127,16 @@ function executorStatusLine() {
     try {
       const data = await satApi('executor/overview');
       const pill = bar.querySelector('.pill, span');
-      bar.replaceChildren(statusPill(data.enLinea ? 'ok' : 'warn',
-        data.enLinea ? 'Ejecutor en línea en tu equipo'
+      const hijos = [statusPill(data.enLinea ? 'ok' : 'warn',
+        data.enLinea ? 'Ejecutor despierto en tu equipo'
           : !(data.ejecutores || []).some(ex => !ex.revocado) ? 'Ejecutor sin emparejar: las consultas esperan tu equipo'
-          : 'Tu equipo no responde: las consultas quedan en cola'), ir);
+          : 'Tu ejecutor está dormido: las consultas quedan en cola'), ir];
+      /* «Ejecutar aquí» en la misma línea (nº 31): discreto
+         si está despierto; el gesto, si está dormido. */
+      if (typeof ejecutarAqui201 === 'function' &&
+          (data.enLinea || (data.ejecutores || []).some(ex => !ex.revocado)))
+        hijos.push(ejecutarAqui201(!data.enLinea));
+      bar.replaceChildren(...hijos);
     } catch { /* sin estado legible, la línea no finge nada */ }
   })();
   return bar;
@@ -135,11 +152,14 @@ function executorPanel() {
     const activos = (data.ejecutores || []).filter(ex => !ex.revocado);
     const bar = n('div', undefined, 'traffic-strip');
     bar.append(statusPill(data.enLinea ? 'ok' : 'warn',
-      data.enLinea ? 'Ejecutor en línea en tu equipo'
+      data.enLinea ? 'Ejecutor despierto en tu equipo'
         : !activos.length ? 'Todavía no has emparejado ningún equipo'
-        : 'Tu equipo no responde'));
+        : 'Tu ejecutor está dormido'));
     if (data.enCola) bar.append(statusPill('warn', number.format(data.enCola) + ' en cola'));
     if (data.enCurso) bar.append(statusPill('dim', number.format(data.enCurso) + ' en curso'));
+    /* Despierto: «Abrir ejecutor» discreto en la misma franja
+       (nº 31). Dormido: el botón va con su explicación, abajo. */
+    if (data.enLinea && typeof ejecutarAqui201 === 'function') bar.append(ejecutarAqui201(false));
     body.append(bar);
     /* La guía de la espera, también en el panel (1.29.1, D5):
        qué es el ejecutor y qué paso toca, no solo la pastilla. */
@@ -148,8 +168,15 @@ function executorPanel() {
     else if (!data.enLinea) {
       const ultimo = activos.reduce((max, ex) => Math.max(max, Number(ex.ultimoVisto) || 0), 0);
       body.append(n('p', ultimo
-        ? 'Última señal de tu equipo: ' + fmtFechaHora(ultimo) + '. Abre el ejecutor en tu PC y los trabajos en cola saldrán solos.'
-        : 'Tu equipo está emparejado, pero el ejecutor aún no ha dado señales: ábrelo en tu PC con su llave de emparejamiento.', 'muted'));
+        ? 'Última señal de tu equipo: ' + fmtFechaHora(ultimo) + '. Lo normal es que esté despierto solo (arranca con tu equipo); si está cerrado, despiértalo aquí y los trabajos en cola saldrán solos.'
+        : 'Tu equipo está emparejado, pero el ejecutor aún no ha dado señales: despiértalo aquí y los trabajos en cola saldrán solos.', 'muted'));
+      /* El gesto de despertarlo, en su propia vista (nº 31). */
+      if (typeof ejecutarAqui201 === 'function') {
+        const actos = n('div', undefined, 'actions');
+        actos.append(ejecutarAqui201(true),
+          n('span', 'Si el botón no responde, ábrelo con arrancar.bat en tu equipo.', 'muted'));
+        body.append(actos);
+      }
     }
     for (const ex of data.ejecutores || []) {
       const row = n('div', undefined, 'cp-row');
@@ -293,6 +320,15 @@ function tributarioScreen() {
     else if (data.ultimaConsulta)
       body.append(n('p', 'Última consulta: ' + buzonCuando(data.ultimaConsulta) + ' · ' +
         number.format(data.total || 0) + ' notificación(es) en la bandeja.', 'today-line'));
+    /* Comunicados (2.0.1): el conteo de «Mis comunicados» sin
+       leer que la última consulta buena leyó de los encabezados
+       de grupo — sin abrir ningún mensaje —, con la fecha de
+       esa consulta. Si ninguna corrida lo ha leído aún, no se
+       pinta nada: no se inventa el dato. */
+    if (data.comunicadosNoLeidos !== null && data.comunicadosNoLeidos !== undefined && data.comunicadosFecha)
+      body.append(n('p', 'Comunicados: ' + (data.comunicadosNoLeidos === 0 ? 'ninguno sin leer' :
+        number.format(data.comunicadosNoLeidos) + ' sin leer') +
+        ' (contados en la consulta del ' + buzonCuando(data.comunicadosFecha) + ', sin abrir ninguno).', 'today-line'));
     /* Consulta automática semanal (1.28.0, P3): la pantalla dice
        cuándo toca la siguiente sin que nadie pulse nada. Semanal
        porque la no abierta se tiene por notificada al 4.º día:

@@ -581,6 +581,14 @@ async function conDeshacer1310(texto, hacer, deshacer) {
   }, true);
   window.addEventListener('drop', event => {
     if (!traeArchivos1310(event)) return;
+    /* Documentos y Bancos tienen su propio camino (2.0.1 ·
+       nº 25): en Documentos manda la tarjeta de clasificación
+       del papel (el oyente de la parte de Salidas) y en Bancos
+       la detección del estado con su confirmación. Aquí no se
+       intercepta en esas pantallas: el soltar llega a su
+       dueño, con la misma confirmación que su botón. */
+    if (typeof page !== 'undefined' &&
+        (page === 'docs' || (page === 'dinero' && typeof dineroTab !== 'undefined' && dineroTab === 'bancos'))) { ocultar1310(); return; }
     const archivos = [...(event.dataTransfer.files || [])];
     const habiaDialogo = dialogoAbierto1310();
     ocultar1310();
@@ -672,7 +680,9 @@ function gestosLista1311() {
 }
 function gestosPanel1311() {
   const lista = gestosLista1311();
-  const wrap = panel('Tu lista de gestos', lista.length
+  /* En Hoy el panel se llama como lo que es (2.0.1): «Lo que te
+     necesita» — solo gestos reales, cada uno con su botón. */
+  const wrap = panel('Lo que te necesita', lista.length
     ? 'Todo lo que solo tú puedes hacer: junto, con su botón. El sistema no puede hacerlo por ti.'
     : '');
   wrap.dataset.gestos1311 = '1';
@@ -726,15 +736,18 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '2.0.0',
+  version: '2.0.1',
   puntos: [
-    'La construcción grande: Hoy es corto y sin duplicados, la puerta del SAT dice la causa viva (si tu equipo está apagado, lo dice y no te manda a la e.firma) y el semáforo de vigilancia ya no se queda en verde con una pata caída.',
-    'Los correos salen con la cara del sistema: tarjetas, el faro y un botón que abre el comprobante exacto. El de la Opinión dice si salió positiva o negativa y hasta cuándo vale. Y el de novedades ya solo anuncia lo que de verdad entra nuevo — solo altas reales —, un solo correo por RFC y día.',
-    'Centro de salud nuevo: cada pieza con su semáforo y su frescura, reparaciones en un toque, configuración guiada y un cruce interno que detecta desacuerdos antes de que los veas tú.',
-    'Puedes programar los días y la hora en que el sistema revisa tus facturas nuevas, y el botón «Ponte al día» lo pone todo al corriente en un toque.',
-    'Cada RFC puede tener su color, asignado por ti, y hay un panel general de contribuyentes ordenado por urgencia: con muchos RFC, todo identificado de un vistazo.',
-    'Bancos: un solo botón sube el estado de cuenta — el sistema detecta banco, cuenta y periodo, lo aplica con Deshacer y corre la conciliación contra tus facturas. Del día 1 al 10 te recuerda los estados que falten, cuenta por cuenta.',
-    'Cierre de mes guiado paso a paso, el mes en un ZIP listo para el despacho, y el candado de ejercicio cerrado: un año cerrado no se toca sin desbloquearlo a propósito.'
+    'Limpieza a fondo: Hoy es corto y claro — el estado de cada pieza con su fecha, lo que te necesita y las cuatro acciones grandes, sin nada repetido.',
+    'Las acciones se hacen desde Hoy, en un toque: descargar facturas despacha la descarga, el Buzón despacha su consulta y Declaraciones despacha la recuperación. Ya no hay pestañas escondidas.',
+    'El menú quedó corto y llano: nueve entradas, con Reportes y Listas del SAT propias. Las Listas enseñan su resultado y su fecha en la propia entrada del menú, y lo demás cuelga de Salud, a un toque.',
+    'Facturas tiene un filtro nuevo, «Canceladas»: solo los comprobantes cancelados, con su estado y su efecto en el mes. Siguen fuera de los totales, como siempre.',
+    'Documentos es ahora tu expediente vivo: agrupado por tipo — constancia, opinión con su sentido y su vigencia, declaraciones por año y el resto — y si en el SAT constan acuses que aquí faltan, la pantalla lo dice y los baja. Cada documento, una sola vez.',
+    'Imprimir y reportar, a la vista: la pantalla Reportes junta todos los reportes con su periodo y sus botones de PDF, Excel e Imprimir, y Facturas, Dinero y Documentos llevan su botón «Imprimir» sin esconderlo en ningún menú.',
+    'Los pasillos del Buzón Tributario y de Declaraciones están reconstruidos contra el portal real del SAT: la consulta y la recuperación siguen los pasos que el portal enseña hoy, no los de antes.',
+    'El acceso con e.firma está reforzado: antes de firmar, el sistema verifica el formulario que tiene delante, para no firmar a ciegas en una página que no es la de acceso.',
+    'Las Listas 69-B se ven claras de un vistazo: la vista abre con quién está limpio y quién señalado, en qué listado consta y la fecha de la última comprobación. Esa misma foto, en una línea con su fecha, está también en Salud.',
+    'En Documentos, cada documento lleva su botón «Archivar» a la vista, junto a «Descargar». De la constancia y la opinión, la más reciente se marca «vigente» y las demás «anterior», y archivar las anteriores queda a un toque: los documentos no se borran, se archivan y se recuperan cuando quieras.'
   ]
 };
 function novedadesCard1311() {

@@ -80,8 +80,8 @@ try {
   /* --- La forma REAL del overview (la que la pantalla pinta) --- */
   const view = runBody.view;
   assert.deepEqual(Object.keys(view).sort(),
-    ['anios', 'anual', 'configured', 'documentos', 'ejecutor', 'ejercicio', 'folios', 'lastError', 'mapa', 'mensuales', 'progreso', 'rfc'],
-    'claves del overview (la 1.17.0 suma «mapa»: el mapa anual de la propuesta P13; la 1.22.0 suma «progreso»: la corrida viva de declaraciones, con su Cancelar; la 1.25.0 suma «folios» y «anios»: el registro de folios de la ficha 77792 y el resumen por años de la recuperación histórica; la 1.29.1 suma «ejecutor»: el estado real del ejecutor — emparejado, en línea, última señal — para guiar la espera en la propia pantalla)');
+    ['anios', 'anual', 'configured', 'cruce201', 'documentos', 'ejecutor', 'ejercicio', 'folios', 'lastError', 'mapa', 'mensuales', 'progreso', 'rfc'],
+    'claves del overview (la 1.17.0 suma «mapa»: el mapa anual de la propuesta P13; la 1.22.0 suma «progreso»: la corrida viva de declaraciones, con su Cancelar; la 1.25.0 suma «folios» y «anios»: el registro de folios de la ficha 77792 y el resumen por años de la recuperación histórica; la 1.29.1 suma «ejecutor»: el estado real del ejecutor — emparejado, en línea, última señal — para guiar la espera en la propia pantalla; la 2.0.1 — parte de cliente de esta misma ronda — suma «cruce201»: el cruce entre las operaciones conocidas (folios de la 22513 y documentos archivados) y los acuses guardados, «lo que falta», que reutiliza el resumen dominical)');
   assert.equal(view.rfc, OWN);
   assert.equal(view.ejercicio, 2026);
   assert.equal(view.lastError, null);
