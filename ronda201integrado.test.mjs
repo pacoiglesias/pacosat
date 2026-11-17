@@ -49,6 +49,14 @@ import {
 const AQUI = dirname(fileURLToPath(import.meta.url));
 const CARPETA_BUNDLE = join(AQUI, '..', '..', 'ejecutor-pacosat');
 const leerBundle = nombre => readFileSync(join(CARPETA_BUNDLE, nombre), 'utf8');
+/* La carpeta del bundle vive FUERA del repo (es la carpeta de
+   trabajo de Paco, hermana del espacio de trabajo): en un checkout
+   limpio — la CI — no existe y los bloques (3)-(6), que leen las
+   piezas del bundle y las comparan con las del árbol, se omiten
+   con su constancia, como las pruebas «extra» de navegador real
+   de sat-doc-browser. Donde la carpeta vive corren enteros: la
+   prueba que puede fallar sigue pudiendo fallar ahí. */
+const HAY_BUNDLE = existsSync(CARPETA_BUNDLE);
 const DIR = 'C:\\Users\\Paco\\PacoSAT-Ejecutor';
 const LANZADOR = 'wscript.exe "C:\\Users\\Paco\\PacoSAT-Ejecutor\\despertar.vbs"';
 
@@ -118,6 +126,12 @@ if (process.platform !== 'win32') {
   assert.equal(e.comandoApertura, null);
 }
 
+if (!HAY_BUNDLE) {
+  console.log('ronda201integrado: se omiten los bloques (3)-(6) — la carpeta del bundle ' +
+    '(ejecutor-pacosat, fuera del repo) no existe en este entorno; la lógica del registro ' +
+    'y de la residencia (bloques 1-2) sí ha corrido.');
+}
+if (HAY_BUNDLE) {
 /* ---------- (3) El lanzador despertar.vbs ---------- */
 const vbs = leerBundle('despertar.vbs');
 assert.ok(vbs.includes('winmgmts:'), 'la instancia única se consulta por WMI');
@@ -200,5 +214,9 @@ for (const nombre of ['registro-windows.mjs', 'despertar.vbs', 'bandeja.ps1']) {
     nombre + ' es idéntico en el árbol y en la carpeta del bundle (viaja en el zip)');
 }
 
-console.log('ronda201integrado: ejecutor integrado OK — registro exacto, residencia idempotente, ' +
-  'lanzador de instancia única, instalador sin re-emparejamiento, bandeja built-in y reserva interna.');
+}
+console.log(HAY_BUNDLE
+  ? 'ronda201integrado: ejecutor integrado OK — registro exacto, residencia idempotente, ' +
+    'lanzador de instancia única, instalador sin re-emparejamiento, bandeja built-in y reserva interna.'
+  : 'ronda201integrado: OK parcial en este entorno — registro exacto y residencia ' +
+    'idempotente probados; los bloques del bundle se prueban donde la carpeta vive.');
