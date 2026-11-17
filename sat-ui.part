@@ -1308,6 +1308,31 @@ function downloadSheet(rfc, preset = {}) {
   };
   showDialog(form);
 }
+/* ===== Aviso antes de quemar una petición (2.3.0 · pieza 7) =====
+   El plan de descarga trae, por criterio, yaPedida: null o
+   { at, requestId } cuando esa ventana YA se pidió al SAT.
+   Repetirla gasta otra petición: la confirmación lo dice
+   ANTES de enviar, en llano y con su fecha, visible sin
+   desplegar nada. La lectura es defensiva: el aviso sale de
+   donde el plan lo traiga (el plan entero o sus criterios). */
+function planYaPedidas230(plan) {
+  const salida = [];
+  const recoger = x => { if (x && typeof x === 'object' && x.at) salida.push(x); };
+  if (!plan || typeof plan !== 'object') return salida;
+  recoger(plan.yaPedida);
+  for (const lista of [plan.criterios, plan.criteria, plan.ventanas])
+    if (Array.isArray(lista)) for (const criterio of lista) recoger(criterio?.yaPedida);
+  return salida;
+}
+function planAvisoYaPedida230(plan) {
+  const pedidas = planYaPedidas230(plan);
+  if (!pedidas.length) return '';
+  const fecha = typeof fmtFechaHora === 'function' ? fmtFechaHora(pedidas[0].at) : String(pedidas[0].at);
+  if (pedidas.length === 1)
+    return 'Ojo: esta ventana ya se pidió el ' + fecha + '; repetirla gasta otra petición al SAT.';
+  return 'Ojo: ' + pedidas.length + ' de estas ventanas ya se pidieron (la primera, el ' + fecha +
+    '); repetirlas gasta otra petición al SAT por cada una.';
+}
 function requestDialog(preset) {
   const person = selectPerson();
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
@@ -1351,10 +1376,14 @@ function requestDialog(preset) {
      si el rango CFDI es amplio y nuevo, propone explorar primero con
      Metadatos. Es una lectura: no envía nada por sí solo. */
   const planNote = n('p', 'Revisando el criterio en el libro…', 'plan-note');
+  /* El aviso de ventana ya pedida (pieza 7): visible sin
+     desplegar nada, encima de la nota del plan. */
+  const planYaPedida = n('p', '', 'plan-note plan-yapedida230');
+  planYaPedida.hidden = true;
   const metaFirst = action('Pedir este rango como Metadatos', () => { type.value = 'metadata'; refreshPlan(); });
   metaFirst.hidden = true;
   const planBox = n('div', undefined, 'plan-box');
-  planBox.append(planNote, metaFirst);
+  planBox.append(planYaPedida, planNote, metaFirst);
   let planSeq = 0;
   async function refreshPlan() {
     const seq = ++planSeq;
@@ -1362,10 +1391,14 @@ function requestDialog(preset) {
       const plan = await satApi('plan', { rfc: person.value, direction: direction.value, type: type.value, start: start.value, end: end.value });
       if (seq !== planSeq) return;
       planNote.textContent = plan.reason;
+      const avisoYaPedida = planAvisoYaPedida230(plan);
+      planYaPedida.textContent = avisoYaPedida;
+      planYaPedida.hidden = !avisoYaPedida;
       metaFirst.hidden = plan.recommendation !== 'metadata-first';
     } catch {
       if (seq !== planSeq) return;
       planNote.textContent = 'El planificador no pudo revisar el libro; la guardia actuará al enviar, como siempre.';
+      planYaPedida.hidden = true;
       metaFirst.hidden = true;
     }
   }

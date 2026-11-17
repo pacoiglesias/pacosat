@@ -422,8 +422,14 @@ const falloNavegacion = marcador => async () => {
      la tarjeta de Documentos sigue llevando a ella. Registro
      tampoco es botón del menú: se resuelve en el mapa como
      parte diferida, como constatan las líneas de P1 de abajo. */
-  assert.ok(!html.includes('data-view="declaraciones"'), 'P2: Declaraciones ya no es botón del menú (2.0.1)');
-  assert.ok(html.includes('declaracionesGrupo201'), 'P2: Declaraciones vive como grupo dentro de Documentos');
+  /* RE-BASIFICADO en la 2.0.2 (orden directa de Paco): Declaraciones
+     RECUPERA su botón propio en el menú, con su estado en texto
+     (span decl-menu-estado202); el grupo dentro de Documentos se
+     queda — cada documento, una sola vez — y su pantalla se sigue
+     resolviendo en el mapa de render. */
+  assert.ok(html.includes('data-view="declaraciones"'), 'P2: Declaraciones es botón propio del menú (2.0.2)');
+  assert.ok(html.includes('id="decl-menu-estado202"'), 'P2: su entrada enseña su estado en texto');
+  assert.ok(html.includes('declaracionesGrupo201'), 'P2: Declaraciones vive también como grupo dentro de Documentos');
   assert.ok(html.includes("declaraciones: ['Declaraciones'"), 'P2: la pantalla consta en el mapa');
   assert.ok(html.includes('declaraciones: declaracionesScreen'), 'P2: y se resuelve en el render');
   assert.ok(!ui.includes('parts.push(declaracionesSection())'), 'P2: Documentos ya no repite la sección');
@@ -533,7 +539,7 @@ const falloNavegacion = marcador => async () => {
   assert.ok(caps.includes('MENÚ DE 13 DESTINOS'), 'P8/D3: el menú dice sus 13 destinos reales');
   assert.ok(caps.includes('SEMANAL'), 'P8/D4: el buzón automático consta con su cadencia semanal real');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.0.1"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella con la versión vigente (2.0.1)');
   console.log('OK 1.28.0 · P8 — CAPACIDADES veraz: e.firma viva, versión al pie, 13 destinos y cadencia semanal; copias idénticas.');
 }
 

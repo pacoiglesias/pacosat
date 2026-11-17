@@ -374,7 +374,7 @@ const E1 = '33333333-3333-4333-8333-333333333333';
     'bancosContrapartesPanel200f', 'sin pago visto en esta cuenta', 'capture'])
     assert.ok(part.includes(texto), 'la parte diferida de Bancos trae «' + texto + '»');
   const html = readFileSync(join(process.cwd(), 'Faro-Fiscal.html'), 'utf8');
-  assert.ok(html.includes('"version":"2.0.1"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
+  assert.ok(html.includes('"version":"2.3.0"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
   console.log('OK 2.0·T6 · cliente — botón único y vistas en la parte diferida; versión intacta.');
 }
 /* ===== H-2 (corrección de seguridad 2.0): el candado de

@@ -86,12 +86,12 @@ const unlock = async (h, rfc = OWN) => {
 /* ===== 1 · ESTÁTICAS + cabecera honesta (A1) ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.0.1', 'la ronda es la 2.0.1');
+  assert.equal(pkg.version, '2.3.0', 'la ronda es la 2.0.1');
   const ejecutor = read('ejecutor-local.mjs');
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.0.1'"), 'el ejecutor declara 2.0.1');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.3.0'"), 'el ejecutor declara 2.0.1');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.0.1"'), 'el artefacto se sella 2.0.1');
-  assert.ok(html.length <= 795000 || Buffer.byteLength(html) <= 800000, 'techo del artefacto (795.000 caracteres / 800.000 B, re-basificado en la fase 2 de cliente de la 2.0.1: el artefacto mide 794.528 caracteres / 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 771.000 / 775.000 de la limpieza de esta misma ronda)');
+  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella 2.0.1');
+  assert.ok(html.length <= 818500 || Buffer.byteLength(html) <= 822500, 'techo del artefacto (818.500 caracteres / 822.500 B, re-basificado en la 2.3.0: el artefacto mide 817.195 caracteres / 820.999 B (+20.350 B con la contabilidad de ronda1110); en la 2.0.2 medía 796.934 caracteres / 800.649 B — +1.739 B de las entradas propias del menú con sus estados —; contabilidad anterior: fase 2 de cliente de la 2.0.1: el artefacto medía 794.528 caracteres / 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 771.000 / 775.000 de la limpieza de esta misma ronda)');
 
   /* Cabecera ↔ despacho: para cada pantalla tocada por la
      auditoría, la etiqueta que primaryLabel promete y el gesto

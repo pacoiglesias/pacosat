@@ -631,6 +631,42 @@ function paintNavDots1312() {
     set('sat', sinAbrir > 0 || puertaMal || (satData?.pendingProfiles || []).length > 0);
   } catch { /* sin estado global legible: ningún punto */ }
 }
+/* ===== «Seguir» tras cancelar (2.3.0 · pieza 6) =====
+   Un trabajo cancelado que trae su jobId se puede REANUDAR
+   con POST /api/trabajos/seguir: el servidor reanuda sin
+   repetir lo hecho y devuelve en llano qué se reanudó; para
+   buzón/documento su texto ya dice que se relanza limpio. Si
+   el trabajo no es reanudable según su tipo, el servidor
+   responde ok:false con su motivo y ese motivo SE ENSEÑA
+   junto al botón — no se esconde ni se disfraza de éxito.
+   Sin jobId no hay botón: no se finge una reanudación. */
+async function seguirTrabajo230(jobId) {
+  return await satApi('trabajos/seguir', { jobId });
+}
+function seguirBoton230(jobId, alTerminar) {
+  const caja = n('span', undefined, 'seguir230');
+  const boton = n('button', 'Seguir', 'primary small');
+  boton.type = 'button';
+  const nota = n('span', '', 'muted seguir-nota230');
+  boton.onclick = async () => {
+    boton.disabled = true; boton.textContent = 'Reanudando…';
+    try {
+      const r = await seguirTrabajo230(jobId);
+      const texto = r?.texto || (r?.ok ? 'Trabajo reanudado.' : 'Ese trabajo no se puede seguir.');
+      nota.textContent = texto;
+      toast(texto, r?.ok ? 'ok' : 'error');
+      if (r?.ok && typeof alTerminar === 'function') alTerminar();
+      if (!r?.ok) { boton.disabled = false; boton.textContent = 'Seguir'; }
+    } catch (error) {
+      /* Respuesta perdida: el texto del error se enseña en el
+         sitio, no solo en un toast que se va. */
+      nota.textContent = error.message;
+      boton.disabled = false; boton.textContent = 'Seguir';
+    }
+  };
+  caja.append(boton, nota);
+  return caja;
+}
 function paintActivity() {
   const view = activityView; if (!view) return;
   paintNavDots1312();

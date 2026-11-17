@@ -1,4 +1,5 @@
-/* Mapa ÚNICO de pantallas (1.11.0): los 9 destinos del menú más
+/* Mapa ÚNICO de pantallas (1.11.0): los destinos del menú (11
+   desde la 2.0.2: Buzón y Declaraciones con entrada propia) más
    Preguntas (vive en la barra superior). Título, frase de para qué
    (la tarea, no el sistema) y acción principal con verbo + objeto.
    Las vistas absorbidas no tienen entrada: navigate() las traduce
@@ -1637,8 +1638,16 @@ function aMedias201Panel() {
       txt.append(n('strong', item.texto),
         n('p', (item.rfc ? item.rfc + ' · ' : '') + (item.at ? 'quedó a medias el ' + fmtFechaHora(item.at) : '')));
       fila.append(txt);
+      /* «Seguir» tras cancelar (2.3.0 · pieza 6): si el ítem
+         trae el trabajo (jobId), el botón REANUDA de verdad con
+         POST /api/trabajos/seguir y enseña el texto devuelto —
+         también el ok:false con su motivo. Sin trabajo que
+         reanudar, queda el gesto de siempre: ir a su vista. */
+      const jobId230 = item.seguir?.jobId || item.jobId || '';
       const vista = item.seguir?.vista || '';
-      if (vista) {
+      if (jobId230 && typeof seguirBoton230 === 'function') {
+        fila.append(seguirBoton230(jobId230));
+      } else if (vista) {
         const seguir = n('button', 'Seguir', 'primary small');
         seguir.type = 'button';
         seguir.onclick = () => {
@@ -1648,6 +1657,111 @@ function aMedias201Panel() {
         fila.append(seguir);
       }
       body.append(fila);
+    }
+  }).catch(() => {});
+  return wrap;
+}
+/* ===== Hoy: «Qué cambió desde ayer» (2.3.0 · pieza 10) =====
+   Tarjeta compacta alimentada por GET /api/cambios: una línea
+   por cambio REAL desde ayer a las 00:00, máximo 5 y el resto
+   se cuenta y se manda al Registro. Sin cambios, la tarjeta
+   NO aparece: Hoy no crece con tarjetas vacías. */
+function cambiosLineas230(data) {
+  const lineas = Array.isArray(data?.lineas) ? data.lineas : [];
+  const validas = lineas.filter(l => l && typeof l.texto === 'string' && l.texto.trim());
+  return { visibles: validas.slice(0, 5), total: validas.length };
+}
+function cambiosPanel230() {
+  const wrap = n('section', undefined, 'panel cambios230');
+  wrap.style.display = 'none';
+  if (typeof satToken === 'undefined' || !satToken) return wrap;
+  const ruta = 'cambios' + (scope ? '?rfc=' + encodeURIComponent(scope) : '');
+  satApi(ruta).then(data => {
+    if (!wrap.isConnected) return;
+    const { visibles, total } = cambiosLineas230(data);
+    if (!total) return;
+    wrap.style.display = '';
+    wrap.append(n('h3', 'Qué cambió desde ayer'));
+    for (const linea of visibles) {
+      const fila = n('div', undefined, 'cp-row');
+      if (linea.at) fila.append(statusPill(linea.clase === 'mal' ? 'bad' : linea.clase === 'bien' ? 'ok' : 'dim',
+        fmtFechaHora(linea.at)));
+      fila.append(n('span', linea.texto));
+      wrap.append(fila);
+    }
+    if (total > visibles.length)
+      wrap.append(n('p', 'Y ' + (total - visibles.length) + ' cambio(s) más desde ayer.', 'muted'));
+    const actos = n('div', undefined, 'actions');
+    const ver = n('button', 'Ver en el Registro', 'soft small');
+    ver.type = 'button';
+    ver.onclick = () => navigate('registro');
+    actos.append(ver);
+    wrap.append(actos);
+  }).catch(() => {});
+  return wrap;
+}
+/* ===== Hoy: la foto por RFC, «Tus empresas» (2.3.0 · pieza 11) =====
+   GET /api/foto-rfc trae, por RFC, su color y cuatro fotos con
+   fecha: puerta, buzón, declaraciones y listas. Una fila por
+   RFC con su medallón de color y cuatro semáforos con su dato
+   corto; tocar la fila selecciona ese RFC y lleva a Hoy (su
+   radiografía). Con un solo RFC, una sola fila compacta. Si el
+   servidor aún no da la foto, la sección no aparece. */
+function fotoSemaforos230(f) {
+  const salida = [];
+  const puerta = f?.puerta;
+  salida.push({ nombre: 'Puerta', estado: !puerta ? 'dim' : puerta.ok ? 'ok' : 'bad',
+    texto: !puerta ? 'sin probar' : puerta.ok ? 'abre' : 'no abre' });
+  const buzon = f?.buzon;
+  const pend = Number(buzon?.pendientes) || 0, com = Number(buzon?.comunicados) || 0;
+  salida.push({ nombre: 'Buzón', estado: !buzon ? 'dim' : (pend || com) ? 'warn' : 'ok',
+    texto: !buzon ? 'sin consultar' : (pend || com)
+      ? (pend ? pend + ' por leer' : '') + (pend && com ? ' · ' : '') + (com ? com + ' comunicado(s)' : '')
+      : 'al día' });
+  const decl = f?.declaraciones;
+  salida.push({ nombre: 'Declaraciones', estado: !decl ? 'dim' : decl.faltaMes ? 'warn' : 'ok',
+    texto: !decl ? 'sin datos'
+      : decl.faltaMes ? 'falta ' + (typeof declFaltaMes230 === 'function' ? declFaltaMes230(decl.faltaMes) : String(decl.faltaMes))
+      : (Number(decl.conocidas) || 0) + ' de ' + (decl.ejercicio || '') + ' · al día' });
+  const listas = f?.listas;
+  const sen = Number(listas?.senaladas);
+  salida.push({ nombre: 'Listas', estado: !listas || Number.isNaN(sen) ? 'dim' : sen > 0 ? 'bad' : 'ok',
+    texto: !listas || Number.isNaN(sen) ? 'sin comprobar' : sen > 0 ? sen + ' señalada(s)' : 'sin señaladas' });
+  return salida;
+}
+function fotoRfcPanel230() {
+  const wrap = n('section', undefined, 'panel foto-rfc230');
+  wrap.style.display = 'none';
+  if (typeof satToken === 'undefined' || !satToken) return wrap;
+  satApi('foto-rfc').then(data => {
+    if (!wrap.isConnected) return;
+    const rfcs = (data?.rfcs || []).filter(f => f && f.rfc);
+    if (!rfcs.length) return;
+    wrap.style.display = '';
+    wrap.append(n('h3', 'Tus empresas'));
+    for (const f of rfcs) {
+      const fila = n('button', undefined, 'foto-rfc-fila230');
+      fila.type = 'button';
+      /* El color de la fila es el que trae la foto; si es una
+         clave de la paleta cerrada, manda sobre el medallón. */
+      const medallon = medallon200b(f.rfc, f.nombre || f.rfc);
+      const paletaFoto = typeof rfcPaleta200b === 'function' ? rfcPaleta200b(f.color) : null;
+      if (paletaFoto) { medallon.style.background = paletaFoto[1]; medallon.style.color = '#ffffff'; medallon.dataset.color = paletaFoto[0]; }
+      fila.append(medallon);
+      const txt = n('span', undefined, 'foto-rfc-txt230');
+      txt.append(n('strong', (f.nombre || f.rfc) + (f.nombre ? ' · ' + f.rfc : '')));
+      const semaforos = n('span', undefined, 'foto-rfc-semaforos230');
+      for (const s of fotoSemaforos230(f))
+        semaforos.append(statusPill(s.estado, s.nombre + ': ' + s.texto));
+      txt.append(semaforos);
+      fila.append(txt);
+      fila.onclick = () => {
+        scope = f.rfc;
+        const sel = $('scope'); if (sel) sel.value = scope;
+        const selTop = $('scope-top'); if (selTop) selTop.value = scope;
+        navigate('home');
+      };
+      wrap.append(fila);
     }
   }).catch(() => {});
   return wrap;
@@ -1670,6 +1784,18 @@ function aMedias201Panel() {
        llevan a otra pantalla con otro botón.
    Constancia y Opinión NO viven aquí: su único sitio es
    Documentos (cero duplicados entre pantallas). */
+/* ===== Ejecutor verificable: su residencia (2.3.0 · pieza 5) =====
+   /api/status gana ejecutor.residencia { registrada, protocolo,
+   rechazada, instancias } cuando el ejecutor lo reporta. La
+   línea se pinta igual en Hoy y en la tarjeta del ejecutor de
+   Salud, desde esta única lectura: si el ejecutor aún no lo
+   reporta, dice «sin reportar todavía» — no se finge un sí. */
+function residenciaTexto230(ejecutor) {
+  const residencia = ejecutor && typeof ejecutor === 'object' ? ejecutor.residencia : null;
+  if (!residencia || typeof residencia !== 'object') return 'Residente: sin reportar todavía';
+  return 'Residente: ' + (residencia.registrada ? 'sí' : 'no') +
+    ' · Instancias: ' + (Number(residencia.instancias) || 0);
+}
 function hoyMando201() {
   const wrap = n('section', undefined, 'panel');
   const sd = typeof satData !== 'undefined' && satData ? satData : null;
@@ -1701,8 +1827,12 @@ function hoyMando201() {
   linea('Puerta del SAT', !puerta ? 'sin probar todavía'
     : (puerta.ok ? 'abre' : 'no abre') + ' · probada el ' + fmtFechaHora(puerta.probada));
   const ej = sd?.ejecutor;
-  linea('Tu ejecutor', !ej?.emparejado ? 'sin emparejar todavía'
-    : (ej.enLinea ? 'en línea' : 'sin señal') + (ej.ultimoVisto ? ' · última señal el ' + fmtFechaHora(ej.ultimoVisto) : ''));
+  /* La residencia del ejecutor viaja en la misma línea (2.3.0 ·
+     pieza 5): «Residente: sí/no · Instancias: n» si el ejecutor
+     lo reporta; «sin reportar todavía» si aún no. */
+  linea('Tu ejecutor', (!ej?.emparejado ? 'sin emparejar todavía'
+    : (ej.enLinea ? 'en línea' : 'sin señal') + (ej.ultimoVisto ? ' · última señal el ' + fmtFechaHora(ej.ultimoVisto) : '')) +
+    ' · ' + residenciaTexto230(ej));
   /* Trabajos esperando con el ejecutor dormido (nº 27, con la
      jerarquía de la nº 31): el dato reunido del servidor
      (ejecutorEspera201 en el estado) y el gesto EN LA PROPIA
@@ -2108,6 +2238,21 @@ function prefetchLazyParts() {
     else if (typeof setTimeout === 'function') setTimeout(go, 3500);
   } catch { /* la precarga es un extra: jamás rompe el arranque */ }
 }
+/* Estados del menú del Buzón y de Declaraciones (2.0.2): se
+   pintan al cargar y en cada pintado con el RFC en curso — el
+   cambio de contribuyente pasa por render(), no por refresh() —,
+   con caché por RFC (60 s) para no repetir las lecturas que Hoy
+   y las propias pantallas ya pagan. Sin servidor, las líneas
+   quedan vacías: no se finge un estado que no se pudo leer. */
+let menuEstados202Cache = { rfc: '', at: 0 };
+function refrescarEstadosMenu202() {
+  if (typeof satToken === 'undefined' || !satToken || !scope) return;
+  const ahora = Date.now();
+  if (menuEstados202Cache.rfc === scope && ahora - menuEstados202Cache.at < 60000) return;
+  menuEstados202Cache = { rfc: scope, at: ahora };
+  if (typeof pintarBuzonMenu202 === 'function') pintarBuzonMenu202();
+  if (typeof pintarDeclMenu202 === 'function') pintarDeclMenu202();
+}
 function render() {
   const lazyName = lazyPartForView(page);
   if (lazyName && !lazyLoadedParts.has(lazyName)) { paintLazyState(lazyName); return; }
@@ -2170,6 +2315,9 @@ function render() {
   /* El botón del selector global refleja el ámbito y su
      salud en cada pintado (2.0 · pieza 8). */
   try { pintarBotonScope200b(); } catch { /* selector decorativo */ }
+  /* Los estados del Buzón y de Declaraciones en el menú (2.0.2):
+     con el RFC en curso, sin esperar a que se abran sus vistas. */
+  try { refrescarEstadosMenu202(); } catch { /* estado decorativo del menú */ }
   $('body').replaceChildren(...content);
   applySettings();
 }
@@ -2731,6 +2879,11 @@ function home() {
   /* «A medias» (nº 16): tras los gestos, en su mismo flujo; el
      panel solo se enseña si el servidor trae algo a medias. */
   blocks.push(aMedias201Panel());
+  /* La foto por RFC y «Qué cambió desde ayer» (2.3.0 · piezas
+     10 y 11): tras lo a medias, en el mismo flujo. Ambas nacen
+     ocultas y solo aparecen con algo real que decir — Hoy no
+     crece con tarjetas vacías. */
+  blocks.push(fotoRfcPanel230(), cambiosPanel230());
   if (lastImport) {
     /* Tarjeta persistente de la última importación (UX-13). */
     const card = panel('Última importación');
@@ -2895,6 +3048,19 @@ function ejecutarAqui201(dormido) {
    se pinta nada — nunca un tiempo inventado. La lectura se
    cachea un minuto: la franja de actividad se repinta seguido. */
 let tiempos201Cache = null, tiempos201At = 0;
+/* Mapa de tipos de la franja a claves del historial de
+   tiempos (2.0.1; 2.3.0 · pieza 4: el BARRIDO entra en el
+   mapa — en la lista de trabajos en curso su kind es
+   «barrido» y su historial puede constar con esa misma clave
+   o como la revisión de comprobantes que es: sin alias, su
+   estimación nunca se encontraba aunque el servidor la
+   tuviera). Puro y ordenado: primero la clave propia. */
+const TIEMPO_ALIAS230 = { tributario: ['buzon-listar'], ciec: ['descarga-ciec'],
+  declaraciones: ['declaraciones-recuperar', 'declaraciones-transacciones'],
+  barrido: ['revision-comprobantes', 'revision', 'vigilancia'] };
+function tiempoClaves230(kind) {
+  return [kind, ...(TIEMPO_ALIAS230[kind] || [])];
+}
 async function tiempoEstimado201(kind) {
   if (!kind || typeof satToken === 'undefined' || !satToken) return '';
   if (!tiempos201Cache || Date.now() - tiempos201At > 60000) {
@@ -2902,16 +3068,7 @@ async function tiempoEstimado201(kind) {
     catch { return ''; }
   }
   const porTipo = tiempos201Cache?.porTipo || {};
-  const directo = porTipo[kind];
-  if (directo?.medianaTexto) return directo.medianaTexto;
-  /* Los tipos de la franja de actividad y las claves del
-     historial no se llaman igual: el buzón se registra como
-     «buzon-listar» y la descarga CIEC como «descarga-ciec»
-     (integración 2.0.1). Declaraciones cae primero a su diario
-     agregado y, si no hay, al trabajo del ejecutor. */
-  const alias201 = { tributario: ['buzon-listar'], ciec: ['descarga-ciec'],
-    declaraciones: ['declaraciones-recuperar', 'declaraciones-transacciones'] };
-  for (const clave of alias201[kind] || []) {
+  for (const clave of tiempoClaves230(kind)) {
     if (porTipo[clave]?.medianaTexto) return porTipo[clave].medianaTexto;
   }
   if (kind === 'documentos') {
@@ -3688,6 +3845,34 @@ async function maybeShowEntry() {
    credenciales»— y dice qué falta y quién lo aporta: la CIEC o
    la e.firma se guardan desde el Centro SAT, nunca por chat. */
 const ELEMENTAL_RFC = 'EDE1902136T2';
+/* Color al nacer (2.3.0 · pieza 18): el alta preparada nace
+   CON su color de la paleta cerrada ya asignado — la primera
+   clave que ningún otro RFC usa — para que Elemental se
+   distinga desde el primer día en medallones y selectores.
+   Puro: dados los colores ya usados, devuelve la clave. */
+function colorLibre230(usados) {
+  const claves = typeof RFC_PALETA200B !== 'undefined' ? RFC_PALETA200B.map(entrada => entrada[0]) : [];
+  const ocupados = new Set(usados || []);
+  return claves.find(clave => !ocupados.has(clave)) || claves[0] || '';
+}
+function elementalColorAsignado230() {
+  return (typeof satData !== 'undefined' && satData?.settings?.rfcColors?.[ELEMENTAL_RFC]) ||
+    (typeof satData !== 'undefined' && (satData?.profiles || []).find(p => p.rfc === ELEMENTAL_RFC)?.color) ||
+    (typeof appSettings !== 'undefined' && appSettings?.rfcColors?.[ELEMENTAL_RFC]) || '';
+}
+let elementalColor230EnCurso = false;
+async function elementalAsegurarColor230() {
+  if (elementalColorAsignado230() || elementalColor230EnCurso) return false;
+  const usados = ((typeof satData !== 'undefined' && satData?.profiles) || [])
+    .map(p => p.rfc).filter(rfc => rfc !== ELEMENTAL_RFC)
+    .map(rfc => typeof rfcColorClave200b === 'function' ? rfcColorClave200b(rfc) : '').filter(Boolean);
+  const clave = colorLibre230(usados);
+  if (!clave || typeof asignarColor200b !== 'function') return false;
+  elementalColor230EnCurso = true;
+  try { await asignarColor200b(ELEMENTAL_RFC, clave); return true; }
+  catch { return false; }
+  finally { elementalColor230EnCurso = false; }
+}
 function elementalAltaCard() {
   if (typeof satToken === 'undefined' || !satToken) return null;
   if (!(typeof satData !== 'undefined' && satData)) return null;
@@ -3698,23 +3883,30 @@ function elementalAltaCard() {
   const wrap = panel('Alta guiada · Elemental Denim');
   const body = n('div', undefined, 'portal');
   if (pendiente) {
+    /* Si el alta ya estaba preparada sin color (preparada antes
+       de esta ronda), se le asigna ahora, una sola vez. */
+    if (!elementalColorAsignado230()) elementalAsegurarColor230();
     body.append(statusPill('warn', 'Faltan credenciales'),
       n('p', 'Elemental Denim (' + ELEMENTAL_RFC + ') ya consta como contribuyente, en estado «faltan credenciales»: ' +
-        'ninguna descarga se intenta todavía. Falta que aportes su CIEC o su e.firma — se guardan desde «Descargar del SAT», ' +
-        'nunca por chat — y en cuanto estén, su puesta en marcha aparece en Documentos como la de cualquier RFC.', 'today-line'),
+        'ninguna descarga se intenta todavía. El gesto que falta es subir su e.firma (o dar su CIEC) — se guarda desde «Descargar del SAT», ' +
+        'nunca por chat — y en cuanto esté, su puesta en marcha aparece en Documentos como la de cualquier RFC.', 'today-line'),
+      n('p', 'Su color: ' + ((typeof rfcPaleta200b === 'function' && rfcPaleta200b(rfcColorClave200b(ELEMENTAL_RFC))?.[2]) ||
+        rfcColorClave200b(ELEMENTAL_RFC) || 'por asignar') + ' — con él se distingue en todo PacoSAT.', 'today-line'),
       action('Ir a Descargar del SAT a aportarlas', () => showSatDownload(), 'primary', 'lock'));
   } else {
     body.append(statusPill('dim', 'Sin preparar'),
       n('p', 'Elemental Denim (' + ELEMENTAL_RFC + ') aún no consta como contribuyente. Prepárala con un toque: ' +
-        'nace en el servidor en estado «faltan credenciales», sin inventar ningún dato suyo, y el alta se completa ' +
-        'cuando aportes su CIEC o su e.firma desde «Descargar del SAT».', 'today-line'));
+        'nace en el servidor en estado «faltan credenciales» y con su color de la paleta ya asignado, sin inventar ningún dato suyo, y el alta se completa ' +
+        'cuando subas su e.firma (o des su CIEC) desde «Descargar del SAT».', 'today-line'));
     const preparar = n('button', 'Preparar su alta', 'primary small');
     preparar.type = 'button';
     preparar.onclick = async () => {
       preparar.disabled = true; preparar.textContent = 'Preparando…';
       try {
         await satApi('profiles/prepare', { rfc: ELEMENTAL_RFC });
-        toast('Alta preparada: Elemental Denim consta en «faltan credenciales».', 'ok');
+        /* Nace con su color de la paleta ya asignado (pieza 18). */
+        await elementalAsegurarColor230().catch(() => {});
+        toast('Alta preparada: Elemental Denim consta en «faltan credenciales», con su color asignado.', 'ok');
         await pollSat().catch(() => {});
         render();
       } catch (error) {
@@ -3723,7 +3915,8 @@ function elementalAltaCard() {
         try {
           await pollSat();
           if ((satData.pendingProfiles || []).includes(ELEMENTAL_RFC)) {
-            toast('Quedó preparada: consta en «faltan credenciales».', 'ok');
+            await elementalAsegurarColor230().catch(() => {});
+            toast('Quedó preparada: consta en «faltan credenciales», con su color asignado.', 'ok');
             render();
             return;
           }

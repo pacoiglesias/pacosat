@@ -186,7 +186,11 @@ try {
     result: new Set([...Object.keys(runBody.result), ...Object.keys(failed.json().result),
       ...Object.keys(descubrimiento.json().result)]) };
   const accesses = new Map();
-  for (const match of part.matchAll(/\b(view|mes|doc|data|result)\.([A-Za-z]+)/g)) {
+  /* (2.3.0) La clave capturada admite dígitos: la línea de vida
+     lee view.cruce201 y el barrido viejo lo truncaba a «cruce»,
+     una clave que el servidor no emite — el barrido ahora ve la
+     clave entera y la contrasta de verdad. */
+  for (const match of part.matchAll(/\b(view|mes|doc|data|result)\.([A-Za-z][A-Za-z0-9]*)/g)) {
     if (!accesses.has(match[1])) accesses.set(match[1], new Set());
     accesses.get(match[1]).add(match[2]);
   }
@@ -198,7 +202,13 @@ try {
         'la pantalla lee ' + receiver + '.' + key + ' y el servidor SÍ lo emite');
   /* Las claves muertas no vuelven: ni como acceso ni como cuerpo. */
   assert.ok(!/view\.months\b/.test(part), 'nada de view.months');
-  assert.ok(!/\.presentada\b/.test(part), 'nada de doc.presentada');
+  /* (2.3.0) La prohibición se estrecha a su forma muerta real:
+     doc.presentada como lectura del servidor la caza ya el
+     barrido de arriba (no está entre lo emitido); el .presentada
+     de la línea de vida es un campo del modelo local declVida230,
+     no una lectura — prohibirlo sería prohibir un nombre, no un
+     dato muerto. */
+  assert.ok(!/\bdoc\.presentada\b/.test(part), 'nada de doc.presentada');
   assert.ok(!/data\.overview\b/.test(part), 'nada de data.overview');
   const bodyLiteral = part.match(/satApi\('declaraciones\/run',\s*\{([^}]*)\}/);
   assert.ok(bodyLiteral, 'la llamada a declaraciones/run está en el fragmento');
