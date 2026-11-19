@@ -72,11 +72,11 @@
 
    Uso:  node ejecutor-local.mjs
    ================================================================ */
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, copyFileSync, readdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, copyFileSync, renameSync, readdirSync, rmSync, statSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 import { createSatDocCredentialResolver, createFileEfirmaStorage } from './sat-doc-fetch.mjs';
 import { createPlaywrightDriverFactory, satBrowserLogin, prepareKeyForPortal } from './sat-doc-browser.mjs';
@@ -86,7 +86,7 @@ import { createSatTribFetch } from './sat-tributario.mjs';
 import { SAT_EXECUTOR_PROTOCOL_VERSION } from './sat-executor.mjs';
 import { asegurarResidencia, estadoResidencia } from './registro-windows.mjs';
 
-export const EJECUTOR_VERSION = '2.3.0';
+export const EJECUTOR_VERSION = '2.9.14';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const URL_BASE = String(process.env.PACOSAT_URL || '').replace(/\/$/, '');
@@ -168,52 +168,521 @@ function compararVersiones(a, b) {
   for (let i = 0; i < 3; i++) { if (pa[i] !== pb[i]) return pa[i] - pb[i]; }
   return 0;
 }
-const PRESERVADOS_UPDATE = new Set(['token.txt', 'codigo.txt', 'ejecutor-sesiones.json', 'actualizacion.zip']);
+const PRESERVADOS_UPDATE = new Set(['token.txt', 'codigo.txt', 'ejecutor-sesiones.json', 'actualizacion.zip',
+  'actualizacion-anterior', 'actualizacion-nueva', 'ejecutor.lock', 'despertar-crashes.txt']);
+
+/* ---------- Verdad de versión (2.3.1, constructor B; evidencia
+   del 17 nov 2026, diagnostico-231.md) ----------
+   La instalación de la PC corría MEZCLADA: cáscara de la 2.3.0
+   (su latido ya traía el reporte de residencia) con los motores
+   de la 2.0.0, y nadie lo vio — el sello de versión vive en la
+   cáscara, así que una copia fichero a fichero que renueva la
+   cáscara pero no los motores dejaba el chequeo de versión
+   satisfecho para siempre. La defensa es una HUELLA DE MOTORES:
+   sha256 sobre los contenidos, en orden fijo y con su nombre,
+   de los ficheros de programa que mandan en el comportamiento.
+   La huella viaja en cada latido (reporteVersion231) y manda
+   en la decisión de actualizar (tocaActualizar): una
+   instalación mezclada con el sello ya renovado se reinstala
+   sola en cuanto el servidor anuncia la huella del paquete. */
+export const FICHEROS_HUELLA231 = ['ejecutor-local.mjs', 'sat-tributario.mjs',
+  'sat-declaraciones.mjs', 'sat-doc-browser.mjs', 'sat-doc-fetch.mjs',
+  'sat-executor.mjs', 'secret-box.mjs', 'registro-windows.mjs'];
+export function huellaMotores(dir = HERE) {
+  const hash = createHash('sha256');
+  for (const nombre of FICHEROS_HUELLA231) {
+    hash.update(nombre + '\n');
+    try { hash.update(readFileSync(join(dir, nombre))); }
+    catch { hash.update('<<ausente:' + nombre + '>>'); }
+    hash.update('\n--\n');
+  }
+  return hash.digest('hex');
+}
+/* ---------- Huella de paquete (2.3.2, constructor B2a; E-02/M-2) ----------
+   La huella de motores cubre los 8 .mjs que mandan, pero el
+   comportamiento real manda en más sitios: node_modules entero
+   (playwright-core y el SDK @nodecfdi se cargan dinámicamente),
+   instalar.mjs y todos los lanzadores. Una copia cortada en
+   node_modules o un despertar.vbs truncado pasaban la
+   verificación de la 2.3.1 y se anunciaban como éxito.
+   huellaPaquete es la segunda huella, determinista como la de
+   motores (orden fijo, separadores fijos): sha256 sobre
+   nombre + contenido de TODOS los ficheros de programa de nivel
+   superior (los 8 de la huella + los 9 que quedaban fuera +
+   LICENSE) y, por cada paquete de primer nivel de node_modules,
+   un hash propio (sha256 sobre ruta relativa + contenido de
+   cada fichero suyo, rutas ordenadas con separador '/'). Un
+   paquete ausente o truncado cambia la huella igual que un
+   motor cambiado cambia la suya. */
+export const FICHEROS_PAQUETE232 = ['instalar.mjs', 'despertar.vbs', 'arrancar.bat', 'bandeja.ps1',
+  'INSTALAR.bat', 'RESPALDAR.bat', 'LEEME.txt', 'package.json', 'package-lock.json', 'LICENSE'];
+/* Integración-3 (2.3.2): la enumeración SIGUE los enlaces
+   simbólicos, como ya hace readFileSync al leer el contenido.
+   npm crea los .bin de node_modules como symlinks en Linux
+   (en Windows son ficheros normales) y el zip del paquete
+   guarda el destino como fichero normal: juzgando solo por
+   Dirent.isFile()/isDirectory() —que dan false para un
+   symlink— el fichero enlazado se saltaba al computar la
+   huella sobre la carpeta y SÍ contaba sobre la instalación
+   extraída del zip: contenido idéntico, huellas distintas
+   para siempre. Ahora un symlink se resuelve con statSync
+   (sigue el enlace): si el destino es fichero, se incluye con
+   su ruta relativa (el contenido que se hashea es el del
+   destino, vía el readFileSync de siempre); si es directorio,
+   se recursa por la ruta del enlace, así que las rutas
+   relativas son las del árbol enlazado — las mismas que el
+   árbol materializado. Guarda contra bucles: la cadena de
+   directorios ancestros por su ruta real (realpathSync) —un
+   enlace que apunta a un ancestro no se vuelve a entrar— más
+   un tope de profundidad; un bucle de enlaces no puede colgar
+   la huella ni el arranque. Un enlace roto se salta, como
+   antes. Para un árbol SIN enlaces el resultado es el de
+   siempre, entrada a entrada: ordenación, separadores y el
+   esquema nombre+contenido no cambian. */
+const PROFUNDIDAD_MAX232 = 32;
+function listarFicheros232(base, dir = base, acc = [], ancestros = null, profundidad = 0) {
+  if (profundidad > PROFUNDIDAD_MAX232) return acc;
+  let real;
+  try { real = realpathSync(dir); } catch { real = dir; }
+  if (ancestros && ancestros.has(real)) return acc;
+  const cadena = new Set(ancestros || []);
+  cadena.add(real);
+  let entradas;
+  try { entradas = readdirSync(dir, { withFileTypes: true }); } catch { return acc; }
+  entradas.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  for (const entrada of entradas) {
+    const ruta = join(dir, entrada.name);
+    if (entrada.isDirectory()) { listarFicheros232(base, ruta, acc, cadena, profundidad + 1); continue; }
+    if (entrada.isFile()) { acc.push(ruta.slice(base.length + 1).split('\\').join('/')); continue; }
+    if (!entrada.isSymbolicLink()) continue;
+    let destino;
+    try { destino = statSync(ruta); } catch { continue; }
+    if (destino.isDirectory()) listarFicheros232(base, ruta, acc, cadena, profundidad + 1);
+    else if (destino.isFile()) acc.push(ruta.slice(base.length + 1).split('\\').join('/'));
+  }
+  return acc;
+}
+function huellaDirectorio232(base) {
+  const hash = createHash('sha256');
+  for (const rel of listarFicheros232(base)) {
+    hash.update(rel + '\n');
+    try { hash.update(readFileSync(join(base, rel))); } catch { hash.update('<<ausente:' + rel + '>>'); }
+    hash.update('\n--\n');
+  }
+  return hash.digest('hex');
+}
+/* La misma regla de enlaces que en listarFicheros232
+   (Integración-3): un paquete enlazado —su entrada en
+   node_modules es un symlink a un directorio— cuenta como
+   paquete, y un ámbito enlazado se abre igual (readdirSync ya
+   sigue el enlace al listar sus hijos). statSync sigue el
+   enlace: si está roto o el destino no es directorio, no es
+   paquete, como antes. */
+function esDirectorio232(entrada, ruta) {
+  if (entrada.isDirectory()) return true;
+  if (!entrada.isSymbolicLink()) return false;
+  try { return statSync(ruta).isDirectory(); } catch { return false; }
+}
+export function paquetesNodeModules232(dir = HERE) {
+  const nmDir = join(dir, 'node_modules');
+  let entradas;
+  try { entradas = readdirSync(nmDir, { withFileTypes: true }); } catch { return []; }
+  const paquetes = [];
+  for (const entrada of entradas) {
+    if (!esDirectorio232(entrada, join(nmDir, entrada.name))) continue;
+    if (entrada.name.startsWith('@')) {
+      let hijos;
+      try { hijos = readdirSync(join(nmDir, entrada.name), { withFileTypes: true }); } catch { continue; }
+      for (const hijo of hijos) if (esDirectorio232(hijo, join(nmDir, entrada.name, hijo.name))) paquetes.push(entrada.name + '/' + hijo.name);
+    } else paquetes.push(entrada.name);
+  }
+  return paquetes.sort();
+}
+export function huellaPaquete(dir = HERE) {
+  const hash = createHash('sha256');
+  for (const nombre of [...FICHEROS_HUELLA231, ...FICHEROS_PAQUETE232]) {
+    hash.update(nombre + '\n');
+    try { hash.update(readFileSync(join(dir, nombre))); }
+    catch { hash.update('<<ausente:' + nombre + '>>'); }
+    hash.update('\n--\n');
+  }
+  const nmDir = join(dir, 'node_modules');
+  if (!existsSync(nmDir)) { hash.update('node_modules\n<<ausente>>\n--\n'); return hash.digest('hex'); }
+  for (const paquete of paquetesNodeModules232(dir)) {
+    hash.update('node_modules/' + paquete + '\n');
+    hash.update(huellaDirectorio232(join(nmDir, paquete)));
+    hash.update('\n--\n');
+  }
+  return hash.digest('hex');
+}
+/* Verificación de la huella de paquete, pura como la de
+   motores: se recomputa DESDE EL DISCO y se compara. */
+export function verificacionPaquete232(dir, huellaEsperada) {
+  const huella = huellaPaquete(dir);
+  return { ok: /^[0-9a-f]{64}$/.test(String(huellaEsperada || '')) && huella === huellaEsperada, huellaPaquete: huella };
+}
+
+/* ---------- Saneo del detalle por tokens (2.3.2, m-19) ----------
+   El detalle de actualización viaja al servidor y se enseña en
+   Salud: ninguna ruta absoluta puede viajar en él. Cada palabra
+   que contenga \ o / se sustituye por su último segmento
+   (C:\\Users\\…\\sat-tributario.mjs → sat-tributario.mjs)
+   ANTES del colapso de espacios y del corte a 200. */
+export function sanearDetalle232(detalle) {
+  const palabras = String(detalle || '').split(/\s+/).filter(Boolean).map(palabra => {
+    if (!palabra.includes('\\') && !palabra.includes('/')) return palabra;
+    const segmentos = palabra.split(/[\\/]+/).filter(Boolean);
+    return segmentos.length ? segmentos[segmentos.length - 1] : palabra;
+  });
+  return palabras.join(' ').replace(/\s+/g, ' ').trim().slice(0, 200);
+}
+
+/* Decisión pura de actualizar: manda la versión mayor; a igual
+   versión manda la huella — si la anunciada difiere de la
+   propia, la instalación está mezclada y se reinstala. Sin
+   huella anunciada (servidor o paquete anterior), manda solo
+   la versión, como siempre. Nunca se baja de versión. */
+export function tocaActualizar(infoServidor, propia) {
+  if (!infoServidor?.version || !propia?.version) return false;
+  const cmp = compararVersiones(infoServidor.version, propia.version);
+  if (cmp > 0) return true;
+  if (cmp < 0) return false;
+  const anunciada = String(infoServidor.huellaMotores || '');
+  if (!/^[0-9a-f]{64}$/.test(anunciada)) return false;
+  return anunciada !== String(propia.huella || '');
+}
+/* Verificación post-copia, pura: la huella se recomputa DESDE
+   EL DISCO tras copiar y se compara con la anunciada. Solo con
+   las dos iguales la actualización se da por buena. */
+export function verificacionPostCopia(dir, huellaEsperada) {
+  const huella = huellaMotores(dir);
+  return { ok: /^[0-9a-f]{64}$/.test(String(huellaEsperada || '')) && huella === huellaEsperada, huella };
+}
+/* Lo último que la comprobación de actualización dejó que
+   contar ({ estado: 'fallo'|'pendiente', detalle } o null):
+   viaja en el reporte del latido para que el servidor lo
+   enseñe en Salud. El detalle es corto (≤200) y sin rutas
+   personales: nombres de fichero y causa técnica breve. */
+let ultimoReporteActualizacion231 = null;
+export function anotarActualizacion231(estado, detalle) {
+  ultimoReporteActualizacion231 = { estado, detalle: sanearDetalle232(detalle) };
+}
+/* El reporte de versión del latido: solo versión, huella y,
+   cuando la hay, la novedad de la actualización. Ningún dato
+   sensible viaja aquí — las credenciales jamás entran en el
+   protocolo (regla de la casa). */
+export function reporteVersion231(dir = HERE) {
+  const reporte = { version: EJECUTOR_VERSION, huella: huellaMotores(dir), huellaPaquete: huellaPaquete(dir) };
+  if (ultimoReporteActualizacion231) reporte.actualizacion = { ...ultimoReporteActualizacion231 };
+  return reporte;
+}
+
+/* ---------- Copia en orden de dependencias (2.3.2, B-2) ----------
+   La copia de la 2.3.1 sobrescribía la instalación viva en el
+   orden que devolviera readdirSync: si moría a mitad tras la
+   cáscara y antes que los motores, el módulo ya no cargaba
+   (imports estáticos) y la pieza que podía curarse era la que
+   no arrancaba. El orden ahora es fijo y por dependencias:
+   primero las carpetas (node_modules, del que cuelga todo),
+   después los motores en el orden de la huella, después el
+   resto de ficheros de programa, y ejecutor-local.mjs —la
+   cáscara que importa a todos— EL ÚLTIMO de los de programa:
+   hasta que la cáscara nueva aterriza, la vieja sigue casando
+   con los motores viejos o con los nuevos ya copiados, y si la
+   copia muere a mitad la instalación sigue pudiendo arrancar
+   y curarse en la siguiente comprobación. */
+function rangoCopia232(nombre) {
+  if (nombre === 'ejecutor-local.mjs') return 9000;
+  const ih = FICHEROS_HUELLA231.indexOf(nombre);
+  if (ih > 0) return ih;
+  const ip = FICHEROS_PAQUETE232.indexOf(nombre);
+  if (ip >= 0) return 100 + ip;
+  return 500;
+}
+export function ordenarCopia232(nombres) {
+  return [...nombres].sort((a, b) => (rangoCopia232(a) - rangoCopia232(b)) || (a < b ? -1 : a > b ? 1 : 0));
+}
+const nombreBase232 = ruta => String(ruta || '').split(/[\\/]/).filter(Boolean).pop() || 'carpeta';
+/* Copia atómica por fichero (2.3.2, D-2; auditoría final §2):
+   TODA copia de fichero de la actualización va primero a un
+   hermano temporal (destino + sufijo) y solo entonces se
+   renombra sobre el destino — renameSync es atómico en el
+   mismo volumen, así que el destino o queda entero viejo o
+   entero nuevo, nunca truncado a mitad. Esto importa sobre
+   todo para despertar.vbs: es pieza copiada y a la vez el
+   único rescatador de todos los caminos de arranque; morir
+   durante su copia directa dejaba el ejecutor sin arranque
+   ni autorreparación. Si la copia o el renombrado fallan, el
+   temporal se borra y el destino ORIGINAL queda intacto; al
+   terminar (bien o mal) no queda ningún temporal residual.
+   Las operaciones de fs son inyectables (ops232) solo como
+   costura de prueba, siguiendo la del propio fichero: la
+   suite fuerza un renombrado que falla y comprueba que el
+   destino original sobrevive. */
+export const SUFIJO_COPIA_TEMPORAL232 = '.tmp-actualizacion-232';
+export function copiarFicheroAtomico232(origenFichero, destinoFichero, ops232 = {}) {
+  const copiarF = ops232.copyFileSync || copyFileSync;
+  const renombrarF = ops232.renameSync || renameSync;
+  const borrarF = ops232.unlinkSync || unlinkSync;
+  const temporal = destinoFichero + SUFIJO_COPIA_TEMPORAL232;
+  try { if (existsSync(temporal)) borrarF(temporal); } catch { /* un temporal viejo no bloquea la copia */ }
+  try {
+    copiarF(origenFichero, temporal);
+    renombrarF(temporal, destinoFichero);
+  } catch (errorCopia) {
+    try { if (existsSync(temporal)) borrarF(temporal); } catch { /* el error que manda es el de la copia */ }
+    throw errorCopia;
+  }
+}
+export function copiarActualizacion232(origen, destino, ops232 = {}) {
+  let entradas;
+  try { entradas = readdirSync(origen, { withFileTypes: true }); }
+  catch (errorLectura) { throw new Error(nombreBase232(origen) + ' (' + (errorLectura?.code || 'error de lectura') + ')'); }
+  const porNombre = new Map(entradas.map(e => [e.name, e]));
+  const directorios = entradas.filter(e => e.isDirectory()).map(e => e.name).sort();
+  for (const nombreDir of directorios) {
+    const nombre = porNombre.get(nombreDir);
+    if (nombre.name === 'efirma-local' || PRESERVADOS_UPDATE.has(nombre.name)) continue;
+    const d = join(destino, nombre.name);
+    try { mkdirSync(d, { recursive: true }); }
+    catch (errorDir) { throw new Error(nombre.name + ' (' + (errorDir?.code || 'error al crear carpeta') + ')'); }
+    copiarActualizacion232(join(origen, nombre.name), d, ops232);
+  }
+  for (const nombreFichero of ordenarCopia232(entradas.filter(e => !e.isDirectory()).map(e => e.name))) {
+    const nombre = porNombre.get(nombreFichero);
+    if (nombre.name === 'efirma-local' || PRESERVADOS_UPDATE.has(nombre.name)) continue;
+    try { copiarFicheroAtomico232(join(origen, nombre.name), join(destino, nombre.name), ops232); }
+    catch (errorCopia) { throw new Error(nombre.name + ' (' + (errorCopia?.code || 'error de copia') + ')'); }
+  }
+}
+const copiar = copiarActualizacion232;
+
+/* Respaldo y restauración (2.3.2, B-2): antes de copiar se
+   guardan los ficheros de programa vigentes (y node_modules)
+   en actualizacion-anterior/; despertar.vbs restaura esa
+   carpeta si el proceso nuevo muere al arrancar una y otra
+   vez, y el propio ejecutor la restaura si la verificación
+   post-copia caza una mezcla. */
+export function respaldarActual232(dir = HERE, respaldo = join(dir, 'actualizacion-anterior')) {
+  rmSync(respaldo, { recursive: true, force: true });
+  mkdirSync(respaldo, { recursive: true });
+  for (const nombre of [...FICHEROS_HUELLA231, ...FICHEROS_PAQUETE232]) {
+    const ruta = join(dir, nombre);
+    if (existsSync(ruta)) copiarFicheroAtomico232(ruta, join(respaldo, nombre));
+  }
+  const nm = join(dir, 'node_modules');
+  if (existsSync(nm)) copiarActualizacion232(nm, join(respaldo, 'node_modules'));
+  return respaldo;
+}
+export function restaurarRespaldo232(dir = HERE, respaldo = join(dir, 'actualizacion-anterior')) {
+  if (!existsSync(respaldo)) return false;
+  copiarActualizacion232(respaldo, dir);
+  return true;
+}
+/* Re-verificación tras restaurar (2.3.2, D-2; auditoría final
+   §2): restaurar no basta para afirmar «restaurado». Se
+   recomputan DESDE EL DISCO, con las mismas funciones de
+   verificación de motores y de paquete de siempre
+   (verificacionPostCopia / verificacionPaquete232), las
+   huellas de la instalación viva y se comparan con las del
+   propio respaldo — lo restaurado debe ser, huella a huella,
+   lo que el respaldo guarda. Si la restauración quedó a
+   medias, ok va en false aquí, en el acto, y no en el
+   siguiente arranque vía despertador. */
+export function reverificacionTrasRestaurar232(dir = HERE, respaldo = join(dir, 'actualizacion-anterior')) {
+  const motores = verificacionPostCopia(dir, huellaMotores(respaldo));
+  const paquete = verificacionPaquete232(dir, huellaPaquete(respaldo));
+  return { ok: motores.ok && paquete.ok, motores, paquete, huella: motores.huella, huellaPaquete: paquete.huellaPaquete };
+}
+
+/* Humo de carga y verificación EN STAGING (2.3.2, B-2): el
+   paquete nuevo se descomprime en actualizacion-nueva/ y se
+   verifica ALLÍ —huella de motores, huellaPaquete y
+   node --check de cada .mjs de programa— antes de tocar la
+   instalación viva. Si el staging no verifica, la viva no se
+   toca y el fallo se reporta. */
+export function humoCarga232(dir) {
+  for (const nombre of [...FICHEROS_HUELLA231, 'instalar.mjs']) {
+    const ruta = join(dir, nombre);
+    if (!existsSync(ruta)) continue;
+    try { execFileSync(process.execPath, ['--check', ruta], { stdio: 'pipe' }); }
+    catch { return { ok: false, fichero: nombre }; }
+  }
+  return { ok: true };
+}
+export function verificarStaging232(dir, info = {}) {
+  const motores = verificacionPostCopia(dir, info.huellaMotores);
+  if (!motores.ok) return { ok: false, motivo: 'huella-motores', huella: motores.huella };
+  const paquete = verificacionPaquete232(dir, info.huellaPaquete);
+  if (!paquete.ok) return { ok: false, motivo: 'huella-paquete', huellaPaquete: paquete.huellaPaquete };
+  const humo = humoCarga232(dir);
+  if (!humo.ok) return { ok: false, motivo: 'humo-carga', fichero: humo.fichero };
+  return { ok: true, huella: motores.huella, huellaPaquete: paquete.huellaPaquete };
+}
+
+/* Decisión de actualización (2.3.2, o-4): un manifiesto sin
+   huellaMotores (o sin huellaPaquete) NO se copia y NO es un
+   éxito silencioso: es un pendiente reportable — el 42 ya no
+   descansa solo en el sha del zip. Nunca se baja de versión. */
+export function decisionActualizacion232(infoServidor, propia) {
+  if (!infoServidor?.version || !propia?.version) return { accion: 'ninguna', motivo: 'sin-version' };
+  const cmp = compararVersiones(infoServidor.version, propia.version);
+  if (cmp < 0) return { accion: 'ninguna', motivo: 'no-bajar' };
+  const huellaOk = /^[0-9a-f]{64}$/.test(String(infoServidor.huellaMotores || ''));
+  const paqueteOk = /^[0-9a-f]{64}$/.test(String(infoServidor.huellaPaquete || ''));
+  const necesita = cmp > 0 || (huellaOk && String(infoServidor.huellaMotores) !== String(propia.huella || ''));
+  if (!necesita) return { accion: 'ninguna', motivo: 'al-dia' };
+  if (!huellaOk) return { accion: 'pendiente-sin-huella', motivo: 'huellaMotores' };
+  if (!paqueteOk) return { accion: 'pendiente-sin-huella', motivo: 'huellaPaquete' };
+  return { accion: 'actualizar' };
+}
+
+/* Relanzamiento que no depende del padre (2.3.2, o-6): antes
+   de salir con 42, el ejecutor lanza despertar.vbs desacoplado;
+   el despertador ya sabe no duplicar (YaCorre) y relanzar tras
+   el 42, así que la vuelta no depende de quién lanzó a este
+   proceso. Fuera de Windows no hay despertador: no se lanza. */
+export function lanzarDespertador232(dir = HERE) {
+  if (process.platform !== 'win32') return false;
+  try {
+    const hijo = spawn('wscript.exe', [join(dir, 'despertar.vbs')], { detached: true, stdio: 'ignore', windowsHide: true });
+    hijo.unref();
+    return true;
+  } catch { return false; }
+}
+
+/* Cadencia de re-comprobación (2.3.2, M-5): la actualización
+   ya no se comprueba solo al arrancar. En el bucle se repite
+   cada 6 h; tras un fallo o un pendiente, el reintento espera
+   1 h, luego 6 h, luego 24 h (y se queda en 24 h). */
+export const CADENCIA_ACTUALIZACION232_MS = 6 * 60 * 60 * 1000;
+export const ESPERAS_REINTENTO232_MS = [60 * 60 * 1000, 6 * 60 * 60 * 1000, 24 * 60 * 60 * 1000];
+export function proximaComprobacion232({ ultima = 0, fallosSeguidos = 0, ahora = Date.now() } = {}) {
+  if (!ultima) return ahora;
+  const espera = fallosSeguidos > 0
+    ? ESPERAS_REINTENTO232_MS[Math.min(fallosSeguidos - 1, ESPERAS_REINTENTO232_MS.length - 1)]
+    : CADENCIA_ACTUALIZACION232_MS;
+  return ultima + espera;
+}
+
+/* Devuelve el desenlace ('sin-cambio' | 'pendiente' | 'fallo')
+   para que el bucle lleve la cadencia de reintentos; cuando la
+   actualización se aplica, sale con 42 y no vuelve. Las ramas
+   de verificación post-copia vuelven sin valor (return;): el
+   llamador las lee como 'fallo' con ?? 'fallo'. */
 async function comprobarActualizacion() {
   let info;
-  try { info = await api('/api/executor/version', {}); } catch { return; }
-  if (!info?.version || compararVersiones(info.version, EJECUTOR_VERSION) <= 0) return;
+  try { info = await api('/api/executor/version', {}); } catch { return 'sin-cambio'; }
+  const decision = decisionActualizacion232(info, { version: EJECUTOR_VERSION, huella: huellaMotores() });
+  if (decision.accion === 'ninguna') return 'sin-cambio';
+  if (decision.accion === 'pendiente-sin-huella') {
+    console.error('[ejecutor] el paquete de la versión ' + info.version + ' no anuncia ' + decision.motivo + ': no se copia nada.');
+    anotarActualizacion231('pendiente', 'PacoSAT ofrece la versión ' + info.version +
+      ' pero el paquete no anuncia ' + decision.motivo + ': no se copia nada hasta que el paquete la anuncie.');
+    return 'pendiente';
+  }
   if (process.platform !== 'win32') {
     console.log('[ejecutor] PacoSAT tiene la versión ' + info.version + ' del ejecutor, pero la ' +
       'actualización automática solo corre en Windows: actualiza a mano desde PacoSAT.');
-    return;
+    anotarActualizacion231('pendiente', 'PacoSAT ofrece la versión ' + info.version +
+      ' (o el mismo sello con piezas distintas) y esta plataforma no se actualiza sola: toca actualizar a mano.');
+    return 'pendiente';
   }
   const res = await fetch(URL_BASE + '/api/executor/bundle', { method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-PacoSAT-Executor': TOKEN }, body: '{}' });
-  if (!res.ok) { console.error('[ejecutor] no se pudo bajar la actualización: no se toca nada.'); return; }
+  if (!res.ok) {
+    console.error('[ejecutor] no se pudo bajar la actualización: no se toca nada.');
+    anotarActualizacion231('fallo', 'No se pudo bajar el paquete de la versión ' + info.version +
+      ' desde PacoSAT: no se tocó nada.');
+    return 'fallo';
+  }
   const buf = Buffer.from(await res.arrayBuffer());
   const sha = createHash('sha256').update(buf).digest('hex');
   if (!info.sha256 || sha !== info.sha256) {
     console.error('[ejecutor] la actualización bajada NO coincide con la huella que PacoSAT anuncia: no se toca nada.');
-    return;
+    anotarActualizacion231('fallo', 'El paquete bajado de la versión ' + info.version +
+      ' no coincide con la huella que PacoSAT anuncia (sha256): no se tocó nada.');
+    return 'fallo';
   }
   const zipPath = join(HERE, 'actualizacion.zip');
-  const tmpDir = join(HERE, 'actualizacion-tmp');
+  const tmpDir = join(HERE, 'actualizacion-nueva');
   writeFileSync(zipPath, buf);
   try {
     rmSync(tmpDir, { recursive: true, force: true });
     execFileSync('powershell', ['-NoProfile', '-Command',
       'Expand-Archive -LiteralPath $env:PACO_ZIP -DestinationPath $env:PACO_TMP -Force'],
       { env: { ...process.env, PACO_ZIP: zipPath, PACO_TMP: tmpDir }, stdio: 'pipe' });
-    /* La carpeta efirma-local y los ficheros propios NUNCA se
-       sobrescriben: la actualización trae código, no tus llaves. */
-    const copiar = (origen, destino) => {
-      for (const nombre of readdirSync(origen, { withFileTypes: true })) {
-        if (nombre.name === 'efirma-local' || PRESERVADOS_UPDATE.has(nombre.name)) continue;
-        const o = join(origen, nombre.name), d = join(destino, nombre.name);
-        if (nombre.isDirectory()) { mkdirSync(d, { recursive: true }); copiar(o, d); }
-        else copyFileSync(o, d);
-      }
-    };
+    /* Verificación EN STAGING (2.3.2, B-2): huellas y humo de
+       carga sobre la carpeta nueva; si algo no cuadra, la
+       instalación viva no se ha tocado y no se toca. */
+    const staging = verificarStaging232(tmpDir, info);
+    if (!staging.ok) {
+      console.error('[ejecutor] el paquete nuevo no verifica en staging (' + staging.motivo + '): no se toca la instalación.');
+      anotarActualizacion231('fallo', 'El paquete de la versión ' + info.version +
+        ' no verifica antes de copiar (' + staging.motivo + '): no se tocó la instalación.');
+      return 'fallo';
+    }
+    /* Respaldo de lo vigente y copia en orden de dependencias
+       con la cáscara la última (2.3.2, B-2). La carpeta
+       efirma-local y los ficheros propios NUNCA se sobrescriben:
+       la actualización trae código, no tus llaves. */
+    respaldarActual232(HERE);
     copiar(tmpDir, HERE);
   } catch (error) {
     console.error('[ejecutor] la actualización falló al aplicarse (' + (error?.message || error) + '): sigo con la versión de siempre.');
-    return;
+    anotarActualizacion231('fallo', 'La actualización a la versión ' + info.version +
+      ' falló al copiar ' + (error?.message || 'un fichero') + ': se sigue con lo que había.');
+    return 'fallo';
   } finally {
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* limpieza menor */ }
     try { unlinkSync(zipPath); } catch { /* limpieza menor */ }
   }
+  /* Verificación post-copia (2.3.1, constructor B; ampliada en
+     la 2.3.2 con la huellaPaquete, M-2): antes de dar la
+     actualización por buena, las huellas se recomputan desde
+     el disco y se comparan con las anunciadas. Si alguna no
+     coincide, la instalación sigue mezclada: se restaura el
+     respaldo, NO se anuncia éxito ni se sale como actualizado
+     — el fallo queda anotado para el próximo reporte del
+     latido y se sigue con lo que haya; el servidor lo
+     enseñará en Salud. */
+  if (info.huellaMotores) {
+    const verificacion = verificacionPostCopia(HERE, info.huellaMotores);
+    if (!verificacion.ok) {
+      console.error('[ejecutor] tras copiar, la huella de los motores NO coincide con la anunciada: ' +
+        'la instalación sigue mezclada; restauro el respaldo, lo re-verifico y lo reporto en el latido.');
+      let restaurado = false;
+      try { restaurado = restaurarRespaldo232(HERE); } catch { /* el respaldo queda en actualizacion-anterior para despertar.vbs */ }
+      /* D-2: tras restaurar se RE-VERIFICA con las mismas
+         verificaciones de motores y paquete, y ese resultado
+         —no la sola restauración— es el que queda anotado. */
+      const reverificacion = restaurado ? reverificacionTrasRestaurar232(HERE) : { ok: false };
+      anotarActualizacion231('fallo', 'Tras copiar la versión ' + info.version +
+        ', la huella de los motores no coincide con la del paquete: la instalación sigue mezclada. ' +
+        (reverificacion.ok
+          ? 'Restauración verificada: motores y paquete coinciden con el respaldo restaurado.'
+          : 'Restauración NO verificada: lo restaurado no coincide con el respaldo (motores ' +
+            (reverificacion.motores?.ok ? 'sí' : 'no') + ', paquete ' + (reverificacion.paquete?.ok ? 'sí' : 'no') + ').'));
+      return;
+    }
+  }
+  const verificacionPaquete = verificacionPaquete232(HERE, info.huellaPaquete);
+  if (!verificacionPaquete.ok) {
+    console.error('[ejecutor] tras copiar, la huella del paquete NO coincide con la anunciada: ' +
+      'la instalación sigue mezclada; restauro el respaldo, lo re-verifico y lo reporto en el latido.');
+    let restaurado = false;
+    try { restaurado = restaurarRespaldo232(HERE); } catch { /* el respaldo queda en actualizacion-anterior para despertar.vbs */ }
+    const reverificacion = restaurado ? reverificacionTrasRestaurar232(HERE) : { ok: false };
+    anotarActualizacion231('fallo', 'Tras copiar la versión ' + info.version +
+      ', la huella del paquete no coincide con la anunciada: la instalación sigue mezclada. ' +
+      (reverificacion.ok
+        ? 'Restauración verificada: motores y paquete coinciden con el respaldo restaurado.'
+        : 'Restauración NO verificada: lo restaurado no coincide con el respaldo (motores ' +
+          (reverificacion.motores?.ok ? 'sí' : 'no') + ', paquete ' + (reverificacion.paquete?.ok ? 'sí' : 'no') + ').'));
+    return;
+  }
   console.log('[ejecutor] actualizado a la versión ' + info.version + ': reinicio solo.');
+  lanzarDespertador232(HERE);
   process.exit(42);
 }
 
@@ -288,12 +757,92 @@ function diagDecisionDe(error) {
   return { screenshotBase64: diag.screenshot ? toB64(diag.screenshot) : '',
     html: diag.html ? String(diag.html) : '', url: String(diag.url || '') };
 }
+/* Evidencia de la página de RESULTADOS en las corridas de
+   declaraciones (2.3.2, constructor P2): el motor la devuelve
+   en su resultado como resultadosDiag (el diagnostics() de la
+   página de resultados al concluir la lectura, con filas o con
+   el vacío confirmado) y aquí viaja al servidor con la misma
+   forma que diagDe — base64, foto + HTML + URL — para que el
+   servidor la guarde como la foto/HTML de la corrida TAMBIÉN
+   en las corridas buenas. Evidencia del defecto: las corridas
+   del 17 nov 2026 (47496edb-5e1f-4f62-b1dc-07c08001f6ed y
+   e0af7105-4c4c-4aa8-a773-8dfce3cb0e4a) cerraron ok:true con
+   «Resultados leídos: 0 filas» y hasShot/hasHtml todos false:
+   un 0 sin constancia se dio por bueno. */
+export function resultadosDiagDe(result) {
+  const diag = result?.resultadosDiag;
+  if (!diag) return undefined;
+  return { screenshotBase64: diag.screenshot ? toB64(diag.screenshot) : '',
+    html: diag.html ? String(diag.html) : '', url: String(diag.url || '') };
+}
+/* Evidencia POR SECCIÓN del Buzón (2.9.3): la página de
+   «Mis comunicados» o «Mis documentos» TAL COMO QUEDÓ cuando
+   la sección concluyó o agotó su plazo — el motor la
+   devuelve en su resultado como comunicadosDiag /
+   documentosDiag, con el inventario de marcos de la página
+   (la URL de cada marco y una muestra de su texto visible)
+   — y aquí viaja al servidor con la misma forma que
+   resultadosDiag, marcos incluidos. Evidencia del defecto:
+   la corrida real 805fc97e (2.9.2, sede NAS) guardó la
+   página de la BANDEJA y su corrida cerró con evidencia,
+   pero comunicados volvió a no concluir y de ESA página no
+   quedó nada que mirar: el artefacto guardado era el de la
+   bandeja, no el momento de la sección. Puro y exportado,
+   como resultadosDiagDe: la suite lo juzga sin portal. */
+export function seccionDiagDe(diag) {
+  if (!diag) return undefined;
+  return { screenshotBase64: diag.screenshot ? toB64(diag.screenshot) : '',
+    html: diag.html ? String(diag.html) : '', url: String(diag.url || ''),
+    marcos: Array.isArray(diag.marcos) ? diag.marcos.map(marco => ({
+      url: String(marco?.url || ''), texto: String(marco?.texto || '') })) : [] };
+}
+/* Buzón completo por la vía del ejecutor (2.4.0, WC1b): el
+   motor (sat-tributario.mjs, castigo 4 de WC1) devuelve las
+   secciones de «Mis comunicados» y «Mis documentos» en su
+   resultado (comunicados/documentos) y aquí viajan al
+   servidor TAL COMO el motor las devuelve — la misma
+   referencia, sin copiar ni transformar ningún campo: su
+   validación de forma es del protocolo (validateBuzonResult
+   en sat-executor.mjs), no de este reenvío. Si el motor no
+   las trae (réplicas viejas del motor), devuelve undefined
+   y el resultado del trabajo no gana ningún campo: el
+   servidor ya trata su ausencia como «no consta». Puro y
+   exportado, como resultadosDiagDe: la suite lo juzga sin
+   portal, porque ejecutarIntento no es importable. */
+export function buzonSecciones240De(result) {
+  if (!result) return undefined;
+  const secciones = {};
+  if (result.comunicados !== undefined) secciones.comunicados = result.comunicados;
+  if (result.documentos !== undefined) secciones.documentos = result.documentos;
+  return Object.keys(secciones).length ? secciones : undefined;
+}
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+/* Predicado puro del reintento con sesión fresca (2.3.2,
+   FIX-B): en la corrida 1 se descarta la sesión y se reintenta
+   UNA vez cuando (a) la sesión era REUTILIZADA y no respondió
+   —el caso de siempre— O (b) el motor lanzó «ruta-muerta»,
+   aunque la sesión sea FRESCA. El caso (b) es el contrato
+   escrito en sat-tributario.mjs («para que el ejecutor
+   descarte la sesión y reintente con un acceso fresco»): la
+   evidencia viva del 17 nov ~14:57 CST (run buzon-listar
+   1d36cce9) mostró una sesión recién abierta que el portal
+   dejó en /app/seg/null; con la condición vieja (solo
+   reutilizada) attempts quedó en 1 y el trabajo murió con la
+   puerta abierta. Fuera de la corrida 1, o sin ninguno de los
+   dos motivos, no hay reintento por esta vía. Puro y
+   exportado: la suite lo juzga sin portal, porque
+   ejecutarIntento no es importable. */
+export function debeReintentarConSesionFresca232(error, sesion, corrida) {
+  return corrida === 1 && Boolean(sesion?.reutilizada || error?.code === 'ruta-muerta');
+}
+
 /* Un intento de un trabajo: sesión (viva o nueva) + motor. Si la
-   sesión REUTILIZADA muere a mitad, se entra de nuevo y el motor
-   se repite dentro del mismo intento — la tanda no se pierde
-   por una sesión caducada del portal. */
+   sesión REUTILIZADA muere a mitad, o el motor detecta la ruta
+   muerta del portal (también con sesión fresca, FIX-B), se
+   entra de nuevo y el motor se repite dentro del mismo
+   intento — la tanda no se pierde por una sesión caducada del
+   portal ni por la página muerta en la que el portal la dejó. */
 async function ejecutarIntento(job, m, onStep) {
   const rfc = job.rfc;
   if (job.kind === 'puerta-probar') {
@@ -348,10 +897,37 @@ async function ejecutarIntento(job, m, onStep) {
         /* accesoOk (1.32.1): un corredor que COMPLETA bajo la
            sesión —fresca o reutilizada— acredita acceso real:
            la sesión estaba viva dentro del portal. */
-        return { operations: ['entrar-con-efirma', 'navegar-a-lista', 'leer-lista'],
+        const salida = { operations: ['entrar-con-efirma', 'navegar-a-lista', 'leer-lista'],
           accesoOk: true,
           notifications: result.notifications || [],
-          comunicadosNoLeidos: result.comunicadosNoLeidos ?? null };
+          comunicadosNoLeidos: result.comunicadosNoLeidos ?? null,
+          /* Buzón completo (2.4.0, WC1b): las secciones de
+             «Mis comunicados» y «Mis documentos» se reenvían
+             tal como el motor las devolvió; sin secciones en
+             el motor, el resultado no gana ningún campo. */
+          ...(buzonSecciones240De(result) || {}) };
+        /* La evidencia de resultados viaja ADEMÁS del
+           resultado (2.9.2, pieza B): la página de la bandeja
+           que el motor capturó al leer la lista, con la misma
+           forma que en declaraciones — el servidor la guarda
+           como foto/HTML de la corrida también en las buenas
+           (su espejo la esperaba desde la 2.4.0, castigo 28;
+           lo que faltaba era este reenvío y que el motor la
+           produjera). Solo cuando el motor la trajo: sin
+           ella, el resultado no gana ningún campo. */
+        const resultadosDiag = resultadosDiagDe(result);
+        if (resultadosDiag) salida.resultadosDiag = resultadosDiag;
+        /* La evidencia por sección viaja ADEMÁS (2.9.3): la
+           página de «Mis comunicados» y la de «Mis
+           documentos» tal como quedaron cuando cada sección
+           concluyó o agotó su plazo, con su inventario de
+           marcos — solo cuando el motor las trajo: sin ellas,
+           el resultado no gana ningún campo. */
+        const comunicadosDiag = seccionDiagDe(result.comunicadosDiag);
+        if (comunicadosDiag) salida.comunicadosDiag = comunicadosDiag;
+        const documentosDiag = seccionDiagDe(result.documentosDiag);
+        if (documentosDiag) salida.documentosDiag = documentosDiag;
+        return salida;
       }
       if (job.kind === 'declaraciones-recuperar' || job.kind === 'declaracion-folio' || job.kind === 'declaraciones-transacciones') {
         const query = job.kind === 'declaracion-folio'
@@ -371,6 +947,13 @@ async function ejecutarIntento(job, m, onStep) {
             fechaPresentacion: doc.fechaPresentacion || '', operacion: doc.operacion || '',
             contentBase64: toB64(doc.content) })),
           transactions: result.transactions || [], warnings: result.warnings || [] };
+        /* La evidencia de resultados viaja ADEMÁS del resultado
+           (2.3.2, P2): solo cuando el motor la trajo — las
+           corridas de folio/transacciones no leen la consulta
+           y no la traen — y sin cambiar la forma de siempre
+           cuando no la hay. */
+        const resultadosDiag = resultadosDiagDe(result);
+        if (resultadosDiag) salida.resultadosDiag = resultadosDiag;
         /* «Seguir» real (2.3.0, pieza 6): SOLO declaraciones-
            recuperar lo honra — declaracion-folio y
            declaraciones-transacciones son atómicos y su
@@ -400,12 +983,20 @@ async function ejecutarIntento(job, m, onStep) {
       }
       throw Object.assign(new Error('Clase de trabajo no reconocida por este ejecutor: ' + job.kind), { code: 'sin-manejador' });
     } catch (error) {
-      if (corrida === 1 && sesion.reutilizada) {
-        /* La sesión heredada no respondió: se descarta, se entra
-           de nuevo y el motor se repite UNA vez. Queda en la
-           traza, no en silencio. Si la NUEVA entrada cae, ese
-           error sí es de la puerta y nace marcado. */
-        onStep('La sesión reutilizada no respondió', 'se descarta y se entra de nuevo con la e.firma');
+      if (debeReintentarConSesionFresca232(error, sesion, corrida)) {
+        /* Se descarta la sesión, se entra de nuevo y el motor
+           se repite UNA vez. Queda en la traza, no en silencio.
+           Si la NUEVA entrada cae, ese error sí es de la puerta
+           y nace marcado (enAcceso, justo debajo). Dos motivos:
+           la sesión heredada que no respondió —el caso de
+           siempre— y la ruta muerta del portal, que también
+           dispara el reintento con sesión FRESCA (FIX-B): el
+           motor la lanza justo «para que el ejecutor descarte
+           la sesión y reintente con un acceso fresco». */
+        if (error?.code === 'ruta-muerta')
+          onStep('La sesión quedó en la página muerta del portal', 'se descarta y se entra de nuevo con la e.firma');
+        else
+          onStep('La sesión reutilizada no respondió', 'se descarta y se entra de nuevo con la e.firma');
         await cerrarSesionViva(rfc);
         try {
           sesion = await sesionVivaPara(rfc, m, onStep);
@@ -418,7 +1009,9 @@ async function ejecutarIntento(job, m, onStep) {
       /* Fallo terminal DEL CORREDOR (1.32.1): la sesión con la
          que el motor corrió estaba viva — si era reutilizada y
          es la primera corrida no se llega aquí (se reintenta
-         con entrada fresca); si era fresca, su login se
+         con entrada fresca), y tampoco si era fresca pero el
+         motor lanzó ruta-muerta en la primera corrida (FIX-B);
+         en los demás casos con sesión fresca, su login se
          completó en esta corrida dentro de abrirSesionViva.
          La puerta abrió: el error lo declara para que el
          resultado lleve accesoOk aunque el trabajo falle. */
@@ -526,16 +1119,102 @@ async function ejecutar(job) {
    Windows, donde el lanzador no corre y la forma se conserva
    con los hechos de registro a false. La lectura jamás tumba
    el ciclo: si algo falla, viaja la forma en false y el
-   latido sigue. */
+   latido sigue. (2.3.2, M-4: instancias ya no es la constante
+   de este texto — se mide con medirInstancias232 o no se
+   manda; ver el bloque de instancia única más abajo.) */
+/* ---------- Instancia única DE VERDAD (2.3.2, constructor B2a; E-04/M-4) ----------
+   La 2.3.0 reportaba instancias = 1 como constante y arrancar.bat
+   lanzaba node a pelo: el duplicado era posible y el servidor no
+   podía verlo. Ahora hay un cerrojo real: al arrancar el bucle,
+   el ejecutor toma ejecutor.lock en su carpeta con su PID y lo
+   late (latido de fichero) en cada ciclo. Si el fichero nombra
+   un PID vivo con latido fresco, el segundo proceso sale con un
+   mensaje claro SIN latir ni reclamar trabajos. Un cerrojo con
+   latido caducado o de un PID muerto se toma: un crash no deja
+   la puerta cerrada para siempre. */
+export const CERROJO_FICHERO232 = 'ejecutor.lock';
+export const CERROJO_STALE232_MS = 90 * 1000;
+function pidVivo232(pid) {
+  if (!pid) return false;
+  if (pid === process.pid) return true;
+  try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; }
+}
+export function adquirirCerrojo232(dir = HERE, { ahora = Date.now(), staleMs = CERROJO_STALE232_MS } = {}) {
+  const ruta = join(dir, CERROJO_FICHERO232);
+  try {
+    const datos = JSON.parse(readFileSync(ruta, 'utf8'));
+    const pid = Number(datos?.pid) || 0;
+    const latido = Number(datos?.latido) || 0;
+    if (pid && pid !== process.pid && pidVivo232(pid) && (ahora - latido) < staleMs) {
+      return { ok: false, pid, motivo: 'otra-instancia-viva' };
+    }
+  } catch { /* sin cerrojo legible: se toma */ }
+  try { writeFileSync(ruta, JSON.stringify({ pid: process.pid, latido: ahora }), { mode: 0o600 }); }
+  catch { return { ok: true, pid: process.pid, propio: false }; }
+  return { ok: true, pid: process.pid, propio: true };
+}
+export function latidoCerrojo232(dir = HERE, { ahora = Date.now() } = {}) {
+  const ruta = join(dir, CERROJO_FICHERO232);
+  try {
+    const datos = JSON.parse(readFileSync(ruta, 'utf8'));
+    if (Number(datos?.pid) !== process.pid) return false;
+    writeFileSync(ruta, JSON.stringify({ pid: process.pid, latido: ahora }), { mode: 0o600 });
+    return true;
+  } catch { return false; }
+}
+export function liberarCerrojo232(dir = HERE) {
+  const ruta = join(dir, CERROJO_FICHERO232);
+  try {
+    const datos = JSON.parse(readFileSync(ruta, 'utf8'));
+    if (Number(datos?.pid) === process.pid) unlinkSync(ruta);
+    return true;
+  } catch { return false; }
+}
+/* Medición de instancias: conteo REAL de procesos node con el
+   ejecutor-local.mjs de ESTA carpeta — por WMI en Windows (la
+   misma consulta que hace despertar.vbs) y por /proc en Linux.
+   Si la medición no es fiable en el entorno (la consulta falla
+   o no encuentra a este proceso, que se está contando a sí
+   mismo), devuelve null y el campo instancias NO se manda:
+   declarar un número sin medirlo fue el defecto E-04. */
+export function medirInstancias232(dir = HERE) {
+  if (process.platform === 'win32') {
+    try {
+      const salida = execFileSync('powershell', ['-NoProfile', '-Command',
+        "$p = @(Get-CimInstance Win32_Process -Filter \"Name = 'node.exe'\" | Where-Object { $_.CommandLine -like '*ejecutor-local.mjs*' }); $p.Count"],
+        { encoding: 'utf8', timeout: 15000 });
+      const n = Number(String(salida).trim());
+      return Number.isInteger(n) && n >= 1 ? n : null;
+    } catch { return null; }
+  }
+  if (process.platform === 'linux') {
+    try {
+      let cuenta = 0;
+      for (const entrada of readdirSync('/proc')) {
+        if (!/^[0-9]+$/.test(entrada)) continue;
+        let cmdline = '';
+        try { cmdline = readFileSync(join('/proc', entrada, 'cmdline'), 'utf8'); } catch { continue; }
+        if (cmdline.includes('ejecutor-local.mjs')) cuenta++;
+      }
+      return cuenta >= 1 ? cuenta : null;
+    } catch { return null; }
+  }
+  return null;
+}
+/* La constante de la 2.3.0 queda solo como referencia histórica:
+   ya no se reporta — instancias se mide o no se manda (M-4). */
 export const INSTANCIAS_ESTE_PROCESO230 = 1;
-export async function residenciaLatido230({ dir } = {}) {
+export async function residenciaLatido230({ dir, medirInstancias = medirInstancias232 } = {}) {
   const estado = await estadoResidencia(dir ? { dir } : {}).catch(() => null);
-  return {
+  const latidoResidencia = {
     registrada: estado?.registrada === true,
     protocolo: estado?.protocolo === true,
     rechazada: estado?.rechazada === true,
-    instancias: INSTANCIAS_ESTE_PROCESO230,
   };
+  let instancias = null;
+  try { instancias = medirInstancias(dir || HERE); } catch { instancias = null; }
+  if (Number.isInteger(instancias) && instancias >= 1) latidoResidencia.instancias = instancias;
+  return latidoResidencia;
 }
 
 /* ---------- Pieza 6: «Seguir» real en declaraciones ----------
@@ -603,7 +1282,13 @@ async function ciclo() {
      el estado real de este equipo y lo manda en `residencia`;
      el servidor lo guarda tal cual. */
   const residencia = await residenciaLatido230();
-  const latido = await api('/api/executor/heartbeat', { residencia });
+  /* Verdad de versión (2.3.1, constructor B): cada latido lleva
+     además el `reporte` — mi versión y la huella de mis motores
+     recomputada en este pulso, más la novedad de la última
+     comprobación de actualización cuando la hubo — para que
+     una instalación mezclada se vea en el servidor en vez de
+     pasar en silencio. */
+  const latido = await api('/api/executor/heartbeat', { residencia, reporte: reporteVersion231() });
   if (Array.isArray(latido?.cancelados)) {
     for (const id of latido.cancelados) {
       if (id != null && id !== '') canceladosRemotos.add(String(id));
@@ -632,6 +1317,17 @@ export async function runExecutorLoop({ once = false } = {}) {
   await asegurarToken();
   if (!TOKEN) throw new Error('Faltan PACOSAT_EXECUTOR_TOKEN (o token.txt / codigo.txt para el primer canje).');
   if (!existsSync(EFIRMA_DIR)) mkdirSync(EFIRMA_DIR, { recursive: true, mode: 0o700 });
+  /* Instancia única (2.3.2, M-4): el cerrojo se toma ANTES de
+     latir o reclamar nada. Si otra instancia viva lo tiene,
+     este proceso sale con el mensaje claro y sin tocar nada:
+     ni un latido que pise al residente ni un trabajo doble. */
+  const cerrojo = adquirirCerrojo232(HERE);
+  if (!cerrojo.ok) {
+    console.log('[ejecutor] ya hay otro ejecutor de PacoSAT corriendo en este equipo (proceso ' + cerrojo.pid +
+      '): salgo sin latir ni reclamar trabajos. Si no es así, cierra aquel proceso y vuelve a abrir.');
+    return;
+  }
+  process.once('exit', () => liberarCerrojo232(HERE));
   console.log('[ejecutor] PacoSAT ' + URL_BASE + ' · protocolo ' + SAT_EXECUTOR_PROTOCOL_VERSION +
     ' · ejecutor ' + EJECUTOR_VERSION + ' · e.firma local en ' + EFIRMA_DIR);
   /* Residencia (2.0.1, nº 31): el ejecutor se asegura SOLO, en su
@@ -639,10 +1335,28 @@ export async function runExecutorLoop({ once = false } = {}) {
      automático con Windows están registrados — idempotente,
      silencioso y solo en Windows; la e.firma no se mueve de aquí. */
   await asegurarResidencia().catch(() => {});
-  await comprobarActualizacion();
+  /* Actualización periódica (2.3.2, M-5): la comprobación de
+     arranque se repite dentro del bucle cada 6 h, y tras un
+     fallo o un pendiente con espera creciente (1 h, 6 h, 24 h).
+     Punto seguro elegido: la comprobación corre ENTRE ciclos —
+     ciclo() reclama y ejecuta sus trabajos en secuencia, así
+     que cuando vuelve, no hay ningún trabajo en curso en este
+     proceso; si hay actualización, se aplica ahí o el proceso
+     sale con 42, nunca a mitad de un trabajo. Los trabajos que
+     el servidor tenga encolados esperan al proceso nuevo. */
+  let ultimaComprobacion = Date.now();
+  let fallosSeguidos = 0;
+  const primera = (await comprobarActualizacion()) ?? 'fallo';
+  if (primera === 'fallo' || primera === 'pendiente') fallosSeguidos = 1;
   do {
     let cicloRes = { activos: 0, pendientes: 0 };
     try { cicloRes = await ciclo(); } catch (error) { console.error('[ejecutor] ' + (error?.message || error)); }
+    latidoCerrojo232(HERE);
+    if (!once && Date.now() >= proximaComprobacion232({ ultima: ultimaComprobacion, fallosSeguidos })) {
+      ultimaComprobacion = Date.now();
+      const desenlace = (await comprobarActualizacion()) ?? 'fallo';
+      fallosSeguidos = (desenlace === 'fallo' || desenlace === 'pendiente') ? fallosSeguidos + 1 : 0;
+    }
     /* Sondeo adaptativo (1.31.1) llevado a su consecuencia
        (O7, tanda 5): en reposo, el pulso de siempre (20 s); si
        el ciclo movió trabajos O el servidor anuncia cola
@@ -651,6 +1365,7 @@ export async function runExecutorLoop({ once = false } = {}) {
     if (!once) await new Promise(resolve =>
       setTimeout(resolve, executorPollDelay200e(cicloRes)));
   } while (!once);
+  liberarCerrojo232(HERE);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

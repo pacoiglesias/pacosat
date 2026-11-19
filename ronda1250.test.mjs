@@ -286,15 +286,16 @@ const U = n => '12500000-0000-4000-8000-' + String(n).padStart(12, '0');
   ]);
   const todo = await h.call('POST', '/api/reports/generate-all', { rfc: OWN, month: '2026-10' });
   assert.equal(todo.status, 200, JSON.stringify(todo.json));
-  assert.equal(todo.json.pasos.length, 3, 'tres artefactos en un gesto');
+  assert.equal(todo.json.pasos.length, 5,
+    'cinco artefactos en un gesto (la 2.9.3 suma el Excel y el CSV del cierre, como en los demás paneles — antes eran tres)');
   for (const paso of todo.json.pasos) {
     assert.ok(paso.ok, 'el paso ' + paso.id + ' salió: ' + (paso.error || ''));
     assert.ok(paso.content && paso.name, 'cada paso trae su descarga');
   }
   const estado = (await h.call('GET', '/api/reports/close-state?rfc=' + OWN + '&month=2026-10')).json;
-  assert.ok(estado.cierre && ['paquete', 'reporte', 'zip'].every(id =>
+  assert.ok(estado.cierre && ['paquete', 'reporte', 'zip', 'excel', 'csv'].every(id =>
     estado.cierre.pasos.some(paso => paso.id === id && paso.ok)),
-    'al volver, los tres pasos constan pre-marcados');
+    'al volver, los cinco pasos constan pre-marcados');
 
   const notices = (await h.call('GET', '/api/notices')).json;
   const saldo = notices.avisos.find(a => a.kind === 'saldo' && a.direccion === 'cobrar');
@@ -513,13 +514,21 @@ class FixtureParser {
   /* Anexo 1.26.0: el sello sube con la Ronda Visual, como en
      cada ronda (el pin de la 1.17.0 en ronda1170 y este se
      mueven con la versión vigente). */
-  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+  assert.ok(html.includes('"version":"2.9.14"'), 'el artefacto se sella con la versión vigente (2.0.1)');
   assert.ok(html.includes('--accent:var(--green)'), '--accent es token de raíz');
   assert.ok(!html.includes('#2563eb'), 'el azul de emergencia desapareció');
   assert.ok(!html.includes('#d9534f'), 'la insignia ya no lleva el rojo crudo');
   assert.ok(html.includes('.soft{'), '.soft está definida por fin');
   assert.ok(html.includes('.clickable{'), '.clickable está definida por fin');
   assert.ok(html.includes('.inline-form{'), '.inline-form está definida por fin');
+  /* RE-BASE integración 2.4.0 (W6/W6b): tres textos de la lista
+     viven hoy en partes diferidas — «Reimprimir el acuse» y
+     «Recuperar el año completo» en Declaraciones, «Previsión
+     del mes» en Dinero —. La lista se busca en artefacto +
+     partes (lo que el navegador recibe en total), con los
+     mismos textos y la misma fuerza. */
+  const lazy1250 = JSON.parse(readFileSync(join(import.meta.dirname, 'lazy.json'), 'utf8'));
+  const todo1250 = html + Object.values(lazy1250.partes).map(p => p.source).join('\n');
   for (const texto of ['Desde que no estabas', 'Marcar como visto', 'Generar todo el cierre',
     /* «Mientras no estabas» se llama «Desde que no estabas»
        desde la 1.31.1 (la palabra de Paco al pedirla). */
@@ -527,7 +536,7 @@ class FixtureParser {
     'Puente a Paperless', 'Avisos push en este dispositivo', 'Vista de la contadora',
     'Expediente legal', 'Previsión del mes', 'Añadir a Google Calendar',
     'Descargar el calendario (.ics)', 'Abrir el comprobante', 'protagonista'])
-    assert.ok(html.includes(texto), 'el artefacto trae «' + texto + '»');
+    assert.ok(todo1250.includes(texto), 'el artefacto (+ sus partes) trae «' + texto + '»');
   console.log('OK 1.25.0 · artefacto: tokens cerrados, clases definidas y pantallas nuevas presentes');
 }
 console.log('OK ronda1250 — las 20 de Paco, fijadas');

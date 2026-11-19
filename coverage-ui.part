@@ -5,8 +5,16 @@
    modelo que el servidor calcula desde las solicitudes y el libro de
    criterios; esta vista no pide nada al SAT. */
 let coverageYear = '';
-function coverageScreen() {
+/* (2.8.0 · diseño 3) Los paneles de cobertura ya no son una
+   pantalla propia: son la segunda mitad de la CASA ÚNICA de
+   descargas (Descargar del SAT), junto a pedir, lo pedido, la
+   cuota y «Baja lo mismo». coverageScreen queda como envoltorio
+   de compatibilidad; la vista «coverage» se funde en
+   «descargar» (VIEW_ALIASES) y su destino del menú desaparece
+   con ella — su función entera vive en la casa. */
+function coberturaPaneles280(enCasa280 = false) {
   if (typeof satToken === 'undefined' || !satToken) {
+    if (enCasa280) return [];
     const guide = n('section', undefined, 'guide');
     const info = n('div');
     info.append(n('h2', 'La cobertura se calcula en el servidor'),
@@ -45,10 +53,26 @@ function coverageScreen() {
         ' — ' + number.format(group.total) + ' CFDI entre ' + monthLabelC3(group.first) + ' y ' + monthLabelC3(group.last)));
       const byMonth = new Map(group.months.map(cell => [cell.month, cell]));
       const rows = [];
+      /* Los huecos consecutivos se agrupan en UNA fila por
+         tramo (2.9.0 · Bloque C): con actividad desde 2007 la
+         tabla pintaba 231 filas de «sin datos», una por mes. */
+      let huecoDesde = '', huecoHasta = '';
+      const volcarHueco = () => {
+        if (!huecoDesde) return;
+        const [yy, mm] = huecoHasta.split('-').map(Number);
+        const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+        const tramo = huecoDesde === huecoHasta ? monthLabelC3(huecoDesde)
+          : monthLabelC3(huecoDesde) + ' – ' + monthLabelC3(huecoHasta);
+        rows.push([tramo, 'sin datos', 'Hueco dentro de tu rango de actividad', action('Descargar este tramo', () => downloadSheet(group.rfc,
+          { direction: group.direction, start: huecoDesde + '-01', end: huecoHasta + '-' + String(lastDay).padStart(2, '0') }))]);
+        huecoDesde = ''; huecoHasta = '';
+      };
       let cursor = group.first, guard = 0;
       while (cursor <= group.last && guard++ < 240) {
         const cell = byMonth.get(cursor);
+        if (!cell) { if (!huecoDesde) huecoDesde = cursor; huecoHasta = cursor; }
         if (cell) {
+          volcarHueco();
           const vias = [];
           if (cell.descarga) vias.push(number.format(cell.descarga) + ' por descarga del SAT');
           if (cell.importacion) vias.push(number.format(cell.importacion) + ' por importación');
@@ -61,17 +85,26 @@ function coverageScreen() {
             action('Ver los CFDI', () => { scope = group.rfc; const sel = $('scope'); if (sel) sel.value = scope;
               month = cursor; direction = group.direction === 'received' ? 'Recibidos' : 'Emitidos';
               invoicePage = 0; navigate('invoices'); })]);
-        } else {
-          const [yy, mm] = cursor.split('-').map(Number);
-          const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
-          rows.push([monthLabelC3(cursor), 'sin datos', 'Hueco dentro de tu rango de actividad',
-            action('Descargar este mes', () => downloadSheet(group.rfc,
-              { direction: group.direction, start: cursor + '-01', end: cursor + '-' + String(lastDay).padStart(2, '0') }))]);
         }
         const [y, m] = cursor.split('-').map(Number);
         cursor = m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
       }
-      tienesPanel.append(grid(['Mes', 'CFDI guardados', 'Cómo llegaron', 'Estado'], rows));
+      volcarHueco();
+      /* El año como anillo (2.4.0 · W5b1, pieza 5): la misma
+         cuenta de la tabla, pintada — cada segmento es un mes
+         clicable hasta el detalle que la tabla enseña debajo. */
+      tienesPanel.append(coverageRing240(group, byMonth));
+      /* (2.9.9 · D4c) La cobertura se cuenta UNA vez: la
+         vista principal es ESTE anillo de «Qué meses tienes»
+         — tenencia real desde los registros, el año de un
+         vistazo y cada mes clicable hasta el mismo detalle
+         y la misma acción que la tabla —. La tabla mes a
+         mes (la densa, todo el rango) queda tras su «ver
+         más» nombrado, alcanzable con un toque. */
+      const dT = n('details');
+      dT.append(n('summary', 'Ver más · Tabla mes a mes'),
+        grid(['Mes', 'CFDI guardados', 'Cómo llegaron', 'Estado'], rows));
+      tienesPanel.append(dT);
     }
   }
   screens.push(monthlyPanel());
@@ -132,9 +165,20 @@ function coverageScreen() {
       row.total ? '$' + row.total : '—', row.status === '0' ? 'Cancelado' : 'Vigente'])));
   screens.push(metaPanel);
   const rfcs = [...new Set([...visible.map(group => group.rfc), ...Object.keys(coverage.days)])].filter(rfc => !scope || rfc === scope).sort();
-  for (const rfc of rfcs) screens.push(coverageHeatmap(rfc, coverage.days[rfc] || { received: [], issued: [] }));
+  /* (2.9.9 · D4c) El mapa de calor de 365 días — que mide
+     SOLICITUDES, no tenencia — es la tercera vez que se
+     contaba la cobertura: sale de la vista principal y
+     vive entero tras su «ver más» nombrado, un toque más
+     allá, sin perder ni un día. */
+  if (rfcs.length) {
+    const dC = n('details');
+    dC.append(n('summary', 'Ver más · Mapa de calor'),
+      ...rfcs.map(rfc => coverageHeatmap(rfc, coverage.days[rfc] || { received: [], issued: [] })));
+    screens.push(dC);
+  }
   return screens;
 }
+function coverageScreen() { return coberturaPaneles280(false); }
 /* Descarga automática mensual (1.15.0): su configuración, la
    cuenta de la última corrida y la oferta de recuperación de los
    huecos históricos — aparte de la corrida, un mes y un sentido
@@ -154,9 +198,15 @@ function monthlyPanel() {
     const enabled = input('checkbox', { checked: Boolean(men.config.enabled) });
     const switchLabel = n('label', undefined, 'switch-line');
     switchLabel.append(enabled, n('span', 'Descargar sola el mes anterior'));
-    const dayInput = input('number', { value: men.config.day, min: 1, max: 28, 'aria-label': 'Día del mes' });
-    const hourInput = input('number', { value: men.config.hour, min: 0, max: 23, 'aria-label': 'Hora' });
-    const save = n('button', 'Guardar', 'soft');
+    /* Sin configuración guardada, el formulario nace precargado
+       (2.3.2 · m-13): día 1 a las 06:00, no campos vacíos. La
+       hora 0 es válida (medianoche): solo el vacío hereda el 6. */
+    const dia232 = Number(men.config.day) || 1;
+    const hora232 = men.config.hour === null || men.config.hour === undefined || men.config.hour === ''
+      ? 6 : Number(men.config.hour);
+    const dayInput = input('number', { value: dia232, min: 1, max: 28, 'aria-label': 'Día del mes' });
+    const hourInput = input('number', { value: hora232, min: 0, max: 23, 'aria-label': 'Hora' });
+    const save = n('button', 'Guardar descarga automática', 'soft');
     save.onclick = async () => {
       save.disabled = true;
       try {
@@ -187,7 +237,7 @@ function monthlyPanel() {
            entry.status === 'fallida' ? 'no terminó' + (entry.error ? ': ' + entry.error : '') : entry.status);
         body.append(line);
       }
-    } else body.append(n('p', 'Aún no hay corridas: la primera bajará ' + mesNombre(men.targetMonth) + ' el día ' + men.config.day + '.', 'muted'));
+    } else body.append(n('p', 'Aún no hay corridas: la primera bajará ' + mesNombre(men.targetMonth) + ' el día ' + dia232 + '.', 'muted'));
     if (!abierta) {
       const nowBtn = n('button', 'Descargar ahora el mes pasado', 'soft');
       nowBtn.onclick = async () => {
@@ -220,7 +270,8 @@ function monthlyPanel() {
                 'Ese mes ya estaba cubierto por descargas anteriores: no se gastó ninguna solicitud.' :
                 'Recuperación pedida: el SAT la prepara y entra sola, sin duplicar lo que ya tienes.', 'ok');
             }
-            btn.textContent = 'Pedido ✓';
+            btn.dataset.estado = 'aldia';
+            btn.textContent = 'Pedido';
           } catch (error) { toast(error.message, 'error'); btn.disabled = false; btn.textContent = 'Recuperar este mes'; }
         }, 'soft');
         return [gap.rfc, gap.direction === 'received' ? 'Recibidos' : 'Emitidos', mesNombre(gap.month), btn];
@@ -235,7 +286,13 @@ function monthlyPanel() {
   return wrap;
 }
 function coverageHeatmap(rfc, daysForRfc) {
-  const wrap = panel('Mapa anual de días cubiertos · ' + rfc);
+  /* El mapa mide SOLICITUDES, no tenencia (2.9.0 · Bloque C):
+     un día «sin cubrir» aquí solo dice que ninguna solicitud
+     lo pidió; puede haber CFDI guardados de ese día por
+     importación u otras vías — lo que tienes vive en «Qué
+     meses tienes», arriba. El título y la leyenda lo dicen. */
+  const wrap = panel('Cobertura de solicitudes al SAT · ' + rfc);
+  wrap.append(n('p', 'Este mapa pinta los días que una SOLICITUD de descarga cubrió. Un día sin cubrir no significa que no tengas sus CFDI: pueden estar guardados por importación u otra vía — lo que tienes, mes a mes, está en «Qué meses tienes».', 'muted'));
   const received = new Set(daysForRfc.received || []), issued = new Set(daysForRfc.issued || []);
   const years = [...new Set([...received, ...issued].map(date => date.slice(0, 4)))].sort();
   const year = years.includes(coverageYear) ? coverageYear : (years.length ? years[years.length - 1] : String(new Date().getFullYear()));
@@ -282,21 +339,130 @@ function coverageHeatmap(rfc, daysForRfc) {
     const level = (received.has(key) ? 1 : 0) + (issued.has(key) ? 1 : 0);
     const rect = el('rect', { x: Math.floor(offset / 7) * pitch + 1, y: top + (offset % 7) * pitch + 1,
       width: cell, height: cell, rx: 2, class: 'hm-l' + level });
-    rect.append(el('title', {}, key + ' · recibidos: ' + (received.has(key) ? 'cubierto' : 'sin cubrir') +
-      ' · emitidos: ' + (issued.has(key) ? 'cubierto' : 'sin cubrir')));
+    rect.append(el('title', {}, key + ' · recibidos: ' + (received.has(key) ? 'cubierto por solicitud' : 'sin cubrir por solicitud') +
+      ' · emitidos: ' + (issued.has(key) ? 'cubierto por solicitud' : 'sin cubrir por solicitud')));
     /* El detalle por día también con tacto y teclado (UX-26), no solo
        con el tooltip del ratón. */
     rect.style.cursor = 'pointer';
     rect.addEventListener('click', () => {
-      detail.textContent = dateLabel(key) + ' · recibidos: ' + (received.has(key) ? 'cubierto' : 'sin cubrir') +
-        ' · emitidos: ' + (issued.has(key) ? 'cubierto' : 'sin cubrir');
+      detail.textContent = dateLabel(key) + ' · recibidos: ' + (received.has(key) ? 'cubierto por solicitud' : 'sin cubrir por solicitud') +
+        ' · emitidos: ' + (issued.has(key) ? 'cubierto por solicitud' : 'sin cubrir por solicitud');
     });
     svg.append(rect);
   }
   const scroll = n('div', undefined, 'hm-scroll'); scroll.append(svg);
   const legend = n('div', undefined, 'chart-legend');
   const item = (cls, label) => { const span = n('span'); span.append(n('i', undefined, cls), document.createTextNode(label)); return span; };
-  legend.append(item('sw-hm0', 'Sin cubrir'), item('sw-hm1', 'Un sentido'), item('sw-hm2', 'Recibidos y emitidos'));
+  legend.append(item('sw-hm0', 'Sin cubrir por solicitud'), item('sw-hm1', 'Un sentido'), item('sw-hm2', 'Recibidos y emitidos'));
   wrap.append(scroll, legend, detail);
+  return wrap;
+}
+/* ===== Anillo de cobertura del año (2.4.0 · W5b1, pieza 5) =====
+   El estado de cada mes sale SOLO de los datos que la vista ya
+   recibe (coverage.records: las celdas con CFDI y el rango
+   first..last del grupo) y del mes en curso del reloj:
+   · aldia   — el mes tiene celda (hay CFDI guardados);
+   · encurso — es el mes en curso y aún no tiene celda;
+   · hueco   — mes cerrado, desde el primer mes con datos del
+               grupo, sin celda (el «hueco dentro de tu rango»
+               de la tabla, extendido a los meses cerrados
+               posteriores al último con datos: tampoco hay
+               ningún CFDI guardado en ellos);
+   · fuera   — anterior al primer mes con datos o futuro: el
+               dato no dice nada de él y se pinta apagado.
+   Cada segmento lleva su <title> (mes y estado en palabras) y su
+   clic abre en la línea de detalle el MISMO contenido y la MISMA
+   acción que la fila de la tabla de debajo (Ver los CFDI /
+   Descargar este mes): la tabla se queda, el anillo la resume. */
+function covEstado240(key, cell, hoyKey, firstKey) {
+  if (cell) return 'aldia';
+  if (key === hoyKey) return 'encurso';
+  if (key < firstKey || key > hoyKey) return 'fuera';
+  return 'hueco';
+}
+function covAnilloAnio240(group) {
+  const hoyY = String(new Date().getFullYear());
+  return group.first.slice(0, 4) <= hoyY && hoyY <= group.last.slice(0, 4) ?
+    hoyY : group.last.slice(0, 4);
+}
+const COV_ESTADO240 = { aldia: 'Al día · con datos', encurso: 'En curso', hueco: 'Hueco · sin datos', fuera: 'Fuera del rango con datos' };
+function coverageRing240(group, byMonth) {
+  const wrap = n('div', undefined, 'cov-ring-wrap');
+  const anio = covAnilloAnio240(group);
+  const hoyKey = new Date().toISOString().slice(0, 7);
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  const el = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  svg.setAttribute('viewBox', '0 0 132 132');
+  svg.setAttribute('class', 'cov-ring');
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Anillo de cobertura de ' + anio + ' · ' + group.rfc + ' · ' +
+    (group.direction === 'received' ? 'Recibidos' : 'Emitidos'));
+  svg.append(el('title', {}, 'Cobertura de ' + anio + ' · ' + group.rfc));
+  const detalle = n('div', undefined, 'cov-detalle');
+  detalle.append(document.createTextNode('Toca un mes del anillo para ver su detalle aquí: es el mismo que enseña la tabla de abajo.'));
+  const punto = (radio, grados) => {
+    const rad = (grados - 90) * Math.PI / 180;
+    return [66 + radio * Math.cos(rad), 66 + radio * Math.sin(rad)];
+  };
+  let conDatos = 0, hayFuera = false;
+  for (let i = 0; i < 12; i++) {
+    const key = anio + '-' + String(i + 1).padStart(2, '0');
+    const cell = byMonth.get(key);
+    const estado = covEstado240(key, cell, hoyKey, group.first);
+    if (estado === 'aldia') conDatos++;
+    if (estado === 'fuera') hayFuera = true;
+    const a0 = i * 30 + 1.6, a1 = (i + 1) * 30 - 1.6;
+    const [ox0, oy0] = punto(60, a0), [ox1, oy1] = punto(60, a1);
+    const [ix1, iy1] = punto(42, a1), [ix0, iy0] = punto(42, a0);
+    const seg = el('path', { d: 'M ' + ox0.toFixed(2) + ' ' + oy0.toFixed(2) +
+      ' A 60 60 0 0 1 ' + ox1.toFixed(2) + ' ' + oy1.toFixed(2) +
+      ' L ' + ix1.toFixed(2) + ' ' + iy1.toFixed(2) +
+      ' A 42 42 0 0 0 ' + ix0.toFixed(2) + ' ' + iy0.toFixed(2) + ' Z',
+      class: 'cov-seg', 'data-cov': estado, tabindex: '0', role: 'button',
+      'aria-label': MESES[i] + ' de ' + anio + ' · ' + COV_ESTADO240[estado] });
+    seg.append(el('title', {}, MESES[i] + ' de ' + anio + ' · ' + COV_ESTADO240[estado] +
+      (cell ? ' · ' + number.format(cell.count) + ' CFDI' : '')));
+    const abrir = () => {
+      detalle.replaceChildren();
+      if (cell) {
+        const vias = [];
+        if (cell.descarga) vias.push(number.format(cell.descarga) + ' por descarga del SAT');
+        if (cell.importacion) vias.push(number.format(cell.importacion) + ' por importación');
+        if (cell.sinClasificar && (cell.descarga || cell.importacion)) vias.push(number.format(cell.sinClasificar) + ' sin clasificar');
+        detalle.append(n('strong', MESES[i] + ' de ' + anio + ': '),
+          document.createTextNode(number.format(cell.count) + ' CFDI guardados' + (vias.length ? ' · ' + vias.join(' · ') : '') + ' '),
+          action('Ver los CFDI', () => { scope = group.rfc; const sel = $('scope'); if (sel) sel.value = scope;
+            month = key; direction = group.direction === 'received' ? 'Recibidos' : 'Emitidos';
+            invoicePage = 0; navigate('invoices'); }));
+      } else {
+        const [yy, mm] = key.split('-').map(Number);
+        const lastDay = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+        detalle.append(n('strong', MESES[i] + ' de ' + anio + ': '),
+          document.createTextNode(estado === 'fuera' ? 'fuera del rango con datos de este grupo. ' : 'sin datos guardados. '));
+        if (key <= hoyKey) detalle.append(action('Descargar este mes', () => downloadSheet(group.rfc,
+          { direction: group.direction, start: key + '-01', end: key + '-' + String(lastDay).padStart(2, '0') })));
+      }
+    };
+    seg.addEventListener('click', abrir);
+    seg.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); abrir(); } });
+    svg.append(seg);
+  }
+  svg.append(el('text', { x: 66, y: 64, 'text-anchor': 'middle', class: 'cov-centro-num' }, conDatos + '/12'));
+  svg.append(el('text', { x: 66, y: 78, 'text-anchor': 'middle', class: 'cov-centro-lab' }, 'meses con datos · ' + anio));
+  const lado = n('div', undefined, 'cov-lado');
+  const legend = n('div', undefined, 'chart-legend');
+  const item = (cls, label) => { const span = n('span'); span.append(n('i', undefined, cls), document.createTextNode(label)); return span; };
+  legend.append(item('sw-cov-aldia', 'Al día'), item('sw-cov-encurso', 'En curso'), item('sw-cov-hueco', 'Hueco'));
+  if (hayFuera) legend.append(item('sw-cov-hueco', 'Fuera del rango'));
+  lado.append(n('strong', 'El año ' + anio + ' de un vistazo · ' + group.rfc + ' · ' +
+    (group.direction === 'received' ? 'Recibidos' : 'Emitidos')), legend, detalle);
+  wrap.append(svg, lado);
   return wrap;
 }

@@ -489,10 +489,15 @@ const abrirDb = file => new DatabaseSync(file);
   assert.equal(hecho.json.ok, true, 'la consulta de transacciones se cierra');
   const decl = (await h.call('GET', '/api/declaraciones?rfc=' + OWN + '&ejercicio=2026')).json;
   const folio = decl.folios.find(f => f.folio === '262620080100');
-  assert.equal(folio?.fechaPresentacion, '17/09/2026', 'la foto del folio enseña la fecha descubierta');
+  /* 2.9.5 · R6: la fecha descubierta es la misma (17/09/2026
+     en el portal); lo que cambia es su FORMA al guardarse y
+     servirse — ISO, como todo el overview — porque el
+     formato crudo del portal era el que rompía la tarjeta
+     de Hoy («26//2/16/1»). */
+  assert.equal(folio?.fechaPresentacion, '2026-09-17', 'la foto del folio enseña la fecha descubierta, en ISO (2.9.5 · R6)');
   const entrada = decl.cruce201.operacionesConocidas.find(e => e.operacion === '262620080100');
-  assert.equal(entrada?.fechaPresentacion, '17/09/2026',
-    'el cruce enseña la fecha del folio aunque ningún documento la traiga');
+  assert.equal(entrada?.fechaPresentacion, '2026-09-17',
+    'el cruce enseña la fecha del folio aunque ningún documento la traiga, en ISO (2.9.5 · R6)');
   await h.service.close();
 
   /* Camino local: el motor del servidor descubre folios. */
@@ -504,7 +509,7 @@ const abrirDb = file => new DatabaseSync(file);
   assert.equal(descubiertos.json.result.descubiertos, 1, 'el descubrimiento local aprende el folio');
   const decl2 = (await h2.call('GET', '/api/declaraciones?rfc=' + OWN + '&ejercicio=2026')).json;
   const folio2 = decl2.folios.find(f => f.folio === '262620070100');
-  assert.equal(folio2?.fechaPresentacion, '17/08/2026', 'el camino local también guarda la fecha');
+  assert.equal(folio2?.fechaPresentacion, '2026-08-17', 'el camino local también guarda la fecha, en ISO (2.9.5 · R6)');
   await h2.service.close();
   console.log('OK 2.3.0 S2 · 15: fechaPresentacion guardada por ambos caminos y usada por el cruce.');
 }

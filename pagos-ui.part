@@ -199,7 +199,14 @@ function pagosScreen() {
   wrap.append(steps);
   const step1 = pagosMakeStep(1, 'A quién le pagas');
   step1.note.textContent = 'Tu catálogo: normalmente solo se mira';
-  step1.body.append(n('p', 'Proveedores y clientes con su banco y su cuenta o CLABE. Al guardar, PacoSAT comprueba la CLABE dígito a dígito: un número mal copiado se caza aquí, no en el banco.', 'muted'));
+  /* (2.9.9 · D5) Los párrafos explicativos de Pagos, a «Ver
+     más»: el texto íntegro queda a un toque dentro de su paso. */
+  const pagosAyuda299 = texto => {
+    const det = n('details', undefined, 'seal-details');
+    det.append(n('summary', 'Ver más'), n('p', texto, 'muted'));
+    return det;
+  };
+  step1.body.append(pagosAyuda299('Proveedores y clientes con su banco y su cuenta o CLABE. Al guardar, PacoSAT comprueba la CLABE dígito a dígito: un número mal copiado se caza aquí, no en el banco.'));
   const catBody = n('div');
   step1.body.append(catBody);
   steps.append(step1.section);
@@ -212,7 +219,7 @@ function pagosScreen() {
   const step3 = pagosMakeStep(3, 'Las tablas para el banco');
   step3.note.textContent = 'Se abre al armar la lista del mes';
   step3.body.hidden = !pagosLineas.length;
-  step3.body.append(n('p', 'Un clic en una celda copia ese dato solo, entero, listo para pegarlo en su campo del banco. Con «Copiar la tabla» te llevas la tabla entera de un grupo. Al final tienes también el archivo de texto y el archivo para el banco.', 'muted'));
+  step3.body.append(pagosAyuda299('Un clic en una celda copia ese dato solo, entero, listo para pegarlo en su campo del banco. Con «Copiar la tabla» te llevas la tabla entera de un grupo. Al final tienes también el archivo de texto y el archivo para el banco.'));
   const genBtn = n('button', 'Generar las tablas', 'primary');
   genBtn.disabled = !pagosLineas.length;
   pagosGenBtn = genBtn;
@@ -251,7 +258,9 @@ async function pagosFillVencimientos(body, refrescar) {
   const dinero = cents => '$' + (typeof centsLabel === 'function' ? centsLabel(BigInt(cents || 0)) : String(cents || 0));
   if (data.todoPagado) {
     const ok = n('div', undefined, 'pagos-todo-pagado');
-    ok.append(n('strong', '✓ Todo pagado'),
+    const todoPagado240 = n('strong', 'Todo pagado');
+    todoPagado240.dataset.estado = 'aldia';
+    ok.append(todoPagado240,
       n('p', 'No consta ningún vencimiento de impuestos o cuotas por pagar de este RFC: ni líneas pendientes, ni meses declarados sin su línea. Cuando aparezca uno, aquí saldrá con su importe y su documento.'));
     body.append(ok);
   } else {
@@ -266,8 +275,11 @@ async function pagosFillVencimientos(body, refrescar) {
     main.append(n('span', v.concepto + ' — ' + dinero(v.importeCents)));
     main.append(n('small', 'Respaldo: ' + (v.respaldo?.label || 'su preparación') +
       (v.lineaCaptura ? ' · Línea de captura ' + v.lineaCaptura : ''), 'muted'));
-    if (v.caducada) main.append(n('small', '⚠ ' + v.avisoCaducidad, 'error-text'));
-    else if (v.avisoCaducidad) main.append(n('small', '⚠ ' + v.avisoCaducidad, 'muted'));
+    if (v.avisoCaducidad) {
+      const avisoCad240 = n('small', v.avisoCaducidad, v.caducada ? 'error-text' : 'muted');
+      avisoCad240.dataset.estado = 'atencion';
+      main.append(avisoCad240);
+    }
     row.append(main);
     body.append(row);
   }
@@ -275,9 +287,11 @@ async function pagosFillVencimientos(body, refrescar) {
     body.append(n('p', 'Ya consta pagado (no se prepara otra vez): ' + c.concepto + ' — ' + c.motivo + '.', 'muted'));
   if ((data.faltantes || []).length) {
     const meses = data.faltantes.map(f => f.periodo).filter(Boolean);
-    body.append(n('p', '⚠ Sin importe que conste: ' +
+    const sinImporte240 = n('p', 'Sin importe que conste: ' +
       (meses.length === 1 ? 'el mes ' + meses[0] : 'los meses ' + meses.join(', ')) +
-      ' no constan presentados con acuse verificado ni tienen línea respaldada en el expediente — cuánto se debe no consta, y por eso esto no se puede preparar.', 'error-text'));
+      ' no constan presentados con acuse verificado ni tienen línea respaldada en el expediente — cuánto se debe no consta, y por eso esto no se puede preparar.', 'error-text');
+    sinImporte240.dataset.estado = 'atencion';
+    body.append(sinImporte240);
   }
   if ((data.vencimientos || []).length) {
     const preparar = n('button', 'Preparar pagos', 'primary');
@@ -292,7 +306,11 @@ async function pagosFillVencimientos(body, refrescar) {
         refrescar();
       } catch (error) { toast(error.message, 'error'); preparar.disabled = false; preparar.textContent = 'Preparar pagos'; }
     };
-    body.append(n('p', 'Preparar junta los vencimientos en una sola lista del banco con su documento por concepto. Pagar sigue siendo tu gesto en el banco: aquí nada se paga solo.', 'muted'), preparar);
+    /* (2.9.9 · D5) La explicación, a «Ver más» junto al botón. */
+    const det299 = n('details', undefined, 'seal-details');
+    det299.append(n('summary', 'Ver más'),
+      n('p', 'Preparar junta los vencimientos en una sola lista del banco con su documento por concepto. Pagar sigue siendo tu gesto en el banco: aquí nada se paga solo.', 'muted'));
+    body.append(det299, preparar);
   }
 }
 /* F11 · Repetir una preparación (1.31.0): las líneas de la
@@ -588,8 +606,10 @@ function pagosForm(catBody, prepBody, outBody) {
   const aviso = n('p', '', 'muted');
   clabe.oninput = () => {
     const value = clabe.value.replace(/[\s-]/g, '');
+    if (!value || value.length !== 18) delete aviso.dataset.estado;
+    else aviso.dataset.estado = pagosClabeOk(value) ? 'aldia' : 'error';
     aviso.textContent = !value ? '' : value.length !== 18 ? 'La CLABE lleva 18 dígitos (van ' + value.length + ').'
-      : pagosClabeOk(value) ? '✓ CLABE válida: su dígito de control cuadra.' : '✗ El dígito de control no cuadra: revisa el número.';
+      : pagosClabeOk(value) ? 'CLABE válida: su dígito de control cuadra.' : 'El dígito de control no cuadra: revisa el número.';
   };
   box.append(aviso);
   const row = n('div', undefined, 'pagos-actions');
@@ -712,8 +732,116 @@ function pagosFillPrepare(prepBody, outBody) {
   prepBody.append(armar, linesBox);
   if (pagosLineas.length) pagosFillLines(linesBox, pagosGroupInputs, outBody);
 }
+/* ===== Semáforo 69-B en Pagos (2.4.0 · castigo 12) =====
+   Antes de dispersar: si alguna factura del lote es de un RFC
+   que consta en las listas negras de verdad (69-B / 69-B Bis,
+   golpe vigente — la misma lectura que Listas: severity 'ok' es
+   «ya aclaró» y no avisa), la pantalla avisa EN la tarjeta del
+   lote, nombrando la factura y el RFC. No bloquea: Paco decide.
+   El cruce es el del sistema: la respuesta viva de /api/lists
+   (counterparts con sus hits), la misma que pinta Listas negras.
+   Lo «recién listado» sale del historial de cambios de esa misma
+   respuesta (events): «Alta nueva» desde la línea base, o un
+   «Cambio de situación» que empeoró a Definitivo. Si en el
+   historial cargado no consta un alta reciente, el aviso lo dice
+   así — «consta listado; no consta alta reciente» — y no inventa
+   una fecha. */
+/*PAGOS69B240-INICIO*/
+function pagosCruce69b240(lineas, data) {
+  const avisos = [];
+  const porRfc = new Map((data?.counterparts || []).map(cp => [cp.rfc, cp]));
+  const eventos = data?.events || [];
+  for (const linea of lineas || []) {
+    const rfc = String(linea?.rfc || '').toUpperCase();
+    if (!rfc) continue;
+    const cp = porRfc.get(rfc);
+    if (!cp) continue;
+    const hits = (cp.hits || []).filter(hit =>
+      (hit.listId === '69b' || hit.listId === '69b-bis') && hit.severity !== 'ok');
+    if (!hits.length) continue;
+    let reciente = false, cuando = '';
+    for (const evento of eventos) {
+      if (evento.rfc !== rfc || (evento.listId !== '69b' && evento.listId !== '69b-bis')) continue;
+      const cambio = String(evento.change || '');
+      if (cambio.startsWith('Alta nueva')) {
+        reciente = true;
+        cuando = 'alta nueva en el listado' + (evento.at ? ' el ' + localDate(evento.at) : '');
+        break;
+      }
+      if (cambio.startsWith('Cambio de situación')) {
+        const partes = String(evento.detail || '').split('→').map(parte => parte.trim());
+        const nuevo = partes[partes.length - 1] || '', viejo = partes[0] || '';
+        if (/definitiv/i.test(nuevo) && !/definitiv/i.test(viejo)) {
+          reciente = true;
+          cuando = 'su situación empeoró a Definitivo' + (evento.at ? ' el ' + localDate(evento.at) : '');
+          break;
+        }
+      }
+    }
+    avisos.push({ rfc, nombre: linea.nombre || cp.name || rfc,
+      folio: linea.folio || '', uuid: linea.uuid || '',
+      lista: hits.map(hit => hit.label).join(' · '),
+      detalle: hits.map(hit => hit.detail).join(' · '),
+      definitivo: hits.some(hit => hit.severity === 'bad' || /definitiv/i.test(hit.detail || '')),
+      reciente, cuando });
+  }
+  return avisos;
+}
+/*PAGOS69B240-FIN*/
+/* La tarjeta del aviso, con el modelo único de problema: semáforo,
+   la factura y el RFC nombrados, qué significa y el gesto. Un
+   lote limpio no pinta nada (null). */
+function pagosAviso69bEl240(lineas, data) {
+  const avisos = pagosCruce69b240(lineas, data);
+  if (!avisos.length) return null;
+  const box = n('div');
+  box.dataset.pagos69b240 = String(avisos.length);
+  for (const aviso of avisos) {
+    const spec = { level: aviso.definitivo ? 'rojo' : 'ambar',
+      titulo: 'Antes de dispersar: ' + aviso.nombre + ' (' + aviso.rfc + ') está en el listado 69-B',
+      significa: 'La factura ' + (aviso.folio ? 'folio ' + aviso.folio + ' ' : '') + 'de este lote es de un RFC que consta en ' +
+        aviso.lista + ' (' + aviso.detalle + ')' +
+        (aviso.reciente ? ' — y es reciente: ' + aviso.cuando + ', desde la última línea base del cruce.' :
+          ' — consta listado; en el historial de cambios cargado no consta un alta reciente.') +
+        ' Pagar a un RFC del 69-B puede poner en riesgo la deducción de esa factura.',
+      ahora: 'PacoSAT no bloquea el pago: la decisión es tuya. Si sigues, queda avisado aquí; si no, desmarca su línea en el paso 2 antes de generar las tablas.',
+      detalle: aviso.uuid ? 'UUID de la factura: ' + aviso.uuid : '' };
+    let gesto = null;
+    const factura = aviso.uuid && typeof invoices !== 'undefined' ?
+      invoices.find(inv => inv.id === aviso.uuid) : null;
+    if (factura) gesto = action('Ver la factura', () => invoiceDetail(factura), 'soft');
+    box.append(problemCard(spec, gesto));
+  }
+  return box;
+}
+/* El hueco del aviso en la pantalla: pinta al instante si el
+   cruce ya viajó en esta sesión y, si no, lo pide por la ruta de
+   siempre (/api/lists) y pinta al llegar — el patrón de huecos
+   que se completan solos del Centro de mando. Sin servidor o sin
+   respuesta, el hueco queda vacío y la pantalla sigue igual. */
+let pagosListas240 = null, pagosListasCargando240 = null;
+function pagosListasCargar240() {
+  if (pagosListas240) return Promise.resolve(pagosListas240);
+  if (!pagosListasCargando240) pagosListasCargando240 = satApi('lists')
+    .then(data => { pagosListas240 = data; return data; }).catch(() => null);
+  return pagosListasCargando240;
+}
+function pagosAviso69bSlot240(lineas) {
+  const slot = n('div');
+  const snapshot = [...(lineas || [])];
+  const pintar = data => {
+    const el = data ? pagosAviso69bEl240(snapshot, data) : null;
+    if (el) slot.replaceChildren(el);
+  };
+  if (pagosListas240) pintar(pagosListas240);
+  else if (typeof satToken !== 'undefined' && satToken) pagosListasCargar240().then(pintar);
+  return slot;
+}
 function pagosFillLines(linesBox, groupInputs, outBody) {
   linesBox.replaceChildren();
+  /* Semáforo 69-B al preparar (2.4.0 · castigo 12): el aviso va
+     encima de la lista recién armada, antes de generar nada. */
+  linesBox.append(pagosAviso69bSlot240(pagosLineas));
   if (pagosSinCatalogo.length) {
     const warn = n('div', undefined, 'pagos-warn');
     warn.append(n('strong', 'Facturas del mes sin beneficiario en el catálogo (no entran en la lista):'));
@@ -840,6 +968,11 @@ function pagosFillOutput(outBody) {
     return;
   }
   const prep = pagosPrep;
+  /* Semáforo 69-B en la tarjeta del lote (2.4.0 · castigo 12):
+     el aviso protagonista abre la salida, antes del total y de
+     las tablas — es lo último que se ve antes de dispersar. */
+  outBody.append(pagosAviso69bSlot240([...(prep.bbva?.lines || []),
+    ...(prep.interbancario?.lines || []), ...(prep.speiIndividual?.lines || [])]));
   const hero = n('div', undefined, 'total-hero kpi');
   hero.append(n('strong', 'Total a pagar: $' + pagosCentsText(prep.totalCents)));
   hero.append(n('small', 'en ' + prep.operaciones + (prep.operaciones === 1 ? ' operación' : ' operaciones') + ' · ' + pagosMesLargo(prep.month || pagosMes)));

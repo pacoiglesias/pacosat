@@ -66,14 +66,27 @@ async function renamePerson(person) {
     await refresh(); announce('Contribuyente renombrado a «' + name.value.trim() + '».');
   }, 'Renombrar');
 }
+/* Papelera de documentos (2.9.0 · Bloque C): el botón de la
+   lista de Documentos YA NO borra — mueve a la papelera
+   (marca en el registro; el PDF se queda guardado) y desde
+   Archivo se restaura o se elimina de verdad. Así la palabra
+   y el hecho coinciden con «los documentos no se borran». */
+function papeleraDocumento290(doc) {
+  dialog('Mover a la papelera', [n('p', '«' + doc.name + '» (' + doc.kind + ' · ' + doc.rfc + ') sale de Documentos y queda en la papelera de Archivo. ' +
+    'No se borra nada: desde Archivo lo restauras cuando quieras, y solo ahí se puede eliminar de verdad.')], async () => {
+    await writeBatch({ documents: [{ ...doc, papelera: Date.now() }] });
+    await logEvent('Documento a la papelera: ' + doc.name);
+    await refresh(); announce('Documento en la papelera: lo restauras desde Archivo.');
+  }, 'Mover a la papelera');
+}
 function deleteDocument(doc) {
-  dialog('Eliminar documento', [n('p', 'Se eliminará «' + doc.name + '» (' + doc.kind + ' · ' + doc.rfc + ') del expediente, con su PDF. ' +
-    'No hay papelera: si dudas, crea antes un respaldo cifrado.')], async () => {
+  dialog('Eliminar documento para siempre', [n('p', 'Se eliminará «' + doc.name + '» (' + doc.kind + ' · ' + doc.rfc + ') del expediente, con su PDF. ' +
+    'Esto SÍ es para siempre: no hay vuelta atrás. Si dudas, déjalo en la papelera o crea antes un respaldo cifrado.')], async () => {
     await deleteStoreRecords('documents', [doc.id]);
     await deleteStoreRecords('files', [doc.id]);
-    await logEvent('Documento eliminado: ' + doc.name);
-    await refresh(); announce('Documento eliminado.');
-  }, 'Eliminar documento');
+    await logEvent('Documento eliminado para siempre: ' + doc.name);
+    await refresh(); announce('Documento eliminado para siempre.');
+  }, 'Eliminar para siempre');
 }
 function unlinkDocument(doc) {
   dialog('Desvincular PDF del CFDI', [n('p', '«' + doc.name + '» dejará de estar vinculado al folio ' + doc.uuid + '. El PDF se queda en el expediente.')], async () => {
@@ -119,22 +132,63 @@ async function importBatch(source, requiredRfc = scope, { quiet = false, fromFol
   const pending = new Map();
   const known = scopes();
   const seen = new Set((await readStore('invoices').catch(() => invoices)).map(row => row.id));
+  /* CFDI de retenciones (2.4.0 · WC3b, ítem 14): su propio carril
+     dentro de la misma importación — se clasifican por la raíz, se
+     parsean con su parser y se guardan como documentos de su tipo,
+     deduplicados por identidad y huella contra lo ya archivado. */
+  const retConocidas = (await readStore('documents').catch(() => []))
+    .filter(doc => doc && doc.kind === 'CFDI de retenciones');
+  let addedRet = 0, duplicatesRet = 0;
+  const pendingRet = new Map();
   let pendingSize = 0;
   const issue = (name, error) => {
     review++;
     if (issues.length < 20) issues.push({ name: name.slice(0, 180), reason: error.message.slice(0, 320) });
   };
   async function flush() {
+    if (pendingRet.size) {
+      await writeBatch({ documents: [...pendingRet.values()].map(item => item.row), files: [...pendingRet.values()].map(item => item.file) });
+      addedRet += pendingRet.size;
+      for (const item of pendingRet.values()) retConocidas.push(item.row);
+      pendingRet.clear();
+    }
     if (!pending.size) return;
     await writeBatch({ invoices: [...pending.values()].map(item => item.row), files: [...pending.values()].map(item => item.file) });
     added += pending.size;
     pending.clear();
     pendingSize = 0;
   }
+  async function acceptRetenciones(name, xml) {
+    let parsed;
+    try {
+      parsed = parseRetenciones(xml);
+      check(!requiredRfc || parsed.from.rfc === requiredRfc || parsed.to.rfc === requiredRfc,
+        'No corresponde a ' + requiredRfc + '. Emisor ' + parsed.from.rfc + ' · Receptor ' + parsed.to.rfc + '.');
+      check(known.has(parsed.from.rfc) || known.has(parsed.to.rfc), 'Los RFC del documento de retenciones no están registrados.');
+    } catch (error) {
+      if (String(error.message).startsWith('No corresponde a')) scopeRejected++;
+      issue(name, error); return;
+    }
+    const hash = await sha256Hex(xml);
+    if (retencionesEsDuplicada(retConocidas, parsed, hash) ||
+        retencionesEsDuplicada([...pendingRet.values()].map(item => item.row), parsed, hash)) { duplicatesRet++; return; }
+    const dueno = requiredRfc && (parsed.from.rfc === requiredRfc || parsed.to.rfc === requiredRfc) ? requiredRfc :
+      known.has(parsed.from.rfc) ? parsed.from.rfc : parsed.to.rfc;
+    const row = retencionesDocRow(parsed, hash, dueno, 'importacion');
+    pendingRet.set(row.id, { row, file: { id: row.id, blob: new Blob([xml], { type: 'application/xml' }) } });
+    if (pendingRet.size >= 100) await flush();
+  }
   async function accept(name, xml) {
+    /* La clasificación manda: un CFDI de retenciones no se rechaza
+       como Comprobante mal formado ni se archiva como tal. */
+    if (clasificaDocumentoXml(xml) === 'retenciones') { await acceptRetenciones(name, xml); return; }
     let row;
     try {
       row = withFiscal(parseXml(xml), xml);
+      /* Huella de importación (2.4.0 · WC3b, ítem 20): el SHA-256
+         del fichero tal como entró; la ficha lo recalcula sobre el
+         XML guardado y lo compara contra esta huella. */
+      row.xmlHash = await sha256Hex(xml);
       check(!requiredRfc || row.from.rfc === requiredRfc || row.to.rfc === requiredRfc,
         'No corresponde a ' + requiredRfc + '. Emisor ' + row.from.rfc + ' · Receptor ' + row.to.rfc + '.');
       check(known.has(row.from.rfc) || known.has(row.to.rfc), 'Los RFC del comprobante no están registrados.');
@@ -214,6 +268,8 @@ async function importBatch(source, requiredRfc = scope, { quiet = false, fromFol
          Resumen («Última importación») además del aviso superior. */
       lastImport = { at: Date.now(), added, duplicates, review, dupIds };
       announce(added + ' nuevos · ' + duplicates + ' duplicados · ' + review + ' por revisar' +
+        (addedRet ? ' · ' + addedRet + ' CFDI de retenciones nuevos (en Documentos, como su tipo)' : '') +
+        (duplicatesRet ? ' · ' + duplicatesRet + ' CFDI de retenciones duplicados' : '') +
         (scopeRejected ? '\n' + scopeRejected + ' archivo(s) no corresponden al RFC seleccionado (' + requiredRfc + ') y quedaron por revisar: cambia el contribuyente a ese RFC para importarlos.' : '') +
         (issues.length ? '\n' + issues.slice(0, 6).map(item => item.name + ' · ' + item.reason).join('\n') : ''), Boolean(review));
       if (!review) soundCue('success'); else if (added) soundCue('notice');
@@ -221,19 +277,21 @@ async function importBatch(source, requiredRfc = scope, { quiet = false, fromFol
          problemas o con archivos sin procesar, el resultado queda en
          pantalla hasta que el usuario lo cierra — nada de avisos
          fugaces para 2.493 comprobantes. */
-      const esGrande = totalUnits >= 10 || review > 0 || skipped.length > 0;
+      const esGrande = totalUnits >= 10 || review > 0 || skipped.length > 0 || addedRet > 0 || duplicatesRet > 0;
       if (esGrande) {
         const lines = [];
         lines.push(added
-          ? '✓ ' + number.format(added) + ' comprobantes nuevos (' + number.format(nuevosEmitidos) + ' emitidos · ' + number.format(nuevosRecibidos) + ' recibidos).'
+          ? number.format(added) + ' comprobantes nuevos (' + number.format(nuevosEmitidos) + ' emitidos · ' + number.format(nuevosRecibidos) + ' recibidos).'
           : 'Sin comprobantes nuevos.');
         if (nuevosPorMes.size) {
           const top = [...nuevosPorMes.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 4);
           lines.push('Por mes: ' + top.map(([mes, n]) => mes + ': ' + number.format(n)).join(' · ') + (nuevosPorMes.size > 4 ? ' · …' : ''));
         }
+        if (addedRet) lines.push(number.format(addedRet) + ' CFDI de retenciones nuevos: quedan en Documentos como su propio tipo («CFDI de retenciones»), con su ficha.');
+        if (duplicatesRet) lines.push(number.format(duplicatesRet) + ' CFDI de retenciones duplicados: ya estaban en el expediente (misma identidad o misma huella) y no se tocaron.');
         if (duplicates) lines.push(number.format(duplicates) + ' duplicados: ya estaban en PacoSAT y no se tocaron.');
         if (review) {
-          lines.push('⚠ ' + number.format(review) + ' por revisar — no entraron. Motivo de los primeros:');
+          lines.push('Atención: ' + number.format(review) + ' por revisar — no entraron. Motivo de los primeros:');
           for (const item of issues.slice(0, 6)) lines.push('· ' + item.name + ' — ' + item.reason);
           if (scopeRejected) lines.push(number.format(scopeRejected) + ' no corresponden al RFC seleccionado (' + requiredRfc + '): cambia el contribuyente a ese RFC y vuelve a importarlos.');
           lines.push('Qué hacer: corrige el archivo o el RFC indicado y vuelve a importar solo esos; los demás ya están dentro.');
@@ -242,7 +300,7 @@ async function importBatch(source, requiredRfc = scope, { quiet = false, fromFol
           lines.push('Sin procesar (' + skipped.length + '): no son XML ni ZIP de CFDI.');
           for (const item of skipped.slice(0, 6)) lines.push('· ' + item.name + ' — ' + item.reason);
         }
-        activityDone('✓ Procesado', lines);
+        activityDone('Procesado', lines);
       } else activityFinish();
     }
     return { added, duplicates, review };
@@ -373,6 +431,229 @@ function cfdiPrint(row, full, opts = {}) {
   }
   if (opts.print !== false) setTimeout(() => window.print(), 120);
 }
+/* ===== Línea de tiempo VISUAL del CFDI (2.4.0 · W5b2, pieza 6) =====
+   Los pasos de la vida de la factura —emitido → pagado → REP →
+   cancelado— pintados en su ficha, solo los que le aplican:
+   una vigente no enseña «cancelado» y una PPD sin pagar se
+   queda en «emitido». Cada paso lleva su fecha REAL de la
+   ficha misma: la emisión de la fila, la fechaPago de su
+   complemento, la fecha del propio REP (el CFDI de pago) y,
+   si consta, la fecha en que la vigilancia vio la cancelación.
+   Lo que no conste dice «sin fecha»: ninguna fecha se inventa.
+   Función pura sobre (factura, todos los CFDI, contexto): la
+   suite la fija con facturas de juguete. */
+function cfdiLineaDatos240(row, todos, ctx = {}) {
+  if (!row || row.kind !== 'I') return [];
+  const pasos = [{ clave: 'emitido', etiqueta: 'Emitido', estado: 'hecho', fecha: row.date || null }];
+  const reps = (todos || []).filter(doc => doc && doc.kind === 'P' && doc.fiscal?.payments &&
+    (doc.fiscal.payments.pagos || []).some(pago => (pago.documentos || []).some(d => d.idDocumento === row.id)));
+  let fechaPago = null, pagadoCents = 0n;
+  for (const rep of reps)
+    for (const pago of rep.fiscal.payments.pagos || [])
+      for (const doc of pago.documentos || [])
+        if (doc.idDocumento === row.id) {
+          pagadoCents += typeof moneyCents === 'function' ? moneyCents(doc.impPagado) : 0n;
+          if (pago.fechaPago && (!fechaPago || pago.fechaPago > fechaPago)) fechaPago = pago.fechaPago;
+        }
+  const esPue = row.fiscal?.paymentMethod === 'PUE';
+  const total = typeof totalCents === 'function' ? totalCents(row) : 0n;
+  const pagada = esPue || (total > 0n && pagadoCents >= total) || Boolean(ctx.marcada);
+  if (esPue) pasos.push({ clave: 'pagado', etiqueta: 'Pagado', estado: 'hecho', fecha: row.date || null });
+  else if (pagada) pasos.push({ clave: 'pagado', etiqueta: 'Pagado', estado: 'hecho', fecha: fechaPago || null });
+  else if (pagadoCents > 0n) pasos.push({ clave: 'pagado', etiqueta: 'Pagado', estado: 'pendiente', fecha: fechaPago || null });
+  if (reps.length) {
+    const fechaRep = reps.map(rep => rep.date || '').filter(Boolean).sort().pop() || null;
+    pasos.push({ clave: 'rep', etiqueta: 'REP (complemento de pago)', estado: 'hecho', fecha: fechaRep });
+  }
+  if (ctx.cancelada)
+    pasos.push({ clave: 'cancelado', etiqueta: 'Cancelado', estado: 'hecho', fecha: ctx.fechaCancelacion || null });
+  return pasos;
+}
+/* La fecha de un paso, en palabra: fecha real formateada o
+   «sin fecha» — nunca una fecha aproximada. */
+function cfdiLineaFecha240(fecha) {
+  if (!fecha) return 'sin fecha';
+  if (typeof fecha === 'number') return typeof fmtFechaCorta === 'function' ? fmtFechaCorta(fecha) : String(fecha);
+  const texto = String(fecha);
+  return texto.length >= 10 && typeof dateLabel === 'function' ? dateLabel(texto.slice(0, 10)) : texto;
+}
+/* El pintado: cada paso con su estado en icono + palabra +
+   color (data-estado de W5a: hecho = al día; pendiente =
+   esperando) y su fecha debajo. */
+function cfdiLineaVisual240(pasos) {
+  const box = n('div');
+  box.dataset.lineaCfdi240 = '1';
+  box.append(n('h3', 'Línea de tiempo'));
+  const fila = n('div', undefined, 'linea240');
+  for (const paso of pasos || []) {
+    const celda = n('div', undefined, 'linea240-paso');
+    celda.dataset.paso240 = paso.clave;
+    const chip = n('span', paso.estado === 'hecho' ? 'Hecho' : 'Pendiente', 'estado240');
+    chip.dataset.estado = paso.estado === 'hecho' ? 'aldia' : 'esperando';
+    celda.append(n('strong', paso.etiqueta), chip, n('small', cfdiLineaFecha240(paso.fecha)));
+    fila.append(celda);
+  }
+  box.append(fila);
+  return box;
+}
+/* ===== El Lector de XML (2.9.7 · Pieza B) =====
+   Al abrir un comprobante, su vista primera es el XML LEÍDO
+   por el servidor (GET /api/cfdi/lectura?uuid=): protagonista
+   con el total, conceptos con sus impuestos, impuestos
+   trasladados y retenidos, forma y método de pago, uso CFDI,
+   moneda, el timbre en despliegue progresivo y el complemento
+   de pagos cuando lo trae. Si la lectura responde sinXml, la
+   hoja lo dice en llano y ofrece «Bajar ahora» por el portal
+   (POST /api/portal-cfdi/run { rfc, uuids:[uuid], origen:
+   'factura' }), con su progreso vivo y su Cancelar; al
+   terminar bien, la lectura se vuelve a pedir y se enseña.
+   Todo lo que el detalle hacía ya (resumen, nota, saldo, la
+   representación completa desde el XML local, la historia y
+   los botones de XML/PDF/ZIP/enviar) se conserva intacto
+   debajo: el Lector se suma, nada se pierde. */
+function lectorImpuestosConcepto297(concepto) {
+  const listas = [...(concepto?.impuestos?.traslados || concepto?.traslados || []),
+    ...(concepto?.impuestos?.retenidos || concepto?.retenciones || [])];
+  const partes = listas.map(t => (t.impuesto || t.nombre || 'Impuesto') +
+    (t.tasa ? ' ' + t.tasa : '') + (t.importe ? ' $' + t.importe : ''));
+  if (typeof concepto?.impuestos === 'string' && concepto.impuestos) partes.push(concepto.impuestos);
+  return partes.join(' · ');
+}
+function lectorPintar297(body, lectura, row) {
+  body.replaceChildren();
+  const tipoTexto = (typeof KINDS !== 'undefined' && KINDS[lectura.tipo]) || lectura.tipo || row.kind || '';
+  const estadoTexto = lectura.estado || (typeof invoiceStateOf === 'function' ? invoiceStateOf(row) : '') || '';
+  const prota = n('div', undefined, 'invoice-summary lector-prota297');
+  prota.dataset.lectorProtagonista297 = '1';
+  const cabeza = n('div');
+  cabeza.append(n('span', tipoTexto, 'period-chip'),
+    n('h3', '$' + (lectura.total ?? '') + (lectura.moneda ? ' ' + lectura.moneda : '')),
+    n('p', (lectura.emisor?.nombre || lectura.emisor?.rfc || '') + ' → ' +
+      (lectura.receptor?.nombre || lectura.receptor?.rfc || '') + ' · ' +
+      (lectura.fecha || '') + (estadoTexto ? ' · ' + estadoTexto : '')));
+  prota.append(cabeza);
+  body.append(prota);
+  const conceptos = Array.isArray(lectura.conceptos) ? lectura.conceptos : [];
+  if (conceptos.length) {
+    const tabla = n('div', undefined, 'table-wrap');
+    tabla.dataset.lectorConceptos297 = '1';
+    tabla.append(grid(['Cantidad', 'Descripción', 'Precio', 'Importe', 'Impuestos'],
+      conceptos.map(c => [String(c.cantidad ?? ''), String(c.descripcion || ''),
+        '$' + (c.valorUnitario ?? c.precio ?? ''), '$' + (c.importe ?? ''),
+        lectorImpuestosConcepto297(c) || '—'])));
+    body.append(tabla);
+  } else body.append(n('p', 'Este comprobante no trae conceptos en su lectura.', 'timeline-empty'));
+  const facts = n('div', undefined, 'facts');
+  const fact = (label, value) => { if (value === undefined || value === null || value === '') return;
+    const box = n('div'); box.append(n('small', label), n('strong', String(value))); facts.append(box); };
+  fact('Forma de pago', lectura.formaPago);
+  fact('Método de pago', lectura.metodoPago);
+  fact('Uso de CFDI', lectura.receptor?.uso);
+  fact('Moneda', lectura.moneda);
+  fact('Subtotal', lectura.subTotal !== undefined ? '$' + lectura.subTotal : '');
+  fact('Descuento', lectura.descuento ? '−$' + lectura.descuento : '');
+  const imp = lectura.impuestos || {};
+  const sumaImp = lista => (lista || []).reduce((suma, t) => suma + (Number(t.importe) || 0), 0);
+  fact('Total impuestos trasladados', imp.totalTrasladados ?? imp.trasladadosTotal ??
+    ((imp.traslados || []).length ? '$' + sumaImp(imp.traslados).toFixed(2) : ''));
+  fact('Total impuestos retenidos', imp.totalRetenidos ?? imp.retenidosTotal ??
+    ((imp.retenidos || []).length ? '$' + sumaImp(imp.retenidos).toFixed(2) : ''));
+  body.append(facts);
+  for (const [titulo, lista, signo] of [['Impuestos trasladados', imp.traslados, '$'],
+      ['Impuestos retenidos', imp.retenidos, '−$']]) {
+    if (!(lista || []).length) continue;
+    const wrapImp = n('div', undefined, 'table-wrap');
+    wrapImp.append(grid([titulo, 'Importe'], lista.map(t => [
+      (t.impuesto || t.nombre || 'Impuesto') + (t.tasa ? ' ' + t.tasa : '') + (t.tipoFactor ? ' ' + t.tipoFactor : ''),
+      signo + (t.importe ?? '')])));
+    body.append(wrapImp);
+  }
+  if (lectura.timbre) {
+    const timbre = lectura.timbre;
+    const detalles = n('details', undefined, 'seal-details lector-timbre297');
+    detalles.dataset.lectorTimbre297 = '1';
+    detalles.append(n('summary', 'Ver timbre'));
+    const tfacts = n('div', undefined, 'facts');
+    const tfact = (label, value) => { if (!value) return;
+      const box = n('div'); box.append(n('small', label), n('strong', String(value))); tfacts.append(box); };
+    tfact('UUID', timbre.uuid);
+    tfact('Fecha de timbrado', timbre.fechaTimbrado);
+    tfact('PAC', timbre.rfcProvCertif);
+    tfact('Certificado del SAT', timbre.noCertificadoSAT);
+    detalles.append(tfacts);
+    for (const [label, value] of [['Sello del CFDI', timbre.selloCfd], ['Sello del SAT', timbre.selloSat],
+        ['Cadena original', timbre.cadenaOriginal]]) {
+      if (!value) continue;
+      detalles.append(n('small', label), n('pre', String(value), 'xml-view'));
+    }
+    body.append(detalles);
+  }
+  const pagosLista = Array.isArray(lectura.pagos) ? lectura.pagos
+    : Array.isArray(lectura.pagos?.pagos) ? lectura.pagos.pagos : [];
+  if (pagosLista.length) {
+    const pagosBox = n('div');
+    pagosBox.dataset.lectorPagos297 = '1';
+    pagosBox.append(n('h3', 'Complemento de pagos'));
+    for (const pago of pagosLista) {
+      pagosBox.append(n('p', 'Pago del ' + (pago.fechaPago || '') + ' · Forma ' + (pago.formaDePagoP || '—') +
+        ' · ' + (pago.monto ? '$' + pago.monto + ' ' + (pago.monedaP || '') : 'Sin monto') +
+        (pago.numOperacion ? ' · Operación ' + pago.numOperacion : '')));
+      const docs = pago.documentos || pago.documentosRelacionados || [];
+      if (docs.length) {
+        const tablaDocs = n('div', undefined, 'table-wrap');
+        tablaDocs.append(grid(['Documento (UUID)', 'Folio', 'Parcialidad', 'Saldo anterior', 'Pagado', 'Saldo insoluto'],
+          docs.map(d => [String(d.idDocumento || d.uuid || ''), [d.serie, d.folio].filter(Boolean).join('-') || '—',
+            String(d.numParcialidad ?? ''), '$' + (d.impSaldoAnt ?? ''), '$' + (d.impPagado ?? ''),
+            '$' + (d.impSaldoInsoluto ?? '')])));
+        pagosBox.append(tablaDocs);
+      }
+    }
+    const totalPagos = lectura.pagos?.totales?.MontoTotalPagos;
+    if (totalPagos) pagosBox.append(n('p', 'Monto total de pagos: $' + totalPagos));
+    body.append(pagosBox);
+  }
+}
+function lectorSeccion297(row) {
+  const box = n('section', undefined, 'invoice-concepts lector297');
+  box.dataset.lector297 = '1';
+  box.append(n('h3', 'Lector del comprobante'));
+  const body = n('div');
+  body.append(n('p', 'Leyendo el XML…', 'timeline-empty'));
+  box.append(body);
+  const rfc = (typeof scope !== 'undefined' && scope) || row.to?.rfc || row.from?.rfc || '';
+  const cargar = async () => {
+    body.replaceChildren(n('p', 'Leyendo el XML…', 'timeline-empty'));
+    try {
+      const data = await lectorLectura297(row.id);
+      const lectura = data?.lectura || null;
+      if (!lectura) throw new Error('La lectura no trajo datos del comprobante.');
+      lectorPintar297(body, lectura, row);
+    } catch (error) {
+      if (error?.data?.sinXml) {
+        body.replaceChildren();
+        body.append(n('p', 'Este comprobante está detectado por metadatos pero su XML aún no está en tu expediente', 'report-note'));
+        const prog = n('div');
+        const bajar = action('Bajar ahora', async () => {
+          bajar.disabled = true;
+          await portalLanzar297(prog, { rfc, uuids: [row.id], origen: 'factura' }, (ok, state, runError) => {
+            if (ok) cargar();
+            else prog.append(n('p', 'La bajada no terminó: ' +
+              (runError ? runError.message : portalMotivo297(state)), 'error-text'));
+          });
+        }, 'primary', 'down');
+        bajar.dataset.lectorBajar297 = '1';
+        const acts = n('div', undefined, 'actions');
+        acts.append(bajar);
+        body.append(acts, prog);
+      } else {
+        body.replaceChildren(n('p', 'No se pudo leer el XML desde el servidor: ' + error.message, 'timeline-empty'));
+      }
+    }
+  };
+  if (typeof satToken !== 'undefined' && satToken) cargar();
+  else body.replaceChildren(n('p', 'El Lector vive en el servidor: abre PacoSAT desde el servidor de tu casa para leer el XML aquí.', 'timeline-empty'));
+  return box;
+}
 function invoiceDetail(row) {
   const summary = n('div', undefined, 'invoice-summary');
   const headline = n('div');
@@ -383,7 +664,37 @@ function invoiceDetail(row) {
     box.append(n('small', label), n('strong', party.name || party.rfc), n('span', party.rfc));
     parties.append(box);
   }
-  summary.append(headline, parties, cell(row.id, 'Folio fiscal'));
+  /* El folio fiscal va en su bloque con la etiqueta ENCIMA
+     (2.9.0 · Bloque C): con cell() a secas, el UUID y la
+     etiqueta salían pegados («…6235Folio fiscal»). */
+  const folioBloque290 = n('div', undefined, 'facts');
+  const folioCelda290 = n('div');
+  folioCelda290.append(n('small', 'Folio fiscal'), n('strong', row.id, 'rescue-folios'));
+  folioBloque290.append(folioCelda290);
+  summary.append(headline, parties, folioBloque290);
+  /* (2.9.13 · mejora 8) El visor dibuja la factura COMO
+     DOCUMENTO: su desglose en renglones — subtotal, IVA y el
+     total en grande — con el marco de documento de la clase
+     factura-doc2913. El desglose sale del XML guardado
+     (invoiceIvaBaseCents/invoiceIvaCents); sin desglose no se
+     dibuja la tabla: no se estima nada. */
+  summary.classList.add('factura-doc2913');
+  {
+    const base2913 = typeof invoiceIvaBaseCents === 'function' ? invoiceIvaBaseCents(row) : null;
+    const iva2913 = typeof invoiceIvaCents === 'function' ? invoiceIvaCents(row) : null;
+    if (base2913 !== null && iva2913 !== null) {
+      const desglose2913 = n('div', undefined, 'factura-desglose2913');
+      const renglon2913 = (etiqueta, cents, grande = false) => {
+        const r = n('div', undefined, 'factura-renglon2913' + (grande ? ' total' : ''));
+        r.append(n('span', etiqueta), n('strong', '$' + centsLabel(cents)));
+        return r;
+      };
+      desglose2913.append(renglon2913('Subtotal', base2913),
+        renglon2913('IVA', iva2913),
+        renglon2913('Total', totalCents(row), true));
+      summary.append(desglose2913);
+    }
+  }
   summary.append(statusCell(row.id));
   /* Nota pegada al comprobante (F12, 1.31.0): texto libre de Paco
      sobre ESTE CFDI («esto es la renta de diciembre»). Vive en el
@@ -495,7 +806,23 @@ function invoiceDetail(row) {
     }
   }
   if (row.initialState) summary.append(n('p', 'Estado al importarse (según los metadatos del SAT): ' + row.initialState + '.', 'report-note'));
-  const contents = [summary];
+  /* El Lector es la vista al abrir (2.9.7 · Pieza B): va
+     primero; el resumen y todo lo demás del detalle quedan
+     debajo, intactos. */
+  const contents = [lectorSeccion297(row), summary];
+  /* Línea de tiempo visual (2.4.0 · W5b2, pieza 6): tras el
+     resumen de la ficha, con los datos que la ficha ya carga
+     —la factura, sus complementos en `invoices` y la fecha de
+     la vigilancia para la cancelada—. */
+  if (row.kind === 'I') {
+    const vig240 = typeof fiscalResults !== 'undefined' ? fiscalResults.get(row.id) : null;
+    const pasos240 = cfdiLineaDatos240(row, invoices, {
+      cancelada: typeof invoiceStateOf === 'function' && invoiceStateOf(row) === 'Cancelado',
+      fechaCancelacion: vig240?.sat?.checked || vig240?.checked || null,
+      marcada: visorMarcados.has(row.id) || (typeof dineroMarcados !== 'undefined' && dineroMarcados.has(row.id))
+    });
+    if (pasos240.length) contents.push(cfdiLineaVisual240(pasos240));
+  }
   const linked = documents.filter(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id && (!scope || doc.rfc === scope));
   const actionsRow = n('div', undefined, 'actions');
   actionsRow.append(
@@ -538,12 +865,48 @@ function invoiceDetail(row) {
       }, undefined, 'eye'),
       action('Descargar PDF', pedir('pdf'), undefined, 'file'),
       action('XML + PDF', pedir('ambos'), undefined, 'down'));
+    /* «Enviar» junto a las descargas de la ficha (2.4.0 ·
+       W4a; W2c cablea el correo de los dos): el XML va por la
+       clase «cfdi-xml» de /api/enviar — el servidor resuelve
+       el file record xml:<uuid> del almacén — y el PDF del
+       emisor va por {clase:'documento', id} cuando el
+       documento «Factura PDF» de ESTE CFDI existe en el
+       expediente (linked, el de «Ver PDF» de aquí arriba).
+       Sin ese documento, el PDF queda como en W4a: solo
+       WhatsApp/Compartir en esta tarjeta y su «Reenviar por
+       correo» propio de siempre — ningún botón de correo que
+       la ruta rechace. */
+    if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode)) {
+      const notaCfdi = 'El correo de este comprobante ya tiene su camino en esta ficha («Reenviar por correo», aquí mismo). El PDF del emisor no consta como documento del expediente para este CFDI, así que por la ruta nueva no encaja: mándalo por WhatsApp o Compartir, o usa su «Reenviar por correo».';
+      actionsRow.append(enviarBoton240(() => ({
+        nombre: 'Comprobante ' + row.id + '.pdf',
+        asunto: 'PacoSAT · Comprobante ' + row.id,
+        correo: linked[0] ? { clase: 'documento', id: linked[0].id } : null,
+        correoNota: linked[0] ? undefined : notaCfdi,
+        archivo: () => enviarBlobSalida240('salidas/cfdi', { id: row.id, format: 'pdf', rfc: scope }) })));
+      const envXml = enviarBoton240(() => ({
+        nombre: row.id + '.xml',
+        asunto: 'PacoSAT · XML ' + row.id,
+        correo: { clase: 'cfdi-xml', uuid: row.id },
+        archivo: async () => {
+          const file = await readStore('files', 'xml:' + row.id);
+          check(file, 'Archivo no encontrado.');
+          return { blob: file.blob, nombre: row.id + '.xml' };
+        } }));
+      envXml.textContent = 'Enviar XML';
+      envXml.prepend(icon('send'));
+      actionsRow.append(envXml);
+    }
   }
   for (const doc of linked) actionsRow.append(action('Ver PDF · ' + doc.rfc, () => {
     $('dialog').addEventListener('close', () => viewPdf(doc).catch(error => announce(error.message, true)), { once: true });
     $('dialog').close();
   }, undefined, 'file'));
   if (!linked.length) actionsRow.append(n('span', 'Sin PDF vinculado a este CFDI.', 'timeline-empty'));
+  /* Comparador XML/PDF (2.4.0 · WC3b, ítem 15): sin el PDF DEL
+     EMISOR no se ofrece comparación alguna — el PDF que diseña
+     PacoSAT sale de este mismo XML y compararlo no probaría nada. */
+  if (!linked.length) actionsRow.append(n('span', 'Sin PDF del emisor no hay comparación XML/PDF: el PDF que diseña PacoSAT sale de este mismo XML y compararlo no probaría nada.', 'timeline-empty'));
   /* Reenviar por correo (1.24.0, punto 11): el mismo diálogo del
      Buzón, con el dueño del comprobante (el perfil que es emisor
      o receptor) como RFC del reenvío — nunca otro. */
@@ -566,7 +929,8 @@ function invoiceDetail(row) {
     try {
       const file = await readStore('files', 'xml:' + row.id);
       check(file, 'El XML original no está en este equipo.');
-      const full = parseCfdiFull(bytes(await file.blob.arrayBuffer()));
+      const rawBytes = bytes(await file.blob.arrayBuffer());
+      const full = parseCfdiFull(rawBytes);
       fullBody.replaceChildren();
       const facts = n('div', undefined, 'facts');
       const fact = (label, value) => { if (!value) return; const box = n('div'); box.append(n('small', label), n('strong', value)); return box; };
@@ -623,6 +987,61 @@ function invoiceDetail(row) {
         }
         fullBody.append(timbreBox);
       } else fullBody.append(n('p', 'Este comprobante no tiene Timbre Fiscal Digital (no está timbrado).', 'timeline-empty'));
+      /* Semáforo de integridad (2.4.0 · WC3b, ítem 20): estructura,
+         huella del fichero contra la registrada al importarlo y
+         estado en el SAT según la vigilancia — solo lo comprobable,
+         con lo no verificable dicho en llano (integridadCfdi). */
+      const intBox = n('div');
+      intBox.append(n('h3', 'Integridad del comprobante'));
+      const itemVig240 = fiscalResults.get(row.id);
+      const informe240 = integridadCfdi(full, { huellaRegistrada: row.xmlHash || '',
+        huellaActual: await sha256Hex(rawBytes), estadoSat: itemVig240?.sat?.state || '',
+        revisadoEl: itemVig240?.checked ? localDateTime(itemVig240.checked) : '' });
+      intBox.dataset.integridad240 = informe240.nivel;
+      intBox.append(n('p', informe240.nivel === 'verde' ? 'Semáforo verde: todo lo comprobable está bien.' :
+        informe240.nivel === 'rojo' ? 'Semáforo rojo: algo de lo comprobable FALLA (va nombrado abajo).' :
+        'Semáforo ámbar: falta algo por comprobar (lo que no consta va nombrado abajo).', 'report-note'));
+      for (const punto of informe240.puntos) {
+        const linea = n('p', punto.nombre + ': ' + punto.detalle);
+        linea.dataset.punto240 = punto.nombre;
+        linea.dataset.estado240 = punto.estado;
+        intBox.append(linea);
+      }
+      intBox.append(n('p', informe240.noVerificado, 'report-note'));
+      fullBody.append(intBox);
+      /* Comparador XML ↔ PDF del emisor (2.4.0 · WC3b, ítem 15):
+         solo cuando el expediente guarda el PDF DEL EMISOR de este
+         CFDI (linked). El texto lo lee el servidor con su extractor
+         de siempre (el de bank-statement, vía el índice de WC3a) y
+         el contraste campo a campo lo hace compararCfdiPdf: igual,
+         DIFERENTE con las dos cifras, o «no consta en el PDF». */
+      if (linked.length) {
+        const compBox = n('div');
+        compBox.append(n('h3', 'Comparar con su PDF del emisor'));
+        compBox.append(n('p', 'Este CFDI tiene archivado el PDF del emisor: su texto se contrasta campo a campo contra el XML. ' +
+          'Lo que el PDF no traiga legible sale «no consta en el PDF», nunca como diferencia.', 'report-note'));
+        const compResult = n('div');
+        const compBtn = action('Comparar con su PDF', async () => {
+          compResult.replaceChildren(n('p', 'Leyendo el PDF del emisor…', 'timeline-empty'));
+          try {
+            check(satToken, 'Sin servidor no se puede leer el texto del PDF: la comparación usa el lector de PDF del servidor.');
+            const data = await satApi('cfdi/pdf-texto240?id=' + encodeURIComponent(linked[0].id));
+            check(data.estado === 'ok' && data.texto, 'El PDF del emisor no trae texto legible: no hay campos que contrastar.');
+            compResult.replaceChildren();
+            for (const fila of compararCfdiPdf(full, data.texto)) {
+              const linea = n('p');
+              linea.dataset.campo240 = fila.campo;
+              linea.dataset.estado240 = fila.estado;
+              linea.append(n('strong', fila.campo + ': '),
+                n('span', 'XML ' + (fila.xml || '—') + ' · PDF ' + (fila.estado === 'no-consta' ? 'no consta en el PDF' : (fila.pdf || '—')) + ' — '),
+                n('strong', fila.estado === 'igual' ? 'Igual' : fila.estado === 'diferente' ? 'DIFERENTE' : 'No consta'));
+              compResult.append(linea);
+            }
+          } catch (error) { compResult.replaceChildren(n('p', error.message, 'timeline-empty')); }
+        }, undefined, 'search');
+        compBox.append(compBtn, compResult);
+        fullBody.append(compBox);
+      }
       if (full.pagos) {
         const pagosBox = n('div');
         pagosBox.append(n('h3', 'Complemento de pagos 2.0'));
@@ -656,10 +1075,21 @@ function invoiceDetail(row) {
   timelineSection.id = 'cfdi-timeline';
   timelineSection.append(n('h3', 'Historia del comprobante'));
   const timelineList = n('div', undefined, 'timeline');
+  /* Esqueleto con la forma de la historia (2.4.0 · W5b2,
+     pieza 4b): filas .sk-fila mientras llega, con su palabra
+     de carga; el dato lo sustituye al pintar. */
+  timelineList.setAttribute('aria-busy', 'true');
+  if (typeof esqueletoPantalla240 === 'function') {
+    const skelHistoria240 = esqueletoPantalla240(2);
+    skelHistoria240.querySelector?.('.sk-hero')?.remove();
+    timelineList.append(skelHistoria240);
+  }
   timelineList.append(n('p', 'Cargando historia…', 'timeline-empty'));
   timelineSection.append(timelineList);
   contents.push(timelineSection);
-  actionsRow.append(action('Ver historia', () => timelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' })));
+  /* «Ver historia» fuera (2.3.2 · m-15): solo desplazaba
+     dentro del mismo diálogo hasta la historia que ya está
+     en él. La historia se queda; el botón, no. */
   (async () => {
     const events = [{ at: row.date, label: 'CFDI emitido', detail: KINDS[row.kind] + ' · ' + amount(row) }];
     for (const doc of linked) events.push({ at: null, label: 'PDF vinculado', detail: doc.name });
@@ -676,13 +1106,19 @@ function invoiceDetail(row) {
            movimiento o su marca manual) llevan su enlace al
            documento, no solo el texto. */
         const vida200h = await satApi('vida200h?uuid=' + encodeURIComponent(row.id)).catch(() => null);
-        for (const hito of vida200h?.hitos || [])
+        for (const hito of vidaHitosVisibles232(vida200h?.hitos))
           events.push({ at: hito.at ? new Date(hito.at).toISOString() : null,
-            label: hito.tipo === 'cancelada' ? 'Cancelada' : 'Línea de vida · ' + hito.tipo,
+            label: hito.tipo === 'cancelada' ? 'Cancelada' : hitoTitulo232(hito.tipo),
             detail: hito.texto, hito201: hito });
       } catch { /* sin servidor o sin historia remota: se muestra la local */ }
     }
     events.sort((a, b) => (a.at || '9999').localeCompare(b.at || '9999'));
+    /* El contenido real sustituye al esqueleto: la lista sale
+       del estado ocupado (corrección visual 2.4.0, el mismo
+       patrón que en Dinero: el contenedor que llevaba
+       aria-busy es este mismo, y replaceChildren no lo
+       retiraba). */
+    timelineList.removeAttribute('aria-busy');
     timelineList.replaceChildren(...events.map(event => {
       const item = n('div', undefined, 'timeline-item');
       item.append(n('strong', event.label),
@@ -712,84 +1148,167 @@ function invoiceDetail(row) {
   $('dialog').classList.add('invoice-dialog');
   $('dialog').classList.add('cfdi-dialog');
 }
-function invoiceActions(row) {
-  const wrap = n('div', undefined, 'actions');
-  /* «Revisar ahora» (1.13.1): fuerza la revisión de ESTA factura en
-     el SAT al momento, sin esperar a que la tanda automática de 5
-     en 5 llegue hasta ella entre los miles pendientes. Mandando
-     (botón principal) mientras está sin revisar o con problema;
-     acción normal en las ya revisadas, para refrescar su estado.
-     El invitado no lo ve: su acceso es de solo lectura y el
-     servidor lo rechazaría igualmente. */
-  if (typeof guestMode === 'undefined' || !guestMode) {
-    const item = fiscalResults.get(row.id);
-    const pendiente = !item?.sat;
-    const revisar = n('button', 'Revisar ahora', pendiente ? 'primary' : 'soft');
-    revisar.type = 'button';
-    revisar.prepend(icon('search'));
-    revisar.onclick = () => monitorCheckOne(row, revisar);
-    wrap.append(revisar);
+/* Ficha básica del CFDI de retenciones (2.4.0 · WC3b, ítem 14):
+   el documento vive en Documentos con su clase propia y TODOS sus
+   datos parseados viajan en la fila (doc.retenciones), así que la
+   ficha se pinta sin reabrir el XML; el XML original se descarga
+   desde aquí. El cruce contra los CFDI normales archivados sale de
+   cruceRetenciones: cuando no hay datos para cruzar, la ficha lo
+   dice («sin cruce posible con lo archivado»), no finge uno. */
+function retencionesDetail(doc) {
+  const ret = doc.retenciones || {};
+  const summary = n('div', undefined, 'invoice-summary');
+  const headline = n('div');
+  headline.append(n('span', 'CFDI de retenciones', 'period-chip'),
+    n('h3', ret.totales?.retenido ? '$' + ret.totales.retenido + ' retenidos' : 'CFDI de retenciones'),
+    n('p', 'CFDI de retenciones · ' + (doc.period || '') + (ret.folioInt ? ' · Folio interno ' + ret.folioInt : '')));
+  const parties = n('div', undefined, 'invoice-parties');
+  for (const [label, party] of [['EMISOR (RETENEDOR)', ret.from || {}], ['RECEPTOR (CONTRIBUYENTE)', ret.to || {}]]) {
+    const box = n('div');
+    box.append(n('small', label), n('strong', party.name || party.rfc || '—'), n('span', party.rfc || '—'));
+    parties.append(box);
   }
-  /* Acciones directas por fila (1.32.1, F3): la tabla cumple su
-     propio subtítulo — «su PDF, en una sola tabla» — con PDF y
-     XML de un toque en la fila (el PDF diseñado lo construye el
-     servidor desde el XML guardado, como en el detalle). El
-     resto vive en el menú ⋯ de la fila: Imprimir, Copiar UUID,
-     Ver XML y Archivar. */
-  const bajarXml = async () => {
+  summary.append(headline, parties);
+  const contents = [summary];
+  const facts = n('div', undefined, 'facts');
+  const fact = (label, value) => { if (!value) return; const box = n('div'); box.append(n('small', label), n('strong', value)); return box; };
+  [fact('Fecha de expedición', ret.fecha ? dateLabel(ret.fecha) + ' ' + String(ret.fecha).slice(11, 16) : ''),
+    fact('Periodo', doc.period),
+    fact('Monto total de la operación', ret.totales?.operacion ? '$' + ret.totales.operacion : ''),
+    fact('Base gravada', ret.totales?.gravado ? '$' + ret.totales.gravado : ''),
+    fact('Monto exento', ret.totales?.exento ? '$' + ret.totales.exento : ''),
+    fact('Total de retenciones', ret.totales?.retenido ? '$' + ret.totales.retenido : ''),
+    fact('Huella SHA-256 al importarlo', doc.xmlHash || 'Sin huella de importación: no consta')]
+    .forEach(box => box && facts.append(box));
+  contents.push(facts);
+  if (ret.detalle?.length) {
+    const detalleWrap = n('div', undefined, 'table-wrap');
+    detalleWrap.append(grid(['Impuesto retenido', 'Base', 'Importe retenido', 'Tipo de pago'],
+      ret.detalle.map(d => [taxLabel(d.impuesto), d.base ? '$' + d.base : '—', '$' + d.monto, d.tipoPago || '—'])));
+    contents.push(detalleWrap);
+  }
+  const cruce = cruceRetenciones(ret, invoices);
+  const cruceBox = n('div');
+  cruceBox.append(n('h3', 'Cruce con los CFDI normales'));
+  const cruceTexto = n('p', cruce.mensaje, 'report-note');
+  cruceTexto.dataset.cruce240 = cruce.estado;
+  cruceBox.append(cruceTexto);
+  if (cruce.detalle.length) {
+    const cruceWrap = n('div', undefined, 'table-wrap');
+    cruceWrap.append(grid(['Impuesto', 'En este documento', 'En los CFDI normales', 'Resultado'],
+      cruce.detalle.map(fila => [taxLabel(fila.impuesto), fila.enRetenciones ? '$' + fila.enRetenciones : '—',
+        fila.enCfdi ? '$' + fila.enCfdi : '—', fila.estado === 'igual' ? 'Igual' : 'DIFERENTE'])));
+    cruceBox.append(cruceWrap);
+  }
+  contents.push(cruceBox);
+  const acts = n('div', undefined, 'actions');
+  acts.append(action('Descargar XML original', async () => {
+    const file = await readStore('files', doc.id);
+    check(file, 'Archivo no encontrado.');
+    download(file.blob, (doc.name || 'CFDI de retenciones') + '.xml');
+  }, undefined, 'down'));
+  contents.push(acts);
+  dialog('CFDI de retenciones', contents);
+  $('dialog').classList.add('invoice-dialog');
+}
+/* ===== Línea de vida del CFDI (2.3.2 · M-7/m-14) =====
+   Títulos llanos por tipo de hito: la clave interna
+   («estado-sat», «emision») nunca se enseña. Y la afirmación
+   del estado consultado vive UNA sola vez: en la entrada de
+   la historia (con su fecha y, desde la 2.3.2, su detalle ya
+   en llano del servidor); el hito «estado-sat» de la línea de
+   vida contaba el mismo hecho otra vez y sale de la mezcla. */
+const HITO_TITULOS232 = {
+  descubierto: 'Descubierto en el SAT', emision: 'Emisión',
+  descargado: 'Descargado del SAT', aviso: 'Aviso de novedades',
+  correo: 'Nombrado en un correo', nota: 'Nota', pago: 'Pago',
+  cancelada: 'Cancelada', marca: 'Marca a revisar',
+  archivado: 'Archivado', 'estado-sat': 'Estado consultado en el SAT'
+};
+function hitoTitulo232(tipo) {
+  return HITO_TITULOS232[tipo] || 'Línea de vida';
+}
+function vidaHitosVisibles232(hitos) {
+  return (hitos || []).filter(hito => hito && hito.tipo !== 'estado-sat');
+}
+function invoiceActions(row) {
+  /* (2.9.9 · D2) UN solo botón de acciones por fila: el ⋯.
+     Dentro viven TODAS las acciones que la fila tenía — las
+     directas de antes y las que ya estaban en el menú —, con
+     las mismas palabras y el mismo efecto:
+     · «Revisar ahora» (1.13.1): fuerza la revisión de ESTA
+       factura en el SAT al momento. El invitado no lo ve.
+     · «PDF» (1.32.1, F3): el PDF diseñado que construye el
+       servidor desde el XML guardado, como en el detalle.
+     · «XML»: descarga el XML guardado.
+     · «Enviar» / «Enviar XML» (2.4.0 · W4a/W2c): la misma hoja
+       de envío de antes (enviarTarjeta240 con las mismas
+       opciones: el PDF usa {clase:'documento', id} del
+       documento «Factura PDF» de este CFDI cuando existe; sin
+       él, solo compartir con su nota; el XML usa «cfdi-xml»).
+     · «Imprimir», «Copiar UUID», «Ver XML», «Archivar»
+       (1.31.1, con su Deshacer; solo con servidor y nunca
+       para el invitado) y «Compartir por correo» (7A, A7). */
+  const itF = [];
+  const push = (label, fn) => itF.push({ label, fn });
+  if (typeof guestMode === 'undefined' || !guestMode) {
+    const fb = { textContent: 'Revisar ahora', disabled: false };
+    push('Revisar ahora', () => monitorCheckOne(row, fb));
+  }
+  const xmlFile = async () => {
     const file = await readStore('files', 'xml:' + row.id);
     check(file, 'Archivo no encontrado.');
-    download(file.blob, row.id + '.xml');
+    return file;
   };
-  wrap.append(action('Ver CFDI', () => invoiceDetail(row)));
+  const bajarXml = async () => download((await xmlFile()).blob, row.id + '.xml');
   if (typeof satToken !== 'undefined' && satToken) {
-    wrap.append(action('PDF', async event => {
-      const boton = event?.currentTarget;
-      if (boton) { boton.disabled = true; boton.textContent = 'Preparando…'; }
+    push('PDF', async () => {
       try {
         const data = await satApi('salidas/cfdi', { id: row.id, format: 'pdf', rfc: scope });
         download(new Blob([decode64(data.content)], { type: data.type || 'application/pdf' }), data.name);
       } catch (error) { toast(error.message, 'error'); }
-      finally { if (boton) { boton.disabled = false; boton.textContent = 'PDF'; } }
-    }, undefined, 'file'));
+    });
   }
-  wrap.append(action('XML', bajarXml, undefined, 'down'));
-  const menuFila = cardMenu1312('Más opciones de esta factura');
-  const itemsFila = [
-    { label: 'Imprimir', fn: async () => {
-        const file = await readStore('files', 'xml:' + row.id);
-        check(file, 'Archivo no encontrado.');
-        cfdiPrint(row, parseCfdiFull(bytes(await file.blob.arrayBuffer())));
-      } },
-    { label: 'Copiar UUID', fn: async () => {
-        try { await navigator.clipboard.writeText(row.id); announce('UUID copiado: ' + row.id); }
-        catch { announce('No se pudo copiar al portapapeles en este navegador.', true); }
-      } },
-    { label: 'Ver XML', fn: async () => {
-        const file = await readStore('files', 'xml:' + row.id);
-        check(file, 'Archivo no encontrado.');
-        await viewXml(file.blob, row.id + '.xml');
-      } }];
-  /* Archivar (1.31.1): el gesto de guardar fuera de las vistas
-     de trabajo, con su Deshacer. Un CFDI no se borra nunca
-     desde la app; archivado vive en Archivo, recuperable. Solo
-     con servidor (la marca es suya) y nunca para el invitado. */
+  push('XML', bajarXml);
+  if (typeof satToken !== 'undefined' && satToken && typeof enviarBoton240 === 'function' &&
+      (typeof guestMode === 'undefined' || !guestMode)) {
+    const linkedPdfFila = (typeof documents !== 'undefined' ? documents : [])
+      .filter(doc => doc.kind === 'Factura PDF' && doc.uuid === row.id && (!scope || doc.rfc === scope));
+    const optsPdf = () => ({
+      nombre: 'Comprobante ' + row.id + '.pdf',
+      asunto: 'PacoSAT · Comprobante ' + row.id,
+      correo: linkedPdfFila[0] ? { clase: 'documento', id: linkedPdfFila[0].id } : null,
+      correoNota: linkedPdfFila[0] ? undefined :
+        'El correo de un comprobante vive en su ficha («Reenviar por correo»). El PDF del emisor no consta como documento del expediente para este CFDI, así que por la ruta nueva no encaja: mándalo por WhatsApp o Compartir desde aquí.',
+      archivo: () => enviarBlobSalida240('salidas/cfdi', { id: row.id, format: 'pdf', rfc: scope }) });
+    push('Enviar', () => enviarTarjeta240(optsPdf()));
+    push('Enviar XML', () => enviarTarjeta240({
+      nombre: row.id + '.xml',
+      asunto: 'PacoSAT · XML ' + row.id,
+      correo: { clase: 'cfdi-xml', uuid: row.id },
+      archivo: async () => { const file = await xmlFile();
+        return { blob: file.blob, nombre: row.id + '.xml' }; } }));
+  }
+  push('Imprimir', async () =>
+    cfdiPrint(row, parseCfdiFull(bytes(await (await xmlFile()).blob.arrayBuffer()))));
+  push('Copiar UUID', async () => {
+      try { await navigator.clipboard.writeText(row.id); announce('UUID copiado: ' + row.id); }
+      catch { announce('No se pudo copiar al portapapeles en este navegador.', true); }
+    });
+  push('Ver XML', async () => viewXml((await xmlFile()).blob, row.id + '.xml'));
   if ((typeof guestMode === 'undefined' || !guestMode) &&
     typeof satToken !== 'undefined' && satToken &&
     typeof cfdiArchivar1311 === 'function') {
-    itemsFila.push({ label: 'Archivar', fn: () => cfdiArchivar1311(row)
-      .catch(error => announce(error.message, true)) });
+    push('Archivar', () => cfdiArchivar1311(row)
+      .catch(error => announce(error.message, true)));
   }
-  /* Compartir en un toque (tanda 7A, A7): el servidor prepara
-     el correo con la ficha del comprobante y su XML adjunto;
-     el envío sigue siendo gesto de Paco. */
   if (typeof satToken !== 'undefined' && satToken && typeof ensureLazyPart === 'function') {
-    itemsFila.push({ label: 'Compartir por correo', fn: () =>
-      ensureLazyPart('salidas').then(() => { if (typeof compartir200g === 'function') compartir200g('cfdi', row.id); }) });
+    push('Compartir por correo', () =>
+      ensureLazyPart('salidas').then(() => { if (typeof compartir200g === 'function') compartir200g('cfdi', row.id); }));
   }
-  menuFila._setItems1312(itemsFila);
-  wrap.append(menuFila);
-  return wrap;
+  const menuFila = cardMenu1312('Más opciones de esta factura');
+  menuFila._setItems1312(itF);
+  return menuFila;
 }
 async function viewXml(file, name) {
   check(file.size && file.size <= 8 * MB, 'El visor admite XML de hasta 8 MB.');
@@ -863,7 +1382,7 @@ function totalsCsv() {
 function exportTotalsCsv() {
   download(new Blob(['\uFEFF', totalsCsv()], { type: 'text/csv;charset=utf-8' }), 'Totales-por-RFC-y-mes.csv');
 }
-async function snapshot() {
+async function snapshot(sinTechoUnico = false) {
   const data = { version: 2 };
   const records = cloudStorage ? await Promise.all(STORES.map(name => readStore(name))) : await new Promise((resolve, reject) => {
     const tx = db.transaction(STORES, 'readonly');
@@ -872,7 +1391,13 @@ async function snapshot() {
     tx.onabort = () => reject(tx.error || new Error('No se pudo crear el respaldo.'));
   });
   for (let i = 0; i < STORES.length; i++) data[STORES[i]] = records[i];
-  check(data.files.reduce((sum, file) => sum + file.blob.size, 0) <= 100 * MB, 'Este formato admite hasta 100 MB de archivos por respaldo.');
+  /* El techo de 100 MB es POR ARCHIVO de respaldo. El respaldo
+     partido (2.9.10) pide la foto sin él porque su gracia es
+     partir lo que no cabe en un solo archivo; cada una de sus
+     partes ya respeta el techo al empaquetarse. Los demás
+     llamadores (respaldo completo, copia antes de restaurar)
+     generan un único archivo y conservan el techo intacto. */
+  check(sinTechoUnico || data.files.reduce((sum, file) => sum + file.blob.size, 0) <= 100 * MB, 'Este formato admite hasta 100 MB de archivos por respaldo.');
   data.files = await Promise.all(data.files.map(async item => ({ id: item.id, content: encode64(bytes(await item.blob.arrayBuffer())) })));
   return data;
 }
@@ -1023,6 +1548,78 @@ $('inspectFile').onchange = handle(async () => {
   $('inspectFile').value = '';
   if (file) await viewXml(file, file.name);
 });
+/* ===== Primarios que despachan su verbo (2.3.2 · M-11) =====
+   Ningún botón principal puede quedarse en repintar o
+   enfocar: cada uno ejecuta el gesto que su etiqueta promete,
+   contra el servidor o contra el botón real de su pantalla. */
+/* Ejecutor emparejado: PRUEBA el ejecutor de verdad — encola
+   la prueba de puerta (salud/puerta, el despacho que el
+   servidor ya sabe hacer: sin ejecutor vivo no encola y lo
+   dice; con él, su equipo la corre al recogerla). */
+async function probarEjecutor232() {
+  const rfc = scope || (typeof satData !== 'undefined' && satData?.profiles?.[0]?.rfc) || people?.[0]?.id || '';
+  if (!rfc) { toast('No hay ningún RFC con perfil para probar la puerta.', 'error'); return false; }
+  try {
+    const r = await satApi('salud/puerta', { rfc });
+    if (r.probada) toast(r.ok ? 'La puerta de ' + rfc + ' abre: la e.firma entró al portal (probada ahora mismo).'
+      : 'La puerta de ' + rfc + ' NO abre: ' + (r.error || 'sin motivo'), r.ok ? 'ok' : 'error');
+    else if (r.encolado) toast(r.repetido
+      ? 'La prueba de la puerta de ' + rfc + ' ya estaba en cola: no se duplicó.'
+      : 'Prueba de puerta encolada para ' + rfc + ': tu ejecutor la corre al recogerla.', 'ok');
+    else toast(r.motivo || 'La prueba no se encoló: abre el ejecutor en tu PC.', 'error');
+    if (typeof pollSat === 'function') await pollSat().catch(() => {});
+    render();
+    return Boolean(r.encolado || r.probada);
+  } catch (error) { toast(error.message, 'error'); return false; }
+}
+/* Ajustes › API: refresca el panel DE VERDAD — re-lee las
+   llaves y el estado desde el servidor antes de repintar, y
+   dice cuántas llaves constan. */
+async function refrescarApi232() {
+  try {
+    const data = await satApi('apikeys');
+    if (typeof pollSat === 'function') await pollSat().catch(() => {});
+    render();
+    announce('Panel de API actualizado desde el servidor: ' +
+      number.format((data?.llaves || []).length) + ' llave(s) constan.');
+    return true;
+  } catch (error) { toast(error.message, 'error'); return false; }
+}
+/* Cierre › Calendario: APLICA el mes elegido en el campo de
+   la pantalla y lo ENSEÑA — ese mes pasa a ser el del cierre
+   (OUT.month, el que pintan el IVA y el reporte del periodo)
+   y la vista salta a Reportes con ese mes aplicado. */
+async function aplicarMesCierre232() {
+  const monthInput = document.querySelector('main input[type="month"]');
+  const mes = monthInput?.value || '';
+  if (!/^\d{4}-\d{2}$/.test(mes)) {
+    toast('Elige primero el mes en el campo de esta pantalla.', 'error');
+    if (monthInput) monthInput.focus();
+    return false;
+  }
+  if (typeof ensureLazyPart === 'function') await ensureLazyPart('salidas');
+  if (typeof OUT === 'undefined') {
+    toast('La parte de reportes no se pudo cargar: inténtalo otra vez.', 'error');
+    return false;
+  }
+  OUT.month = mes;
+  cierreSection = 'reportes';
+  render();
+  announce('Mes del cierre aplicado: ' + mes +
+    '. El IVA del mes y el reporte del periodo ya enseñan ese mes.');
+  return true;
+}
+/* Preguntas: ENVÍA la pregunta escrita pulsando el botón
+   real de su pantalla («Preguntar»), el mismo gesto. */
+function enviarPregunta232() {
+  const botones = document.querySelectorAll ? document.querySelectorAll('main button') : [];
+  for (const b of botones)
+    if ((b.textContent || '').trim() === 'Preguntar') { b.click(); return true; }
+  const q = document.querySelector('main input[type="text"]');
+  if (q) q.focus();
+  toast('La pantalla de Preguntas aún se está pintando: pulsa «Preguntar» en su panel.', 'error');
+  return false;
+}
 $('primary').onclick = handle(async () => {
   /* Despacho por DESTINO (1.11.0): la acción principal depende de la
      pestaña o sección en curso, no de la vista absorbida. */
@@ -1039,15 +1636,11 @@ $('primary').onclick = handle(async () => {
     if (satTab === 'descargado') { await pollSat(); render(); return; }
     if (satTab === 'ejecutor') {
       /* Contextual (2.0, 2.6): con ejecutor emparejado, el
-         primario es «Tu ejecutor» y enseña su estado — no
-         ofrece emparejar de nuevo; sin ninguno, empareja. */
+         primario es «Tu ejecutor» — y desde la 2.3.2 (M-11)
+         lo PRUEBA de verdad encolando la prueba de puerta;
+         sin ninguno, empareja. */
       const exP = satData?.ejecutor;
-      if (exP?.emparejado) {
-        render();
-        announce(exP.enLinea ? 'Tu ejecutor está en línea en tu equipo.' :
-          'Tu equipo no responde' + (exP.ultimoVisto ? ' desde el ' + localDateTime(exP.ultimoVisto) : '') + ': abre el ejecutor en tu PC.');
-        return;
-      }
+      if (exP?.emparejado) { await probarEjecutor232(); return; }
       document.querySelector('.executor-pair')?.click(); return;
     }
     /* Descargar (1.32.1, G4): la cabecera de la pantalla de
@@ -1064,12 +1657,7 @@ $('primary').onclick = handle(async () => {
   if (page === 'coverage') { await pollSat(); render(); return; }
   if (page === 'ejecutor') {
     const exP = satData?.ejecutor;
-    if (exP?.emparejado) {
-      render();
-      announce(exP.enLinea ? 'Tu ejecutor está en línea en tu equipo.' :
-        'Tu equipo no responde' + (exP.ultimoVisto ? ' desde el ' + localDateTime(exP.ultimoVisto) : '') + ': abre el ejecutor en tu PC.');
-      return;
-    }
+    if (exP?.emparejado) { await probarEjecutor232(); return; }
     document.querySelector('.executor-pair')?.click(); return;
   }
   if (page === 'descargar') {
@@ -1082,11 +1670,14 @@ $('primary').onclick = handle(async () => {
     toast('La parte de reportes no se pudo cargar: inténtalo otra vez.', 'error'); return;
   }
   if (page === 'buzon') {
-    /* «Marcar todo leído» (1.32.1, R1): la cabecera pulsa el
-       MISMO botón de la franja de Recibidos; sin nada sin leer,
-       lo dice en vez de fingir el gesto. */
-    const marcar = document.querySelector('.buzon-mark-all');
-    if (marcar && !marcar.disabled) { marcar.click(); return; }
+    /* «Marcar todo leído» (1.32.1, R1; 2.9.13 · A7): el botón
+       de la franja salió por duplicado — la cabecera es el
+       único sitio y llama a la función de la parte del buzón;
+       sin nada sin leer, lo dice en vez de fingir el gesto. */
+    if (typeof buzonMarcarTodoLeido2913 === 'function' &&
+        typeof buzonCache !== 'undefined' && buzonCache && (buzonCache.unread || 0) > 0) {
+      await buzonMarcarTodoLeido2913(); return;
+    }
     toast('Recibidos está al día: no hay nada sin leer.', 'ok'); return;
   }
   if (page === 'tributario') {
@@ -1111,12 +1702,13 @@ $('primary').onclick = handle(async () => {
     if (ajustesSection === 'contribuyentes') { await addPerson(); return; }
     if (ajustesSection === 'respaldos') { backupDialog(); return; }
     if (ajustesSection === 'sistema') { await pollSat(); await pollMonitor(); render(); return; }
-    if (ajustesSection === 'api') { render(); return; }
+    if (ajustesSection === 'api') { await refrescarApi232(); return; }
     render(); return;
   }
   if (page === 'salidas') {
+    if (cierreSection === 'reportes') { navigate('reportes'); return; }
     if (cierreSection === 'diot') { exportDiotCsv(); return; }
-    if (cierreSection === 'calendario') { render(); const monthInput = document.querySelector('main input[type="month"]'); if (monthInput) monthInput.focus(); return; }
+    if (cierreSection === 'calendario') { await aplicarMesCierre232(); return; }
     await ensureLazyPart('salidas');
     if (typeof exportFull === 'function') { await exportFull(''); return; }
     toast('La parte de reportes no se pudo cargar: inténtalo otra vez.', 'error'); return;
@@ -1125,7 +1717,12 @@ $('primary').onclick = handle(async () => {
     /* «Descargar Excel de saldos» (1.32.1, Di3): la cabecera de
        Dinero es su salida natural — antes navegaba a otra
        pantalla disfrazada de acción. */
-    if (typeof descargarSalida1310 === 'function') { descargarSalida1310('salidas/xlsx', { kind: 'dinero' }, $('primary')); return; }
+    /* Con el RFC del selector (2.9.3 · F6): sin él, el servidor
+       contestaba «Elige primero el RFC del expediente» aunque
+       el RFC estuviera elegido en pantalla, y la banda quedaba
+       pegada sin descarga — la llamada gemela del panel de
+       salidas sí lo pasaba. */
+    if (typeof descargarSalida1310 === 'function') { descargarSalida1310('salidas/xlsx', { kind: 'dinero', rfc: scope }, $('primary')); return; }
     toast('La salida de Dinero no se pudo cargar: inténtalo otra vez.', 'error'); return;
   }
   if (page === 'pagos') {
@@ -1150,14 +1747,14 @@ $('primary').onclick = handle(async () => {
     const paso = primaryLabel();
     if (paso === 'Ver tu ejecutor') satTab = 'ejecutor';
     if (paso === 'Dar sus credenciales') satTab = 'descargar';
-    if (paso === 'Descargar CFDI del SAT') { if (scope) downloadSheet(scope); else showSatDownload(); }
+    if (paso === 'Descargar del SAT') { if (scope) downloadSheet(scope); else showSatDownload(); }
     else navigate('sat');
     return;
   }
   if (page === 'contribuyentes') { navigate('home'); return; }
-  if (page === 'preguntas') { render(); const q = document.querySelector('main input[type="text"]'); if (q) q.focus(); return; }
+  if (page === 'preguntas') { enviarPregunta232(); return; }
   if (page === 'registro') { if (typeof downloadRegistroCsv === 'function') await downloadRegistroCsv(); return; }
-  if (page === 'archivo') { navigate('invoices'); return; }
+  if (page === 'archivo') { const r280 = document.getElementById('archivo-recuperar280'); if (r280) { r280.click(); return; } navigate('invoices'); return; }
   if (page === 'declaraciones') {
     /* «Descargar declaraciones del SAT» (1.32.1, D2): la
        cabecera pulsa el MISMO botón grande de la pantalla —
@@ -1250,7 +1847,10 @@ async function globalSearch200h(query) {
     const controls = [];
     const titulos = { cfdi: 'CFDI', documentos: 'Documentos del SAT', avisos: 'Avisos', registro: 'Registro' };
     for (const grupoRfc of grupos) {
-      controls.push(n('h3', 'RFC ' + grupoRfc.rfc));
+      /* El grupo sin dueño se etiqueta como lo que es
+         (2.9.0 · Bloque C): el servidor lo clavea «SIN RFC» y
+         el encabezado salía «RFC SIN RFC». */
+      controls.push(n('h3', grupoRfc.rfc === 'SIN RFC' ? 'Sin RFC propio · avisos y registro del sistema' : 'RFC ' + grupoRfc.rfc));
       for (const [clave, items] of Object.entries(grupoRfc.grupos || {})) {
         if (!items?.length) continue;
         controls.push(n('strong', titulos[clave] || clave));
@@ -1303,6 +1903,15 @@ function runGlobalSearch() {
   term = query; invoiceState = ''; invoiceKind = ''; month = ''; invoicePage = 0;
   navigate('invoices');
   const found = invoiceRows();
+  /* CFDI de retenciones (2.4.0 · WC3b): no son comprobantes y no
+     salen en Facturas; si la búsqueda casa con UNO solo (por folio
+     interno, RFC o nombre) y con ninguna factura, se abre SU ficha. */
+  if (!found.length) {
+    const retHits = documents.filter(doc => !doc.archived && doc.kind === 'CFDI de retenciones' &&
+      globalSearchCasa1310(query, doc.name, doc.identidad, doc.retenciones?.folioInt,
+        doc.retenciones?.from?.rfc, doc.retenciones?.from?.name, doc.retenciones?.to?.rfc, doc.retenciones?.to?.name));
+    if (retHits.length === 1) { retencionesDetail(retHits[0]); return; }
+  }
   if (found.length === 1) invoiceDetail(found[0]);
   else announce((hadFilters ? 'Filtros anteriores limpiados. ' : '') +
     (found.length ? number.format(found.length) + ' comprobantes coinciden con «' + query + '».' :

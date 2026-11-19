@@ -37,26 +37,58 @@ function saludScreen200d() {
   return [wrap];
 }
 /* «Revisar ahora»: el cruce de coherencia a demanda y repintado.
-   Es también el gesto del botón principal de la cabecera. */
+   Es también el gesto del botón principal de la cabecera.
+   Con estado visible (2.9.3 · F9): la revisión corre con su
+   «Revisando…» pintado en la tarjeta ANTES de pedirla — en
+   vivo el gesto no enseñaba ningún efecto y las marcas
+   parecían no cambiar —; al volver, la tarjeta repinta con
+   la marca nueva («revisado el…») y el veredicto fresco. */
+let saludRevisando293 = false;
 async function saludRevisar200d() {
+  if (saludRevisando293) return;
+  saludRevisando293 = true;
+  render();
   try {
     const r = await satApi('salud/coherencia', {});
     toast(r.desacuerdos?.length ? 'Coherencia revisada: ' + r.desacuerdos.length + ' desacuerdo(s) encontrado(s).'
       : 'Coherencia revisada: todo cuadra.', r.desacuerdos?.length ? 'error' : 'ok');
   } catch (error) { toast(error.message, 'error'); }
+  saludRevisando293 = false;
   render();
 }
 function saludTarjeta200d(tarjeta, accionesNode) {
   const card = panel(tarjeta.titulo);
   card.dataset.destino200b = tarjeta.id;
+  card.classList.add('salud-card2913');
   const head = n('div', undefined, 'panel-head');
+  /* (2.9.13 · D2/D5) Semáforo GRANDE y su «desde cuándo» en
+     la misma línea: la hora de la última comprobación viaja
+     en frescuraTexto y ninguna pieza enseña un estado de
+     otra hora sin decir su hora. El botón de arreglo de cada
+     pieza vive en sus acciones, junto a la pieza (debajo). */
   head.append(statusPill(SALUD_PILL200D[tarjeta.estado] || 'dim',
     tarjeta.estado === 'bien' ? 'Bien' : tarjeta.estado === 'vigilar' ? 'A vigilar' :
-    tarjeta.estado === 'mal' ? 'Mal' : 'Sin dato'),
-    n('span', tarjeta.frescuraTexto || '', 'muted'));
+    tarjeta.estado === 'mal' ? 'Mal' : 'Sin dato', undefined, undefined, true),
+    n('span', tarjeta.frescuraTexto ? 'Comprobada: ' + tarjeta.frescuraTexto : 'Sin comprobar todavía', 'muted'));
+  /* El semáforo, en grande (D2): la clase va sobre la misma
+     píldora de siempre, la primera hija de la cabecera. */
+  if (head.firstChild?.classList) head.firstChild.classList.add('salud-estado2913');
   card.append(head);
   card.append(n('p', tarjeta.porque));
-  card.append(n('p', 'Qué es esto: ' + tarjeta.queEs, 'muted'));
+  /* (2.9.9 · D5) El «Qué es esto:» sale de la cara: vive tras
+     su icono de ayuda, con el texto íntegro, a un toque. */
+  if (tarjeta.queEs) {
+    const ayuda299 = n('div', undefined, 'actions');
+    const boton299 = n('button', '?', 'soft small');
+    boton299.type = 'button';
+    boton299.title = 'Qué es esto';
+    boton299.setAttribute('aria-label', 'Qué es esto: ayuda de esta sección');
+    const texto299 = n('p', 'Qué es esto: ' + tarjeta.queEs, 'muted');
+    texto299.hidden = true;
+    boton299.onclick = () => { texto299.hidden = !texto299.hidden; };
+    ayuda299.append(boton299, texto299);
+    card.append(ayuda299);
+  }
   if (accionesNode) card.append(accionesNode);
   return card;
 }
@@ -66,10 +98,86 @@ function saludBoton200d(label, work, cls = 'soft') {
   b.onclick = () => Promise.resolve().then(work).catch(error => toast(error.message, 'error'));
   return b;
 }
+/* ===== Veredicto de Salud (2.4.0 · WC4a) =====
+   La tarjeta protagonista de la pantalla: resume las tarjetas
+   que el servidor ya compone (data.tarjetas) en UN veredicto —
+   todo bien, o qué está mal con su porqué — y el botón de cada
+   pieza mala lleva a su tarjeta, donde vive su arreglo en un
+   toque. No duplica la lógica de ninguna pieza: la resume. */
+function saludVeredicto240(data) {
+  const tarjetas = data.tarjetas || [];
+  const malas = tarjetas.filter(t => t.estado === 'mal');
+  const aVigilar = tarjetas.filter(t => t.estado === 'vigilar');
+  const card = panel('Veredicto de salud');
+  card.dataset.veredicto240 = '1';
+  card.classList.add('protagonista280'); /* (2.8.0 · diseño 7) */
+  const hero = n('div', undefined, 'total-hero');
+  const irATarjeta = id => {
+    const destino = document.querySelector('[data-destino200b="' + id + '"]');
+    if (destino) destino.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  };
+  const filaPieza = (t, etiquetaBoton, clase) => {
+    const fila = n('div', undefined, 'cp-row');
+    fila.append(n('span', t.titulo + ' — ' + t.porque));
+    fila.append(saludBoton200d(etiquetaBoton, () => irATarjeta(t.id), clase));
+    return fila;
+  };
+  if (malas.length) {
+    hero.append(statusPill('bad', 'Mal', undefined, undefined, true),
+      n('strong', malas.length === 1 ? 'Una pieza está mal' : malas.length + ' piezas están mal'));
+    card.append(hero);
+    for (const t of malas) card.append(filaPieza(t, 'Ver su arreglo', 'primary small'));
+    if (aVigilar.length)
+      card.append(n('p', 'Y a vigilar: ' + aVigilar.map(t => t.titulo).join('; ') + '.', 'muted'));
+  } else if (aVigilar.length) {
+    hero.append(statusPill('warn', 'A vigilar', undefined, undefined, true),
+      n('strong', 'Todo funciona, con ' + aVigilar.length +
+        (aVigilar.length === 1 ? ' pieza a vigilar' : ' piezas a vigilar')));
+    card.append(hero);
+    for (const t of aVigilar) card.append(filaPieza(t, 'Ver la pieza', 'soft small'));
+  } else {
+    hero.append(statusPill('ok', 'Bien', undefined, undefined, true), n('strong', 'Todo bien'));
+    card.append(hero);
+    card.append(n('p', 'Las ' + tarjetas.length + ' piezas del sistema están bien: ' +
+      'sin nada que arreglar y sin nada a vigilar.'));
+  }
+  return card;
+}
+/* ===== Bitácora visible en Salud (2.4.0 · WC4a) =====
+   (2.8.0 · diseño 10) La exportación de la bitácora vive en
+   UN sitio — Registro, cuya acción principal es «Exportar
+   CSV» —: esta tarjeta ya no exporta; enseña la cuenta y
+   enlaza. Una función, una puerta (antes había tres, con dos
+   nombres). La bitácora con sus filtros y su resumen sigue
+   en Ajustes › Sistema, también sin botón de exportar. */
+function saludBitacora240() {
+  const card = panel('Bitácora');
+  card.dataset.bitacora240 = '1';
+  const filas = typeof activity !== 'undefined' && Array.isArray(activity) ? activity : [];
+  const hoyClave = new Date().toISOString().slice(0, 10);
+  const semanaClave = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+  const deHoy = filas.filter(r => String(r.date || '').slice(0, 10) === hoyClave).length;
+  const deSemana = filas.filter(r => String(r.date || '').slice(0, 10) >= semanaClave).length;
+  card.append(n('p', 'Lo que PacoSAT ha hecho, asentado: ' + filas.length + ' asiento(s) en la bitácora · ' +
+    deHoy + ' hoy · ' + deSemana + ' en los últimos 7 días.'));
+  const acts = n('div', undefined, 'actions');
+  acts.append(saludBoton200d('Ir a Registro', () => navigate('registro')));
+  card.append(acts);
+  card.append(n('p', 'La bitácora completa y su exportación están en Registro.'));
+  return card;
+}
+/* (2.9.9 · D3) Tarjetas de salud por página: 10 y «Ver más». */
+let saludLimite299 = 10;
 function saludTarjetasPintar200d(body, data) {
+  /* Rediseño 2.4.0 (WC4a): primero el veredicto protagonista
+     y la bitácora con su exportación a la vista; debajo, la
+     rejilla de tarjetas de siempre y los paneles de siempre —
+     paridad completa, nada desaparece. */
+  body.append(saludVeredicto240(data));
+  body.append(saludBitacora240());
   const grid = n('div', undefined, 'salud-grid200d');
   const ex = data.ejecutor || {};
-  for (const tarjeta of data.tarjetas || []) {
+  for (const tarjeta of (data.tarjetas || []).slice(0, saludLimite299)) {
     const acts = n('div', undefined, 'actions');
     let conAcciones = false;
     const add = node => { acts.append(node); conAcciones = true; };
@@ -77,9 +185,20 @@ function saludTarjetasPintar200d(body, data) {
       const rfc = tarjeta.datos.rfc;
       add(saludBoton200d('Re-probar la puerta', async () => {
         const r = await satApi('salud/puerta', { rfc });
-        if (r.encolado) toast(r.repetido ? 'La prueba de la puerta de ' + rfc + ' ya estaba en cola: no se duplicó.'
+        /* Veredicto en el acto (2.9.3 · F1): en sede NAS la
+           prueba corre aquí y su resultado se dice, no solo
+           se encola o se excusa. */
+        if (r.probada) toast(r.ok ? 'La puerta de ' + rfc + ' abre: la e.firma entró al portal (probada ahora mismo).'
+          : 'La puerta de ' + rfc + ' NO abre: ' + (r.error || 'sin motivo'), r.ok ? 'ok' : 'error');
+        else if (r.encolado) toast(r.repetido ? 'La prueba de la puerta de ' + rfc + ' ya estaba en cola: no se duplicó.'
           : 'Prueba de la puerta de ' + rfc + ' encolada: tu equipo la corre al recogerla.', 'ok');
         else toast(r.motivo || 'La prueba no se encoló.', 'error');
+        /* (2.9.13 · A3/D5) El estado de la puerta se re-lee y
+           las señales se repintan EN EL SITIO antes del
+           repintado general: el encabezado no se queda con la
+           foto vieja hasta cambiar de panel. */
+        if (typeof puertaRefrescarEnSitio2913 === 'function')
+          await puertaRefrescarEnSitio2913(rfc).catch(() => {});
         render();
       }, 'primary'));
       if (tarjeta.datos.tipo === 'equipo' || tarjeta.datos.tipo === 'sin-equipo')
@@ -88,10 +207,14 @@ function saludTarjetasPintar200d(body, data) {
         add(saludBoton200d('Revisar la e.firma', () => { ajustesSection = 'contribuyentes'; navigate('settings'); }));
     } else if (tarjeta.id === 'ejecutor') {
       add(saludBoton200d('Regenerar el código de emparejado', async () => {
-        if (!confirm('Se creará un código de emparejado nuevo y el anterior dejará de servir al instante. ¿Seguir?')) return;
-        const r = await satApi('salud/codigo', {});
-        toast('Código nuevo: ' + r.codigo + ' — teclealo en tu PC en los próximos 10 minutos; el anterior ya no sirve.', 'ok');
-        render();
+        /* Confirmación con el diálogo propio (2.9.7 · D4). */
+        dialog('Regenerar el código de emparejado',
+          [n('p', 'Se creará un código de emparejado nuevo y el anterior dejará de servir al instante. ¿Seguir?')],
+          async () => {
+            const r = await satApi('salud/codigo', {});
+            toast('Código nuevo: ' + r.codigo + ' — teclealo en tu PC en los próximos 10 minutos; el anterior ya no sirve.', 'ok');
+            render();
+          }, 'Regenerar');
       }));
       add(saludBoton200d('Abrir el panel del ejecutor', () => navigate('ejecutor')));
       /* Residencia verificable (2.3.0 · pieza 5): la misma
@@ -102,7 +225,11 @@ function saludTarjetasPintar200d(body, data) {
         (tarjeta.datos.bundleVersion ? '. El paquete guardado en el servidor es la ' + tarjeta.datos.bundleVersion + '.' : '.') +
         ' ' + (typeof residenciaTexto230 === 'function'
           ? residenciaTexto230(typeof satData !== 'undefined' ? satData?.ejecutor : null)
-          : 'Residente: sin reportar todavía') + '.', 'muted');
+          : 'Residente: sin reportar todavía') +
+        /* La huella, por fin en frase (2.3.2 · m-22): el dato
+           huellaOk ya viajaba en la tarjeta y nadie lo decía. */
+        '. Huella de motores: ' + (tarjeta.datos.huellaOk === true ? 'coincide'
+          : tarjeta.datos.huellaOk === false ? 'no coincide' : 'no consta') + '.', 'muted');
       tarjeta._extra200d = extra;
       /* Tanda 5 (pieza 3): el aviso de dormido vive en Hoy y en el
          correo; aquí solo su ajuste — la tarjeta ya enseña el
@@ -131,6 +258,20 @@ function saludTarjetasPintar200d(body, data) {
         }, 'soft small'));
         add(fila);
       }
+      /* (2.9.13 · A4/D1) Las retenidas por ti: visibles y bien
+         atribuidas — semáforo tuyo, no enfermedad — con su
+         gesto de reanudar en la propia fila. */
+      for (const retenida of tarjeta.datos.retenidas || []) {
+        const fila = n('div', undefined, 'cp-row salud-retenida2913');
+        fila.append(statusPill('warn', 'Retenida por ti'));
+        fila.append(n('span', retenida.texto));
+        fila.append(saludBoton200d('Reanudarla', async () => {
+          const r = await satApi('activity/control', { kind: 'masiva', action: 'reanudar', jobId: retenida.id });
+          toast(r.message || 'Solicitud reanudada: PacoSAT vuelve a recogerla cuando el SAT la entregue.', 'ok');
+          render();
+        }, 'soft small'));
+        add(fila);
+      }
     } else if (tarjeta.id === 'atascados') {
       for (const trabajo of tarjeta.datos.atascados || []) {
         const fila = n('div', undefined, 'cp-row');
@@ -142,24 +283,48 @@ function saludTarjetasPintar200d(body, data) {
           render();
         }, 'soft small'));
         fila.append(saludBoton200d('Descartar', async () => {
-          if (!confirm('Descartar «' + trabajo.nombre + '» de ' + trabajo.rfc + ': saldrá de la cola y no se hará. Esto no se puede deshacer. ¿Seguir?')) return;
-          await satApi('salud/trabajo', { jobId: trabajo.id, accion: 'descartar' });
-          toast('Trabajo descartado: quedó registrado en el Registro.', 'ok');
-          render();
+          /* Confirmación con el diálogo propio (2.9.7 · D4). */
+          dialog('Descartar el trabajo',
+            [n('p', 'Descartar «' + trabajo.nombre + '» de ' + trabajo.rfc + ': saldrá de la cola y no se hará. Esto no se puede deshacer. ¿Seguir?')],
+            async () => {
+              await satApi('salud/trabajo', { jobId: trabajo.id, accion: 'descartar' });
+              toast('Trabajo descartado: quedó registrado en el Registro.', 'ok');
+              render();
+            }, 'Descartar');
         }, 'soft small'));
         add(fila);
       }
-      for (const trabajo of tarjeta.datos.fallidos || []) {
-        const fila = n('div', undefined, 'cp-row');
-        fila.append(n('span', 'Falló: ' + trabajo.nombre + ' · ' + trabajo.rfc +
-          (trabajo.error ? ' — ' + trabajo.error : '') + ' (el ' + fmtFechaHora(trabajo.actualizado) + ')'));
-        fila.append(saludBoton200d('Reintentar la descarga', async () => {
-          const r = await satApi('salud/trabajo', { jobId: trabajo.id, accion: 'reencolar' });
-          toast(r.motivo || (r.repetido ? 'Ya había un reintento vivo de ese trabajo: no se duplicó.'
-            : 'Reintento encolado con la memoria del trabajo fallido.'), r.ok === false ? 'error' : 'ok');
-          render();
-        }, 'soft small'));
-        add(fila);
+      /* (2.9.13 · D3/A10) Los fallidos van AGRUPADOS POR
+         CAUSA, no en volcado, y el botón de reintento nombra
+         el trabajo REAL: antes decía «Reintentar la descarga»
+         también para el Buzón y la puerta, que no son
+         descargas. La causa es el error que el propio trabajo
+         trae, en su frase; sin error registrado, «sin causa
+         registrada». */
+      {
+        const porCausa2913 = new Map();
+        for (const trabajo of tarjeta.datos.fallidos || []) {
+          const causa = String(trabajo.error || '').trim() || 'Sin causa registrada';
+          const lista = porCausa2913.get(causa) || [];
+          lista.push(trabajo);
+          porCausa2913.set(causa, lista);
+        }
+        for (const [causa2913, grupo2913] of porCausa2913) {
+          add(n('p', 'Causa: ' + causa2913 + ' · ' + grupo2913.length +
+            (grupo2913.length === 1 ? ' trabajo' : ' trabajos'), 'strong-line'));
+          for (const trabajo of grupo2913) {
+            const fila = n('div', undefined, 'cp-row');
+            fila.append(n('span', 'Falló: ' + trabajo.nombre + ' · ' + trabajo.rfc +
+              ' (el ' + fmtFechaHora(trabajo.actualizado) + ')'));
+            fila.append(saludBoton200d('Reintentar: ' + trabajo.nombre, async () => {
+              const r = await satApi('salud/trabajo', { jobId: trabajo.id, accion: 'reencolar' });
+              toast(r.motivo || (r.repetido ? 'Ya había un reintento vivo de ese trabajo: no se duplicó.'
+                : 'Reintento encolado con la memoria del trabajo fallido.'), r.ok === false ? 'error' : 'ok');
+              render();
+            }, 'soft small'));
+            add(fila);
+          }
+        }
       }
     } else if (tarjeta.id === 'correo') {
       if (tarjeta.datos.configurado) add(saludBoton200d('Enviar correo de prueba', async () => {
@@ -187,6 +352,17 @@ function saludTarjetasPintar200d(body, data) {
     } else if (tarjeta.id === 'respaldo') {
       add(saludBoton200d('Ir a Respaldos', () => { ajustesSection = 'respaldos'; navigate('settings'); }));
       const ensayo = tarjeta.datos.ensayo;
+      /* Constancia de la prueba automática mensual (2.4.0 ·
+         WServ2, ítem 29): se lee del estado servido
+         (datos.auto240) y se enseña tal cual — fecha y, si
+         salió bien, «salió bien»; si no, el porqué servido,
+         incluida la honesta «no probada a fondo» del respaldo
+         cifrado sin contraseña configurada. */
+      const auto240 = tarjeta.datos.auto240;
+      add(n('p', auto240?.at
+        ? 'Última prueba automática: ' + fmtFechaHora(auto240.at) + ' — ' +
+          (auto240.ok ? 'salió bien' : 'falló por ' + (auto240.detail || 'sin detalle'))
+        : 'Última prueba automática: aún no consta ninguna (corre sola una vez al mes).', 'muted'));
       if (ensayo?.conteos) tarjeta._extra200d = n('p', 'Conteos cruzados del ensayo: ' +
         (ensayo.conteos.tiendas?.invoices ?? '—') + ' CFDI · ' + (ensayo.conteos.tiendas?.people ?? '—') +
         ' personas · ' + (ensayo.conteos.tiendas?.documents ?? '—') + ' documentos · ' +
@@ -198,20 +374,28 @@ function saludTarjetasPintar200d(body, data) {
          técnico. */
       const resultadoEnsayo230 = n('p', '', 'muted ensayo-resultado230');
       add(saludBoton200d('Probar la restauración ahora', async () => {
+        resultadoEnsayo230.dataset.estado = 'encurso';
         resultadoEnsayo230.textContent = 'Probando la restauración…';
         const pintarResultado230 = r => {
           const detalle = String(r?.detail || '');
-          if (r?.ok) resultadoEnsayo230.textContent = '✓ ' + (detalle || 'La restauración de prueba salió bien.') +
-            (r.at ? ' (' + fmtFechaHora(r.at) + ')' : '');
-          else if (/contraseña|password/i.test(detalle))
+          if (r?.ok) {
+            resultadoEnsayo230.dataset.estado = 'aldia';
+            resultadoEnsayo230.textContent = (detalle || 'La restauración de prueba salió bien.') +
+              (r.at ? ' (' + fmtFechaHora(r.at) + ')' : '');
+          } else if (/contraseña|password/i.test(detalle)) {
+            resultadoEnsayo230.dataset.estado = 'atencion';
             resultadoEnsayo230.textContent = 'Falta un gesto tuyo: ' + detalle +
               ' La contraseña se define en Ajustes › Respaldos.';
-          else resultadoEnsayo230.textContent = '✗ ' + (detalle || 'El ensayo no salió.');
+          } else {
+            resultadoEnsayo230.dataset.estado = 'error';
+            resultadoEnsayo230.textContent = detalle || 'El ensayo no salió.';
+          }
         };
         try {
           pintarResultado230(await satApi('backup/restore-test', {}));
         } catch (error) {
           if (/contraseña|password/i.test(error.message || '')) {
+            resultadoEnsayo230.dataset.estado = 'atencion';
             resultadoEnsayo230.textContent = 'Falta un gesto tuyo: ' + error.message +
               ' La contraseña se define en Ajustes › Respaldos.';
             return;
@@ -224,12 +408,17 @@ function saludTarjetasPintar200d(body, data) {
             const ultimo = typeof satData !== 'undefined' ? satData?.backupRestoreTest : null;
             if (ultimo && ultimo.at) { pintarResultado230(ultimo); return; }
           } catch { /* sin re-lectura: manda el error original */ }
-          resultadoEnsayo230.textContent = '✗ ' + error.message;
+          resultadoEnsayo230.dataset.estado = 'error';
+          resultadoEnsayo230.textContent = error.message;
         }
       }, 'primary'));
       add(resultadoEnsayo230);
     } else if (tarjeta.id === 'coherencia') {
-      add(saludBoton200d('Revisar ahora', () => saludRevisar200d(), 'primary'));
+      if (saludRevisando293) {
+        add(statusPill('warn', 'Revisando la coherencia ahora…'));
+      } else {
+        add(saludBoton200d('Revisar ahora', () => saludRevisar200d(), 'primary'));
+      }
       for (const d of tarjeta.datos.desacuerdos || []) {
         const fila = n('div', undefined, 'cp-row');
         fila.append(n('span', (d.rfc ? d.rfc + ' — ' : '') + d.detalle));
@@ -248,6 +437,14 @@ function saludTarjetasPintar200d(body, data) {
     grid.append(card);
   }
   body.append(grid);
+  /* (2.9.9 · D3) «Ver más» tarjetas, sin perder la pantalla. */
+  if ((data.tarjetas || []).length > saludLimite299) {
+    const foot299 = n('div', undefined, 'table-foot');
+    foot299.append(n('span', 'Ves ' + number.format(Math.min(saludLimite299, (data.tarjetas || []).length)) +
+        ' de ' + number.format((data.tarjetas || []).length) + ' piezas'),
+      action('Ver más', () => { saludLimite299 += 10; body.replaceChildren(); saludTarjetasPintar200d(body, data); }, 'soft'));
+    body.append(foot299);
+  }
   /* Autorreparación semanal (2.0.1 · nº 7): la foto que el
      servidor deja en ESTA misma lectura (auto201). */
   body.append(saludAutoPanel201(data.auto201));
@@ -285,7 +482,7 @@ function saludEnlaces201() {
   enlace('Declaraciones', () => navigate('declaraciones'));
   enlace('Descargar del SAT', () => navigate('descargar'));
   enlace('Vigilancia de CFDI', () => navigate('monitor'));
-  enlace('Descargados del SAT', () => navigate('coverage'));
+  enlace('Descargados del SAT', () => navigate('descargar'));
   enlace('Tu ejecutor', () => navigate('ejecutor'));
   enlace('Pagos al banco', () => navigate('pagos'));
   enlace('Cierre del mes', () => navigate('salidas'));
@@ -376,8 +573,16 @@ function saludAutoPanel201(auto) {
   }
   card.append(n('p', 'Última pasada: semana del ' + (auto.semana || '—') +
     (auto.at ? ' · corrida el ' + fmtFechaHora(auto.at) : '') + '.'));
-  for (const hecha of auto.hechas || []) card.append(n('p', '✓ Reparado: ' + hecha, 'today-line'));
-  for (const rota of auto.rotas || []) card.append(n('p', '✗ Quedó roto: ' + rota, 'today-line'));
+  for (const hecha of auto.hechas || []) {
+    const lineaHecha240 = n('p', 'Reparado: ' + hecha, 'today-line');
+    lineaHecha240.dataset.estado = 'aldia';
+    card.append(lineaHecha240);
+  }
+  for (const rota of auto.rotas || []) {
+    const lineaRota240 = n('p', 'Quedó roto: ' + rota, 'today-line');
+    lineaRota240.dataset.estado = 'error';
+    card.append(lineaRota240);
+  }
   if (!(auto.hechas || []).length && !(auto.rotas || []).length)
     card.append(n('p', 'La pasada no encontró nada que reparar.', 'muted'));
   return card;
@@ -438,17 +643,51 @@ function saludDuplicadosPanel201() {
   const body = n('div');
   body.append(n('p', 'Buscando duplicados sospechosos…', 'muted'));
   card.append(body);
-  satApi('duplicados201' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(data => {
+  const pintarDuplicados2913 = data => {
     if (!card.isConnected) return;
     const sospechosos = data?.sospechosos || [];
+    const resueltos = data?.resueltos || [];
+    const conocidas = data?.nominasAgrupadas || [];
     body.replaceChildren();
-    if (!sospechosos.length) {
+    /* (2.9.13 · D4) La foto en una línea: cuántos grupos
+       quedan por revisar, cuántos patrones son CONOCIDOS (la
+       nómina agrupada, ya explicada por el propio sistema) y
+       cuántos ya llevan tu veredicto. Nada se oculta: los
+       conocidos y los resueltos constan debajo, contados. */
+    body.append(n('p', number.format(sospechosos.length) + ' grupo(s) por revisar · ' +
+      number.format(conocidas.length) + ' conocido(s) (nómina agrupada, ya explicada) · ' +
+      number.format(resueltos.length) + ' ya revisado(s) por ti.', 'strong-line'));
+    /* Las series de nómina, agrupadas y explicadas (2.9.0 ·
+       Bloque C): una línea por grupo, sin «Revisar» por
+       comprobante — no son sospechosos, son la nómina del
+       periodo repartida entre sus trabajadores. */
+    for (const g of conocidas)
+      body.append(n('p', 'Conocido · Nómina agrupada · ' + (g.fecha || '') + ' · $' + (g.importe || '') + ' × ' +
+        number.format(g.cantidad || 0) + ' — ' + (g.detalle || 'Serie periódica de nómina: no es un duplicado.'), 'muted'));
+    if (!sospechosos.length && !resueltos.length)
       body.append(n('p', 'Sin duplicados sospechosos: ningún importe+fecha se repite con folios distintos, ni hay un folio en dos RFC.', 'muted'));
-      return;
-    }
+    /* Cada grupo por revisar, con su patrón en llano y TU
+       veredicto como acción: «Son el mismo» / «Son distintos»
+       lo deja revisado (sin tocar ningún comprobante) y sale
+       de la lista de sospecha; «Revisar» sigue llevando a la
+       ficha en Facturas. */
+    const veredicto2913 = async (s, veredicto) => {
+      try {
+        await satApi('duplicados201/veredicto', { clave: s.clave, veredicto });
+        toast(veredicto === 'reabrir' ? 'Grupo reabierto: vuelve a contar como sospechoso.'
+          : 'Veredicto guardado: el grupo queda como revisado (' +
+            (veredicto === 'mismo' ? 'son el mismo' : 'son distintos') + ').', 'ok');
+        /* Se re-lee con el MISMO alcance de la pantalla: la
+           respuesta del veredicto trae la foto completa y no
+           debe ensanchar lo que esta vista enseña. */
+        pintarDuplicados2913(await satApi('duplicados201' +
+          (scope ? '?rfc=' + encodeURIComponent(scope) : '')));
+      } catch (error) { toast(error.message, 'error'); }
+    };
     for (const s of sospechosos) {
-      body.append(n('p', s.detalle || (s.tipo === 'mismo-folio-dos-rfc'
-        ? 'El mismo folio aparece en dos RFC.' : 'Mismo importe y fecha con folios distintos.'), 'strong-line'));
+      body.append(n('p', (s.tipo === 'mismo-folio-dos-rfc'
+        ? 'Patrón: el mismo folio en dos RFC. ' : 'Patrón: mismo importe y misma fecha, folios distintos. ') +
+        (s.detalle || ''), 'strong-line'));
       for (const c of s.comprobantes || []) {
         const fila = n('div', undefined, 'cp-row');
         fila.append(n('span', (c.fecha || '') + ' · folio ' + (c.folio || '—') + ' · $' + (c.importe || '') +
@@ -462,8 +701,34 @@ function saludDuplicadosPanel201() {
         fila.append(revisar);
         body.append(fila);
       }
+      if (s.clave) {
+        const actos = n('div', undefined, 'actions');
+        const mismo = n('button', 'Son el mismo', 'soft small');
+        mismo.type = 'button';
+        mismo.onclick = () => veredicto2913(s, 'mismo');
+        const distintos = n('button', 'Son distintos', 'soft small');
+        distintos.type = 'button';
+        distintos.onclick = () => veredicto2913(s, 'distintos');
+        actos.append(mismo, distintos);
+        body.append(actos);
+      }
     }
-  }).catch(error => { if (card.isConnected) body.replaceChildren(n('p', 'No se pudo leer: ' + error.message, 'error-text')); });
+    /* Los ya revisados constan, con su veredicto y su
+       «Reabrir» (el Deshacer del veredicto). */
+    for (const s of resueltos) {
+      const fila = n('div', undefined, 'cp-row');
+      fila.append(statusPill('dim', s.veredicto === 'mismo' ? 'Revisado: son el mismo' : 'Revisado: son distintos'));
+      fila.append(n('span', s.detalle || 'Grupo ya revisado.'));
+      const reabrir = n('button', 'Reabrir', 'soft small');
+      reabrir.type = 'button';
+      reabrir.onclick = () => veredicto2913(s, 'reabrir');
+      fila.append(reabrir);
+      body.append(fila);
+    }
+  };
+  satApi('duplicados201' + (scope ? '?rfc=' + encodeURIComponent(scope) : ''))
+    .then(pintarDuplicados2913)
+    .catch(error => { if (card.isConnected) body.replaceChildren(n('p', 'No se pudo leer: ' + error.message, 'error-text')); });
   return card;
 }
 /* ===== Ayuda por pantalla (20#20, primera mitad) =====
@@ -480,7 +745,7 @@ const AYUDA_TEXTOS200D = {
     h: 'Filtra por contribuyente, sentido o estado; toca un comprobante para verlo entero, copiar su UUID o imprimirlo. «Descargar del SAT» trae los que falten.' },
   sat: { q: 'Es «Descargar del SAT»: desde aquí se descargan tus facturas del SAT por periodo, con la puerta de cada RFC a la vista.',
     p: 'Sirve para traer tus comprobantes del SAT sin bajarlos a mano, con la causa viva cuando algo no abre.',
-    h: 'Elige el periodo y despacha la descarga. Si la puerta no abre, la tarjeta dice de quién es la causa —tu equipo, tu e.firma o el SAT— y el único gesto que toca. Tu constancia y tu opinión viven en Documentos; los listados, en Listas del SAT; y tu ejecutor, en Salud.' },
+    h: 'Elige el periodo y despacha la descarga. Si la puerta no abre, la tarjeta dice de quién es la causa —tu equipo, tu e.firma o el SAT— y el único gesto que toca. Tu constancia y tu opinión viven en Documentos; los listados, en Listas negras; y tu ejecutor, en Salud.' },
   tributario: { q: 'Es el Buzón Tributario de este RFC: las notificaciones del SAT listadas sin abrir ninguna, con su fecha y su plazo.',
     p: 'Sirve para saber qué te ha notificado el SAT y cuándo se tiene por notificada cada una, sin que PacoSAT abra nada por ti.',
     h: 'Pulsa «Consultar ahora» para listar de nuevo desde tu equipo. Abrir una notificación es gesto tuyo, en el portal del SAT.' },
@@ -504,7 +769,7 @@ const AYUDA_TEXTOS200D = {
     h: 'Filtra por RFC o por clase y abre el detalle de un fallo para ver su traza. Puedes copiar lo visible o limpiarlo con Deshacer.' },
   salud: { q: 'Es el Centro de salud: cada pieza del sistema —puerta, ejecutor, e.firma, correo, respaldo, disco, coherencia— con su semáforo y su porqué.',
     p: 'Sirve para saber qué está bien, qué hay que vigilar y qué está mal, y reparar en un toque solo lo seguro, con su asiento en el Registro.',
-    h: 'Recorre las tarjetas: cada una dice qué es, cómo está y su arreglo cuando lo hay. En «Configurar» ves qué pasos faltan y el botón que lleva a hacerlos.' },
+    h: 'Empieza por el veredicto de arriba: dice si todo está bien o qué pieza está mal y por qué, y su botón te lleva a la tarjeta con el arreglo. La bitácora se exporta desde su propia tarjeta, sin entrar a ningún panel; el registro completo vive en Registro. En «Configurar» ves qué pasos faltan y el botón que lleva a hacerlos.' },
   settings: { q: 'Son los Ajustes: contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema, la API y el acerca de.',
     p: 'Sirve para dejar la casa en orden: quiénes son tus RFC, cómo te avisa el sistema y cómo se guarda tu expediente.',
     h: 'Elige la sección en la franja de arriba y usa el botón principal de la cabecera para guardar o ejecutar lo de esa sección.' },
@@ -514,7 +779,7 @@ const AYUDA_TEXTOS200D = {
   reportes: { q: 'Es la pantalla de Reportes: todos los informes del sistema en un solo sitio, cada uno con su periodo.',
     p: 'Sirve para sacar el papel que necesites — totales, una contraparte, un mes, declaraciones, saldos o avisos — sin cazarlo pantalla por pantalla.',
     h: 'Elige el reporte, ajusta su periodo y usa su botón de PDF, Excel o Imprimir: el documento sale con las cifras del cálculo único.' },
-  lists: { q: 'Son las Listas del SAT: los listados oficiales (69-B y demás) cruzados con tu padrón de contrapartes, con la fecha de la última comprobación.',
+  lists: { q: 'Son las Listas negras: los listados oficiales (69-B y demás) cruzados con tu padrón de contrapartes, con la fecha de la última comprobación.',
     p: 'Sirve para saber de un vistazo quién de tus contrapartes aparece en un listado, en cuál y desde cuándo, y validar a cualquier empresa.',
     h: 'Mira el resumen de arriba; para comprobar a una empresa, escribe su RFC o nombre en «Validar una empresa». Los listados se actualizan solos cada día.' },
   bancos: { q: 'Es Bancos: tus cuentas y sus estados de cuenta por mes, con los saldos leídos del propio documento y la conciliación contra tus facturas.',
@@ -525,7 +790,30 @@ const AYUDA_TEXTOS200D = {
     h: 'Revisa los próximos vencimientos de arriba abajo; con «Descargar calendario» te llevas el archivo ICS para tu calendario de siempre.' },
   salidas: { q: 'Es Cierre y reportes: el cierre del mes paso a paso, el calendario de vencimientos y las salidas para tu contadora.',
     p: 'Sirve para cerrar el mes sin olvidar ningún paso y entregar a tu contadora el paquete completo, con las cifras del cálculo único.',
-    h: 'Sigue la lista del cierre en orden: cada paso dice su estado y su botón. Al final, genera la exportación completa desde la cabecera.' }
+    h: 'Sigue la lista del cierre en orden: cada paso dice su estado y su botón. Al final, genera la exportación completa desde la cabecera.' },
+  /* Claves que faltaban (2.9.0 · Bloque C): sin texto propio,
+     la ayuda de estas pantallas caía al contexto de otra. */
+  buzon: { q: 'Es Recibidos: lo que llegó de este RFC — CFDI nuevos y documentos del SAT — con su leído y sin leer.',
+    p: 'Sirve para ver lo último que entró sin recorrer Facturas ni Documentos.',
+    h: 'Toca un elemento para abrirlo; «Marcar todo leído» deja la bandeja al día.' },
+  contribuyentes: { q: 'Es la lista de tus contribuyentes: cada RFC con su salud, su última descarga y su e.firma.',
+    p: 'Sirve para elegir de quién estás mirando y ver quién necesita un gesto.',
+    h: 'Toca un RFC para abrir su ficha; desde ahí entras a su Hoy o descargas del SAT.' },
+  monitor: { q: 'Es Vigilancia: el estado de tus comprobantes según el SAT — vigentes, cancelados, en el listado 69-B y los que aún no se han podido consultar.',
+    p: 'Sirve para saber si algún comprobante cambió de estado en el SAT.',
+    h: '«Revisar ahora» vuelve a consultar; los cancelados se cuentan aparte de los problemas de consulta.' },
+  preguntas: { q: 'Es Preguntas: le preguntas a tus propios datos y la respuesta sale del cálculo único del sistema.',
+    p: 'Sirve para saber cuánto te deben, cuánto debes o qué vence sin recorrer pantallas.',
+    h: 'Escribe tu pregunta o toca un ejemplo: la cifra es la misma que enseña Dinero.' },
+  ejecutor: { q: 'Es Tu ejecutor: el programa de tu equipo que navega el SAT cuando la sede es tu PC; en esta instalación el paseo se hace desde casa, desde tu NAS.',
+    p: 'Sirve para emparejar o revocar el acceso de tu equipo y ver su cola.',
+    h: 'Con sede en el NAS no tienes que hacer nada aquí: el ejecutor queda como reserva.' },
+  archivo: { q: 'Es el Archivo: lo archivado y la papelera de documentos, todo recuperable.',
+    p: 'Sirve para encontrar lo que sacaste de la vista principal sin perderlo.',
+    h: 'Restaura lo que quieras a su sitio; lo definitivo se nombra «Eliminar definitivo».' },
+  descargar: { q: 'Es Descargar del SAT: desde aquí se descargan tus facturas del SAT por periodo, con la puerta de cada RFC a la vista.',
+    p: 'Sirve para traer tus comprobantes del SAT sin bajarlos a mano.',
+    h: 'Elige el periodo y despacha la descarga; el mapa enseña la cobertura de tus solicitudes.' }
 };
 
 /* ===== Tanda 5 (2.0) · Revisión programada y «Ponte al día» =====
@@ -562,6 +850,14 @@ function revisionControles200e(cfg, alCambiar) {
   const leer = () => ({ enabled: cb.checked,
     dias: [...marcas.entries()].filter(([, box]) => box.checked).map(([num]) => num),
     hora: Math.max(0, Math.min(23, Number(hora.value) || 0)) });
+  /* Coherencia del control (2.9.0 · Bloque C): días marcados
+     con «Revisión activa» desmarcada se contradecían en la
+     cara. Marcar un día activa la revisión; desmarcar el
+     interruptor la apaga y los días quedan como estaban,
+     pero el resumen de arriba dice el estado real. */
+  for (const box of marcas.values()) box.addEventListener('change', () => {
+    if (box.checked) cb.checked = true;
+  });
   for (const el of [cb, hora, ...marcas.values()]) el.addEventListener('change', () => alCambiar(leer()));
   return { wrap, leer };
 }

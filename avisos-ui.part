@@ -2,7 +2,7 @@
    Pieza 1 (puntos 12 y 16): ninguna acción larga queda «en silencio».
    Un panel fijo y visible dice QUÉ se está haciendo, con contador real
    («procesando X de N») y barra; al terminar una importación grande, el
-   resumen «✓ Procesado» queda FIJO en pantalla hasta que el usuario lo
+   resumen «Procesado» queda FIJO en pantalla hasta que el usuario lo
    cierra: nuevos, duplicados, por revisar y qué hacer con cada problema.
    Pieza 2 (punto 17): el Centro de Avisos vive en el servidor (NAS): tres
    clases siempre visibles — LO QUE ESTÁ MAL, LO QUE FALTA y LO QUE EL
@@ -56,7 +56,11 @@ function activityFinish() {
 }
 function activityDone(title, lines) {
   activityFinish();
-  $('activity-result-title').textContent = title;
+  const tituloResultado240 = $('activity-result-title');
+  tituloResultado240.textContent = title;
+  /* Sin glifo (2.4.0 · W5b3): el icono lo pone data-estado (familia
+     W5a); un título nuevo nunca hereda el estado del anterior. */
+  delete tituloResultado240.dataset.estado;
   $('activity-result-text').replaceChildren(...lines.map(line =>
     typeof line === 'string' ? n('p', line) : line));
   $('activity-result').hidden = false;
@@ -64,7 +68,8 @@ function activityDone(title, lines) {
 }
 function activityFail(title, message) {
   activityFinish();
-  activityDone('⚠ ' + title, [message]);
+  activityDone(title, [message]);
+  $('activity-result-title').dataset.estado = 'atencion';
 }
 $('activity-result-close').onclick = () => { $('activity-result').hidden = true; };
 
@@ -87,6 +92,10 @@ let avisosRfcFiltro = typeof avisosFiltrosGuardados1310.rfc === 'string' ? aviso
    las únicas que cuentan), pospuestas y archivadas. */
 let avisosVista = ['activas', 'pospuestas', 'archivadas'].includes(avisosFiltrosGuardados1310.vista)
   ? avisosFiltrosGuardados1310.vista : 'activas';
+/* Filtro por clase (2.9.0 · Bloque C): las tres pastillas del
+   resumen FILTRAN de verdad la lista por su clase — antes eran
+   píldoras con conteo que parecían filtros y no filtraban. */
+let avisosClaseFiltro290 = '';
 function avisosGuardarFiltros1310() {
   try {
     localStorage.setItem('pacosat-filtros-avisos',
@@ -94,6 +103,16 @@ function avisosGuardarFiltros1310() {
   } catch { /* Sin almacenamiento local, el filtro dura la sesión. */ }
 }
 let avisosVisibles = [];
+/* (2.9.9 · D3) Páginas de Avisos: 25 tarjetas/filas y «Ver
+   más», sin perder el filtro (los límites viven fuera del
+   pintado y «Ver más» repinta con el filtro en curso). */
+const aPag299 = { activa: 25, vista: 25, hist: 25 };
+function aMas299(total, clave) {
+  const foot = n('div', undefined, 'table-foot');
+  foot.append(n('span', 'Ves ' + number.format(Math.min(aPag299[clave], total)) + ' de ' + number.format(total)),
+    action('Ver más', () => { aPag299[clave] += 25; render(); }, 'soft'));
+  return foot;
+}
 const AVISOS_CLASES = [
   ['necesita', 'Lo que el sistema necesita de ti', 'alert'],
   ['mal', 'Lo que está mal', 'x'],
@@ -101,7 +120,7 @@ const AVISOS_CLASES = [
 ];
 const AVISOS_ENLACES = {
   dinero: ['dinero', 'Ir a Dinero'], bancos: ['bancos', 'Ir a Dinero › Bancos'],
-  lists: ['lists', 'Ir a Listas del SAT'], monitor: ['monitor', 'Ir a Vigilancia de CFDI'],
+  lists: ['lists', 'Ir a Listas negras'], monitor: ['monitor', 'Ir a Vigilancia de CFDI'],
   sat: ['sat', 'Ir a Descargar del SAT'], backup: ['backup', 'Ir a Ajustes › Respaldos'],
   docs: ['docs', 'Ir a Documentos'], operaciones: ['operations', 'Ir a Ajustes › Sistema'],
   cumplimiento: ['cumplimiento', 'Ir a Cierre y reportes › Calendario']
@@ -332,7 +351,9 @@ function avisosScreen() {
     bueno.append(statusPill('ok', 'Todo en orden'),
       buenoTitulo,
       n('p', 'Cuando algo necesite tu atención aparecerá aquí.'));
-    bueno.append(avisosRecalcularBoton());
+    /* Sin segundo «Revisar avisos ahora» (2.9.0 · Bloque C):
+       el gesto vive UNA vez, en el botón principal de la
+       pantalla; aquí se duplicaba. */
     resumen.append(bueno);
     wrap.append(resumen);
   } else {
@@ -361,21 +382,49 @@ function avisosScreen() {
       resumen.append(filtro);
     }
     const strip = n('div', undefined, 'traffic-strip');
-    for (const [clase, etiqueta] of AVISOS_CLASES)
-      strip.append(statusPill(conteoVisible(clase) ? (clase === 'mal' ? 'bad' : 'warn') : 'ok',
-        etiqueta + ': ' + number.format(conteoVisible(clase))));
-    strip.append(avisosRecalcularBoton());
+    /* Filtros reales por clase (2.9.0 · Bloque C): cada
+       pastilla es un botón que deja la lista solo con su
+       clase; la activa se marca y «Todas» quita el filtro. */
+    for (const [clase, etiqueta] of AVISOS_CLASES) {
+      const cuenta = conteoVisible(clase);
+      const fb = n('button', etiqueta + ': ' + number.format(cuenta),
+        avisosClaseFiltro290 === clase ? 'primary small' : 'soft small');
+      fb.type = 'button';
+      fb.setAttribute('aria-pressed', String(avisosClaseFiltro290 === clase));
+      fb.disabled = !cuenta && avisosClaseFiltro290 !== clase;
+      /* El filtro de clase mira las ACTIVAS (2.9.3 · F2): las
+         pastillas cuentan y filtran la lista de abiertas, pero
+         la vista persistida podía ser «archivadas» — su panel
+         ignora la clase — y el clic parecía no hacer nada: la
+         lista seguía en «Archivadas · 0». Al filtrar por clase,
+         la vista pasa a las activas, que es la lista que la
+         pastilla anuncia. */
+      fb.onclick = () => { avisosClaseFiltro290 = avisosClaseFiltro290 === clase ? '' : clase;
+        if (avisosClaseFiltro290) { avisosVista = 'activas'; avisosGuardarFiltros1310(); }
+        render(); };
+      strip.append(fb);
+    }
+    if (avisosClaseFiltro290) {
+      const todas = n('button', 'Todas las clases', 'soft small');
+      todas.type = 'button';
+      todas.onclick = () => { avisosClaseFiltro290 = ''; render(); };
+      strip.append(todas);
+    }
     resumen.append(strip);
     /* El texto de manual va plegado (1.32.1, A4): el primer
-       pantallazo de Avisos son los avisos, no la explicación. */
-    const comoAvisos = n('details', undefined, 'seal-details');
-    comoAvisos.append(n('summary', 'Cómo funciona'),
+       pantallazo de Avisos son los avisos, no la explicación.
+       Con cableado propio (2.9.0 · Bloque C): el <details>
+       nativo no desplegaba en producción. */
+    const comoContenido290 = n('div', undefined, 'seal-details');
+    comoContenido290.append(
       n('p', 'El recálculo revisa los datos ya guardados en PacoSAT — saldos, documentos que faltan y listados —; no sale al SAT.', 'muted'),
       /* La regla del renacimiento, escrita como la enseña la app
          (1.29.2): la capa de atención manda mientras el hecho no
          cambie; si cambia, el aviso vuelve como nuevo. */
       n('p', 'Si archivas o pospones un aviso y el hecho que lo causó cambia, vuelve como aviso nuevo y te llega la notificación; si el hecho sigue igual, tu decisión se respeta.', 'muted'));
-    resumen.append(comoAvisos);
+    resumen.append(typeof plegable290 === 'function'
+      ? plegable290('Cómo funciona', comoContenido290, 'avisos-como')
+      : comoContenido290);
     /* Sin vías fuera de la app, se dice aquí y en Hoy (1.29.2):
        una alerta que nace y no llega a ninguna parte es un
        silencio, y el silencio está prohibido. */
@@ -431,24 +480,32 @@ function avisosScreen() {
        es del SAT, de la contadora o del propio sistema). Las
        tres clases de siempre siguen en las pastillas del
        resumen, como foto; las secciones mandan por gesto. */
+    /* (2.9.9 · D3) Corte de página en las tarjetas activas:
+       25 tarjetas (un grupo cuenta como una) y «Ver más». */
+    let pint299 = 0, cort299 = false, total299 = 0;
     for (const [grupo201, etiqueta] of [[true, 'Necesita tu gesto'], [false, 'Informativos']]) {
-      const delGrupo = data.avisos.filter(aviso => (aviso.gesto?.de === 'paco') === grupo201 && visiblesPorRfc(aviso));
+      const delGrupo = data.avisos.filter(aviso => (aviso.gesto?.de === 'paco') === grupo201 && visiblesPorRfc(aviso) &&
+        (!avisosClaseFiltro290 || aviso.clase === avisosClaseFiltro290));
+      total299 += delGrupo.length;
       if (!delGrupo.length) continue;
       algunaSeccion = true;
       const section = panel(etiqueta + ' (' + number.format(delGrupo.length) + ')');
       for (const aviso of delGrupo) {
+        if (pint299 >= aPag299.activa) { cort299 = true; break; }
         const grupo = aviso.grupo ? gruposPorClave.get(aviso.grupo) : null;
         if (grupo) {
           const clavePintada = grupo.clave + ':' + etiqueta;
           if (gruposPintados.has(clavePintada)) continue;
           gruposPintados.add(clavePintada);
           const miembros = grupo.miembros.map(id => porId.get(id)).filter(Boolean)
-            .filter(miembro => (miembro.gesto?.de === 'paco') === grupo201 && visiblesPorRfc(miembro));
-          if (miembros.length) section.append(avisoGrupoCard(grupo, miembros));
-        } else section.append(avisoCard(aviso));
+            .filter(miembro => (miembro.gesto?.de === 'paco') === grupo201 && visiblesPorRfc(miembro) &&
+              (!avisosClaseFiltro290 || miembro.clase === avisosClaseFiltro290));
+          if (miembros.length) { section.append(avisoGrupoCard(grupo, miembros)); pint299++; }
+        } else { section.append(avisoCard(aviso)); pint299++; }
       }
       seccionesActivas.append(section);
     }
+    if (cort299) seccionesActivas.append(aMas299(total299, 'activa'));
     if (!algunaSeccion && avisosRfcFiltro) {
       const sinFiltro = panel('Tus avisos');
       sinFiltro.append(n('p', 'Con este filtro no hay avisos de ese RFC. Quita el filtro para verlos todos.', 'muted'));
@@ -460,22 +517,25 @@ function avisosScreen() {
         'No cuentan en los distintivos ni notifican. El día elegido vuelven solas a la vista activa y te llega la notificación de vuelta.');
       const deVista = (data.pospuestas || []).filter(visiblesPorRfc);
       if (!deVista.length) section.append(n('p', 'No tienes avisos pospuestos' + (avisosRfcFiltro ? ' de este RFC' : '') + '.', 'muted'));
-      for (const aviso of deVista) section.append(avisoAtencionCard(aviso, 'pospuesta'));
+      for (const aviso of deVista.slice(0, aPag299.vista)) section.append(avisoAtencionCard(aviso, 'pospuesta'));
+      if (deVista.length > aPag299.vista) section.append(aMas299(deVista.length, 'vista'));
       wrap.append(section);
     } else {
       const section = panel('Archivadas (' + number.format((data.archivadas || []).length) + ')',
         'Archivar no borra el hecho ni su documento de origen: solo tu capa de atención. Todo lo archivado se puede restaurar.');
       const deVista = (data.archivadas || []).filter(visiblesPorRfc);
       if (!deVista.length) section.append(n('p', 'No tienes avisos archivados' + (avisosRfcFiltro ? ' de este RFC' : '') + '.', 'muted'));
-      for (const aviso of deVista) section.append(avisoAtencionCard(aviso, 'archivada'));
+      for (const aviso of deVista.slice(0, aPag299.vista)) section.append(avisoAtencionCard(aviso, 'archivada'));
+      if (deVista.length > aPag299.vista) section.append(aMas299(deVista.length, 'vista'));
       wrap.append(section);
     }
   }
   if (data.historial.length) {
     const history = panel('Historial · ya solventado', 'Lo que se corrigió queda registrado aquí, con su nota.');
-    for (const aviso of data.historial) {
+    /* (2.9.9 · D3) El historial también pagina: 25 y «Ver más». */
+    for (const aviso of data.historial.slice(0, aPag299.hist)) {
       const row = n('div', undefined, 'cp-row');
-      row.append(statusPill('ok', '✓ ' + avisoFecha(aviso.resuelto)),
+      row.append(statusPill('ok', avisoFecha(aviso.resuelto)),
         n('span', aviso.titulo + (aviso.resolucion ? ' — ' + aviso.resolucion : '')));
       /* Reabrir, editar el cierre y ver la bitácora (1.18.0): el
          historial deja de ser una lista muerta; un error de dedo
@@ -487,20 +547,34 @@ function avisosScreen() {
       }, 'soft'));
       if (aviso.kind === 'saldo') acts.append(action('Editar cierre', () => avisoHistorialEditar(aviso), 'soft'));
       const logBox = n('div'); logBox.hidden = true;
-      acts.append(action('Bitácora', async () => {
+      /* Bitácora con resolución garantizada (2.9.0 · Bloque C):
+         la auditoría la cazó en «Leyendo la bitácora…» eterno.
+         El botón es directo (sin la envoltura de action, que
+         tragaba el gesto si el primer render aún no cerraba) y
+         la lectura lleva límite: resuelve con la bitácora o
+         dice el fallo con su palabra — nunca cargando eterno. */
+      const logBtn = n('button', 'Bitácora', 'soft');
+      logBtn.type = 'button';
+      logBtn.onclick = async () => {
         if (!logBox.hidden) { logBox.hidden = true; return; }
         logBox.hidden = false;
         logBox.replaceChildren(n('p', 'Leyendo la bitácora…', 'muted'));
         try {
-          const data = await satApi('notices/log?id=' + aviso.id);
-          logBox.replaceChildren(...(data.log || []).map(entry =>
-            n('p', avisoFecha(entry.at) + ' · ' + entry.nota, 'muted')));
-          if (!data.log?.length) logBox.append(n('p', 'Sin movimientos registrados.', 'muted'));
+          const dataLog = await Promise.race([
+            satApi('notices/log?id=' + encodeURIComponent(aviso.id)),
+            new Promise((_, reject) => setTimeout(() =>
+              reject(new Error('El servidor no respondió la bitácora a tiempo: inténtalo de nuevo.')), 15000))]);
+          logBox.replaceChildren(...(dataLog.log || []).map(entry =>
+            n('p', avisoFecha(entry.at) + ' · ' + (entry.nota || entry.accion || ''), 'muted')));
+          if (!dataLog.log?.length) logBox.append(n('p', 'Sin movimientos registrados.', 'muted'));
         } catch (error) { logBox.replaceChildren(n('p', error.message, 'error-text')); }
-      }, 'soft'));
+      };
+      acts.append(logBtn);
       row.append(acts);
       history.append(row, logBox);
     }
+    if (data.historial.length > aPag299.hist)
+      history.append(aMas299(data.historial.length, 'hist'));
     wrap.append(history);
   }
   return [wrap];
@@ -531,7 +605,7 @@ function avisosMailSection(config) {
     correo.append(option);
   }
   const hora = input('number', { min: '0', max: '23', value: String(cfg.hora ?? 9) });
-  const save = n('button', 'Guardar', 'soft');
+  const save = n('button', 'Guardar correo-resumen', 'soft');
   save.onclick = async () => {
     try {
       const saved = await satApi('notices/config', { correo: correo.value, hora: Number(hora.value) });
@@ -963,7 +1037,7 @@ function avisoUploadButton(aviso) {
           const content = encode64(new Uint8Array(await file.files[0].arrayBuffer()));
           await satApi('banks/statements', { accountId: account.id, month: solicitud.mes, content });
           activityProgress(1, 'Estado archivado y leído.');
-          activityDone('✓ Estado recibido', ['El estado de ' + solicitud.banco + ' de ' + solicitud.mes + ' quedó archivado y leído. Los avisos que dependían de él se re-comprueban solos.']);
+          activityDone('Estado recibido', ['El estado de ' + solicitud.banco + ' de ' + solicitud.mes + ' quedó archivado y leído. Los avisos que dependían de él se re-comprueban solos.']);
           await avisoAfterChange('Estado aportado: la solicitud se solventó.');
         } catch (error) { activityFail('No se pudo procesar el estado', error.message); toast(error.message, 'error'); }
       };

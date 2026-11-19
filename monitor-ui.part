@@ -12,9 +12,13 @@
    «Todos» para no esconder comprobantes sanos tras un filtro. El
    UUID solo se ve al abrir el detalle del comprobante. */
 const watched = new Set();
-const fiscalResults = new Map();
+/* fiscalResults vive en el PUENTE de ui.part (2.4.0 · W6):
+   Facturas, Hoy y Problemas leen el mapa desde el primer
+   pintado, antes de que esta parte diferida cargue. */
 let monitorData = { fetched: null, error: '' }, monitorError = '', monitoring = false;
-let monitorFilter = 'all', monitorCursor = 0, monitorLimit = 100;
+/* monitorFilter vive en el PUENTE de ui.part (2.4.0 · W6):
+   Operaciones lo fija («attention») antes de navegar aquí. */
+let monitorCursor = 0, monitorLimit = 25; /* (2.9.9 · D3) página de 25 con «Ver más» */
 let monitorSummary = null, monitorSummaryKey = '';
 let monitorSearch = '';
 const monitorRow = row => ({
@@ -31,48 +35,10 @@ function monitorErrorText(error) {
   if (/fetch|network|conexi|red\b/i.test(error)) return 'No hubo conexión con el servicio del SAT. Se volverá a intentar solo; no tienes que hacer nada.';
   return 'Hubo un problema al consultar el SAT. Se volverá a intentar solo; no tienes que hacer nada.';
 }
-/* El estado de un CFDI con el modelo único de problema (1.13.0):
-   la insignia corta se queda, y la frase sale de problemSpec —
-   qué significa y qué pasa ahora— para que Vigilancia, el Centro
-   de mando y los correos cuenten lo mismo. */
-function monitorStateInfo(row) {
-  const item = fiscalResults.get(row.id);
-  const spec = problemSpec('vigilancia', {
-    efos: item?.efos || [], state: item?.sat?.state || '', error: item?.error || '' });
-  const badge = item?.efos?.length ? 'En el listado 69-B' :
-    item?.sat?.state === 'Vigente' ? 'Vigente' :
-    item?.sat?.state === 'Cancelado' ? 'Cancelado' :
-    item?.sat?.state === 'No encontrado' ? 'No localizado' :
-    /* Lenguaje llano (1.18.0): el estado crudo del SAT («Formato
-       rechazado») ya no se enseña como pastilla; queda solo en el
-       detalle técnico del comprobante. */
-    item?.sat?.state === 'Formato rechazado' ? 'El SAT no aceptó el formato' :
-    item?.sat ? item.sat.state :
-    item?.error ? 'No se pudo consultar' : 'Sin revisar todavía';
-  const state = item?.efos?.length ? '69-B' : item?.sat?.state || (item?.error ? 'Error' : 'Sin consulta');
-  let text = spec.significa;
-  if (state === 'Cancelado' && item.sat.cancellation) text += ' (' + item.sat.cancellation + ')';
-  if (state === 'Vigente' && item.checked) text += ' Revisado el ' + localDateTime(item.checked) + '.';
-  else if (item?.sat && !item?.efos?.length &&
-    !['Vigente', 'Cancelado', 'No encontrado', 'Formato rechazado'].includes(state))
-    text = 'El SAT respondió: ' + state + '.';
-  else if (state !== 'Vigente' && spec.ahora) text += ' ' + spec.ahora;
-  return { badge, state, text, level: spec.level, titulo: spec.titulo };
-}
-function statusCell(id) {
-  const row = invoices.find(candidate => candidate.id === id);
-  const info = monitorStateInfo(row || { id });
-  const item = fiscalResults.get(id);
-  const wrap = n('div', undefined, 'fiscal-state');
-  /* Marca por UUID (1.13.1): «Revisar ahora» repinta SOLO esta
-     celda cuando vuelve la respuesta, sin recargar la lista. */
-  wrap.dataset.monitorState = id;
-  const badge = n('span', info.badge, 'fiscal-badge');
-  badge.dataset.state = info.state;
-  wrap.append(badge, n('small', info.text));
-  if (item?.sat?.efos === '100') wrap.append(n('small', 'El SAT señaló una coincidencia EFOS en este comprobante.'));
-  return wrap;
-}
+/* monitorStateInfo y statusCell viven en el PUENTE de ui.part
+   (2.4.0 · W6): los pintan Facturas (su detalle), Problemas y el
+   visor desde el bloque principal. Aquí se usan igual, leídos
+   del puente ya cargado. */
 /* «Revisar ahora» de UNA factura (1.13.1): fuerza la consulta de
    ese UUID al momento en el servidor (la misma función de la
    tanda) y repinta solo su celda de estado al volver. Si la fila
@@ -137,6 +103,9 @@ function donutSegments(counts) {
 }
 /* El resumen se cuenta en el servidor sobre TODA la selección (las
    tarjetas no dependen de qué página de la lista se haya cargado). */
+/* (2.9.13 · A5) El último intento de resumen falló: la
+   pantalla lo dice en vez de quedarse en «Cargando…». */
+let monitorSummaryFallo2913 = false;
 async function loadMonitorSummary(force = false) {
   const ids = invoices.filter(matches).map(row => row.id);
   const key = ids.join(',') + '|' + fiscalResults.size;
@@ -144,7 +113,11 @@ async function loadMonitorSummary(force = false) {
   try {
     monitorSummary = await satApi('monitor/summary', { ids });
     monitorSummaryKey = key;
-  } catch { /* Sin conexión con el servicio: se conserva el resumen anterior. */ }
+    /* Una respuesta sin conteos no es un resumen: cuenta como
+       fallo para que la pantalla enseñe su estado honesto. */
+    monitorSummaryFallo2913 = !monitorSummary?.counts;
+  } catch { /* Sin conexión con el servicio: se conserva el resumen anterior. */
+    monitorSummaryFallo2913 = true; }
   return monitorSummary;
 }
 /* ===== Patrón de acciones largas (1.13.1, piezas E y F) =====
@@ -183,7 +156,11 @@ function fillRunStatus(node, kind) {
     node.append(problemCard(run.error, action(kind === 'check' ? 'Revisar mis CFDI ahora' : 'Actualizar listados 69-B y 69',
       () => (kind === 'check' ? monitorCheckNow() : monitorRefreshLists()), 'primary', 'sync')));
   } else if (run.final) {
-    node.append(n('p', run.final, 'run-final'));
+    const lineaFinal240 = n('p', run.final, 'run-final');
+    /* Sin glifo (2.4.0 · W5b3): la corrida que terminó bien lleva el
+       icono de la familia; la cancelada por ti, ninguno. */
+    if (!run.final.startsWith('Cancelado por ti')) lineaFinal240.dataset.estado = 'aldia';
+    node.append(lineaFinal240);
   }
 }
 function runStatusNode(kind) {
@@ -263,9 +240,9 @@ async function monitorCheckNow() {
         ' revisados en esta pasada · quedan ' + number.format(quedan) + '. Lo revisado quedó guardado.';
       activityDone('Revisión cancelada por ti', [checkRun.final]);
     } else {
-      checkRun.final = '✓ ' + number.format(counts?.revisados || 0) + ' revisados · quedan ' +
+      checkRun.final = number.format(counts?.revisados || 0) + ' revisados · quedan ' +
         number.format((counts?.sinRevisar || 0) + (counts?.conProblema || 0)) + ' sin respuesta · a las ' + runHora();
-      activityDone('✓ Revisión terminada', [
+      activityDone('Revisión terminada', [
         'Ya tienen estado del SAT ' + number.format(counts?.revisados || 0) + ' de ' + number.format(counts?.total || selection.length) + ' comprobantes.',
         (counts?.sinRevisar || counts?.conProblema) ?
           'Quedan ' + number.format((counts?.sinRevisar || 0) + (counts?.conProblema || 0)) +
@@ -277,7 +254,7 @@ async function monitorCheckNow() {
     /* El error se cuenta EN EL SITIO de la acción, con el modelo
        único y el reintento ahí mismo (patrón E). */
     checkRun.error = problemSpec('revision', { error: error.message });
-    activityDone('⚠ La revisión se detuvo a mitad', ['Lo ya revisado quedó guardado: no se pierde nada de lo hecho.']);
+    activityFail('La revisión se detuvo a mitad', 'Lo ya revisado quedó guardado: no se pierde nada de lo hecho.');
   }
   checkRun.running = false; checkRun.cancelling = false;
   if (page === 'monitor') render(); else paintRunStatus('check');
@@ -344,10 +321,10 @@ async function monitorRefreshLists() {
         (copiaPrevia ? ' (69-B del ' + localDateTime(copiaPrevia) + ')' : '') + '. Lo parcial se descartó.';
       activityDone('Actualización cancelada por ti', [listsRun.final]);
     } else {
-      listsRun.final = '✓ Listados actualizados a las ' + runHora() + ' · 69-B: ' +
+      listsRun.final = 'Listados actualizados a las ' + runHora() + ' · 69-B: ' +
         number.format(result.lists?.count || 0) + ' RFC · copia del ' +
         (result.lists?.fetched ? localDateTime(result.lists.fetched) : '—');
-      activityDone('✓ Listados actualizados', [
+      activityDone('Listados actualizados', [
         'Listado 69-B: copia del ' + (result.lists?.fetched ? localDateTime(result.lists.fetched) : '—') +
         ' con ' + number.format(result.lists?.count || 0) + ' RFC publicados.',
         'Los listados del artículo 69 también se pidieron de nuevo en Listas negras.'
@@ -361,67 +338,60 @@ async function monitorRefreshLists() {
   listsRun.running = false; listsRun.cancelling = false;
   if (page === 'monitor') render(); else paintRunStatus('lists');
 }
-function monitorKpi(label, glyph, value, note, cls) {
-  const el = n('article', undefined, 'kpi' + (cls ? ' ' + cls : ''));
+function monitorKpi(label, glyph, value, note, cls, filtro232 = '') {
+  /* KPI con destino (2.3.2 · m-10): con filtro, la tarjeta es
+     un botón que deja la tabla de abajo ya filtrada por ese
+     estado; sin filtro, tarjeta estática de siempre. */
+  const el = n(filtro232 ? 'button' : 'article', undefined, 'kpi' + (cls ? ' ' + cls : ''));
+  if (filtro232) {
+    el.type = 'button';
+    el.title = 'Ver la tabla filtrada: ' + label;
+    el.onclick = () => {
+      monitorFilter = filtro232; monitorLimit = 25; render();
+      announce('Vigilancia filtrada: ' + label + '. La tabla de abajo ya enseña solo ese estado.');
+    };
+  }
   const head = n('div', label, 'kpi-label'); head.prepend(icon(glyph));
   el.append(head, n('strong', value), n('small', note));
   return el;
 }
-function monitorActionsPanel(counts) {
-  const wrap = panel('Qué quieres hacer');
-  const grid3 = n('div', undefined, 'monitor-actions');
-  /* Descargar CFDI: la descarga vive SOLO en la pestaña de descarga
-     de SAT (1.11.0); aquí queda un enlace que navega allí
-     (showSatDownload de la cáscara abre SAT en esa pestaña).
-     Sin segundo formulario: dos caminos para la misma tarea
-     daban criterios distintos ante el SAT. */
-  const dl = n('div', undefined, 'monitor-action');
-  dl.append(n('h3', 'Descargar CFDI'),
-    n('p', 'Baja los comprobantes de un periodo desde el SAT: se hace en la pestaña de descarga, paso a paso.'));
-  const dlButton = action('Descargar CFDI', () => showSatDownload(), 'primary', 'down');
-  dlButton.classList.add('monitor-big');
-  dl.append(dlButton);
-  /* Revisar ahora. */
-  const check = n('div', undefined, 'monitor-action');
-  const waiting = counts ? counts.sinRevisar + counts.conProblema : 0;
-  check.append(n('h3', 'Revisar el estado en el SAT'),
-    n('p', counts ? (waiting ?
-      number.format(waiting) + ' comprobantes aún no tienen su estado confirmado por el SAT.' :
-      'Todos tus comprobantes tienen ya su estado del SAT.') :
-      'Consulta al SAT el estado (vigente o cancelado) de los comprobantes que falten.'));
-  const checkButton = action(checkRun?.running ? 'Revisando…' : 'Revisar mis CFDI ahora', monitorCheckNow, 'primary', 'search');
-  checkButton.classList.add('monitor-big');
-  if (checkRun?.running) checkButton.disabled = true;
-  check.append(checkButton, runStatusNode('check'));
-  /* Actualizar listados. */
-  const lists = n('div', undefined, 'monitor-action');
-  const fetched = monitorSummary?.lists?.fetched || monitorData.fetched;
-  lists.append(n('h3', 'Listados 69-B y 69'),
-    n('p', fetched ? 'Última copia del listado 69-B: ' + localDateTime(fetched) + '.' :
-      'Todavía no se ha descargado el listado 69-B.'));
-  const listsButton = action(listsRun?.running ? 'Actualizando…' : 'Actualizar listados 69-B y 69', monitorRefreshLists, 'primary', 'sync');
-  listsButton.classList.add('monitor-big');
-  if (listsRun?.running) listsButton.disabled = true;
-  lists.append(listsButton, runStatusNode('lists'),
-    n('a', 'Ver el listado oficial 69-B ↗', 'monitor-link'));
-  const link = lists.lastChild;
-  link.href = 'https://www.sat.gob.mx/minisitio/DatosAbiertos/contribuyentes_publicados.html';
-  link.target = '_blank'; link.rel = 'noopener noreferrer';
-  grid3.append(dl, check, lists);
-  wrap.append(grid3);
-  return wrap;
-}
+/* El hub inicial «Qué quieres hacer» se retira (2.3.2 ·
+   m-10): duplicaba las acciones de Descargar y de Listas
+   antes del resumen propio de la vigilancia. La pantalla
+   abre con su resumen. Los destinos siguen vivos en sus
+   pantallas: Descargar CFDI en Descargar del SAT, Revisar
+   en el primario de esta pantalla y en Facturas, y los
+   listados en Listas negras. */
 function monitorScreen() {
   const selection = invoices.filter(matches);
   const counts = monitorSummary?.counts;
-  /* --- Acciones primero: lo que Paco vino a hacer. --- */
-  const actionsPanel = monitorActionsPanel(counts);
+  /* --- La pantalla abre con su resumen propio (2.3.2). --- */
   /* --- Resumen en tarjetas con semáforo. --- */
   const summaryPanel = panel('Resumen de tus comprobantes');
   if (!selection.length) {
     summaryPanel.append(empty('Aún no hay comprobantes', 'Cuando importes o descargues CFDI verás aquí su estado según el SAT.'));
   } else if (!counts) {
-    summaryPanel.append(empty('Cargando el resumen…', 'El sistema está contando el estado de tus ' + number.format(selection.length) + ' comprobantes.'));
+    /* (2.9.13 · A5) El resumen se pide AL ENTRAR a la pantalla
+       — antes solo lo pedían los caminos de revisión y la
+       tarjeta se quedaba en «Cargando el resumen…» para
+       siempre con la tabla ya cargada —. Si la lectura falla,
+       se enseña su estado honesto con su reintento, nunca un
+       «cargando» eterno. */
+    if (monitorSummaryFallo2913) {
+      summaryPanel.append(empty('El resumen no se pudo contar',
+        'La lectura del estado de tus comprobantes falló. Tu tabla de abajo está completa; solo falta este conteo.',
+        action('Reintentar el resumen', async () => {
+          monitorSummaryFallo2913 = false;
+          await loadMonitorSummary(true);
+          if (typeof page !== 'undefined' && page === 'monitor') render();
+        }, 'soft')));
+    } else {
+      summaryPanel.append(empty('Cargando el resumen…', 'El sistema está contando el estado de tus ' + number.format(selection.length) + ' comprobantes.'));
+      loadMonitorSummary().then(() => {
+        if (typeof page !== 'undefined' && page === 'monitor' &&
+          (monitorSummary?.counts || monitorSummaryFallo2913)) render();
+      });
+    }
   } else {
     const kpis = n('div', undefined, 'kpis');
     const affected = monitorSummary.masAfectados?.[0];
@@ -434,25 +404,31 @@ function monitorScreen() {
     ].filter(Boolean).join(' · ') || 'Sin problemas de consulta.';
     kpis.append(
       monitorKpi('Comprobantes', 'file', number.format(counts.total),
-        'En tu expediente para el contribuyente elegido.', ''),
+        'En tu expediente para el contribuyente elegido.', '', 'all'),
       monitorKpi('Vigentes', 'shield', number.format(counts.vigentes),
-        'El SAT los confirma vigentes.', 'ok'),
+        'El SAT los confirma vigentes.', 'ok', 'vigentes'),
       monitorKpi('Cancelados', 'alert', number.format(counts.cancelados),
-        counts.cancelados ? 'El SAT los marca cancelados: conviene revisarlos abajo.' : 'Ninguno cancelado.', counts.cancelados ? 'bad' : ''),
+        counts.cancelados ? 'El SAT los marca cancelados: conviene revisarlos abajo.' : 'Ninguno cancelado.', counts.cancelados ? 'bad' : '', 'cancelled'),
       monitorKpi('En el listado 69-B', 'alert', number.format(counts.enListado69B),
         counts.enListado69B ? 'Ojo: ' + affectedName + ' aparece en el listado. Esos CFDI pueden no ser deducibles.' :
-          'Ningún emisor tuyo está en el listado.', counts.enListado69B ? 'bad' : ''),
+          'Ningún emisor tuyo está en el listado.', counts.enListado69B ? 'bad' : '', 'efos'),
       monitorKpi('Aún sin revisar', 'clock', number.format(counts.sinRevisar),
-        counts.sinRevisar ? 'PacoSAT los revisará solo; no tienes que hacer nada.' : 'No queda ninguno en la cola.', counts.sinRevisar ? 'warn' : ''),
+        counts.sinRevisar ? 'PacoSAT los revisará solo; no tienes que hacer nada.' : 'No queda ninguno en la cola.', counts.sinRevisar ? 'warn' : '', 'sin-revisar'),
       monitorKpi('Con problema al consultar', 'alert', number.format(counts.noEncontrados + formatoRechazado + counts.conProblema),
-        problemNote, (counts.noEncontrados + formatoRechazado + counts.conProblema) ? 'warn' : '')
+        problemNote, (counts.noEncontrados + formatoRechazado + counts.conProblema) ? 'warn' : '', 'problema')
     );
     summaryPanel.append(kpis);
     const truth = n('div', undefined, 'monitor-truth');
     truth.append(
+      /* Cancelado ≠ problema al consultar (2.9.0 · Bloque C):
+         la línea de verdad cuenta cada cosa con su nombre —
+         antes sumaba los cancelados dentro de «con problema»
+         y el panel decía «49 con problema» junto a «Con
+         problema al consultar 0». */
       n('p', 'Última revisión: ' + (counts.ultimaRevision ? localDateTime(counts.ultimaRevision) : 'todavía ninguna') +
         ' · ' + number.format(counts.revisados) + ' revisados de ' + number.format(counts.total) +
-        ' · ' + number.format(counts.cancelados + counts.noEncontrados + formatoRechazado + counts.conProblema) + ' con problema' +
+        ' · ' + number.format(counts.cancelados) + ' cancelados' +
+        ' · ' + number.format(counts.noEncontrados + formatoRechazado + counts.conProblema) + ' con problema al consultar' +
         ' · ' + number.format(counts.sinRevisar) + ' sin respuesta.'),
       n('p', monitorSummary.lists?.fetched ?
         'Listado 69-B: copia del ' + localDateTime(monitorSummary.lists.fetched) + ' (' + number.format(monitorSummary.lists.count || 0) + ' RFC publicados).' :
@@ -489,13 +465,19 @@ function monitorScreen() {
     if (monitorFilter === 'all') return true;
     if (monitorFilter === 'cancelled') return info.state === 'Cancelado';
     if (monitorFilter === 'efos') return info.state === '69-B';
+    /* Filtros de los KPI (2.3.2 · m-10): cada tarjeta deja la
+       tabla en su estado — vigentes, sin revisar y con
+       problema de consulta tienen por fin su valor propio. */
+    if (monitorFilter === 'vigentes') return info.state === 'Vigente';
+    if (monitorFilter === 'sin-revisar') return info.state === 'Sin consulta';
+    if (monitorFilter === 'problema') return ['No encontrado', 'Formato rechazado', 'Error'].includes(info.state);
     return ['Cancelado', '69-B', 'No encontrado', 'Formato rechazado', 'Error'].includes(info.state);
   });
   const filters = n('div', undefined, 'filters');
-  const picker = select([['all','Todos los CFDI'],['attention','Requieren atención'],['cancelled','Cancelados'],['efos','En el listado 69-B']], monitorFilter, 'Filtrar vigilancia');
-  picker.onchange = () => { monitorFilter = picker.value; monitorLimit = 100; render(); };
+  const picker = select([['all','Todos los CFDI'],['attention','Requieren atención'],['vigentes','Vigentes'],['cancelled','Cancelados'],['efos','En el listado 69-B'],['sin-revisar','Aún sin revisar'],['problema','Con problema al consultar']], monitorFilter, 'Filtrar vigilancia');
+  picker.onchange = () => { monitorFilter = picker.value; monitorLimit = 25; render(); };
   const search = input('search', { placeholder: 'Buscar por empresa, RFC o mes (2026-11)…', value: monitorSearch, 'aria-label': 'Buscar comprobantes' });
-  search.oninput = () => { monitorSearch = search.value; monitorLimit = 100; clearTimeout(search._t); search._t = setTimeout(render, 250); };
+  search.oninput = () => { monitorSearch = search.value; monitorLimit = 25; clearTimeout(search._t); search._t = setTimeout(render, 250); };
   filters.append(picker, search, n('span', selected.length + ' de ' + selection.length + ' comprobantes', 'period-chip'));
   listPanel.append(filters);
   if (!selected.length) {
@@ -505,7 +487,7 @@ function monitorScreen() {
       /* Vacío con filtro (§6): dice qué filtro es, cuántos
          comprobantes hay en realidad y ofrece quitarlo en un toque —
          nunca un vacío falso que esconda comprobantes sanos. */
-      const filterLabels = { attention: 'Requieren atención', cancelled: 'Cancelados', efos: 'En el listado 69-B', all: 'Todos los CFDI' };
+      const filterLabels = { attention: 'Requieren atención', cancelled: 'Cancelados', efos: 'En el listado 69-B', all: 'Todos los CFDI', vigentes: 'Vigentes', 'sin-revisar': 'Aún sin revisar', problema: 'Con problema al consultar' };
       const sinRevisar = counts?.sinRevisar || 0;
       listPanel.append(empty(
         monitorFilter === 'all' ? 'Sin resultados con esta búsqueda' : 'Con este filtro no hay nada que atender',
@@ -519,17 +501,23 @@ function monitorScreen() {
   else listPanel.append(grid(['Empresa', 'Fecha e importe', 'Estado según el SAT', 'Detalle'], selected.slice(0, monitorLimit).map(row => [
     cell(row.from.name || row.from.rfc, row.from.rfc + ' → ' + (row.to.name || row.to.rfc)),
     cell(dateLabel(row.date), '$' + centsLabel(totalCents(row)) + ' · ' + (row.kind === 'P' ? 'Pago' : row.kind === 'N' ? 'Nómina' : 'Factura')),
-    statusCell(row.id), action('Abrir', () => invoiceDetail(row))
+    statusCell(row.id),
+    /* (2.9.9 · D2) UN solo botón de acciones por fila: el ⋯,
+       con la única acción de antes — «Abrir» — dentro, con la
+       misma palabra y el mismo efecto. */
+    (() => { const menu299 = cardMenu1312('Más opciones de este comprobante');
+      menu299._setItems1312([{ label: 'Abrir', fn: () => invoiceDetail(row) }]);
+      return menu299; })()
   ])));
   /* Sin corte en 100 (1.18.0): la lista pagina con «Ver más» hasta
      agotar el filtro; nada queda inalcanzable. */
   if (selected.length > monitorLimit) {
     const foot = n('div', undefined, 'table-foot');
     foot.append(n('span', 'Ves ' + number.format(monitorLimit) + ' de ' + number.format(selected.length)),
-      action('Ver más', () => { monitorLimit += 100; render(); }, 'soft'));
+      action('Ver más', () => { monitorLimit += 25; render(); }, 'soft'));
     listPanel.append(foot);
   }
-  return [actionsPanel, summaryPanel, listPanel];
+  return [summaryPanel, listPanel];
 }
 async function pollMonitor() {
   if (!satToken || !ready || monitoring) return;
@@ -569,6 +557,19 @@ async function pollMonitor() {
 }
 let monitorSig = '', monitorChanged = false;
 /* ===== Actividad del sistema (1.18.0) =====
+   2.4.0 · W1 (defecto nombrado por Paco, 17 nov): TODA entrada
+   viva lleva su gesto de parada EN la tarjeta — también las
+   solicitudes del SAT, una a una: su botón se llama «Detener»
+   (entry.stopLabel del servidor), su tarjeta enseña en llano
+   qué significa detenerla (entry.note / stopExplain: «el SAT
+   la prepara igual; PacoSAT deja de recogerla y sale de tu
+   actividad») y el gesto ejecuta la retención real (held=1)
+   en el servidor, que devuelve esa misma frase como
+   confirmación breve (toast del patrón de siempre) y deja su
+   asiento en el Registro. Su tiempo ya no nace en 0: el
+   servidor manda since = la creación real de la solicitud y
+   su estado «esperando», y la barra lo pinta «esperando desde
+   hace X» desde esa marca.
    El registro único de trabajos del servidor, pintado en todas
    las pantallas: punto y línea en el menú lateral, franja de
    trabajos junto al dock con sus gestos reales (Pausar, Reanudar
@@ -577,6 +578,12 @@ let monitorSig = '', monitorChanged = false;
    Hoy. Sin trabajos, el menú dice cuándo es la próxima revisión
    automática. Lo alimenta el mismo pulso de 30 s. */
 let activityView = null;
+/* Despliegue de la franja (2.8.0 · diseño 1): con más de 3
+   trabajos la tarjeta nace resumida en su línea de cabecera y
+   esta variable recuerda si Paco la desplegó; el estado se
+   conserva entre repintados del pulso, para que un refresco
+   no la repliegue en su cara. */
+let actividadDesplegada240 = false;
 async function pollActivity() {
   if (!satToken) return;
   try { activityView = await satApi('activity'); } catch { return; }
@@ -667,86 +674,221 @@ function seguirBoton230(jobId, alTerminar) {
   caja.append(boton, nota);
   return caja;
 }
+/* ===== Línea fina de trabajos en la barra superior
+   (2.9.9 · D1) =====
+   El anuncio visible de la actividad en curso: un botón
+   fino en la cabecera (layout.part: #barra-trabajos299) con
+   el conteo, solo cuando hay trabajos. Al pulsarlo despliega
+   la lista (#barra-trabajos-lista299) con CADA trabajo vivo
+   compuesto como en la franja (actividadLinea240) y con sus
+   mismos controles (activityControlButton: Pausar, Reanudar
+   y Detener/Cancelar donde el motor lo permite). El pulso
+   (pollActivity → paintActivity) la repinta: si la lista
+   está desplegada, se recompone con el estado fresco. */
+let barraTrabajosAbierta299 = false;
+/* (2.9.14) El cierre de la casa para la lista de trabajos:
+   clic fuera, Escape y su propio botón — los mismos tres
+   gestos de los demás desplegables del sistema
+   (closeCardMenus1312 y sus oyentes). En la verificación en
+   vivo de la 2.9.13, abierta desde Reportes, la lista se
+   quedó puesta sobre la barra lateral: no había oyente de
+   Escape ni de clic fuera, el panel fijo tapaba el propio
+   botón y los clics de la navegación caían en el panel —
+   hizo falta recargar para seguir. Cerrar es dejar la
+   bandera en falso Y la lista oculta en el mismo gesto. */
+function cerrarBarraTrabajos299() {
+  barraTrabajosAbierta299 = false;
+  const lista = document.getElementById('barra-trabajos-lista299');
+  if (lista) lista.hidden = true;
+  const btn = document.getElementById('barra-trabajos299');
+  if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+/* Los dos elementos de la línea viven en la cabecera
+   (header.top, antes del buscador): los crea esta misma
+   parte al primer pintado — la parte de Vigilancia es la
+   dueña de la actividad, como la franja de siempre —. */
+function barraElementos299() {
+  let btn = document.getElementById('barra-trabajos299');
+  if (btn) return { btn, lista: document.getElementById('barra-trabajos-lista299') };
+  const search = document.querySelector('.top-search');
+  if (!search || !search.before) return {};
+  btn = n('button', '', 'soft small');
+  btn.id = 'barra-trabajos299'; btn.type = 'button'; btn.hidden = true;
+  btn.title = 'Trabajos en curso: despliega la lista, cada uno con su Detener';
+  const lista = n('div', undefined, 'scope-menu200b');
+  lista.id = 'barra-trabajos-lista299'; lista.hidden = true;
+  search.before(btn, lista);
+  if (!window.__barraTrabajos299Cierre) {
+    window.__barraTrabajos299Cierre = true;
+    document.addEventListener('click', event => {
+      if (!barraTrabajosAbierta299) return;
+      const b = document.getElementById('barra-trabajos299');
+      const l = document.getElementById('barra-trabajos-lista299');
+      if (!b || !l) return;
+      /* El clic en su botón lo gobierna el botón (conmuta) y
+         el clic DENTRO de la lista es trabajo (Pausar,
+         Detener…): ninguno de los dos cierra por fuera. */
+      if (b.contains(event.target) || l.contains(event.target)) return;
+      cerrarBarraTrabajos299();
+    });
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && barraTrabajosAbierta299) cerrarBarraTrabajos299();
+    });
+  }
+  return { btn, lista };
+}
+function listaTrabajos299(entries, lista) {
+  lista.replaceChildren();
+  const guia = typeof actividadGuia240 === 'function'
+    ? entries.map(actividadGuia240).find(Boolean) : '';
+  if (guia) lista.append(n('p', guia, 'muted small actividad-guia240'));
+  for (const entry of entries) {
+    const rowEl = n('div');
+    rowEl.style.display = 'flex'; rowEl.style.justifyContent = 'space-between';
+    rowEl.style.gap = '10px'; rowEl.style.alignItems = 'center'; rowEl.style.padding = '6px 0';
+    const body = n('div');
+    const detail = typeof actividadLinea240 === 'function'
+      ? actividadLinea240(entry) : activityDetailText(entry);
+    const label = String(entry.label || '').replace(/\s+/g, ' ').trim().replace(/\s*·$/, '');
+    body.append(n('strong', label + (detail ? ' · ' : '')), n('small', detail, 'activity-detail'));
+    rowEl.append(body);
+    const acts = n('div', undefined, 'actions');
+    if (entry.canPause) acts.append(activityControlButton(entry, entry.enPausa ? 'Reanudar' : 'Pausar', entry.enPausa ? 'reanudar' : 'pausar'));
+    else if (entry.canResume && entry.enPausa) acts.append(activityControlButton(entry, 'Reanudar', 'reanudar'));
+    if (entry.canStop) acts.append(activityControlButton(entry, entry.stopLabel || 'Cancelar', 'detener'));
+    if (acts.childNodes.length) rowEl.append(acts);
+    lista.append(rowEl);
+  }
+}
+function pintarBarraTrabajos299(entries) {
+  const { btn, lista } = barraElementos299();
+  if (!btn) return;
+  btn.hidden = !entries.length;
+  btn.textContent = entries.length === 1 ? '1 trabajo en curso' : entries.length + ' trabajos en curso';
+  btn.setAttribute('aria-expanded', String(barraTrabajosAbierta299 && entries.length > 0));
+  btn.onclick = () => {
+    barraTrabajosAbierta299 = !barraTrabajosAbierta299;
+    btn.setAttribute('aria-expanded', String(barraTrabajosAbierta299));
+    if (lista) { lista.hidden = !barraTrabajosAbierta299; if (barraTrabajosAbierta299) listaTrabajos299(entries, lista); }
+  };
+  if (lista) {
+    if (!entries.length) { barraTrabajosAbierta299 = false; lista.hidden = true; }
+    else if (barraTrabajosAbierta299) { lista.hidden = false; listaTrabajos299(entries, lista); }
+    /* (2.9.14) Bandera cerrada ⇒ lista oculta, siempre: un
+       repintado con la bandera en falso no puede dejar el
+       panel puesto por un estado anterior. */
+    else lista.hidden = true;
+  }
+}
 function paintActivity() {
   const view = activityView; if (!view) return;
   paintNavDots1312();
   const running = view.running || [], paused = view.paused || [];
-  const side = $('side-activity'), sideText = $('side-activity-text'), sideDot = $('side-activity-dot');
-  if (side && sideText) {
-    side.hidden = false;
-    if (running.length) {
-      sideText.textContent = running.length === 1 ? 'Trabajando: ' + running[0].label : number.format(running.length) + ' trabajos en curso';
-      if (sideDot) sideDot.style.background = 'var(--warn-ink)';
-    } else if (paused.length) {
-      sideText.textContent = number.format(paused.length) + (paused.length === 1 ? ' trabajo en pausa' : ' trabajos en pausa');
-      if (sideDot) sideDot.style.background = 'var(--danger)';
-    } else {
-      /* nextAuto viaja como {label, at} desde el servidor
-         (2.0 · tanda 2): se pinta SU FECHA, no el objeto —
-         antes salía «[object Object]» en la barra lateral. */
-      sideText.textContent = 'Sin trabajos en curso' + (view.nextAuto ? ' · próxima revisión: ' +
-        localDateTime(typeof view.nextAuto === 'object' ? view.nextAuto.at : view.nextAuto) : '');
-      if (sideDot) sideDot.style.background = '';
-    }
-  }
-  /* Renglón «Trabajos en curso» del menú (1.31.0): espejo de
-     esta misma actividad en LA MAÑANA — oculto sin trabajos
-     vivos, con su conteo si los hay, y con UN Cancelar directo
-     solo cuando hay exactamente un trabajo cancelable (con
-     varios, el gesto vive en la franja de actividad, donde se
-     ve cuál se para; aquí no se adivina). */
-  const navJobs = $('nav-jobs'), navJobsCount = $('nav-jobs-count'), navJobsCancel = $('nav-jobs-cancel');
-  if (navJobs) {
-    /* «Vivo» incluye lo que ESPERA en cola o en pausa (corrección
-       de integración 1.31.0): un trabajo del ejecutor en cola es
-       un trabajo vivo — es justo el que Paco no veía el 13 nov —
-       y la fila cuenta lo mismo que la línea de actividad de aquí
-       arriba (en curso + en pausa), no solo lo que corre. */
-    const vivos = [...running, ...paused];
-    /* Sitio reservado (1.31.1): la fila ya NO entra y sale del
-       menú (el menú saltaba al aparecer un trabajo); conserva
-       su renglón siempre y sin trabajos se queda invisible e
-       inerte — el hueco es suyo, no un salto. */
-    navJobs.classList.toggle('nav-jobs-vacio', !vivos.length);
-    navJobs.setAttribute('aria-hidden', String(!vivos.length));
-    const navJobsMain = navJobs.querySelector('.nav-jobs-main');
-    if (navJobsMain) navJobsMain.tabIndex = vivos.length ? 0 : -1;
-    if (navJobsCount) navJobsCount.textContent = vivos.length ? number.format(vivos.length) : '';
-    if (navJobsCancel) {
-      navJobsCancel.replaceChildren();
-      const cancelables = vivos.filter(entry => entry.canStop);
-      if (cancelables.length === 1) navJobsCancel.append(activityControlButton(cancelables[0], 'Cancelar', 'detener'));
-    }
-  }
+  /* (2.8.0 · diseño 11) La actividad en curso ya NO se anuncia
+     en el menú: ni el renglón «Trabajos en curso» ni la línea
+     al pie existen (fuera del layout). Quedan DOS anuncios —
+     esta tarjeta en la pantalla, con su Detener, y el
+     punto/contador del menú (paintNavDots1312) — para un mismo
+     hecho que antes se decía en cuatro sitios. */
   let jobsBox = $('activity-jobs');
   if (!jobsBox) {
     const dock = $('activity-dock');
-    if (dock) { jobsBox = n('section', undefined, 'activity-dock'); jobsBox.id = 'activity-jobs'; dock.after(jobsBox); }
+    /* Clase PROPIA y en flujo (2.9.0 · Bloque C): la tarjeta
+       heredaba la clase del dock de importación, que era
+       sticky — en vista angosta FLOTABA y tapaba encabezados
+       y tarjetas protagonistas. La actividad se anuncia en un
+       sitio por pantalla, dentro del flujo, nunca encima. */
+    if (dock) { jobsBox = n('section', undefined, 'activity-jobs290'); jobsBox.id = 'activity-jobs'; dock.after(jobsBox); }
   }
   /* Un trabajo, un sitio por pantalla (2.0 · tanda 2,
-     corrección 3 / 2.3): en Centro SAT el trabajo vive SOLO
-     en su tarjeta, y en Buzón/Declaraciones manda su banner
-     propio con su único Cancelar — en esas pantallas la
-     franja global NO se pinta (y el Cancelar del renglón del
-     menú tampoco compite dentro de Centro SAT). */
-  const franjaDuplica200b = typeof page !== 'undefined' && ['sat', 'tributario', 'declaraciones'].includes(page);
-  if (franjaDuplica200b && navJobsCancel) navJobsCancel.replaceChildren();
+     corrección 3 / 2.3; 2.9.0 · Bloque C/D, contrato D8 de
+     ronda1291): la supresión es de VISIBILIDAD, no de
+     pintado — paintActivity COMPONE Y PINTA sus entradas
+     siempre que se le llama con datos: el STRONG que empieza
+     por la etiqueta de la entrada y su .activity-detail,
+     cuya unión es activityEntryText(entrada).
+     (2.9.9 · D1): la tarjeta ya NO SE VE en ningún panel —
+     la auditoría la cazó compitiendo en 22 pantallas —. El
+     anuncio visible vive en la LÍNEA FINA de la barra
+     superior (pintarBarraTrabajos299): conteo siempre a la
+     vista y, al pulsarla, la lista de trabajos vivos cada
+     uno con su Detener (la misma composición de entradas y
+     los mismos activityControlButton de esta franja:
+     ningún trabajo pierde su freno). Hoy conserva su panel
+     propio (hoyActividadPanel240), Novedades el suyo
+     (buzonTrabajoFijado240) y Buzón/Declaraciones/Centro
+     SAT sus banners propios con su Cancelar, como estaban.
+     franjaDuplica200b queda como el nombre del contrato:
+     hoy vale para TODAS las páginas. (Antes de 2.9.9 la
+     supresión cubría solo ['sat', 'tributario',
+     'declaraciones', 'home', 'buzon'], los paneles donde el
+     trabajo ya tenía sitio propio; la 2.9.0 la fijó para Hoy
+     y Novedades — sin doble «Trabajo en curso» — y la 2.9.9
+     la hace total.) */
+  const franjaDuplica200b = true;
+  const entries = [...running.map(e => ({ ...e, enPausa: false })), ...paused.map(e => ({ ...e, enPausa: true }))];
+  pintarBarraTrabajos299(entries);
   if (jobsBox) {
-    const entries = franjaDuplica200b ? [] :
-      [...running.map(e => ({ ...e, enPausa: false })), ...paused.map(e => ({ ...e, enPausa: true }))];
-    jobsBox.hidden = !entries.length;
+    jobsBox.hidden = !entries.length || franjaDuplica200b;
     if (entries.length) {
       jobsBox.replaceChildren();
       const head = n('div', undefined, 'activity-dock-head');
+      /* Cabecera con su conteo y, si todo es de una clase, su
+         resumen en la misma línea — sale de las propias
+         entradas, sin inventar: con 9 solicitudes del SAT en
+         espera dice «9 trabajos · 9 solicitudes esperando
+         al SAT» (corrección visual 2.4.0). */
+      let conteo240 = entries.length === 1 ? '1 trabajo' : entries.length + ' trabajos';
+      if (entries.length > 1 &&
+          entries.every(e => e.kind === 'masiva' &&
+            (e.state === 'esperando' || /esperando al sat/i.test(e.phase || ''))))
+        conteo240 += ' · ' + entries.length + ' solicitudes esperando al SAT';
+      else if (entries.length > 1 && entries.every(e => e.kind && e.kind === entries[0].kind))
+        conteo240 += ' · ' + entries.length + ' de la misma clase: ' +
+          String(entries[0].label || entries[0].kind).replace(/\s+/g, ' ').trim().split('·')[0].trim();
       head.append(n('strong', 'Actividad del sistema'),
-        n('span', entries.length === 1 ? '1 trabajo' : entries.length + ' trabajos', 'activity-count'));
+        n('span', conteo240, 'activity-count'));
       jobsBox.append(head);
-      for (const entry of entries) {
+      /* (2.8.0 · diseño 1) Con MÁS de 3 trabajos la tarjeta
+         nace RESUMIDA en su línea de cabecera («9 trabajos · 9
+         solicitudes esperando al SAT») tras el botón de
+         despliegue: la protagonista de la pantalla vuelve al
+         primer pantallazo. Desplegar enseña TODOS los trabajos,
+         cada uno con su Detener en la tarjeta. */
+      if (entries.length > 3 && !actividadDesplegada240) {
+        const toggleResumen280 = n('button', 'Ver los ' + entries.length + ' trabajos', 'soft small');
+        toggleResumen280.type = 'button';
+        toggleResumen280.dataset.actividadToggle240 = 'franja';
+        toggleResumen280.onclick = () => { actividadDesplegada240 = true; paintActivity(); };
+        const filaResumen280 = n('div', undefined, 'actions');
+        filaResumen280.append(toggleResumen280);
+        jobsBox.append(filaResumen280);
+        jobsBox.dataset.actividadResumen280 = '1';
+      } else {
+      delete jobsBox.dataset.actividadResumen280;
+      /* La explicación «Detenerla significa…», UNA sola vez
+         por tarjeta, como nota pequeña bajo la cabecera y
+         solo si hay alguna solicitud del SAT presente: antes
+         se repetía entera en CADA entrada. */
+      const guia240 = typeof actividadGuia240 === 'function'
+        ? entries.map(actividadGuia240).find(Boolean) : '';
+      if (guia240) jobsBox.append(n('p', guia240, 'muted small actividad-guia240'));
+      /* Despliegue progresivo: primeras 3 entradas; el resto,
+         tras el botón propio de la tarjeta (abajo). */
+      const visibles240 = actividadDesplegada240 ? entries : entries.slice(0, 3);
+      for (const entry of visibles240) {
         const rowEl = n('div');
         rowEl.style.display = 'flex'; rowEl.style.justifyContent = 'space-between';
         rowEl.style.gap = '10px'; rowEl.style.alignItems = 'center'; rowEl.style.padding = '6px 0';
         const body = n('div');
-        const detail = activityDetailText(entry);
+        /* Cada entrada se compone UNA vez (corrección visual
+           2.4.0): título y UNA línea de detalle con el estado,
+           el «desde hace X» y el dato que la distingue — la
+           composición compartida actividadLinea240 de
+           ui.part; activityDetailText/activityEntryText
+           quedan intactos para sus otros consumidores. */
+        const detail = typeof actividadLinea240 === 'function'
+          ? actividadLinea240(entry) : activityDetailText(entry);
         const label = String(entry.label || '').replace(/\s+/g, ' ').trim().replace(/\s*·$/, '');
         body.append(n('strong', label + (detail ? ' · ' : '')),
           n('small', detail, 'activity-detail'));
@@ -762,29 +904,62 @@ function paintActivity() {
         rowEl.append(body);
         const acts = n('div', undefined, 'actions');
         if (entry.canPause) acts.append(activityControlButton(entry, entry.enPausa ? 'Reanudar' : 'Pausar', entry.enPausa ? 'reanudar' : 'pausar'));
-        if (entry.canStop) acts.append(activityControlButton(entry, 'Cancelar', 'detener'));
+        /* Reanudar de las entradas que solo traen canResume
+           (2.4.0 · W1): una solicitud retenida (held) o una
+           mensual retenida ofrecen SOLO canResume — sin esta
+           línea su Reanudar, que el servidor sí admite, no se
+           pintaba en ninguna tarjeta y la retención era un
+           callejón sin salida visible. */
+        else if (entry.canResume && entry.enPausa) acts.append(activityControlButton(entry, 'Reanudar', 'reanudar'));
+        if (entry.canStop) acts.append(activityControlButton(entry, entry.stopLabel || 'Cancelar', 'detener'));
         if (acts.childNodes.length) rowEl.append(acts);
         jobsBox.append(rowEl);
-        /* Barra universal (1.31.2): TODO trabajo vivo de la
-           app pasa por esta franja — su barra va aquí, con la
-           fase que la fila ya nombra, el conteo si el servidor
-           lo conoce (done/total) y el tiempo desde su inicio
-           real (since). Sin total: indeterminada, sin % falso.
-           El Cancelar queda en la fila, junto a la barra. */
-        jobsBox.append(jobProgress1312({ fase: entry.enPausa
-            ? 'Esperando' + (entry.state === 'esperando' ? ' a tu equipo' : '') : (entry.phase || ''),
-          desde: entry.since || 0, done: entry.done, total: entry.total,
-          estado: entry.enPausa ? (entry.state || 'pausado') : (entry.state || '') }));
+        /* Barra de conteo (2.8.0 · diseño 1): solo cuando el
+           trabajo trae un conteo real (done/total) — la barra
+           de «solo fase» era la tercera vez que se decía el
+           estado en la misma fila. */
+        const progreso240 = typeof actividadProgreso240 === 'function'
+          ? actividadProgreso240(entry, detail) : null;
+        if (progreso240) jobsBox.append(progreso240);
+      }
+      /* El botón de repliegue, dentro de la misma tarjeta:
+         cada entrada desplegada conserva su Detener a un
+         toque, en la tarjeta, como manda la orden de Paco.
+         (El despliegue desde el resumen vive arriba, en la
+         rama de la 2.8.0 · diseño 1.) */
+      if (entries.length > 3 && actividadDesplegada240) {
+        const toggle240 = n('button', 'Ver menos', 'soft small');
+        toggle240.type = 'button';
+        toggle240.dataset.actividadToggle240 = 'franja';
+        toggle240.onclick = () => { actividadDesplegada240 = false; paintActivity(); };
+        const toggleRow240 = n('div', undefined, 'actions');
+        toggleRow240.append(toggle240);
+        jobsBox.append(toggleRow240);
+      }
       }
     }
   }
   const slotEl = document.querySelector('[data-sys-activity]');
   if (slotEl) {
     slotEl.replaceChildren();
-    for (const item of (view.recent || []).slice(0, 5)) {
+    /* (2.9.13 · A9) Lo reciente se agrupa por texto: la misma
+       línea repetida (un pago en lote deja una entrada por
+       factura: «Día de pago a PEGASO PCS — Pagado a mano (en
+       lote)» salió una docena de veces en Hoy) se enseña UNA
+       vez con su cuenta «×N» y la hora de la más reciente. */
+    const recientesAgrupados2913 = [];
+    for (const item of view.recent || []) {
+      const texto295 = String(item.text || '').trim();
+      if (!texto295) continue;
+      const previo = recientesAgrupados2913.find(g => g.texto === texto295);
+      if (previo) { previo.veces++; continue; }
+      recientesAgrupados2913.push({ texto: texto295, at: item.at, veces: 1 });
+    }
+    for (const item of recientesAgrupados2913.slice(0, 5)) {
       const line = n('div');
       line.style.padding = '4px 16px';
-      line.append(n('strong', item.text), n('span', ' · ' + haceText(item.at), 'muted'));
+      line.append(n('strong', item.texto + (item.veces > 1 ? ' ×' + item.veces : '')),
+        n('span', ' · ' + haceText(item.at), 'muted'));
       slotEl.append(line);
     }
     if (!(view.recent || []).length && !running.length && !paused.length)
@@ -803,3 +978,208 @@ if (satToken) {
   setInterval(() => { if (!document.hidden) pulse(); }, 30000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) pulse(); });
 }
+
+/* ===== 2.4.0 · WC4b2 — Descargas: tarjeta de cuota (castigo 2) y
+   «Baja lo mismo del mes pasado» (pieza 27) =====
+   La pantalla de Descargas vive en sat-ui.part (satDownloadScreen /
+   fillSat), fuera del territorio de esta tanda: por eso las dos
+   piezas se cuelgan de fillSat envolviéndola — la original pinta lo
+   de siempre y estas dos tarjetas se anteponen a su resultado, sin
+   tocar ni una línea suya (paridad: nada desaparece). La envoltura
+   es aditiva y va protegida: si algo fallara, la pantalla queda
+   como estaba. */
+
+/* --- Castigo 2 · Tarjeta de cuota por RFC ---
+   El dato lo compone el servidor en /api/status (WC1):
+   satData.cuotaDescargas240 = { definicion, limiteSat: null,
+   ventanaMs, ventanaDesde, ventanaHasta, criterioPorCriterio,
+   porRfc: { [RFC]: { solicitudesEnVentana, porTipo: {cfdi,
+   metadata}, criteriosAlLimite, criteriosAgotados5002, semaforo,
+   texto, seRenuevaEn } } }. La tarjeta pinta ESE dato tal cual:
+   el texto del semáforo es el que el servidor compone (no se
+   reescribe aquí) y, con limiteSat en null, la tarjeta dice que
+   el SAT no publica una cuota en vez de inventar un tope. Si un
+   pulso no trae el campo, se conserva la última copia buena
+   (regla de estados de la casa: un fallo de lectura no borra lo
+   que ya se sabía). */
+let cuota240UltimaBuena = null;
+function cuota240DeEstado() {
+  const viva = (typeof satData !== 'undefined' && satData) ? satData.cuotaDescargas240 : null;
+  if (viva && typeof viva === 'object' && viva.porRfc && typeof viva.porRfc === 'object')
+    cuota240UltimaBuena = viva;
+  return cuota240UltimaBuena;
+}
+function cuotaSemaforo240(vista) {
+  const s = String(vista?.semaforo || '');
+  if (s === 'rojo') return { state: 'bad', icono: 'alert', palabra: 'En rojo' };
+  if (s === 'ambar' || s === 'ámbar') return { state: 'warn', icono: 'alert', palabra: 'En ámbar' };
+  if (s === 'verde') return { state: 'ok', icono: 'check', palabra: 'En verde' };
+  return { state: 'dim', icono: 'clock', palabra: 'Sin dato del servidor' };
+}
+function cuotaTarjeta240(cuota, rfcVisible) {
+  if (!cuota || typeof cuota !== 'object' || !cuota.porRfc || typeof cuota.porRfc !== 'object') return null;
+  const todas = Object.values(cuota.porRfc).filter(vista => vista && typeof vista === 'object');
+  const vistas = rfcVisible ? todas.filter(vista => vista.rfc === rfcVisible) : todas;
+  if (!vistas.length) return null;
+  const card = panel('Cuota de descargas al SAT');
+  card.dataset.cuota240 = '1';
+  const definicion = cuota.definicion || vistas[0].definicion || '';
+  const limite = cuota.limiteSat !== undefined ? cuota.limiteSat : vistas[0].limiteSat;
+  for (const vista of vistas) {
+    const sem = cuotaSemaforo240(vista);
+    const bloque = n('div', undefined, 'cuota240-rfc');
+    bloque.dataset.rfc = vista.rfc || '';
+    const head = n('div', undefined, 'panel-head');
+    head.append(n('strong', vista.rfc || ''));
+    const pill = statusPill(sem.state, sem.palabra, vista.texto || '', null, true);
+    pill.prepend(icon(sem.icono));
+    head.append(pill);
+    bloque.append(head);
+    const total = n('p', undefined, 'total-hero');
+    total.append(n('strong', number.format(Number(vista.solicitudesEnVentana) || 0)),
+      n('span', ' solicitudes enviadas en los últimos 7 días'));
+    bloque.append(total);
+    bloque.append(n('p', 'CFDI completos: ' + number.format(Number(vista.porTipo?.cfdi) || 0) +
+      ' · Solo el listado (metadatos): ' + number.format(Number(vista.porTipo?.metadata) || 0), 'muted'));
+    if (vista.criteriosAlLimite)
+      bloque.append(n('p', 'Criterios al límite: ' + number.format(vista.criteriosAlLimite) +
+        ' (ya llevan las 2 solicitudes del criterio que la comunidad técnica documenta).'));
+    if (vista.criteriosAgotados5002)
+      bloque.append(n('p', 'Criterios agotados en el SAT (error 5002): ' + number.format(vista.criteriosAgotados5002) + '.'));
+    /* El texto del semáforo lo compone el servidor: se pinta tal cual. */
+    if (vista.texto) bloque.append(n('p', vista.texto));
+    bloque.append(n('p', vista.seRenuevaEn ?
+      'Se renueva el ' + fmtFechaHora(vista.seRenuevaEn) +
+        ': ese día sale de la ventana la solicitud más antigua y el conteo baja.' :
+      'Nada que renovar: no hay solicitudes dentro de la ventana de 7 días.'));
+    if (limite === null || limite === undefined)
+      bloque.append(n('p', 'El SAT no publica una cuota: no hay un tope oficial que enseñar; ' +
+        'el semáforo se pinta contra el libro de criterios de la casa, como explica la definición.', 'muted'));
+    else bloque.append(n('p', 'Tope que publica el SAT: ' + number.format(limite) + ' solicitudes.', 'muted'));
+    card.append(bloque);
+  }
+  if (definicion) {
+    const detalle = n('details', undefined, 'seal-details');
+    detalle.append(n('summary', 'Qué significa esta cuota'));
+    detalle.append(n('p', definicion));
+    card.append(detalle);
+  }
+  return card;
+}
+
+/* --- Pieza 27 · «Baja lo mismo del mes pasado» ---
+   Compone la descarga del MES ANTERIOR al actual (mes completo)
+   con los parámetros que la casa usó en su descarga A MANO de ese
+   mes: la fuente es el libro de criterios que ya viaja en el
+   estado (satData.criteriaBook), cuyos envíos llevan su origen —
+   solo cuentan los de origen «manual» enviados dentro del mes
+   pasado — y de ellos salen, por RFC visible, el sentido y el
+   tipo. Sin descarga manual registrada ese mes, se compone con
+   lo habitual de la vista (los dos sentidos, CFDI completos) y la
+   fila lo dice. El botón SOLO compone: abre la hoja de descarga
+   de siempre ya rellena (downloadSheet; para «solo el listado»,
+   el diálogo de siempre, requestDialog) y el envío sigue siendo
+   la confirmación habitual de Paco dentro de esa hoja — aquí no
+   se quema ningún criterio. */
+function bajaLoMismoVentana240(ahora = new Date()) {
+  const primero = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+  const ultimo = new Date(ahora.getFullYear(), ahora.getMonth(), 0);
+  const clave = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+  return { desde: clave(primero), hasta: clave(ultimo),
+    desdeMs: primero.getTime(), hastaMs: ultimo.getTime() + 86399999 };
+}
+function bajaLoMismoPlan240(ahora = new Date()) {
+  const ventana = bajaLoMismoVentana240(ahora);
+  const visibles = [];
+  if (typeof scope !== 'undefined' && scope) visibles.push(scope);
+  else {
+    for (const perfil of (typeof satData !== 'undefined' && satData?.profiles) || [])
+      if (perfil.rfc && !visibles.includes(perfil.rfc)) visibles.push(perfil.rfc);
+    if (!visibles.length && typeof people !== 'undefined')
+      for (const persona of people) if (persona.id && !visibles.includes(persona.id)) visibles.push(persona.id);
+  }
+  const libro = (typeof satData !== 'undefined' && Array.isArray(satData?.criteriaBook)) ? satData.criteriaBook : [];
+  return visibles.map(rfc => {
+    const sentidos = new Set(), tipos = new Set();
+    let huboManual = false;
+    for (const entrada of libro) {
+      if (!entrada || entrada.rfc !== rfc) continue;
+      for (const envio of (entrada.sends || [])) {
+        const at = Number(envio?.sentAt) || 0;
+        if (!at || at < ventana.desdeMs || at > ventana.hastaMs) continue;
+        if (envio.origin && envio.origin !== 'manual') continue;
+        huboManual = true;
+        if (entrada.direction) sentidos.add(entrada.direction);
+        tipos.add(entrada.type || 'cfdi');
+      }
+    }
+    if (!huboManual)
+      return { rfc, desde: ventana.desde, hasta: ventana.hasta, direction: 'both', tipo: 'cfdi', conRegistro: false };
+    return { rfc, desde: ventana.desde, hasta: ventana.hasta,
+      direction: sentidos.size === 1 ? [...sentidos][0] : 'both',
+      tipo: tipos.has('metadata') && !tipos.has('cfdi') ? 'metadata' : 'cfdi',
+      conRegistro: true };
+  });
+}
+function bajaLoMismoComponer240(item) {
+  if (item.tipo === 'metadata') {
+    /* La hoja de CFDI no pide «solo el listado»: esa clase se
+       compone en el diálogo de siempre, cuyo «Enviar solicitud»
+       es su confirmación habitual. */
+    requestDialog({ rfc: item.rfc, direction: item.direction === 'issued' ? 'issued' : 'received',
+      start: item.desde, end: item.hasta, type: 'metadata' });
+    if (item.direction === 'both')
+      announce('Lo del mes pasado fue «solo el listado» en los dos sentidos: esta vez la hoja compone Recibidos; ' +
+        'al cerrarla, repite el botón para componer Emitidos.');
+    return;
+  }
+  downloadSheet(item.rfc, { start: item.desde, end: item.hasta, direction: item.direction });
+}
+function bajaLoMismoPanel240() {
+  if (typeof satToken === 'undefined' || !satToken) return null;
+  if (typeof guestMode !== 'undefined' && guestMode) return null;
+  const plan = bajaLoMismoPlan240();
+  if (!plan.length) return null;
+  const wrap = panel('Baja lo mismo del mes pasado');
+  wrap.dataset.bajaLoMismo240 = '1';
+  wrap.append(n('p', 'Un toque compone la descarga del mes pasado con los mismos parámetros de la descarga ' +
+    'a mano de ese mes (RFC, sentido y tipo). Componer no envía nada: la hoja se abre ya compuesta y el ' +
+    'envío sigue siendo tu confirmación de siempre, porque quemar un criterio no se puede deshacer.'));
+  for (const item of plan) {
+    const fila = n('div', undefined, 'cp-row');
+    const sentidoTxt = item.direction === 'both' ? 'Emitidos y recibidos' :
+      item.direction === 'issued' ? 'Emitidos' : 'Recibidos';
+    const tipoTxt = item.tipo === 'metadata' ? 'Solo el listado (metadatos)' : 'CFDI completos';
+    fila.append(n('span', item.rfc + ' · ' + dateLabel(item.desde) + ' – ' + dateLabel(item.hasta) + ' · ' +
+      sentidoTxt + ' · ' + tipoTxt +
+      (item.conRegistro ? '' : ' · sin descarga manual el mes pasado: compuesto con lo habitual')));
+    const boton = action('Componer la descarga', () => bajaLoMismoComponer240(item), 'primary', 'down');
+    boton.dataset.bajaLoMismo240 = item.rfc;
+    fila.append(boton);
+    wrap.append(fila);
+  }
+  return wrap;
+}
+
+/* El gancho: fillSat pinta lo de siempre y las dos tarjetas se
+   anteponen a su resultado (primero la cuota, su tarjeta
+   protagonista; después «baja lo mismo»). */
+const fillSatCasa240 = fillSat;
+fillSat = function fillSat240(target) {
+  const destino = target || $('sat-live');
+  fillSatCasa240(destino);
+  if (!destino || typeof destino.prepend !== 'function') return;
+  try {
+    const tarjetas = [cuotaTarjeta240(cuota240DeEstado(), typeof scope !== 'undefined' ? scope : ''),
+      bajaLoMismoPanel240()].filter(Boolean);
+    if (tarjetas.length) destino.prepend(...tarjetas);
+  } catch { /* Piezas aditivas: la pantalla de siempre queda intacta. */ }
+};
+/* Al cargar esta parte diferida (2.4.0 · W6): si Paco ya está en
+   Descargas, su pantalla se repinta con la envoltura ya puesta —
+   la cuota y «baja lo mismo» no esperan a la siguiente acción. */
+try {
+  if (typeof page !== 'undefined' && (page === 'descargar' || page === 'sat') &&
+      typeof $ === 'function' && $('sat-live')) fillSat();
+} catch { /* repintado de cortesía al cargar: nunca rompe la parte */ }

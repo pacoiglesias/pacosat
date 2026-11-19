@@ -97,12 +97,26 @@ function settingsScreen() {
     'Sin servidor, los ajustes se guardan en este navegador. La fecha de inicio de la instancia solo existe en modo servidor y por eso no se muestra aquí.'));
   about.append(aboutBody);
   panels.push(about);
-  /* Sonidos por evento (1.6.11): el interruptor general vive en la
-     cabecera; aquí se elige qué eventos suenan. Se guarda al momento en
-     este navegador, sin pasar por «Guardar ajustes». */
+  /* Sonidos por evento (1.6.11): aquí se elige qué eventos
+     suenan. (2.8.0 · diseño 27) El interruptor GENERAL también
+     vive aquí desde esta ronda: salió de la cabecera — un
+     ajuste de una vez al año no ocupa el sitio más caro del
+     sistema — y este panel es su casa entera. Se guarda al
+     momento en este navegador, sin pasar por «Guardar ajustes». */
   const sounds = panel('Sonidos de la interfaz');
   const soundsBody = n('div', undefined, 'portal');
-  soundsBody.append(n('p', 'Sonidos discretos al completar acciones. El botón de altavoz de la cabecera los apaga todos.'));
+  soundsBody.append(n('p', 'Sonidos discretos al completar acciones. El interruptor general los apaga todos; debajo eliges qué eventos suenan.'));
+  {
+    const master280 = input('checkbox');
+    master280.id = 'sound-toggle';
+    master280.checked = typeof soundOn !== 'undefined' ? soundOn : true;
+    master280.onchange = () => {
+      soundOn = master280.checked;
+      prefSet('pacosat-sound', soundOn ? 'on' : 'off');
+      if (soundOn) soundCue('notice');
+    };
+    soundsBody.append(field('Sonidos de la interfaz (todos)', master280));
+  }
   const soundPrefs = (() => { try { return JSON.parse(prefGet('pacosat-sound-events') || '{}'); } catch { return {}; } })();
   for (const [kind, label] of [['success', 'Éxito (importación terminada, respaldo creado)'],
     ['notice', 'Avisos (novedades y confirmaciones)'], ['alert', 'Alertas (algo requiere tu atención)'],
@@ -119,12 +133,26 @@ function settingsScreen() {
   }
   sounds.append(soundsBody);
   panels.push(sounds);
+  /* Lo que PacoSAT hace solo (2.4.0 · WC4a): los ajustes nuevos
+     de la ronda que el servidor ya sirve en status.settings y
+     acepta por el POST /api/settings de siempre. Cada control
+     se guarda AL CAMBIARLO, con su confirmación discreta en el
+     propio panel; los valores pintados son los servidos, nunca
+     escritos a mano. Solo en modo servidor: sin servidor no hay
+     ajustes que servir ni que guardar. */
+  if (satToken && !guestMode) panels.push(automaticosPanel240());
+  /* Mapeo de agrupadoras del SAT (2.4.0 · WServ2, ítem 13): su
+     editor vive aquí, en Ajustes — las pólizas se piden en
+     Salidas, pero el mapeo es configuración de la instalación,
+     como los demás ajustes que el servidor guarda. */
+  if (satToken && !guestMode) panels.push(agrupadorasPanel240());
   /* Guardar también al pie (UX-17): el botón de la cabecera queda lejos
      al hacer scroll en esta pantalla. */
   const saveBar = n('div', undefined, 'actions');
   saveBar.append(action('Guardar ajustes', saveAppSettings, 'primary', 'check'));
   panels.push(saveBar);
   if (satToken && !guestMode) panels.push(guestPanel());
+  if (satToken && !guestMode && !(typeof sesionNombrada298 === 'function' && sesionNombrada298())) panels.push(usersPanel298());
   if (satToken && !guestMode) { panels.push(paperlessPanel()); panels.push(pushPanel()); }
   /* Comercial apagado (2.3.0 · pieza 20): el panel comercial
      SOLO existe si /api/status dice comercial: true en ESTA
@@ -132,6 +160,82 @@ function settingsScreen() {
      panel ni texto alguno: ni rastro en la interfaz. */
   if (typeof satData !== 'undefined' && satData?.comercial === true) panels.push(comercialPanel230());
   return panels;
+}
+/* Panel «Lo que PacoSAT hace solo» (2.4.0 · WC4a): pinta los
+   ajustes automáticos servidos en status.settings —
+   historico240 {enabled}, satdocsProgramadas240 {enabled},
+   resumenSemanal240 {enabled} (trae su propia llave servida:
+   se pinta como los demás) y toleranciaComisionCentavos240
+   (un número en centavos que aquí se enseña y se edita en
+   PESOS) — y los guarda al cambiarlos por el POST /api/settings
+   de la pantalla, cada uno con su confirmación discreta. En
+   pantalla solo van los nombres llanos: ninguna clave interna. */
+function automaticosPanel240() {
+  const panelEl = panel('Lo que PacoSAT hace solo',
+    'Los trabajos automáticos de esta instalación. Cada interruptor se guarda al cambiarlo: no hace falta el botón «Guardar ajustes».');
+  const body = n('div', undefined, 'portal');
+  panelEl.append(body);
+  const servidos = (typeof satData !== 'undefined' && satData && satData.settings) || {};
+  const nota = n('p', '', 'muted ajustes-auto-nota240');
+  const guardar = async (payload, textoOk) => {
+    try {
+      const result = await satApi('settings', payload);
+      if (result && result.settings) {
+        if (typeof satData !== 'undefined' && satData) satData.settings = result.settings;
+        appSettings = { ...appSettings, ...result.settings, logoData: appSettings.logoData };
+      }
+      nota.dataset.estado = 'aldia';
+      nota.textContent = textoOk;
+    } catch (error) {
+      nota.dataset.estado = 'error';
+      nota.textContent = 'No se guardó: ' + error.message;
+    }
+  };
+  const interruptor = (clave, etiqueta, explicacion, encendido, payloadDe, textoDe) => {
+    const toggle = input('checkbox');
+    toggle.checked = Boolean(encendido);
+    toggle.dataset.ajuste240 = clave;
+    toggle.onchange = () => guardar(payloadDe(toggle.checked),
+      'Guardado: ' + textoDe(toggle.checked) + '.');
+    body.append(field(etiqueta, toggle), n('p', explicacion, 'muted'));
+  };
+  interruptor('historico', 'Modo histórico de huecos',
+    'De madrugada, una solicitud por hora, solo si faltan meses por descargar: PacoSAT tapa sola los huecos de tus descargas sin gastar solicitudes del SAT de más.',
+    servidos.historico240?.enabled === true,
+    on => ({ historico240: { enabled: on } }),
+    on => on ? 'el modo histórico quedó encendido' : 'el modo histórico quedó apagado');
+  interruptor('satdocs', 'Constancia y Opinión automáticas',
+    'Se bajan solas cada mes; solo avisa si cambia el sentido o la fecha.',
+    servidos.satdocsProgramadas240?.enabled !== false,
+    on => ({ satdocsProgramadas240: { enabled: on } }),
+    on => on ? 'la bajada automática de Constancia y Opinión quedó encendida' :
+      'la bajada automática de Constancia y Opinión quedó apagada');
+  interruptor('semanal', 'Resumen semanal por correo',
+    'Cada lunes te llega un correo con lo cobrado, lo que vence y lo que falta, RFC por RFC. Si no hay nada que decir, no se manda.',
+    servidos.resumenSemanal240?.enabled !== false,
+    on => ({ resumenSemanal240: { enabled: on } }),
+    on => on ? 'el resumen semanal quedó encendido' : 'el resumen semanal quedó apagado');
+  /* La tolerancia viaja en centavos; Paco la ve y la toca en
+     pesos. 0 la apaga. Se guarda al cambiar el campo. */
+  const centavosServidos = Number(servidos.toleranciaComisionCentavos240);
+  const tolInput = input('number', { min: '0', step: '0.01', 'aria-label': 'Tolerancia de comisión, en pesos' });
+  tolInput.value = Number.isFinite(centavosServidos) ? String(centavosServidos / 100) : '0';
+  tolInput.dataset.ajuste240 = 'tolerancia';
+  tolInput.style.maxWidth = '140px';
+  tolInput.onchange = () => {
+    const pesos = Number(tolInput.value);
+    if (!Number.isFinite(pesos) || pesos < 0) {
+      nota.dataset.estado = 'error';
+      nota.textContent = 'La tolerancia tiene que ser un importe en pesos, 0 o más.';
+      return;
+    }
+    guardar({ toleranciaComisionCentavos240: Math.round(pesos * 100) },
+      'Guardado: la tolerancia de comisión quedó en $' + pesos.toFixed(2) + '.');
+  };
+  body.append(field('Tolerancia de comisión al conciliar (pesos)', tolInput),
+    n('p', 'Al conciliar, una diferencia hasta esta cantidad se propone como comisión bancaria. Con 0 queda apagada.', 'muted'));
+  body.append(nota);
+  return panelEl;
 }
 /* Panel comercial (2.3.0 · pieza 20): solo nace con
    status.comercial === true. Enseña el estado de licencia
@@ -187,7 +291,7 @@ function paperlessPanel() {
       if (estado.ultimoError) body.append(n('p', 'Último error de la cola: ' + estado.ultimoError, 'error-text'));
       const form = n('div', undefined, 'sat-form');
       const activo = input('checkbox', { checked: Boolean(estado.enabled) });
-      const base = input('url', { value: estado.baseUrl || '', placeholder: 'http://192.168.68.126:8000', 'aria-label': 'Dirección de Paperless' });
+      const base = input('url', { value: estado.baseUrl || '', placeholder: 'http://tu-paperless:8000', 'aria-label': 'Dirección de Paperless' });
       const token = input('password', { placeholder: estado.tokenSet ? 'Token guardado — escribe solo para cambiarlo' : 'Token de API de Paperless', autocomplete: 'new-password' });
       const activoLabel = n('label', undefined, 'switch-line');
       activoLabel.append(activo, n('span', 'Activar el puente'));
@@ -201,12 +305,13 @@ function paperlessPanel() {
         pruebaTexto.textContent = 'Probando la conexión con tu Paperless…';
         try {
           const r = await satApi('paperless/probar', {});
-          pruebaGuardada230 = (r?.ok ? '✓ ' : '✗ ') +
-            (r?.texto || (r?.ok ? 'Paperless responde.' : 'Paperless no respondió.'));
+          pruebaGuardada230 = r?.texto || (r?.ok ? 'Paperless responde.' : 'Paperless no respondió.');
+          pruebaTexto.dataset.estado = r?.ok ? 'aldia' : 'error';
           pruebaTexto.textContent = pruebaGuardada230;
           return Boolean(r?.ok);
         } catch (error) {
-          pruebaGuardada230 = '✗ ' + error.message;
+          pruebaGuardada230 = error.message;
+          pruebaTexto.dataset.estado = 'error';
           pruebaTexto.textContent = pruebaGuardada230;
           return false;
         }
@@ -459,14 +564,26 @@ function apiPanelSection1320() {
     /* Las llaves, con su uso. */
     if (!data.llaves.length)
       body.append(n('p', 'Todavía no hay llaves. Crea la primera para conectar tu Excel o tu sistema.'));
-    const actuar = async (llave, estado, etiqueta) => {
-      if (estado === 'revocada' &&
-          !confirm('¿Revocar la llave «' + llave.nombre + '»? Dejará de funcionar al instante y no hay vuelta atrás: para volver a conectar ese sistema habrá que crear una llave nueva.')) return;
+    /* El cambio de estado de una llave (2.9.5 · R1): la
+       confirmación de revocar va con el DIÁLOGO PROPIO de la
+       casa — la doctrina desde la 1.18.0 («fuera el confirm()
+       nativo del navegador») — porque en el navegador real el
+       diálogo nativo se traga: la re-verificación en vivo del
+       18 nov pulsó «Revocar» tres veces «con su confirmación»
+       y la llave siguió «Activa», sin llamada y sin error: la
+       cadena moría en el confirm() antes de nacer. Y la
+       tarjeta se pinta desde la RE-LECTURA del servidor, no
+       desde la respuesta del POST: lo que la tarjeta enseña
+       es lo que el servidor tiene, re-leído tras el cambio. */
+    const ejecutarEstado295 = async (llave, estado, etiqueta) => {
       try {
-        const fresco = await satApi('apikeys/estado', { id: llave.id, estado });
+        await satApi('apikeys/estado', { id: llave.id, estado });
+        const releido = await satApi('apikeys');
         toast('Llave «' + llave.nombre + '»: ' + etiqueta + '.', 'ok');
-        pintar(fresco);
+        pintar(releido);
       } catch (error) {
+        /* Respuesta perdida ≠ cambio perdido: se re-lee el
+           registro antes de dar error (verdad de las acciones). */
         try {
           const releido = await satApi('apikeys');
           if (releido.llaves.find(k => k.id === llave.id)?.estado === estado) {
@@ -476,6 +593,15 @@ function apiPanelSection1320() {
         } catch { /* manda el error original */ }
         toast(error.message, 'error');
       }
+    };
+    const actuar = (llave, estado, etiqueta) => {
+      if (estado === 'revocada') {
+        dialog('Revocar la llave',
+          [n('p', '¿Revocar la llave «' + llave.nombre + '»? Dejará de funcionar al instante y no hay vuelta atrás: para volver a conectar ese sistema habrá que crear una llave nueva.')],
+          async () => { await ejecutarEstado295(llave, estado, etiqueta); }, 'Revocar');
+        return;
+      }
+      return ejecutarEstado295(llave, estado, etiqueta);
     };
     for (const llave of data.llaves) {
       const card = n('article', undefined, 'api-key-card');
@@ -501,6 +627,20 @@ function apiPanelSection1320() {
         n('span', llave.ultimoUso ? 'Último uso: ' + localDateTime(llave.ultimoUso) : 'Sin uso todavía'),
         n('span', 'Llamadas: ' + llave.llamadasHoy + ' hoy · ' + llave.llamadasTotal + ' en total'));
       card.append(head, meta);
+      /* Revocar VISIBLE en la tarjeta (2.9.3 · F12): la acción
+         vivía solo dentro del menú «Más opciones de la llave» y
+         el barrido en vivo no la encontró — una acción necesaria
+         no se esconde en un menú. El menú se conserva intacto
+         (paridad); la tarjeta lleva su propio botón, con la
+         misma confirmación de siempre. */
+      if (llave.estado !== 'revocada') {
+        const actosLlave293 = n('div', undefined, 'actions');
+        const revocarBtn293 = n('button', 'Revocar', 'soft small');
+        revocarBtn293.type = 'button';
+        revocarBtn293.onclick = () => actuar(llave, 'revocada', 'revocada');
+        actosLlave293.append(revocarBtn293);
+        card.append(actosLlave293);
+      }
       body.append(card);
     }
     /* Últimas llamadas, con su puerta al Registro. */
@@ -528,3 +668,67 @@ function apiPanelSection1320() {
   return panels;
 }
 let apiLlaveNueva1320 = '';
+/* Panel «Cuentas agrupadoras del SAT» (2.4.0 · WServ2, ítem 13):
+   el mapeo OPCIONAL contraparte (RFC) → código de agrupadora
+   que el generador de pólizas aplica en la columna «Cuenta»
+   del Excel. Sin mapeo para una contraparte, su columna sigue
+   en blanco, como siempre: PacoSAT no incrusta el catálogo
+   oficial ni inventa códigos — guarda el código que tú
+   escribas, con su nombre llano al lado para reconocerlo. */
+function agrupadorasPanel240() {
+  const panelEl = panel('Cuentas agrupadoras del SAT (pólizas)',
+    'Opcional: para cada contraparte, el código de cuenta agrupadora del SAT que debe llevar en las pólizas. El Excel de pólizas rellena su columna «Cuenta» solo donde hay mapeo; donde no lo hay, sigue en blanco como hasta ahora.');
+  const body = n('div', undefined, 'portal');
+  panelEl.append(body);
+  let mapeo = {};
+  const pintar = async () => {
+    body.replaceChildren(n('p', 'Leyendo el mapeo…', 'muted'));
+    try {
+      const datos = await satApi('polizas/agrupadoras240');
+      mapeo = datos.mapeo || {};
+      body.replaceChildren();
+      const claves = Object.keys(mapeo).sort();
+      if (!claves.length) body.append(n('p', 'Sin ningún mapeo: las pólizas salen con la columna «Cuenta» en blanco, como siempre.', 'muted'));
+      for (const rfc of claves) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill('dim', mapeo[rfc].codigo),
+          n('span', rfc + ' → ' + mapeo[rfc].codigo + (mapeo[rfc].nombre ? ' · ' + mapeo[rfc].nombre : '')));
+        const quitar = n('button', 'Quitar', 'soft small');
+        quitar.type = 'button';
+        quitar.onclick = async () => {
+          const copia = { ...mapeo }; delete copia[rfc];
+          try {
+            const r = await satApi('polizas/agrupadoras240', { mapeo: copia });
+            mapeo = r.mapeo || {};
+            toast('Mapeo quitado para ' + rfc + ': sus pólizas vuelven a salir en blanco.', 'ok');
+            pintar();
+          } catch (error) { toast(error.message, 'error'); }
+        };
+        row.append(quitar);
+        body.append(row);
+      }
+      const form = n('div', undefined, 'sat-form');
+      const rfcIn = input('text', { placeholder: 'RFC de la contraparte', maxlength: '13' });
+      const codigoIn = input('text', { placeholder: 'Código de agrupadora (p. ej. el del catálogo del SAT)', maxlength: '20' });
+      const nombreIn = input('text', { placeholder: 'Nombre llano (opcional)', maxlength: '80' });
+      const guardar = n('button', 'Guardar el mapeo', 'primary');
+      guardar.type = 'button';
+      guardar.onclick = async () => {
+        const rfc = rfcIn.value.trim().toUpperCase();
+        if (!rfc || !codigoIn.value.trim()) { toast('Escribe el RFC de la contraparte y su código de agrupadora.', 'error'); return; }
+        try {
+          const r = await satApi('polizas/agrupadoras240',
+            { mapeo: { ...mapeo, [rfc]: { codigo: codigoIn.value.trim(), nombre: nombreIn.value.trim() } } });
+          mapeo = r.mapeo || {};
+          toast('Mapeo guardado: las pólizas de ' + rfc + ' llevarán su agrupadora desde la próxima generación.', 'ok');
+          pintar();
+        } catch (error) { toast(error.message, 'error'); }
+      };
+      form.append(fieldWrap('Contraparte (RFC)', rfcIn), fieldWrap('Código de agrupadora del SAT', codigoIn),
+        fieldWrap('Nombre llano', nombreIn), guardar);
+      body.append(form);
+    } catch (error) { body.replaceChildren(n('p', 'No se pudo leer el mapeo: ' + error.message, 'error-text')); }
+  };
+  pintar();
+  return panelEl;
+}

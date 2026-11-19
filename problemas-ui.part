@@ -77,9 +77,12 @@ function runPhasesEl(phasesDef, steps, outcome) {
   for (const phase of states) {
     const item = n('li', undefined, 'run-phase');
     item.dataset.state = phase.state;
-    item.append(n('span',
-      phase.state === 'done' ? '✓' : phase.state === 'failed' ? '✕' :
-      phase.state === 'current' ? '◌' : '·', 'run-phase-mark'),
+    /* La marca de la fase es el icono de la familia (2.4.0 · W5b3),
+       no un glifo de texto: data-estado de W5a sobre la marca. */
+    const marcaFase240 = n('span', '', 'run-phase-mark');
+    marcaFase240.dataset.estado = phase.state === 'done' ? 'aldia' : phase.state === 'failed' ? 'error' :
+      phase.state === 'current' ? 'encurso' : 'sindatos';
+    item.append(marcaFase240,
       n('span', phase.label + (phase.warn ? ' · con avisos' : '')));
     list.append(item);
   }
@@ -88,14 +91,18 @@ function runPhasesEl(phasesDef, steps, outcome) {
 /* Botones de evidencia de una corrida caída (la captura y el HTML
    que el motor guardó en el momento del fallo): a un clic desde el
    paso fallido. kind: 'satdoc' | 'ciec'. */
-function evidenceButtons(kind, run) {
+function evidenceButtons(kind, run, menu299 = false) {
   if (!run?.hasShot && !run?.hasHtml && !run?.hasDecisionShot && !run?.hasDecisionHtml) return null;
-  const row = n('div', undefined, 'actions');
+  /* Las piezas de evidencia, UNA lista (2.9.9 · D2): los
+     llamadores de siempre las pintan como botones y el Registro
+     las pide en menú (menu299) — mismas palabras, mismo efecto. */
+  const items = [];
+  const push = (label, fn) => items.push({ label, fn });
   if (kind === 'satdoc') {
-    if (run.hasShot) row.append(action('Ver la captura del fallo', async () =>
-      window.open(URL.createObjectURL(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
-    if (run.hasHtml) row.append(action('Bajar el HTML de la página', async () =>
-      download(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'), 'soft'));
+    if (run.hasShot) push('Ver la captura del fallo', async () =>
+      window.open(URL.createObjectURL(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=shot')), '_blank'));
+    if (run.hasHtml) push('Bajar el HTML de la página', async () =>
+      download(await satApiBlob('satdocs/artifact?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'));
   } else if (kind === 'declaraciones' || kind === 'tributario') {
     /* La página guardada de declaraciones y del buzón (1.27.0):
        mismo gesto que en documentos — ver la foto del momento o
@@ -103,23 +110,56 @@ function evidenceButtons(kind, run) {
        decisión (1.32.1): la portada desde la que se navegó al
        destino que falló, para ver el salto con los ojos. */
     const ruta = kind === 'declaraciones' ? 'declaraciones/artifact' : 'tributario/artifact';
-    if (run.hasShot) row.append(action('Ver la captura del fallo', async () =>
-      window.open(URL.createObjectURL(await satApiBlob(ruta + '?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
-    if (run.hasHtml) row.append(action('Bajar el HTML de la página', async () =>
-      download(await satApiBlob(ruta + '?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'), 'soft'));
-    if (run.hasDecisionShot) row.append(action('Ver la página de decisión', async () =>
-      window.open(URL.createObjectURL(await satApiBlob(ruta + '?run=' + run.id + '&part=decision-shot')), '_blank'), 'soft'));
-    if (run.hasDecisionHtml) row.append(action('Bajar el HTML de decisión', async () =>
-      download(await satApiBlob(ruta + '?run=' + run.id + '&part=decision-html'), 'pagina-de-decision.html'), 'soft'));
+    if (run.hasShot) push('Ver la captura del fallo', async () =>
+      window.open(URL.createObjectURL(await satApiBlob(ruta + '?run=' + run.id + '&part=shot')), '_blank'));
+    if (run.hasHtml) push('Bajar el HTML de la página', async () =>
+      download(await satApiBlob(ruta + '?run=' + run.id + '&part=html'), 'pagina-del-fallo.html'));
+    if (run.hasDecisionShot) push('Ver la página de decisión', async () =>
+      window.open(URL.createObjectURL(await satApiBlob(ruta + '?run=' + run.id + '&part=decision-shot')), '_blank'));
+    if (run.hasDecisionHtml) push('Bajar el HTML de decisión', async () =>
+      download(await satApiBlob(ruta + '?run=' + run.id + '&part=decision-html'), 'pagina-de-decision.html'));
   } else {
-    if (run.hasShot) row.append(action('Ver la foto del fallo', async () =>
-      window.open(URL.createObjectURL(await satApiBlob('ciec/artifact?run=' + run.id + '&part=shot')), '_blank'), 'soft'));
-    if (run.hasHtml) row.append(action('Bajar la página del fallo', async () => {
+    if (run.hasShot) push('Ver la foto del fallo', async () =>
+      window.open(URL.createObjectURL(await satApiBlob('ciec/artifact?run=' + run.id + '&part=shot')), '_blank'));
+    if (run.hasHtml) push('Bajar la página del fallo', async () => {
       const a = n('a');
       a.href = URL.createObjectURL(await satApiBlob('ciec/artifact?run=' + run.id + '&part=html'));
       a.download = 'pagina-del-fallo.html'; a.click();
-    }, 'soft'));
+    });
   }
+  if (!items.length) return null;
+  if (menu299) { const m = cardMenu1312('Evidencia'); m._setItems1312(items); return m; }
+  const row = n('div', undefined, 'actions');
+  for (const item of items) row.append(action(item.label, item.fn, 'soft'));
+  return row;
+}
+/* Botones de evidencia POR SECCIÓN de una corrida del Buzón
+   (2.9.3): la página de «Mis comunicados» o «Mis documentos»
+   tal como quedó cuando la sección concluyó o agotó su
+   plazo — su captura, su HTML y su inventario de marcos —.
+   Valen para corridas buenas y malas: una sección puede no
+   concluir en una corrida que por lo demás va bien (así fue
+   la real 805fc97e), y su evidencia es justo la que hace
+   falta para diagnosticarla sin repetir la consulta a
+   ciegas. */
+function seccionEvidenceButtons293(run) {
+  if (!run?.hasComunicadosShot && !run?.hasComunicadosHtml && !run?.hasComunicadosMarcos &&
+      !run?.hasDocumentosShot && !run?.hasDocumentosHtml && !run?.hasDocumentosMarcos) return null;
+  const row = n('div', undefined, 'actions');
+  const ver = (cond, texto, parte) => {
+    if (cond) row.append(action(texto, async () =>
+      window.open(URL.createObjectURL(await satApiBlob('tributario/artifact?run=' + run.id + '&part=' + parte)), '_blank'), 'soft'));
+  };
+  const bajar = (cond, texto, parte, nombre) => {
+    if (cond) row.append(action(texto, async () =>
+      download(await satApiBlob('tributario/artifact?run=' + run.id + '&part=' + parte), nombre), 'soft'));
+  };
+  ver(run.hasComunicadosShot, 'Ver la captura de «Mis comunicados»', 'comunicados-shot');
+  bajar(run.hasComunicadosHtml, 'Bajar el HTML de «Mis comunicados»', 'comunicados-html', 'comunicados.html');
+  bajar(run.hasComunicadosMarcos, 'Bajar los marcos de «Mis comunicados»', 'comunicados-marcos', 'comunicados-marcos.json');
+  ver(run.hasDocumentosShot, 'Ver la captura de «Mis documentos»', 'documentos-shot');
+  bajar(run.hasDocumentosHtml, 'Bajar el HTML de «Mis documentos»', 'documentos-html', 'documentos.html');
+  bajar(run.hasDocumentosMarcos, 'Bajar los marcos de «Mis documentos»', 'documentos-marcos', 'documentos-marcos.json');
   return row.children.length ? row : null;
 }
 /* ===== Centro de mando (Hoy) =====
@@ -261,6 +301,12 @@ function commandCenter() {
     new MutationObserver(aplicarOrdenCmd1312).observe(gridBox, { childList: true, subtree: true });
   aplicarOrdenCmd1312();
   const seleccion = invoices.filter(matches);
+  /* Posibles duplicados por contenido (2.4.0 · castigo 7): el
+     hallazgo vive en su propio panel, bajo la rejilla del centro
+     de mando; sin pares, no se pinta nada (Hoy no crece con
+     tarjetas vacías). */
+  const dupPanel240 = duplicadosPanel240();
+  if (dupPanel240) wrap.append(dupPanel240);
   /* --- Vigilancia (pieza 2, 1.22.0): pinta al instante con la
      caché de la sesión y MANDA el servidor al llegar su resumen
      (antes contradecía a la base: «0 vigentes · Aún sin
@@ -628,7 +674,7 @@ function healthCard() {
   if (health.level === 'bien') {
     const fila = n('div', undefined, 'health-ok-row');
     for (const check of health.checks) {
-      /* El ✓ sale del STATE de cada comprobación (2.0, 3.5),
+      /* El «hecho» sale del STATE de cada comprobación (2.0, 3.5),
          nunca del nivel general por defecto: si el servidor
          dice «vigilar» o «mal» de una pieza, su chip lo dice
          con su píldora, aunque el resto esté bien. */
@@ -637,7 +683,9 @@ function healthCard() {
         continue;
       }
       const chip = n('span', undefined, 'health-chip');
-      chip.append(n('strong', '✓ ' + check.label), n('small', check.dato));
+      const chipTitulo240 = n('strong', check.label);
+      chipTitulo240.dataset.estado = 'aldia';
+      chip.append(chipTitulo240, n('small', check.dato));
       fila.append(chip);
     }
     wrap.append(fila);
@@ -645,7 +693,8 @@ function healthCard() {
   }
   for (const check of health.checks) {
     if (check.state === 'bien') {
-      const okLine = n('p', '✓ ' + check.label + ' — ' + check.dato, 'health-ok-line');
+      const okLine = n('p', check.label + ' — ' + check.dato, 'health-ok-line');
+      okLine.dataset.estado = 'aldia';
       wrap.append(okLine);
       continue;
     }
@@ -660,4 +709,93 @@ function healthCard() {
     wrap.append(problemCard(spec, gesto));
   }
   return wrap;
+}
+/* ===== Detector de duplicados por contenido (2.4.0 · castigo 7) =====
+   El gemelo que la ingesta NO caza: la ingesta descarta el mismo
+   UUID dos veces, pero una misma compra facturada dos veces trae
+   DOS UUID distintos. La regla es exacta, sin falsos positivos
+   por redondeo: mismo emisor (su RFC, carácter a carácter), mismo
+   importe AL CENTAVO (totalCents, entero exacto) y misma fecha
+   (la fecha guardada de la factura, tal cual), con UUID distinto.
+   No es ninguno de los dos detectores de Cumplimiento: aquel caza
+   el folio repetido (emisor + serie + folio) y el «aproximado»
+   (mismo importe a ≤3 días); este es el contenido idéntico en la
+   misma fecha, y su riesgo es de dinero — pagar dos veces la
+   misma compra —, así que se cuenta con el modelo único de
+   problema (problemCard), no como anomalía suelta.
+   Las canceladas quedan FUERA: con el criterio único de la casa,
+   una factura cancelada no se debe ni se cobra, así que un gemelo
+   cancelado no crea riesgo de doble pago; su sitio es la línea de
+   canceladas de Dinero y la Vigilancia. */
+/*DUPLICADOS240-INICIO*/
+function duplicadosContenido240(rows) {
+  const grupos = new Map();
+  for (const row of rows || []) {
+    if (!row || row.kind !== 'I' || !row.id || !row.from?.rfc) continue;
+    if (typeof invoiceStateOf === 'function' && invoiceStateOf(row) === 'Cancelado') continue;
+    const clave = row.from.rfc + '|' + String(row.date || '') + '|' + String(totalCents(row));
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    const grupo = grupos.get(clave);
+    if (!grupo.some(item => item.id === row.id)) grupo.push(row);
+  }
+  const pares = [];
+  for (const filas of grupos.values()) {
+    if (filas.length < 2) continue;
+    pares.push({ emisorRfc: filas[0].from.rfc,
+      emisorNombre: filas[0].from.name || filas[0].from.rfc,
+      fecha: String(filas[0].date || ''), cents: totalCents(filas[0]), filas });
+  }
+  return pares.sort((a, b) => b.fecha.localeCompare(a.fecha) || (b.cents > a.cents ? 1 : -1));
+}
+/* La ficha del hallazgo con la forma exacta del modelo único
+   (nivel, titular de quién es, qué significa, qué pasa ahora y
+   detalle técnico tras el pliegue): problemSpec (data.part) no
+   tiene fuente «duplicado» y data.part queda fuera de esta
+   tanda, así que la ficha se compone aquí y se pinta con el
+   problemCard de siempre — misma tarjeta, mismo semáforo. */
+function duplicadoSpec240(par) {
+  return { level: 'ambar',
+    titulo: 'Posible duplicado del emisor: ' + par.filas.length + ' facturas iguales con folio fiscal distinto',
+    significa: (par.emisorNombre || par.emisorRfc) + ' (' + par.emisorRfc + ') tiene ' + par.filas.length +
+      ' facturas con el mismo importe ($' + centsLabel(par.cents) + ') y la misma fecha (' + dateLabel(par.fecha) +
+      '), pero cada una con su propio folio fiscal (UUID). Podrían ser la misma compra facturada dos veces: ' +
+      'si pagas las dos, pagas dos veces la misma compra.',
+    ahora: 'Tu gesto: revisa las dos fichas con los botones de abajo y, si es la misma compra, paga solo una y avisa a tu contadora de la otra.',
+    detalle: 'Emisor ' + par.emisorRfc + ' · fecha ' + par.fecha + ' · importe $' + centsLabel(par.cents) +
+      ' · UUID: ' + par.filas.map(fila => fila.id).join(' · ') };
+}
+/*DUPLICADOS240-FIN*/
+/* Los botones de evidencia de un par: una «Ver la factura» por
+   gemela, con su folio — cada sospecha enlaza a LAS DOS fichas. */
+function duplicadoAcciones240(par) {
+  const row = n('div', undefined, 'actions');
+  par.filas.forEach((fila, indice) => {
+    const folio = fila.fiscal ? ((fila.fiscal.serie ? fila.fiscal.serie + '-' : '') + (fila.fiscal.folio || '')) : '';
+    const boton = n('button', 'Ver la factura ' + (indice + 1) + (folio ? ' · Folio ' + folio : ''), 'soft small');
+    boton.type = 'button';
+    boton.onclick = () => invoiceDetail(fila);
+    row.append(boton);
+  });
+  return row;
+}
+/* El panel del hallazgo: se calcula de las facturas que la vista
+   ya recibe (invoices con el filtro de contribuyente de siempre,
+   matches). Sin pares no hay panel: la superficie no crece con
+   tarjetas vacías. Con volumen, los tres primeros pares van
+   abiertos y el resto agrupado tras un despliegue, par a par. */
+function duplicadosPanel240() {
+  const pares = duplicadosContenido240(invoices.filter(matches));
+  if (!pares.length) return null;
+  const panelEl = panel('Posibles duplicados',
+    'Facturas del mismo emisor, con el mismo importe al centavo y la misma fecha, pero con folio fiscal (UUID) distinto: ' +
+    'el gemelo que la importación no caza, porque su UUID sí es otro. ' + pares.length + (pares.length === 1 ? ' par sospechoso.' : ' pares sospechosos.'));
+  panelEl.dataset.duplicados240 = String(pares.length);
+  for (const par of pares.slice(0, 3)) panelEl.append(problemCard(duplicadoSpec240(par), duplicadoAcciones240(par)));
+  if (pares.length > 3) {
+    const resto = n('details', undefined, 'seal-details');
+    resto.append(n('summary', 'Ver los demás pares (' + (pares.length - 3) + ')'));
+    for (const par of pares.slice(3)) resto.append(problemCard(duplicadoSpec240(par), duplicadoAcciones240(par)));
+    panelEl.append(resto);
+  }
+  return panelEl;
 }

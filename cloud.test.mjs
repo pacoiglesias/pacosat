@@ -370,7 +370,16 @@ try {
     assert.equal(restored.jobs.length, 3); /* 1.6.10: también se restaura el job de Metadata */
     assert.equal(restored.jobs.find(job => job.periodStart === '2026-10-01').criteriaState, 'agotado');
     assert.equal(restored.jobs.find(job => job.periodStart === '2026-10-08').checks, 1);
-    assert.equal((await bak2Api.call('/api/backup/verify', {})).status, 400);
+    /* 2.9.5 · R2: sin respaldo configurado, la comprobación ya
+       no es un 400 pelado — devuelve su veredicto completo con
+       200 («pendiente de Paco»: falta su contraseña), la forma
+       del ensayo de restauración, para que la tarjeta pinte el
+       motivo en vez de «la respuesta se perdió». */
+    const verifySinConfigurar = await bak2Api.call('/api/backup/verify', {});
+    assert.equal(verifySinConfigurar.status, 200);
+    const verifySinJson = await verifySinConfigurar.json();
+    assert.equal(verifySinJson.ok, false);
+    assert.equal(verifySinJson.pendienteDePaco, true);
   } finally { bak2.close(); }
   console.log('OK: respaldo 1.6.4 con estado operativo (cola, libro 5002, agotados, alertas pendientes), destino secundario cifrado, restauración del estado y prueba de restauración registrada.');
 } finally { bakService.close(); }
@@ -597,8 +606,13 @@ const HIST_ID = '12345678-1234-1234-1234-1234567890AB';
     id: 'pdf:hist', rfc: 'XAXX010101000', kind: 'Factura PDF', date: '2026-10-05', period: '', name: 'factura-octubre.pdf', uuid: HIST_ID }));
   seed.prepare("INSERT INTO jobs(rfc,direction,periodStart,periodEnd,startAt,endAt,requestId,status,imported,due,created,error,checks) VALUES ('XAXX010101000','received','2026-10-01','2026-10-07','2026-10-01 00:00:00','2026-10-07 23:59:59','hist-1','finished',?,'0',?,'',0)")
     .run(JSON.stringify([HIST_ID]), Date.parse('2026-10-08T15:00:00Z'));
-  seed.prepare("INSERT INTO cfdi_watch(id,emitter,receiver,total,seal,next,checked,result,error) VALUES (?,?,?,?,?,0,?,'Vigente','')")
-    .run(HIST_ID, 'AAA010101AAA', 'XAXX010101000', '100.00', '', Date.parse('2026-10-09T15:00:00Z'));
+  /* M-7 (2.3.2): la semilla guarda el JSON REAL que sat-monitor
+     persiste (querySat: state/code/cancellation/cancelable/efos),
+     no el texto 'Vigente' que ninguna vía real escribe — solo así
+     el caso de la historia traducida existe de verdad. */
+  seed.prepare("INSERT INTO cfdi_watch(id,emitter,receiver,total,seal,next,checked,result,error) VALUES (?,?,?,?,?,0,?,?, '')")
+    .run(HIST_ID, 'AAA010101AAA', 'XAXX010101000', '100.00', '', Date.parse('2026-10-09T15:00:00Z'),
+      JSON.stringify({ state: 'Vigente', code: 'S - Comprobante obtenido satisfactoriamente.', cancellation: '', cancelable: 'Cancelable sin aceptación', efos: '' }));
   seed.prepare("INSERT INTO cancellation_alert(id,due,sent) VALUES (?,?,1)").run(HIST_ID, Date.parse('2026-10-10T15:00:00Z'));
   seed.close();
 }
@@ -610,7 +624,8 @@ try {
   const history = await (await histApi.call('/api/invoice-history?id=' + HIST_ID)).json();
   assert.deepEqual(history.events.map(event => event.kind), ['emission', 'download', 'status', 'alert', 'pdf']);
   assert.match(history.events[1].detail, /Periodo 2026-10-01 a 2026-10-07/);
-  assert.equal(history.events[2].detail, 'Vigente');
+  assert.equal(history.events[2].detail, 'Estado: Vigente · Cancelable sin aceptación',
+    'M-7: el JSON guardado se enseña en llano, nunca crudo');
   assert.equal(history.events[3].detail, 'Aviso enviado por correo');
   assert.equal(history.events[4].detail, 'factura-octubre.pdf');
   const empty = await (await histApi.call('/api/invoice-history?id=00000000-0000-0000-0000-000000000000')).json();
@@ -657,7 +672,18 @@ const idOptions = () => ({ dbFile: idFile, origin, proxyKey, html: '<!--PACOSAT_
        el resto intacto tras un reinicio completo sobre el mismo volumen. */
     /* rfcColors (2.0 · tanda 2, pieza 7): el mapa de color por
        RFC viaja en los ajustes servidos; vacío sin asignaciones. */
-    assert.deepEqual(status.settings, { installName: 'Mano Fil · PacoSAT', senderName: 'PacoSAT bMano/b Fil', accent: 'azul', hasLogo: true, rfcColors: {} });
+    /* Forma re-basada en la integración de la 2.4.0 (coordinador):
+       publicSettings sirve además los cuatro ajustes de la versión
+       (modo histórico, resumen semanal, tolerancia de comisión y
+       Constancia/Opinión programadas), con sus valores por defecto
+       de una instalación nueva: histórico apagado, semanal y
+       programadas encendidos, tolerancia 1000 centavos ($10.00). */
+    assert.deepEqual(status.settings, { installName: 'Mano Fil · PacoSAT', senderName: 'PacoSAT bMano/b Fil', accent: 'azul', hasLogo: true, rfcColors: {},
+      historico240: { enabled: false, ventana: '02:00–05:00',
+        explicacion: 'De madrugada (02:00–05:00), PacoSAT pide como máximo una descarga por hora para tapar el mes sin cubrir más antiguo de cada RFC, sin quemar solicitudes del SAT: si el criterio exacto ya se envió, ensancha la ventana un segundo en vez de repetirlo. Si no hay huecos, no pide nada.' },
+      resumenSemanal240: { enabled: true },
+      toleranciaComisionCentavos240: 1000,
+      satdocsProgramadas240: { enabled: true } });
     assert.ok(status.serverStartedAt > 0);
     /* El sello de modificación de la copia lo aporta el servidor (la
        mtime del archivo servido que recibe al crearse el servicio). */

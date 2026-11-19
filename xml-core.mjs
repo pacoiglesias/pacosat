@@ -315,6 +315,302 @@ function withFiscal(row, raw) {
   try { row.fiscal = fiscalSummary(parseCfdiFull(raw)); } catch { /* el registro ligero ya quedó importado */ }
   return row;
 }
+/* ===== CFDI de retenciones, integridad y comparador (2.4.0 · WC3b) =====
+   Ítem 14: un CFDI de retenciones e información de pagos NO es un
+   Comprobante con retenciones dentro: es otro documento, con raíz
+   <retenciones:Retenciones> y su propio esquema (emisor retenedor,
+   receptor contribuyente, periodo, totales y el detalle de impuestos
+   retenidos). Tiene su clasificador, su parser y su tipo propio en el
+   expediente (la tienda 'documents', con clase «CFDI de retenciones»):
+   NO entra en la tienda de comprobantes, porque no tiene UUID, no lo
+   vigila el SAT por la vía de los CFDI y sus importes no son totales
+   de factura — sumarlo a Dinero o a los totales mensuales mezclaría
+   dos documentos distintos. Su identidad es la que el documento
+   trae (folio interno + emisor + periodo + receptor) más la huella
+   SHA-256 del fichero: la deduplicación usa las dos, nunca un UUID
+   inventado. */
+const RETENCIONES_NS = /^http:\/\/www\.sat\.gob\.mx\/esquemas\/retencionpago\/[12]$/;
+const RETENCIONES_CLASE = 'CFDI de retenciones';
+/* Clasificación por la RAÍZ, sin validar el documento entero: es la
+   puerta de la importación (manual, carpeta vigilada, CIEC y paquetes
+   del SAT) para no rechazar un Retenciones como si fuera un
+   Comprobante mal formado ni archivarlo como tal. */
+function clasificaDocumentoXml(raw, Parser = DOMParser) {
+  try {
+    if (!raw.length || raw.length > 8 * MB) return 'otro';
+    const xml = decodeXml(raw);
+    if (/<!DOCTYPE|<!ENTITY/i.test(xml)) return 'otro';
+    const doc = new Parser().parseFromString(xml, 'application/xml');
+    const root = doc.documentElement;
+    if (!root || doc.getElementsByTagName('parsererror').length) return 'otro';
+    if (root.localName === 'Comprobante' && /^http:\/\/www\.sat\.gob\.mx\/cfd\/[34]$/.test(root.namespaceURI)) return 'comprobante';
+    if (root.localName === 'Retenciones' && RETENCIONES_NS.test(root.namespaceURI)) return 'retenciones';
+    return 'otro';
+  } catch { return 'otro'; }
+}
+function parseRetenciones(raw, Parser = DOMParser) {
+  check(raw.length && raw.length <= 8 * MB, 'XML vacío o mayor de 8 MB.');
+  const xml = decodeXml(raw);
+  check(!/<!DOCTYPE|<!ENTITY/i.test(xml), 'El XML contiene declaraciones no admitidas.');
+  const doc = new Parser().parseFromString(xml, 'application/xml');
+  const root = doc.documentElement;
+  check(root.localName === 'Retenciones' && RETENCIONES_NS.test(root.namespaceURI) &&
+    !doc.getElementsByTagName('parsererror').length, 'No es un CFDI de retenciones con estructura XML válida.');
+  const elements = node => Array.from(node?.children || node?.childNodes || []).filter(item => item.nodeType === 1);
+  const child = (node, name) => elements(node).find(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const kids = (node, name) => elements(node).filter(item => item.localName === name && item.namespaceURI === root.namespaceURI);
+  const attr = (node, key, fallback = key) => node?.getAttribute(key) || node?.getAttribute(fallback) || '';
+  const emisorNode = child(root, 'Emisor'), receptorNode = child(root, 'Receptor');
+  const periodoNode = child(root, 'Periodo'), totalesNode = child(root, 'Totales');
+  const from = { rfc: attr(emisorNode, 'RfcEmisor').toUpperCase(), name: attr(emisorNode, 'NomEmisor').slice(0, 300) };
+  /* El receptor cambia entre versiones del esquema: en la 1.0 trae
+     sus datos como atributos propios; en la 2.0 van en el hijo
+     <Nacional> (o <Extranjero>, sin RFC mexicano). Se leen los dos. */
+  const receptorDetalle = child(receptorNode, 'Nacional') || child(receptorNode, 'Extranjero') || receptorNode;
+  const to = { rfc: attr(receptorDetalle, 'RfcReceptor').toUpperCase(), name: attr(receptorDetalle, 'NomReceptor').slice(0, 300) };
+  const fecha = attr(root, 'FechaExp');
+  const periodo = { mesIni: attr(periodoNode, 'MesIni'), mesFin: attr(periodoNode, 'MesFin'), ejercicio: attr(periodoNode, 'Ejercicio') };
+  const totales = { operacion: attr(totalesNode, 'MontoTotOperacion'), gravado: attr(totalesNode, 'MontoTotGrav'),
+    exento: attr(totalesNode, 'MontoTotExent'), retenido: attr(totalesNode, 'MontoTotRet') };
+  check(from.rfc, 'El CFDI de retenciones no trae el RFC del emisor (retenedor).');
+  const fromShape = validateRfc(from.rfc);
+  check(fromShape.level !== 'structure', 'El RFC del emisor del documento de retenciones no es válido. ' + fromShape.error);
+  check(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(fecha), 'La fecha de expedición del documento de retenciones no tiene el formato esperado.');
+  check(/^\d{4}$/.test(periodo.ejercicio), 'El documento de retenciones no trae un ejercicio válido en su periodo.');
+  check(/^\d{1,2}$/.test(periodo.mesIni) && Number(periodo.mesIni) >= 1 && Number(periodo.mesIni) <= 12,
+    'El documento de retenciones no trae un mes inicial válido en su periodo.');
+  check(/^\d{1,2}$/.test(periodo.mesFin) && Number(periodo.mesFin) >= 1 && Number(periodo.mesFin) <= 12,
+    'El documento de retenciones no trae un mes final válido en su periodo.');
+  const importeOk = value => value === '' || /^\d{1,18}(?:\.\d{1,6})?$/.test(value);
+  check(importeOk(totales.operacion) && totales.operacion !== '', 'El documento de retenciones no trae el monto total de la operación.');
+  check(importeOk(totales.retenido) && totales.retenido !== '', 'El documento de retenciones no trae el total de retenciones.');
+  const detalle = kids(root, 'ImpRetenidos').map(item => ({ base: attr(item, 'BaseRet'), impuesto: attr(item, 'Impuesto'),
+    monto: attr(item, 'MontoRet'), tipoPago: attr(item, 'TipoPagoRet') }));
+  const folioInt = attr(root, 'FolioInt');
+  const identidad = [from.rfc, folioInt, periodo.ejercicio, periodo.mesIni, periodo.mesFin, to.rfc].join('|');
+  return { docType: 'retenciones', clase: RETENCIONES_CLASE, version: attr(root, 'Version'), folioInt, fecha,
+    from, to, periodo, totales, detalle, identidad };
+}
+/* La fila del expediente para un CFDI de retenciones: vive en la
+   tienda 'documents' con su clase propia y TODOS los datos parseados
+   dentro (su ficha se pinta de ahí, sin reabrir el XML). El id sale
+   de la identidad y de la huella (determinista: reimportar el mismo
+   fichero da el mismo id), y la deduplicación compara identidad Y
+   huella contra lo ya archivado. */
+function retencionesDocRow(parsed, xmlHash, duenoRfc, origen = '') {
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const mesIni = Number(parsed.periodo.mesIni), mesFin = Number(parsed.periodo.mesFin);
+  const periodoLabel = mesIni === mesFin
+    ? (meses[mesIni - 1] || parsed.periodo.mesIni) + ' ' + parsed.periodo.ejercicio
+    : 'De ' + (meses[mesIni - 1] || parsed.periodo.mesIni) + ' a ' + (meses[mesFin - 1] || parsed.periodo.mesFin) + ' de ' + parsed.periodo.ejercicio;
+  const idSemilla = parsed.identidad + '|' + (xmlHash || '');
+  const id = 'ret:' + crc32(new TextEncoder().encode(idSemilla)).toString(16).padStart(8, '0') + '-' + (xmlHash || 'sin-huella').slice(0, 12);
+  return { id, rfc: duenoRfc, kind: RETENCIONES_CLASE, date: parsed.fecha.slice(0, 10), period: periodoLabel,
+    name: (RETENCIONES_CLASE + ' · ' + (parsed.from.name || parsed.from.rfc) + ' · ' + periodoLabel).slice(0, 180),
+    identidad: parsed.identidad, xmlHash: xmlHash || '', ...(origen ? { origin: origen } : {}),
+    retenciones: { docType: parsed.docType, clase: parsed.clase, version: parsed.version, folioInt: parsed.folioInt,
+      fecha: parsed.fecha, from: parsed.from, to: parsed.to, periodo: parsed.periodo, totales: parsed.totales,
+      detalle: parsed.detalle, identidad: parsed.identidad } };
+}
+function retencionesEsDuplicada(existentes, parsed, xmlHash) {
+  return (existentes || []).some(doc => doc && doc.kind === RETENCIONES_CLASE &&
+    (doc.identidad === parsed.identidad || (xmlHash && doc.xmlHash === xmlHash)));
+}
+/* Cruce del ítem 14: las retenciones que este documento declara se
+   contrastan con las que los CFDI NORMALES del mismo par y periodo
+   traen en su desglose guardado (fiscal.withheld). En el CFDI normal
+   el retenedor es el RECEPTOR y el contribuyente retenido es el
+   EMISOR; en el de retenciones, el emisor es el retenedor y el
+   receptor el contribuyente: el cruce casa emisor↔receptor. Solo se
+   afirma cuando hay CFDI del periodo CON desglose de retenciones;
+   sin eso, el resultado dice «sin cruce posible con lo archivado»
+   en vez de fingir una comparación. */
+function cruceRetenciones(parsed, invoices) {
+  const ejercicio = String(parsed.periodo.ejercicio || '');
+  const meses = new Set();
+  for (let m = Number(parsed.periodo.mesIni); m <= Number(parsed.periodo.mesFin); m++)
+    meses.add(ejercicio + '-' + String(m).padStart(2, '0'));
+  const periodoTxt = ejercicio + '-' + String(parsed.periodo.mesIni).padStart(2, '0') +
+    (parsed.periodo.mesFin !== parsed.periodo.mesIni ? ' a ' + ejercicio + '-' + String(parsed.periodo.mesFin).padStart(2, '0') : '');
+  const candidatos = (invoices || []).filter(row => row && row.from?.rfc === parsed.to.rfc && row.to?.rfc === parsed.from.rfc &&
+    meses.has(String(row.date || '').slice(0, 7)));
+  if (!candidatos.length) return { estado: 'sin-cruce', detalle: [],
+    mensaje: 'Sin cruce posible con lo archivado: no hay CFDI normales de ' + parsed.to.rfc + ' para ' + parsed.from.rfc +
+      ' en el periodo ' + periodoTxt + ' con los que contrastar estas retenciones.' };
+  const conDesglose = candidatos.filter(row => row.fiscal && Array.isArray(row.fiscal.withheld) && row.fiscal.withheld.length);
+  if (!conDesglose.length) return { estado: 'sin-cruce', detalle: [],
+    mensaje: 'Sin cruce posible con lo archivado: hay ' + candidatos.length + ' CFDI normales del periodo ' + periodoTxt +
+      ', pero ninguno trae desglose de retenciones guardado, así que no hay cifras contra las que cruzar.' };
+  const sumaPorImpuesto = (entradas, claveImp, claveImp2, claveMonto) => {
+    const mapa = new Map();
+    for (const e of entradas) { const imp = String(e[claveImp] || e[claveImp2] || ''); if (!imp) continue;
+      mapa.set(imp, (mapa.get(imp) || 0n) + moneyCents(e[claveMonto])); }
+    return mapa;
+  };
+  const enRet = sumaPorImpuesto(parsed.detalle || [], 'impuesto', 'impuesto', 'monto');
+  const enCfdi = sumaPorImpuesto(conDesglose.flatMap(row => row.fiscal.withheld), 'tax', 'impuesto', 'amount');
+  const impuestos = [...new Set([...enRet.keys(), ...enCfdi.keys()])].sort();
+  const detalle = impuestos.map(impuesto => {
+    const a = enRet.get(impuesto), b = enCfdi.get(impuesto);
+    return { impuesto, enRetenciones: a === undefined ? '' : centsATexto240(a), enCfdi: b === undefined ? '' : centsATexto240(b),
+      estado: a !== undefined && b !== undefined && a === b ? 'igual' : 'diferente' };
+  });
+  const cuadra = detalle.every(fila => fila.estado === 'igual');
+  return { estado: cuadra ? 'cuadra' : 'difiere', detalle,
+    mensaje: cuadra
+      ? 'El cruce cuadra: las retenciones de este documento coinciden, impuesto a impuesto, con las que declaran los ' +
+        conDesglose.length + ' CFDI normales del periodo ' + periodoTxt + ' archivados.'
+      : 'El cruce NO cuadra: hay diferencias entre las retenciones de este documento y las que declaran los CFDI normales del periodo ' +
+        periodoTxt + ' archivados (' + conDesglose.length + ' con desglose). El detalle va impuesto a impuesto, con las dos cifras.' };
+}
+function centsATexto240(cents) {
+  const negativo = cents < 0n, absoluto = negativo ? -cents : cents;
+  return (negativo ? '-' : '') + (absoluto / 100n).toString() + '.' + String(absoluto % 100n).padStart(2, '0');
+}
+/* Huella SHA-256 de un fichero (ítem 20): la que se registra al
+   importar y la que se recalcula al abrir la ficha. Asíncrona
+   porque sale de crypto.subtle, la vía que comparten el navegador
+   y Node; sin subtle no hay huella y se devuelve '' (no consta). */
+async function sha256Hex(raw) {
+  try {
+    if (!globalThis.crypto?.subtle) return '';
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', raw);
+    return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+  } catch { return ''; }
+}
+/* Semáforo de integridad del CFDI (ítem 20), con honestidad
+   criptográfica: compone SOLO lo que el árbol puede probar —
+   (1) la estructura (timbre, UUID con formato, sello presente y de
+   longitud de sello RSA, nº de certificado y fechas coherentes),
+   (2) la huella del fichero contra la registrada al importarlo y
+   (3) el estado en el SAT según la vigilancia — y DICE en llano lo
+   que NO verifica: el sello criptográfico del emisor, porque la
+   cadena original oficial del comprobante (la del XSLT del SAT) no
+   se genera en el árbol y el certificado del emisor no viaja en el
+   XML. Verde solo si todo lo comprobable sale bien; ámbar si falta
+   algo no comprobable; rojo si algo comprobable falla. */
+const INTEGRIDAD_NO_VERIFICADO = 'El sello criptográfico del emisor NO se verifica aquí: para comprobarlo haría falta la cadena original ' +
+  'oficial del comprobante (la que genera el XSLT del SAT, que PacoSAT no genera) y el certificado del emisor, que no viaja dentro del XML. ' +
+  'Este semáforo solo afirma lo que sí se puede probar: la estructura, la huella del fichero y el estado en el SAT.';
+function integridadCfdi(full, opciones = {}) {
+  const puntos = [];
+  const fallos = [];
+  if (!full.timbre) fallos.push('no tiene Timbre Fiscal Digital (no está timbrado)');
+  else {
+    if (!UUID.test(String(full.timbre.uuid || '').toUpperCase())) fallos.push('el UUID del timbre no tiene formato válido');
+    const sello = String(full.timbre.selloCfd || '');
+    if (!sello) fallos.push('falta el sello del CFDI en el timbre');
+    else if (!/^[A-Za-z0-9+/]+={0,2}$/.test(sello) || sello.length % 4 !== 0 || sello.length < 200)
+      fallos.push('el sello del CFDI del timbre no tiene la longitud de un sello RSA válido');
+    if (full.fecha && full.timbre.fechaTimbrado && full.timbre.fechaTimbrado < full.fecha)
+      fallos.push('la fecha de timbrado es anterior a la fecha de emisión');
+  }
+  if (!full.noCertificado) fallos.push('falta el número de certificado del emisor');
+  if (!full.sello) fallos.push('falta el sello del comprobante');
+  puntos.push({ nombre: 'Estructura completa', estado: fallos.length ? 'mal' : 'ok',
+    detalle: fallos.length ? 'Falla: ' + fallos.join('; ') + '.'
+      : 'Timbre presente, UUID con formato, sello presente y de longitud válida, número de certificado presente y fechas coherentes.' });
+  const registrada = String(opciones.huellaRegistrada || ''), actual = String(opciones.huellaActual || '');
+  if (!registrada) puntos.push({ nombre: 'Huella del fichero', estado: 'no-consta',
+    detalle: 'Sin huella de importación: no consta. Este XML entró antes de que PacoSAT registrara la huella SHA-256 al importar, así que no hay contra qué comparar el fichero guardado.' });
+  else if (!actual) puntos.push({ nombre: 'Huella del fichero', estado: 'no-consta',
+    detalle: 'No se pudo recalcular la huella SHA-256 del XML guardado en este equipo.' });
+  else if (registrada === actual) puntos.push({ nombre: 'Huella del fichero', estado: 'ok',
+    detalle: 'La huella SHA-256 del XML guardado coincide con la registrada al importarlo: el fichero no cambió desde entonces.' });
+  else puntos.push({ nombre: 'Huella del fichero', estado: 'mal',
+    detalle: 'La huella SHA-256 del XML guardado NO coincide con la registrada al importarlo: el fichero cambió después de importarse.' });
+  const estadoSat = String(opciones.estadoSat || ''), revisado = String(opciones.revisadoEl || '');
+  if (estadoSat === 'Vigente') puntos.push({ nombre: 'Estado en el SAT', estado: 'ok',
+    detalle: 'La vigilancia lo confirma vigente' + (revisado ? ' (revisado el ' + revisado + ')' : '') + '.' });
+  else if (estadoSat === 'Cancelado') puntos.push({ nombre: 'Estado en el SAT', estado: 'mal',
+    detalle: 'La vigilancia lo tiene CANCELADO en el SAT' + (revisado ? ' (revisado el ' + revisado + ')' : '') + ': para el SAT este comprobante ya no existe.' });
+  else if (estadoSat) puntos.push({ nombre: 'Estado en el SAT', estado: 'no-consta',
+    detalle: 'La vigilancia no confirma su estado (su última respuesta fue «' + estadoSat + '»' + (revisado ? ', revisado el ' + revisado : '') + ').' });
+  else puntos.push({ nombre: 'Estado en el SAT', estado: 'no-consta',
+    detalle: 'Aún no se ha revisado en el SAT: su estado no consta.' });
+  const nivel = puntos.some(punto => punto.estado === 'mal') ? 'rojo' :
+    puntos.some(punto => punto.estado === 'no-consta') ? 'ambar' : 'verde';
+  return { nivel, puntos, noVerificado: INTEGRIDAD_NO_VERIFICADO };
+}
+/* Comparador XML ↔ PDF del emisor (ítem 15): extrae del TEXTO del
+   PDF (el que lee el extractor del servidor, el de bank-statement)
+   los campos clave por sus etiquetas y los contrasta con los del
+   XML parseado. Un campo que el PDF no trae legible sale
+   «no-consta», NUNCA como diferencia; una diferencia enseña las
+   dos cifras. Solo se ofrece con el PDF DEL EMISOR archivado: el
+   PDF que PacoSAT diseña sale del mismo XML y compararlo no
+   probaría nada. */
+function dineroEnVentana240(ventana) {
+  const conSigno = /\$\s*(-?[\d,]+\.\d{2})/.exec(ventana);
+  if (conSigno) return conSigno[1].replace(/,/g, '');
+  const suelto = /(-?[\d,]+\.\d{2})/.exec(ventana);
+  return suelto ? suelto[1].replace(/,/g, '') : '';
+}
+function trasEtiqueta240(texto, etiqueta, ventana = 90) {
+  const indice = texto.search(etiqueta);
+  if (indice < 0) return '';
+  return texto.slice(indice, indice + ventana);
+}
+function extraerCamposPdf(textoCrudo) {
+  const texto = String(textoCrudo || '').replace(/\s+/g, ' ');
+  const campos = { uuid: '', folio: '', fecha: '', rfcEmisor: '', rfcReceptor: '', subtotal: '', iva: '', total: '' };
+  const uuidMatch = /\b[0-9A-F]{8}(?:\s*-\s*[0-9A-F]{4}){3}\s*-\s*[0-9A-F]{12}\b/i.exec(texto);
+  if (uuidMatch) campos.uuid = uuidMatch[0].replace(/\s/g, '').toUpperCase();
+  const rfcRe = /[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}/;
+  const ventanaEmisor = trasEtiqueta240(texto, /EMISOR/i, 220);
+  const rfcEmisorMatch = rfcRe.exec(ventanaEmisor.toUpperCase());
+  if (rfcEmisorMatch) campos.rfcEmisor = rfcEmisorMatch[0];
+  const ventanaReceptor = trasEtiqueta240(texto, /RECEPTOR/i, 220);
+  const rfcReceptorMatch = rfcRe.exec(ventanaReceptor.toUpperCase());
+  if (rfcReceptorMatch) campos.rfcReceptor = rfcReceptorMatch[0];
+  const ventanaFolio = trasEtiqueta240(texto, /FOLIO(?!\s+FISCAL)/i, 60);
+  const folioMatch = /FOLIO[:\s]*([A-Z0-9]+(?:-[A-Z0-9]+)?)/i.exec(ventanaFolio);
+  if (folioMatch) campos.folio = folioMatch[1].toUpperCase();
+  if (campos.folio && !campos.folio.includes('-')) {
+    const ventanaSerie = trasEtiqueta240(texto, /SERIE/i, 40);
+    const serieMatch = /SERIE[:\s]*([A-Z0-9]+)/i.exec(ventanaSerie);
+    if (serieMatch) campos.folio = serieMatch[1].toUpperCase() + '-' + campos.folio;
+  }
+  const ventanaFecha = trasEtiqueta240(texto, /FECHA/i, 80) || texto;
+  const isoMatch = /(\d{4})-(\d{2})-(\d{2})/.exec(ventanaFecha);
+  if (isoMatch) campos.fecha = isoMatch[0];
+  else { const dmy = /(\d{2})\/(\d{2})\/(\d{4})/.exec(ventanaFecha);
+    if (dmy) campos.fecha = dmy[3] + '-' + dmy[2] + '-' + dmy[1]; }
+  campos.subtotal = dineroEnVentana240(trasEtiqueta240(texto, /SUBTOTAL/i, 60));
+  /* El total: la primera etiqueta TOTAL que no sea el SUBTOTAL. */
+  for (const match of texto.matchAll(/TOTAL/gi)) {
+    if (/SUB$/i.test(texto.slice(Math.max(0, match.index - 3), match.index))) continue;
+    campos.total = dineroEnVentana240(texto.slice(match.index, match.index + 60));
+    if (campos.total) break;
+  }
+  /* El IVA: la primera mención que no sea de IVA retenido. */
+  for (const match of texto.matchAll(/\bIVA\b/gi)) {
+    const antes = texto.slice(Math.max(0, match.index - 14), match.index);
+    if (/RETEN/i.test(antes)) continue;
+    const valor = dineroEnVentana240(texto.slice(match.index, match.index + 70));
+    if (valor) { campos.iva = valor; break; }
+  }
+  return campos;
+}
+function compararCfdiPdf(full, textoPdf) {
+  const pdf = extraerCamposPdf(textoPdf);
+  let ivaXmlCents = 0n, hayIva = false;
+  for (const t of full.impuestos?.traslados || []) if (t.impuesto === '002') { hayIva = true; ivaXmlCents += moneyCents(t.importe); }
+  const folioXml = [full.serie, full.folio].filter(Boolean).join('-');
+  const definiciones = [
+    { campo: 'UUID', xml: full.timbre?.uuid || '', pdf: pdf.uuid, iguales: (a, b) => a.toUpperCase() === b.toUpperCase() },
+    { campo: 'Folio (serie-folio)', xml: folioXml, pdf: pdf.folio,
+      iguales: (a, b) => a.toUpperCase() === b.toUpperCase() || b.toUpperCase() === String(full.folio || '').toUpperCase() },
+    { campo: 'Fecha de emisión', xml: String(full.fecha || '').slice(0, 10), pdf: pdf.fecha, iguales: (a, b) => a === b },
+    { campo: 'RFC del emisor', xml: full.emisor?.rfc || '', pdf: pdf.rfcEmisor, iguales: (a, b) => a.toUpperCase() === b.toUpperCase() },
+    { campo: 'RFC del receptor', xml: full.receptor?.rfc || '', pdf: pdf.rfcReceptor, iguales: (a, b) => a.toUpperCase() === b.toUpperCase() },
+    { campo: 'Subtotal', xml: full.subTotal || '', pdf: pdf.subtotal, iguales: (a, b) => moneyCents(a) === moneyCents(b) },
+    { campo: 'IVA', xml: hayIva ? centsATexto240(ivaXmlCents) : '', pdf: pdf.iva, iguales: (a, b) => moneyCents(a) === moneyCents(b) },
+    { campo: 'Total', xml: full.total || '', pdf: pdf.total, iguales: (a, b) => moneyCents(a) === moneyCents(b) }
+  ];
+  return definiciones.map(def => ({ campo: def.campo, xml: def.xml, pdf: def.pdf,
+    estado: !def.pdf || !def.xml ? 'no-consta' : def.iguales(def.xml, def.pdf) ? 'igual' : 'diferente' }));
+}
 function moneyCents(value) {
   const match = /^(-?)(\d+)(?:\.(\d{1,2}))?$/.exec(String(value ?? '').trim());
   if (!match) return 0n;
@@ -324,13 +620,17 @@ function moneyCents(value) {
 /* IVA (impuesto 002) de un CFDI con desglose: importe y base, en
    centavos. Sin desglose devuelve null: jamás se estima a ojo. */
 function invoiceIvaCents(row) {
-  if (!row.fiscal) return null;
+  /* 2.9.13: un CFDI puede traer «fiscal» sin el arreglo de
+     traslados (sin desglose): eso es «sin desglose» (null),
+     nunca un estallido — la tira de totales y el visor llaman
+     a estas dos sobre TODAS las filas visibles. */
+  if (!row.fiscal || !Array.isArray(row.fiscal.transferred)) return null;
   let cents = 0n;
   for (const t of row.fiscal.transferred) if (t.tax === '002') cents += moneyCents(t.amount);
   return cents;
 }
 function invoiceIvaBaseCents(row) {
-  if (!row.fiscal) return null;
+  if (!row.fiscal || !Array.isArray(row.fiscal.transferred)) return null;
   let cents = 0n;
   for (const t of row.fiscal.transferred) if (t.tax === '002') cents += moneyCents(t.base);
   return cents;
@@ -577,7 +877,7 @@ function problemSpec(source, info = {}) {
       'La sesión se intentó abrir, pero el portal no dejó pasar la firma de este RFC.',
       'Revisa el detalle; si se repite, comprueba en el SAT que la e.firma de este RFC siga vigente.');
     if (kind === 'paso-interactivo') return spec('ambar', 'El portal del SAT cambió su página',
-      'La sesión se abrió y firmó bien, pero el portal enseñó una página distinta de la que PacoSAT sabe usar, y ' + que + ' no bajó.',
+      'La sesión se abrió y firmó bien, pero el portal enseñó una página distinta de la que PacoSAT sabe leer, y la bajada no se completó. Es un cambio del portal: no es un error tuyo ni de tu e.firma.',
       'Mientras PacoSAT se actualiza para esa página, el documento se puede subir a mano y queda archivado y vigilado igual.', 'subir-doc');
     if (kind === 'navegador-no-disponible') return spec('ambar', 'Falta una pieza de PacoSAT',
       'El navegador interno que habla con el portal no está disponible en esta instalación, así que la descarga automática no puede correr.',
@@ -585,9 +885,9 @@ function problemSpec(source, info = {}) {
     if (kind === 'documento-invalido') return spec('ambar', 'Lo que bajó del portal no era un PDF válido',
       'El portal entregó algo que no se pudo archivar; no se guardó nada.',
       'Inténtalo de nuevo: suele ser un fallo pasajero del portal.');
-    if (kind === 'respuesta-inesperada') return spec('ambar', 'El portal respondió algo que PacoSAT no esperaba',
-      'El trámite no enseñó la pantalla que PacoSAT conoce, y ' + que + ' no bajó.',
-      'Inténtalo de nuevo en un rato; si se repite, el diario de la corrida guarda la página para actualizar PacoSAT.');
+    if (kind === 'respuesta-inesperada') return spec('ambar', 'El portal del SAT enseñó una pantalla distinta',
+      'El trámite llegó a una pantalla que PacoSAT aún no sabe leer, y la bajada no se completó. Es un cambio del portal, no un error tuyo ni de tu e.firma.',
+      'Por tu parte, nada urgente: inténtalo de nuevo en un rato; si se repite, el diario de la corrida guarda la página del momento para que PacoSAT aprenda a leerla.');
     return spec('ambar', source === 'decl' ? 'La recuperación no terminó' : 'La descarga no terminó',
       'El trámite con el portal del SAT se detuvo antes de terminar.', 'Inténtalo de nuevo en un rato; el detalle técnico queda en el diario.');
   }
@@ -615,9 +915,9 @@ function problemSpec(source, info = {}) {
     if (kind === 'navegador-no-disponible') return spec('ambar', 'Falta una pieza de PacoSAT',
       'El navegador interno que habla con el portal no está disponible en esta instalación.',
       'La descarga por CIEC volverá cuando la pieza esté instalada.');
-    if (kind === 'respuesta-inesperada') return spec('ambar', 'El portal cambió algo que PacoSAT no esperaba',
-      'El portal no enseñó la pantalla que PacoSAT conoce y la descarga se detuvo.',
-      'El diario de la corrida guarda la foto y la página del momento para actualizar PacoSAT.');
+    if (kind === 'respuesta-inesperada') return spec('ambar', 'El portal del SAT enseñó una pantalla distinta',
+      'El portal no enseñó la pantalla que PacoSAT sabe leer y la descarga se detuvo. Es un cambio del portal, no un error tuyo ni de tu contraseña.',
+      'El diario de la corrida guarda la foto y la página del momento para que PacoSAT aprenda a leerla.');
     return spec('ambar', 'La descarga por CIEC no terminó',
       'La descarga se detuvo antes de terminar.', 'Inténtalo de nuevo en un rato; el detalle técnico queda en el diario de la corrida.');
   }
@@ -688,7 +988,14 @@ function problemSpec(source, info = {}) {
    persiste (sin tocar motores). `phases` = [{label, match:[...]}]
    en orden; `steps` = [{text}]; `outcome` = 'running' | 'ok' |
    'failed'. Una fase alcanzada es la última con pasos; las de
-   «⚠ …» marcan aviso en su fase sin cambiar el estado. Con la
+   «⚠ …» marcan aviso en su fase sin cambiar el estado.
+   MARCADOR INTERNO (2.4.0 · W5b3): el prefijo «⚠» NO es un glifo
+   pintado: es la marca que el motor CIEC (sat-ciec.mjs) escribe en
+   el texto de sus pasos y que las corridas ya guardadas traen; este
+   detector la lee tal cual. Migrar el pintado — satDocStepList
+   (satdocs-ui.part) enseña esos pasos con el icono de la familia y
+   el texto limpio — sin tocar el marcador ni este detector: cambiar
+   la marca exigiría cambiar el motor y reescribir el historial. Con la
    corrida en orden ('ok') todas las fases quedan hechas — la
    tubería terminó aunque una fase no dejara paso escrito (p. ej.
    el captcha que el portal no pidió). */
@@ -754,4 +1061,4 @@ function downloadSummaryText(name, rfc, direction, start, end) {
   return 'Se pedirá al SAT: ' + (name ? name + ' (' + rfc + ')' : rfc) + ' · ' + sentido + ' · ' + rango;
 }
 
-export { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc, problemSpec, runPhaseStates, downloadShortcutRange, downloadSummaryText };
+export { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc, problemSpec, runPhaseStates, downloadShortcutRange, downloadSummaryText, clasificaDocumentoXml, parseRetenciones, retencionesDocRow, retencionesEsDuplicada, cruceRetenciones, sha256Hex, integridadCfdi, extraerCamposPdf, compararCfdiPdf };

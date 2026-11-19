@@ -19,7 +19,10 @@ async function satQuickRunDoc(kind, rfc, button, line) {
     try {
       const fresh = await satApi('satdocs');
       const profile = fresh.profiles.find(item => item.rfc === rfc);
-      if (profile?.progress?.running && profile.progress.step) line.textContent = '⏳ ' + profile.progress.step;
+      if (profile?.progress?.running && profile.progress.step) {
+        line.dataset.estado = 'encurso';
+        line.textContent = profile.progress.step;
+      }
     } catch { /* un fallo de sondeo no tumba la descarga */ }
   }, 2500);
   try {
@@ -31,7 +34,7 @@ async function satQuickRunDoc(kind, rfc, button, line) {
       'El portal no entregó el documento: el intento quedó registrado en Documentos.',
       data.results?.[kind]?.ok ? 'ok' : 'error');
   } catch (error) { toast(error.message, 'error'); }
-  finally { clearInterval(poller); button.disabled = false; }
+  finally { clearInterval(poller); delete line.dataset.estado; button.disabled = false; }
 }
 /* Las cuatro tarjetas de Documentos (1.18.0): Constancia ·
    Opinión · CFDI · Declaraciones clavadas encima de los
@@ -131,17 +134,366 @@ function satDocPapelDialog(rfc, fill, file) {
       fill(data);
     }, 'Archivar papel');
 }
+/* ===== Tarjetas protagonistas de Documentos (2.4.0 · W3b) =====
+   Decisión de Paco (17 nov 2026, 15:16): la Constancia NO lleva
+   pantalla propia; entra como TARJETA PROTAGONISTA arriba del
+   todo de Documentos, con la copia archivada y SU FECHA bien
+   visible y el botón «Bajar la de hoy» en un toque; la Opinión
+   de cumplimiento recibe el mismo trato, al lado. Nada de
+   destino nuevo en el menú. Las tarjetas viven al frente de la
+   sección del SAT —la primera pieza de la vista Documentos—,
+   antes de sus tarjetas por contribuyente y del listado del
+   expediente. Reutilizan la vía de siempre, probada desde el
+   13 nov por ruta de servidor (sin ejecutor): la lectura
+   satApi('satdocs') —cuyo perfil trae, por clase, issuedAt,
+   ageDays, level, source, fileId y, en la Opinión, sentido y
+   vigencia leídos del propio documento archivado— y la bajada
+   satApi('satdocs/run', { rfc, kind }) de satQuickRunDoc y del
+   botón «Descargar ahora» de esta misma sección. */
+function docHeroFecha240(value) {
+  const fecha = new Date(value);
+  if (!Number.isFinite(fecha.getTime())) return '';
+  return fecha.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+}
+async function docHeroRun240(kind, profile, button, line, repaint) {
+  const nombre = kind === 'opinion' ? 'Opinión' : 'Constancia';
+  button.disabled = true;
+  line.textContent = 'Descargando del portal…';
+  /* Progreso visible en la propia tarjeta, como en el resto de
+     Documentos: se sondea el estado de la corrida del servidor
+     y su paso actual se pinta en la línea de la tarjeta. */
+  const poller = setInterval(async () => {
+    try {
+      const fresh = await satApi('satdocs');
+      const item = (fresh.profiles || []).find(row => row.rfc === profile.rfc);
+      if (item?.progress?.running && item.progress.kind === kind && item.progress.step) {
+        line.dataset.estado = 'encurso';
+        line.textContent = item.progress.step;
+      }
+    } catch { /* un fallo de sondeo no tumba la descarga */ }
+  }, 2500);
+  try {
+    const data = await satApi('satdocs/run', { rfc: profile.rfc, kind });
+    toast(data.results?.[kind]?.ok ?
+      nombre + ' de hoy descargada y archivada: su fecha nueva ya está en la tarjeta.' :
+      'El portal no entregó el documento: el porqué queda en su tarjeta.',
+      data.results?.[kind]?.ok ? 'ok' : 'error');
+    /* La copia nueva sustituye a la archivada en la tarjeta al
+       momento: la sección entera se repinta con la respuesta
+       del servidor, que ya trae la fecha nueva. */
+    if (typeof repaint === 'function') await repaint(data);
+  } catch (error) {
+    toast(error.message, 'error');
+    if (typeof repaint === 'function') await repaint().catch(() => {});
+  } finally { clearInterval(poller); delete line.dataset.estado; }
+}
+/* La fecha de vigencia tal como el documento la trae
+   («15 de enero de 2027», ISO o DD/MM/AAAA) como instante, o
+   null si no se reconoce: la barra de vigencia solo se
+   dibuja con fechas reales, nunca con una inventada. */
+function docVigenciaFecha2913(texto) {
+  const t = String(texto || '').trim();
+  if (!t) return null;
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).getTime();
+  m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(t);
+  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1])).getTime();
+  m = /^(\d{1,2}) de ([a-záéíóú]+) de (\d{4})/i.exec(t);
+  if (m) {
+    const meses = { enero: 0, febrero: 1, marzo: 2, abril: 3, mayo: 4, junio: 5, julio: 6,
+      agosto: 7, septiembre: 8, setiembre: 8, octubre: 9, noviembre: 10, diciembre: 11 };
+    const mes = meses[m[2].toLowerCase()];
+    if (mes !== undefined) return new Date(Number(m[3]), mes, Number(m[1])).getTime();
+  }
+  return null;
+}
+function docHeroCard240(kind, profile, repaint) {
+  const esOpinion = kind === 'opinion';
+  const nombre = esOpinion ? 'Opinión de cumplimiento' : 'Constancia de situación fiscal';
+  const doc = profile?.[kind] || null;
+  const corriendo = Boolean(profile?.progress?.running && profile.progress.kind === kind);
+  const level = corriendo ? 'ambar' : !doc ? 'ambar' :
+    doc.level === 'ok' ? 'ok' : doc.level === 'warn' ? 'ambar' : 'rojo';
+  const card = n('article', undefined, 'cmd-card doc-hero240');
+  card.dataset.level = level;
+  card.dataset.hero240 = kind;
+  /* Miniatura real de la primera página (2.4.0 · WC3a, pieza
+     16): la que el servidor genera una vez y cachea por huella
+     del fichero (thumbs200g). Se pide SOLO al pintar esta
+     tarjeta — nada de generar las de todo el expediente al
+     abrir la vista — y va con el ancho contenido de la casa
+     (54), sin deformar la tarjeta ni el listado en móvil. Si
+     el PDF no se puede renderizar, la tarjeta queda como
+     siempre: ningún hueco ni icono falso en su lugar. */
+  if (doc?.fileId && typeof satToken !== 'undefined' && satToken) {
+    const thumbSlot = n('div', undefined, 'doc-hero-thumb240');
+    fetch('/api/miniatura200g?id=' + encodeURIComponent(doc.fileId), { headers: { 'X-PacoSAT-Token': satToken } })
+      .then(r => r.ok ? r.blob() : null).then(blob => {
+        if (!blob || !thumbSlot.isConnected) return;
+        const img = n('img');
+        img.alt = 'Primera página de la ' + (esOpinion ? 'Opinión' : 'Constancia');
+        img.width = 54;
+        img.src = URL.createObjectURL(blob);
+        thumbSlot.append(img);
+      }).catch(() => {});
+    card.append(thumbSlot);
+  }
+  const head = n('div', undefined, 'tramite-head');
+  head.append(icon(esOpinion ? 'opinion' : 'constancia'), n('strong', nombre),
+    statusPill(level === 'ok' ? 'ok' : level === 'rojo' ? 'bad' : 'warn',
+      corriendo ? 'Bajando ahora…' : !doc ? 'Sin archivar' :
+        doc.level === 'ok' ? 'Reciente' : doc.level === 'warn' ? 'Conviene renovarla' : 'Muy vieja'));
+  card.append(head, n('p', 'De ' + profile.rfc, 'tramite-detalle'));
+  /* La fecha de la copia archivada, EN GRANDE: el bloque
+     protagonista de la casa (total-hero) con la fecha en
+     lenguaje llano — «del 12 de noviembre de 2026» — o el
+     estado honesto cuando aún no hay copia. */
+  const hero = n('div', undefined, 'total-hero');
+  hero.append(n('span', doc ? 'La copia que tienes archivada es' : 'Copia archivada', 'tramite-detalle'));
+  hero.append(n('strong', doc ? 'del ' + docHeroFecha240(doc.issuedAt) : 'Aún no tienes una archivada',
+    'doc-hero-fecha240'));
+  card.append(hero);
+  if (doc) card.append(n('p',
+    (doc.ageDays === 0 ? 'Llegó hoy' : doc.ageDays === 1 ? 'Hace 1 día' : 'Hace ' + doc.ageDays + ' días') +
+    (doc.source === 'manual' ? ' · subida a mano' : ' · bajada del portal del SAT'), 'cmd-last'));
+  /* (2.9.13 · mejora 15) La vigencia como BARRA: en la
+     Opinión, el tiempo que queda hasta la fecha que el
+     propio documento trae; en la Constancia (que no caduca),
+     la frescura de la copia contra la política de recencia
+     de la casa (60/90 días, la de docLevel). Sin fecha
+     reconocible no se dibuja barra: no se inventa. */
+  if (doc) {
+    let pct2913 = null, leyenda2913 = '';
+    const vence2913 = esOpinion ? docVigenciaFecha2913(doc.vigencia) : null;
+    const emitida2913 = new Date(doc.issuedAt).getTime();
+    if (vence2913 && Number.isFinite(emitida2913) && vence2913 > emitida2913) {
+      const queda2913 = vence2913 - Date.now();
+      pct2913 = Math.max(0, Math.min(100, queda2913 / (vence2913 - emitida2913) * 100));
+      leyenda2913 = queda2913 > 0
+        ? 'Vigencia: quedan ' + Math.ceil(queda2913 / 86400000) + ' días de los ' +
+          Math.round((vence2913 - emitida2913) / 86400000) + ' del documento.'
+        : 'Vigencia cumplida: el documento ya pasó su fecha.';
+    } else if (Number.isFinite(doc.ageDays)) {
+      pct2913 = Math.max(0, Math.min(100, 100 - doc.ageDays / 90 * 100));
+      leyenda2913 = 'Frescura de la copia (política de la casa): reciente hasta los 60 días; ' +
+        'entre 60 y 90 conviene renovarla; después se considera vieja. La constancia no caduca.';
+    }
+    if (pct2913 !== null) {
+      const barra2913 = n('div', undefined, 'doc-hero-barra2913');
+      const relleno2913 = n('div', undefined, 'doc-hero-barra-fill2913');
+      relleno2913.style.width = pct2913.toFixed(0) + '%';
+      relleno2913.dataset.level = level;
+      barra2913.append(relleno2913);
+      card.append(barra2913, n('p', leyenda2913, 'cmd-last'));
+    }
+  }
+  if (esOpinion) {
+    if (doc?.sentido) {
+      const fila = n('p', undefined, 'cmd-last');
+      fila.append(statusPill(doc.sentido === 'negativa' ? 'bad' : 'ok',
+        'Sentido: ' + doc.sentido.toUpperCase(), undefined, undefined, true));
+      if (doc.vigencia) fila.append(n('span', ' · vigente hasta el ' + doc.vigencia));
+      card.append(fila);
+    } else if (doc) {
+      /* El sentido sale del texto del propio documento al
+         archivarlo; si ahí no consta, no se inventa. */
+      card.append(n('p', 'Su sentido no consta en la copia archivada: ábrela con «Ver» para leerlo.', 'cmd-last'));
+    } else {
+      card.append(n('p', 'Bájala para ver su sentido: al archivarla, su sentido queda a la vista en esta tarjeta.', 'cmd-last'));
+    }
+  }
+  const line = n('span', corriendo && profile.progress.step ? profile.progress.step : '',
+    'muted doc-hero-linea240');
+  if (corriendo && profile.progress.step) line.dataset.estado = 'encurso';
+  const acts = n('div', undefined, 'cmd-actions');
+  const bajar = n('button', 'Bajar la de hoy', 'primary');
+  bajar.type = 'button';
+  bajar.disabled = corriendo;
+  bajar.onclick = () => docHeroRun240(kind, profile, bajar, line, repaint);
+  acts.append(bajar);
+  if (doc?.fileId) {
+    const ver = n('button', 'Ver', 'soft');
+    ver.type = 'button';
+    ver.title = 'Ver la copia archivada dentro de PacoSAT';
+    ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: profile.rfc,
+      kind: esOpinion ? 'Opinión de cumplimiento' : 'Constancia / CIF',
+      name: nombre + ' · ' + profile.rfc + '.pdf' });
+    const descargar = n('button', 'Descargar', 'soft');
+    descargar.type = 'button';
+    descargar.title = 'Descargar la copia archivada';
+    descargar.onclick = () => downloadDocOnline({ id: doc.fileId, name: nombre + ' · ' + profile.rfc + '.pdf' });
+    acts.append(ver, descargar);
+    /* «Enviar» junto a «Descargar» (2.4.0 · W4a): la copia
+       archivada es un documento del expediente — su fileId ES
+       el id de su entrada en documents —, así que su correo
+       va por la clase «documento» del conjunto cerrado. */
+    if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+      acts.append(enviarBoton240({
+        nombre: nombre + ' · ' + profile.rfc + '.pdf',
+        asunto: 'PacoSAT · ' + nombre + ' · ' + profile.rfc,
+        correo: { clase: 'documento', id: doc.fileId },
+        archivo: () => enviarBlobDocumento240({ id: doc.fileId, name: nombre + ' · ' + profile.rfc + '.pdf' }) }));
+  }
+  acts.append(line);
+  card.append(acts);
+  /* Si la última bajada de ESTA clase falló, el porqué vive en
+     la tarjeta con el modelo único de problema (semáforo, de
+     quién es —SAT o sistema—, qué significa y el gesto, o que
+     se reintenta solo): sale del progreso persistido y del
+     último fallo que la lectura ya trae, no de un texto nuevo. */
+  if (!corriendo && profile?.progress?.kind === kind && profile.progress?.ok === false)
+    card.append(problemCard(problemSpec('satdoc',
+      { kind: profile.lastFailure?.kind || '', error: profile.lastFailure?.error || profile.progress.step || '' }), null));
+  return card;
+}
+/* ===== Paquete para el banco y buscar dentro (2.4.0 · WC3a) =====
+   Pieza 19: junto a las tarjetas protagonistas, una tarjeta por
+   contribuyente visible con el botón «Paquete para el banco»:
+   el servidor compone el ZIP (Constancia archivada + Opinión
+   archivada + última declaración anual archivada) desde las
+   referencias internas y la tarjeta enseña ANTES qué piezas
+   constan y cuáles faltan — si falta alguna, el ZIP lleva las
+   que hay y su NOTA.txt lo dice; si no hay ninguna, el botón
+   se apaga y la tarjeta lo cuenta, sin generar un ZIP vacío.
+   Su «Enviar» va por la clase «paquete-banco» del conjunto
+   cerrado de /api/enviar, con el mismo ZIP de adjunto.
+   Pieza 17: el panel «Buscar dentro de los documentos» busca
+   en el nombre Y en el texto de los PDF del expediente; cada
+   resultado dice dónde pegó y se abre con «Ver». */
+function docBancoCard240(profile) {
+  const card = n('article', undefined, 'cmd-card doc-banco240');
+  card.dataset.banco240 = profile.rfc;
+  const head = n('div', undefined, 'tramite-head');
+  head.append(icon('bank'), n('strong', 'Paquete para el banco'));
+  card.append(head, n('p', 'De ' + profile.rfc + ' · Constancia, Opinión y última declaración anual archivadas, en un solo ZIP listo para el banco.', 'tramite-detalle'));
+  const line = n('p', 'Revisando qué piezas constan archivadas…', 'muted doc-banco-linea240');
+  card.append(line);
+  const acts = n('div', undefined, 'cmd-actions');
+  const esInvitado = typeof guestMode !== 'undefined' && guestMode;
+  const generar = n('button', 'Generar paquete', 'primary');
+  generar.type = 'button';
+  generar.disabled = true;
+  generar.onclick = async () => {
+    generar.disabled = true;
+    line.textContent = 'Componiendo el paquete…';
+    try {
+      const data = await satApi('paquete-banco240', { rfc: profile.rfc });
+      download(new Blob([decode64(data.content)], { type: 'application/zip' }), data.name);
+      line.textContent = 'Paquete generado y descargado: ' + (data.incluidas || []).join('; ') +
+        ((data.faltan || []).length ? '. No consta archivado: ' + data.faltan.join('; ') + ' — la nota dentro del ZIP lo dice.' : '.');
+      toast('Paquete para el banco de ' + profile.rfc + ' descargado.', 'ok');
+    } catch (error) {
+      line.textContent = 'El paquete no se generó: ' + error.message;
+      toast(error.message, 'error');
+    } finally { generar.disabled = false; }
+  };
+  if (!esInvitado) acts.append(generar);
+  card.append(acts);
+  if (typeof satToken !== 'undefined' && satToken) {
+    satApi('paquete-banco240?rfc=' + encodeURIComponent(profile.rfc)).then(data => {
+      if (!card.isConnected || !data?.piezas) return;
+      const p = data.piezas;
+      const lleva = [], falta = [];
+      if (p.constancia?.hay) lleva.push('Constancia (del ' + p.constancia.fecha + ')'); else falta.push('Constancia');
+      if (p.opinion?.hay) lleva.push('Opinión (del ' + p.opinion.fecha + ')'); else falta.push('Opinión');
+      if (p.anual?.hay) lleva.push('Anual ' + p.anual.ejercicio + (p.anual.esAcuse ? ' (su acuse)' : '')); else falta.push('declaración anual');
+      if (!data.alguna) {
+        line.textContent = 'Aún no hay ninguna pieza archivada de este RFC: baja la Constancia y la Opinión con sus tarjetas de arriba, y el paquete se podrá generar.';
+        return;
+      }
+      line.textContent = 'Lleva: ' + lleva.join(' · ') + (falta.length ? '. Falta: ' + falta.join(' · ') + ' — el ZIP sale con lo que hay y su nota lo dice.' : '.');
+      generar.disabled = false;
+      if (!esInvitado && typeof enviarBoton240 === 'function')
+        acts.append(enviarBoton240({
+          nombre: 'Paquete para el banco · ' + profile.rfc,
+          asunto: 'PacoSAT · Paquete para el banco · ' + profile.rfc,
+          correo: { clase: 'paquete-banco', rfc: profile.rfc },
+          archivo: () => enviarBlobSalida240('paquete-banco240', { rfc: profile.rfc }) }));
+    }).catch(() => {
+      if (!card.isConnected) return;
+      line.textContent = 'No se pudo revisar el expediente: el paquete se puede intentar igualmente; el servidor dirá qué piezas constan.';
+      generar.disabled = false;
+    });
+  }
+  return card;
+}
+function docBuscarPanel240() {
+  const wrap = panel('Buscar dentro de los documentos',
+    'Busca en el nombre y en el TEXTO de los PDF archivados: cada resultado dice dónde pegó y, si pegó en el texto, enseña el fragmento que contiene la frase.');
+  const fila = n('div', undefined, 'filters');
+  const entrada = input('search', { placeholder: 'Una frase del documento: «total a pagar», «cláusula»…', 'aria-label': 'Buscar dentro de los documentos' });
+  const boton = n('button', 'Buscar', 'primary');
+  boton.type = 'button';
+  const estado = n('p', '', 'muted');
+  const resultados = n('div');
+  const buscar = async () => {
+    const q = entrada.value.trim();
+    if (q.length < 3) { estado.textContent = 'Escribe al menos 3 letras para buscar.'; return; }
+    boton.disabled = true;
+    estado.textContent = 'Buscando en los documentos…';
+    resultados.replaceChildren();
+    try {
+      const data = await satApi('buscar-contenido240?q=' + encodeURIComponent(q) +
+        (typeof scope !== 'undefined' && scope ? '&rfc=' + encodeURIComponent(scope) : ''));
+      const lista = data.resultados || [];
+      const notas = [];
+      if (data.indexadosAhora) notas.push('se leyó el texto de ' + data.indexadosAhora + ' documento(s) por primera vez' +
+        (data.pendientes ? '; quedan ' + data.pendientes + ' por leer: busca otra vez para completar' : ''));
+      if (!lista.length) notas.push('ningún documento archivado trae esa frase en su nombre ni en su texto');
+      estado.textContent = notas.length ? 'Sin resultados: ' + notas.join(' — ') + '.' :
+        lista.length + (lista.length === 1 ? ' resultado' : ' resultados') + '.';
+      if (lista.length && notas.length) estado.textContent = lista.length + ' resultado(s) — ' + notas.join(' — ') + '.';
+      for (const r of lista) {
+        const filaR = n('div', undefined, 'cp-row doc-buscar-fila240');
+        const main = n('div', undefined, 'cp-main');
+        main.append(n('strong', (r.kind ? r.kind + ' · ' : '') + (r.name || 'Documento')),
+          n('span', (r.rfc || '') + (r.date ? ' · ' + dateLabel(r.date) : ''), 'muted'));
+        if (r.donde === 'texto' && r.fragmento)
+          main.append(n('span', 'En el texto: «' + r.fragmento + '»', 'doc-buscar-frag240'));
+        filaR.append(main, statusPill(r.donde === 'texto' ? 'ok' : 'dim',
+          r.donde === 'texto' ? 'Pegó en el texto' : 'Pegó en el nombre'));
+        const ver = n('button', 'Ver', 'soft small');
+        ver.type = 'button';
+        ver.onclick = () => viewDocOnline({ id: r.id, rfc: r.rfc, kind: r.kind, name: r.name });
+        filaR.append(ver);
+        resultados.append(filaR);
+      }
+    } catch (error) {
+      estado.textContent = 'La búsqueda no salió: ' + error.message;
+    } finally { boton.disabled = false; }
+  };
+  boton.onclick = buscar;
+  entrada.onkeydown = event => { if (event?.key === 'Enter') buscar(); };
+  fila.append(entrada, boton);
+  wrap.append(fila, estado, resultados);
+  return wrap;
+}
 function satDocsSection() {
   const section = panel('Constancias y opinión del SAT',
     'Vigencia y renovación de tu constancia y tu opinión, por contribuyente.');
   /* Ancla de «Ver los últimos» de las tarjetas del Centro SAT (1.29.2). */
   section.id = 'satdocs-section';
+  /* W3b (2.4.0): las dos tarjetas protagonistas abren la vista
+     Documentos — van en su propio contenedor, ANTES del cuerpo
+     de la sección, para que el repintado del cuerpo (fill) no
+     las arrastre y queden siempre encima del listado. */
+  const heroBox = n('div', undefined, 'cmd-grid doc-hero-grid240');
+  section.append(heroBox);
+  /* WC3a (2.4.0): junto a las protagonistas — el paquete para
+     el banco de cada contribuyente visible y el buscar dentro
+     de los documentos — en sus propios contenedores, para que
+     el repintado del cuerpo (fill) no los arrastre. */
+  const bancoBox = n('div', undefined, 'cmd-grid doc-banco-grid240');
+  section.append(bancoBox);
+  section.append(docBuscarPanel240());
   const body = n('div');
   section.append(body);
   const fill = async data => {
     const view = data || await satApi('satdocs');
     body.replaceChildren();
     if (!view.profiles.length) {
+      heroBox.replaceChildren();
+      bancoBox.replaceChildren();
       body.append(n('p', 'Aún no hay RFC dados de alta: agrega el primero en Ajustes › Contribuyentes y sus documentos se vigilarán aquí.', 'empty'));
       return;
     }
@@ -153,9 +505,21 @@ function satDocsSection() {
        para marcar la vigente y dejar las anteriores con su fecha. */
     const versiones = satDocVersiones();
     if (!visibles.length) {
+      heroBox.replaceChildren();
+      bancoBox.replaceChildren();
       body.append(n('p', 'El contribuyente elegido no tiene documentos del SAT vigilados todavía.', 'empty'));
       return;
     }
+    /* W3b (2.4.0): las protagonistas de cada contribuyente
+       visible — Constancia y Opinión, lado a lado (en móvil se
+       apilan por la rejilla de siempre) — encima de todo lo
+       demás de la sección y del listado del expediente. */
+    heroBox.replaceChildren(...visibles.flatMap(profile => [
+      docHeroCard240('constancia', profile, fill),
+      docHeroCard240('opinion', profile, fill)]));
+    /* WC3a (2.4.0): el paquete para el banco, junto a las
+       protagonistas, una tarjeta por contribuyente visible. */
+    bancoBox.replaceChildren(...visibles.map(profile => docBancoCard240(profile)));
     for (const profile of visibles) {
       const card = n('article', undefined, 'sat-card');
       const head = n('div', undefined, 'sat-card-head');
@@ -231,26 +595,64 @@ function satDocsSection() {
         if (grupo.length < 2) continue;
         const boxVersiones = n('div', undefined, 'sat-versiones');
         boxVersiones.append(n('strong', 'Versiones · ' + etiquetaDoc));
-        grupo.forEach((doc, indice) => {
+        /* (2.9.13 · A9) La misma versión bajada varias veces
+           en el mismo instante se enseña UNA vez («bajada N
+           veces»); dos documentos distintos del mismo día se
+           distinguen por su HORA, no se duplican mudos — la
+           auditoría vio la constancia del 16/11 y la del
+           11/11 dos veces sin nada que las distinguiera. */
+        const filasVersiones2913 = [];
+        {
+          const porMomento2913 = new Map();
+          for (const docGrupo of grupo) {
+            const claveMomento2913 = String(docGrupo.date || '') + '|' + (docGrupo.name || '');
+            const previa2913 = porMomento2913.get(claveMomento2913);
+            if (previa2913) { previa2913.veces++; continue; }
+            const entrada2913 = { doc: docGrupo, veces: 1 };
+            porMomento2913.set(claveMomento2913, entrada2913);
+            filasVersiones2913.push(entrada2913);
+          }
+        }
+        const diaDe2913 = doc => typeof doc.date === 'string' && doc.date.length >= 10
+          ? doc.date.slice(0, 10) : new Date(doc.date).toISOString().slice(0, 10);
+        const diasConVarias2913 = new Set();
+        {
+          const porDia2913 = new Map();
+          for (const entrada2913 of filasVersiones2913) {
+            const dia = diaDe2913(entrada2913.doc);
+            porDia2913.set(dia, (porDia2913.get(dia) || 0) + 1);
+          }
+          for (const [dia, cuenta] of porDia2913) if (cuenta > 1) diasConVarias2913.add(dia);
+        }
+        const horaDe2913 = doc => typeof doc.date === 'string' && doc.date.length >= 16
+          ? doc.date.slice(11, 16) : localTime(doc.date);
+        filasVersiones2913.forEach(({ doc, veces }, indice) => {
           const fila = n('div', undefined, 'cp-row');
           fila.append(n('span', (doc.name || etiquetaDoc) + ' · ' +
-            (typeof doc.date === 'string' && doc.date.length >= 10 ? dateLabel(doc.date) : localDate(doc.date))));
+            (typeof doc.date === 'string' && doc.date.length >= 10 ? dateLabel(doc.date) : localDate(doc.date)) +
+            (diasConVarias2913.has(diaDe2913(doc)) ? ' · ' + horaDe2913(doc) : '') +
+            (veces > 1 ? ' · bajada ' + veces + ' veces' : '')));
           if (indice === 0) fila.append(statusPill('ok', 'Vigente'));
           else fila.append(statusPill('dim', 'Anterior'));
-          /* Cada versión se abre y se baja desde su fila
-             (1.32.1, Do3): antes la fila era un elemento muerto. */
-          const verV = n('button', 'Ver', 'soft small');
-          verV.onclick = () => viewDocOnline(doc);
-          const bajarV = n('button', 'Descargar', 'soft small');
-          bajarV.onclick = () => downloadDocOnline(doc);
-          fila.append(verV, bajarV);
-          if (typeof docArchivar1311 === 'function') {
-            const archV = n('button', 'Archivar', 'soft small');
-            archV.type = 'button';
-            archV.title = 'Archivar esta versión: sale de Documentos y vive en Archivo, recuperable';
-            archV.onclick = () => docArchivar1311(doc);
-            fila.append(archV);
-          }
+          /* (2.9.9 · D2) UN solo botón de acciones por fila: el
+             ⋯, con las acciones de la versión dentro — Ver y
+             Descargar (1.32.1, Do3), Enviar (2.4.0 · W4a: cada
+             versión es un documento del expediente por su id) y
+             Archivar —, mismas palabras y mismo efecto. */
+          const itV = [
+            { label: 'Ver', fn: () => viewDocOnline(doc) },
+            { label: 'Descargar', fn: () => downloadDocOnline(doc) }];
+          if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+            itV.push({ label: 'Enviar', fn: () => enviarTarjeta240({
+              nombre: doc.name || etiquetaDoc,
+              asunto: 'PacoSAT · ' + (doc.name || etiquetaDoc),
+              correo: { clase: 'documento', id: doc.id },
+              archivo: () => enviarBlobDocumento240(doc) }) });
+          if (typeof docArchivar1311 === 'function')
+            itV.push({ label: 'Archivar', fn: () => docArchivar1311(doc) });
+          const mV = cardMenu1312('Más opciones de esta versión');
+          mV._setItems1312(itV);
+          fila.append(mV);
           boxVersiones.append(fila);
         });
         card.append(boxVersiones);
@@ -261,8 +663,11 @@ function satDocsSection() {
         const boxArranque = n('div', undefined, 'sat-arranque');
         boxArranque.append(n('strong', 'Puesta en marcha · ' + profile.arranque.hechas + ' de ' + profile.arranque.total));
         const list = n('ul');
-        for (const step of profile.arranque.steps)
-          list.append(n('li', (step.done ? '✓ ' : '○ ') + step.label + (step.done ? '' : (step.gesto ? ' — ' + step.gesto : ''))));
+        for (const step of profile.arranque.steps) {
+          const pasoArranque240 = n('li', step.label + (step.done ? '' : (step.gesto ? ' — ' + step.gesto : '')));
+          pasoArranque240.dataset.estado = step.done ? 'aldia' : 'sindatos';
+          list.append(pasoArranque240);
+        }
         boxArranque.append(list);
         card.append(boxArranque);
       }
@@ -286,7 +691,7 @@ function satDocsSection() {
       const toggleLabel = n('label', undefined, 'switch-line');
       toggleLabel.append(enabled, n('span', 'Descarga automática mensual'));
       const when = n('label'); when.append(n('span', 'Día '), dayInput, n('span', ' a las '), hourInput, n('span', ':00'));
-      const save = n('button', 'Guardar', 'soft');
+      const save = n('button', 'Guardar descarga automática', 'soft');
       save.onclick = async () => {
         try {
           const data = await satApi('satdocs/config', { rfc: profile.rfc, enabled: enabled.checked,
@@ -378,9 +783,18 @@ function satDocStepList(steps, withUrl) {
   const list = n('ol', undefined, 'sat-steps');
   for (const step of steps || []) {
     const item = n('li');
+    /* El prefijo «⚠» de un paso es un MARCADOR interno (lo emite el
+       motor CIEC y lo detecta runPhaseStates en data.part): aquí se
+       PINTA sin glifo — icono de la familia y el texto limpio — y el
+       marcador en el dato no se toca (2.4.0 · W5b3). */
+    const textoCrudo240 = String(step.text || '');
+    const esAviso240 = textoCrudo240.startsWith('⚠');
+    const textoPaso240 = n('span', (esAviso240 ? textoCrudo240.slice(1).trimStart() : textoCrudo240) +
+      (withUrl && step.url ? ' · ' + step.url : ''));
+    if (esAviso240) textoPaso240.dataset.estado = 'atencion';
     item.append(
       n('span', localTime(step.at), 'sat-step-time'),
-      n('span', step.text + (withUrl && step.url ? ' · ' + step.url : '')));
+      textoPaso240);
     list.append(item);
   }
   return list;
@@ -445,9 +859,14 @@ function renderSatDocRuns(box, profile) {
   box.append(n('h4', 'Diario de descargas', 'sat-runs-title'));
   for (const run of runs.slice(0, 5)) {
     const details = n('details', undefined, 'sat-run');
+    /* El resumen diferencia el fallo (2.9.0 · Bloque C): tres
+       corridas caídas enseñaban tres «Falló» idénticos; ahora
+       cada resumen nombra su causa con el modelo único. */
+    const causa290 = !run.ok && typeof problemSpec === 'function'
+      ? (problemSpec('satdoc', { kind: run.errorKind || '', error: run.error || '' })?.titulo || '') : '';
     const summary = n('summary', localDateTime(run.started) + ' · ' +
       (run.kind === 'opinion' ? 'Opinión' : 'Constancia') +
-      (run.ok ? ' · Guardada en Expedientes' : ' · Falló'));
+      (run.ok ? ' · Guardada en Expedientes' : ' · Falló' + (causa290 ? ' — ' + causa290 : '')));
     details.append(summary);
     /* La corrida caída enseña sus fases con el falló-aquí, el
        problema con el modelo único y su evidencia a un clic

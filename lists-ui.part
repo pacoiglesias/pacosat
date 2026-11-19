@@ -1,9 +1,16 @@
-/* ===== Listas negras (1.6.13) =====
-   Pantalla del servidor: listados oficiales con su semáforo de
-   frescura, validador en tiempo real, padrón de contrapartes con su
-   peor situación y su exposición, historial de cambios y constancia
-   imprimible por empresa. Todo lenguaje llano: «lista negra» aquí
-   significa que el SAT publicó ese RFC en un listado oficial. */
+/* ===== Listas negras (1.6.13; renombre y rediseño 2.4.0) =====
+   Pantalla del servidor: abre con la tarjeta protagonista del
+   veredicto por RFC (el golpe vigente y la frescura), sigue con
+   los golpes agrupados por clase y las fuentes en tarjetas
+   compactas, y conserva todo lo demás: validador en tiempo
+   real, padrón de contrapartes con su peor situación y su
+   exposición, historial de cambios y constancia imprimible
+   por empresa. Todo lenguaje llano: «lista negra» aquí
+   significa que el SAT publicó ese RFC en un listado oficial,
+   y las negras de verdad son solo las de operaciones
+   inexistentes (69-B y 69-B Bis); los demás supuestos del
+   art. 69 van en su clase, y los créditos fiscales se
+   presentan como lo que son: contrapartes que deben al fisco. */
 const LISTS_VIEW = { data: null };
 const listStatePill = source => {
   /* Fallo digno (ronda de correcciones, 9 nov 2026): si la descarga de
@@ -79,76 +86,274 @@ async function listsComprobarAhora201(boton) {
     if (boton && boton.isConnected) { boton.disabled = false; boton.textContent = texto; }
   }
 }
-function listsResumenPanel201(data) {
+/* El error crudo de una fuente, en llano (2.3.2 · m-7): la
+   tarjeta nunca pinta el texto técnico de la descarga; dice la
+   causa en palabras de la casa, en el espíritu de problemSpec —
+   qué pasó, y el gesto (o que no hace falta ninguno) lo añade
+   quien pinta, según haya o no copia válida. */
+function listsErrorLlano232(error) {
+  const detalle = String(error || '');
+  if (/timeout|aborted|aborterror|tard/i.test(detalle)) return 'la fuente oficial tardó demasiado en responder';
+  if (/http\s*\d{3}|respondió con un error/i.test(detalle)) return 'la fuente oficial respondió con un error';
+  if (/fetch|network|enotfound|econn|conexi|sin conexión|red\b/i.test(detalle)) return 'no hubo conexión con la fuente oficial';
+  if (/columna rfc|registros reconocibles|no se reconoce|ilegible/i.test(detalle)) return 'el archivo descargado no se pudo leer como listado válido';
+  return 'la descarga no se pudo completar';
+}
+/* ===== Veredicto de Listas negras (2.4.0 · W3a) =====
+   La pantalla ya no abre con un volcado: abre con el VEREDICTO
+   calculado de la respuesta viva de /api/lists — el golpe
+   vigente de las listas negras de verdad (69-B y 69-B Bis:
+   operaciones inexistentes), separado de los demás supuestos
+   del art. 69 y de los créditos fiscales (que NO son lista
+   negra: son contrapartes que deben al fisco). Ninguna cifra
+   va escrita a mano: todo sale de los datos de la respuesta.
+   Las tres funciones entre las marcas VEREDICTO240 son puras
+   (solo leen la respuesta y formatean) para que la suite
+   ronda240listas las ejercite con respuestas de juguete. */
+/*VEREDICTO240-INICIO*/
+function listsClase240(hit) {
+  if (hit.listId === '69b' || hit.listId === '69b-bis') return 'negras';
+  if (hit.listId === '69-firmes' || hit.listId === '69-exigibles') return 'creditos';
+  return 'supuestos';
+}
+/* Un golpe está vigente si su situación no quedó regularizada:
+   en 69-B, «Desvirtuado» y «Sentencia favorable» llegan del
+   servidor con severity 'ok'; todo lo demás publicado manda. */
+function listsGolpeVigente240(hit) { return hit.severity !== 'ok'; }
+function listsVeredicto240(data) {
   const resumen = listsResumen201(data);
-  const panelEl = panel('Tus listas de un vistazo',
-    'Quién está limpio y quién señalado, y cuándo se comprobó por última vez. El detalle de cada listado y de cada contraparte sigue abajo, como siempre.');
-  const actualizar = n('button', 'Actualizar listados', 'primary');
-  actualizar.type = 'button';
-  actualizar.onclick = () => listsComprobarAhora201(actualizar);
-  if (!resumen.ultima) {
-    panelEl.append(n('p', 'Todavía no se ha comprobado: ningún listado consta descargado, así que aún no hay cruce con tu padrón.', 'empty'));
-    const fila = n('div', undefined, 'actions');
-    fila.append(actualizar);
-    panelEl.append(fila);
-    return panelEl;
+  const grupos = { negras: [], supuestos: [], creditos: [] };
+  for (const cp of data?.counterparts || [])
+    for (const hit of cp.hits || []) {
+      if (!listsGolpeVigente240(hit)) continue;
+      grupos[listsClase240(hit)].push({ cp, hit });
+    }
+  /* El golpe protagonista: el peor de las negras de verdad; a
+     igual gravedad, el de mayor importe recibido. */
+  const orden = { bad: 3, warn: 2, dim: 1, ok: 0 };
+  const golpe = [...grupos.negras].sort((a, b) =>
+    (orden[b.hit.severity] || 0) - (orden[a.hit.severity] || 0) ||
+    (Number(b.cp.exposure?.received) || 0) - (Number(a.cp.exposure?.received) || 0))[0] || null;
+  const estado = !resumen.ultima ? 'sin-comprobar' : golpe ? 'con-golpe' :
+    (grupos.supuestos.length || grupos.creditos.length) ? 'con-avisos' : 'limpio';
+  return { estado, golpe, grupos, resumen };
+}
+/* UNA sola frase de cobertura (2.9.0 · Bloque C): «limpio
+   contra los N listados cargados; faltan M por cargar» — la
+   misma en el veredicto y en la línea de cada RFC propio.
+   Antes convivían «limpio contra los 8 cargados» y «8 de 10
+   cargados» como si se contradijeran. */
+function listsFraseCobertura290(resumen) {
+  const cargadas = (resumen?.cargadas || []).length;
+  const total = (resumen?.sources || []).length;
+  const faltan = Math.max(0, total - cargadas);
+  return 'limpio contra los ' + cargadas + ' listados cargados' +
+    (faltan ? '; faltan ' + faltan + ' por cargar' : '');
+}
+function listsVeredictoTexto240(data) {
+  const v = listsVeredicto240(data);
+  const r = v.resumen;
+  if (v.estado === 'sin-comprobar')
+    return 'Todavía no se ha comprobado: ningún listado consta descargado, así que aún no hay cruce con tu padrón.';
+  const fecha = 'Última comprobación: ' + localDateTime(r.ultima) +
+    ' · ' + r.cargadas.length + ' de ' + r.sources.length + ' listados cargados.';
+  if (v.estado === 'con-golpe') {
+    const { cp, hit } = v.golpe;
+    const bits = [(cp.name || cp.rfc) + ' · ' + cp.rfc, hit.label, 'Situación: ' + hit.detail];
+    const rec = cp.detalle?.recibidos;
+    const count = rec?.count || cp.exposure?.receivedCount || 0;
+    const total = rec?.total || cp.exposure?.received || '';
+    if (count) bits.push('Te ha facturado $' + money(total) + ' en ' + count + ' CFDI recibidos');
+    const anio = (rec?.ultima || rec?.primera || '').slice(0, 4);
+    if (anio) bits.push('último en ' + anio);
+    return 'Un golpe vigente en las listas negras. ' + bits.join(' · ') + '. ' + fecha;
   }
-  const grave = resumen.senaladas.some(cp => cp.severity === 'bad');
-  const strip = n('div', undefined, 'traffic-strip');
-  strip.append(statusPill(resumen.senaladas.length ? (grave ? 'bad' : 'warn') : 'ok',
-      resumen.senaladas.length ? resumen.senaladas.length + ' contraparte(s) señalada(s)' : 'Sin contrapartes señaladas'),
-    statusPill('dim', 'Última comprobación: ' + localDateTime(resumen.ultima) +
-      ' · ' + resumen.cargadas.length + ' de ' + resumen.sources.length + ' listados cargados'));
-  panelEl.append(strip);
-  for (const cp of resumen.propios) {
+  if (v.estado === 'con-avisos') {
+    const partes = [];
+    if (v.grupos.creditos.length) partes.push(v.grupos.creditos.length +
+      ' contraparte(s) en créditos fiscales del art. 69 (deben al fisco; no es una lista negra)');
+    if (v.grupos.supuestos.length) partes.push(v.grupos.supuestos.length +
+      ' contraparte(s) en otros supuestos del art. 69');
+    return 'Sin golpes en las listas negras de operaciones inexistentes. Constan ' +
+      partes.join(' y ') + '. ' + fecha;
+  }
+  return 'Limpio: ninguna contraparte de tu padrón consta en las listas negras — ' +
+    listsFraseCobertura290(r) + '. ' +
+    fecha + ((data?.events || []).length ? '' :
+      ' Sin cambios detectados desde la primera comprobación guardada.');
+}
+/*VEREDICTO240-FIN*/
+/* La tarjeta protagonista: el veredicto, su golpe con todas sus
+   cifras, el estado de tus RFC propios y la frescura — en el
+   primer pantallazo. Su acción es real: sin comprobar, «Comprobar
+   ahora» (la actualización de siempre); con golpe, saltar a la
+   evidencia («Ver sus CFDI») o sacar su constancia. «Actualizar
+   listados» sigue viviendo UNA vez en la cabecera (m-6). */
+function listsVeredictoPanel240(data) {
+  const v = listsVeredicto240(data);
+  const hero = n('section', undefined, 'dashboard-hero');
+  const main = n('div');
+  main.append(n('div', 'LISTAS NEGRAS · EL VEREDICTO', 'hero-kicker'));
+  main.append(n('h2', v.estado === 'con-golpe' ? 'Un golpe vigente en las listas negras' :
+    v.estado === 'con-avisos' ? 'Sin golpes en las listas negras — con avisos del art. 69' :
+    v.estado === 'limpio' ? 'Limpio: sin golpes en las listas negras' : 'Todavía no se ha comprobado'));
+  main.append(n('p', listsVeredictoTexto240(data)));
+  for (const cp of v.resumen.propios) {
     const hits = cp.hits || [];
-    const row = n('div', undefined, 'cp-row');
-    const listados = hits.length ? [...new Set(hits.map(hit => hit.label))].join(' · ') : '';
-    row.append(n('strong', (cp.name || cp.rfc) + ' · ' + cp.rfc),
-      n('span', (hits.length ? 'Señalado en: ' + listados :
-          'Comprobado contra los ' + resumen.cargadas.length + ' listados cargados') +
-        ' · Última comprobación: ' + localDateTime(resumen.ultima), 'muted'),
-      statusPill(hits.length ? (cp.severity === 'bad' ? 'bad' : 'warn') : 'ok',
-        hits.length ? 'Señalado' : 'Limpio'));
-    panelEl.append(row);
+    main.append(n('p', 'Tu RFC ' + cp.rfc + (cp.name ? ' (' + cp.name + ')' : '') + ': ' +
+      (hits.length ? 'señalado en ' + [...new Set(hits.map(hit => hit.label))].join(' · ') :
+        listsFraseCobertura290(v.resumen)) + '.'));
   }
-  if (!resumen.propios.length)
-    panelEl.append(n('p', 'En el padrón: ' + resumen.senaladas.length + ' de ' + (data.counterparts || []).length +
-      ' contrapartes aparecen en algún listado. Tus RFC propios aún no constan en el padrón: se agregan solos al darlos de alta.', 'today-line'));
-  panelEl.append(n('p', 'La fecha de la última comprobación es la descarga más reciente de los listados cargados: ' +
-    'el cruce no guarda una fecha propia por RFC. La fecha de cada listado está en su tarjeta, justo abajo.', 'muted'));
-  const fila = n('div', undefined, 'actions');
-  fila.append(actualizar);
-  panelEl.append(fila);
+  if (v.resumen.ultima)
+    main.append(n('p', 'La fecha de la última comprobación es la descarga más reciente de los listados cargados; la de cada listado está en su tarjeta, justo abajo.'));
+  hero.append(main);
+  const side = n('div', undefined, 'hero-actions');
+  side.append(statusPill(v.estado === 'con-golpe' ? 'bad' : v.estado === 'con-avisos' ? 'warn' :
+      v.estado === 'limpio' ? 'ok' : 'dim',
+    v.estado === 'con-golpe' ? 'Lista negra · golpe vigente' : v.estado === 'con-avisos' ? 'Con avisos del art. 69' :
+      v.estado === 'limpio' ? 'Limpio' : 'Sin comprobar'));
+  if (v.estado === 'sin-comprobar') {
+    const comprobar = n('button', 'Comprobar ahora', 'primary');
+    comprobar.onclick = () => listsComprobarAhora201(comprobar);
+    side.append(comprobar);
+  }
+  if (v.golpe) {
+    const { cp } = v.golpe;
+    if (cp.detalle && (cp.detalle.recibidos || cp.detalle.emitidos)) {
+      const ver = n('button', 'Ver sus CFDI', 'soft');
+      ver.onclick = () => verCfdiDeContraparte(cp);
+      side.append(ver);
+    }
+    const cert = n('button', 'Constancia', 'soft');
+    cert.onclick = () => printListsCertificate(cp, data.sources);
+    side.append(cert);
+  }
+  hero.append(side);
+  return hero;
+}
+/* Los golpes agrupados por clase, con su explicación llana y
+   despliegue progresivo: las negras de verdad abiertas; los
+   demás grupos se despliegan a un toque. El detalle completo
+   de cada contraparte (acciones, «qué significa») sigue en el
+   Padrón, debajo — esto es la foto agrupada, no otro volcado. */
+function listsGruposPanel240(data) {
+  const v = listsVeredicto240(data);
+  const total = v.grupos.negras.length + v.grupos.supuestos.length + v.grupos.creditos.length;
+  if (!total) return null;
+  const panelEl = panel('Los golpes, por clase',
+    'No todo lo que publica el SAT es una lista negra: cada clase dice qué es en llano.');
+  const defs = [
+    ['negras', 'Listas negras de verdad · operaciones inexistentes (69-B y 69-B Bis)',
+     'El SAT sostiene que estas empresas facturan operaciones que no existen. El dinero que te facturaron es el que el SAT puede cuestionar: es el golpe serio.', true],
+    ['supuestos', 'Otros supuestos del art. 69',
+     'Publicados por el SAT por otros motivos — no localizados, sentencias, CSD sin efectos y demás —: no son operaciones inexistentes, pero conviene vigilarlos.', false],
+    ['creditos', 'Créditos fiscales · deben al fisco (art. 69)',
+     'No es una lista negra: son contrapartes con un crédito fiscal firme o exigible. Su deuda es con el fisco, no contigo; su exposición en tus CFDI recibidos es cero salvo que conste otra cosa en su fila del Padrón.', false]];
+  for (const [key, titulo, explicacion, abierto] of defs) {
+    const items = v.grupos[key];
+    if (!items.length) continue;
+    /* (2.9.13 · A9) Una contraparte, una fila por clase: la
+       misma empresa con dos golpes en la misma clase (JOSE
+       JAVIER salía dos veces con el mismo RFC, los mismos
+       CFDI y el mismo importe) se funde en una fila con sus
+       golpes juntos; los golpes idénticos se cuentan una
+       vez. Empresas distintas con el mismo nombre se
+       distinguen por el RFC que la fila ya enseña. */
+    const porRfc2913 = new Map();
+    for (const item of items) {
+      const clave = item.cp.rfc || item.cp.name || '';
+      const previo = porRfc2913.get(clave);
+      if (previo) { previo.hits.push(item.hit); continue; }
+      porRfc2913.set(clave, { cp: item.cp, hits: [item.hit] });
+    }
+    const fusionados2913 = [...porRfc2913.values()];
+    const det = n('details', undefined, 'seal-details');
+    if (abierto) det.open = true;
+    det.append(n('summary', titulo + ' · ' + fusionados2913.length + ' contraparte(s)'));
+    det.append(n('p', explicacion, 'muted'));
+    for (const { cp, hits } of fusionados2913) {
+      const row = n('div', undefined, 'cp-row');
+      const main = n('div', undefined, 'cp-main');
+      main.append(n('strong', cp.name || cp.rfc));
+      const vistos2913 = new Set();
+      for (const hit of hits) {
+        const linea = hit.label + ': ' + hit.detail;
+        if (vistos2913.has(linea)) continue;
+        vistos2913.add(linea);
+        main.append(n('span', cp.rfc + ' · ' + linea, 'cp-hit sev-' + hit.severity));
+      }
+      if (cp.exposure && cp.exposure.receivedCount)
+        main.append(n('span', 'Te ha facturado $' + money(cp.exposure.received) + ' en ' +
+          cp.exposure.receivedCount + ' CFDI recibidos', 'muted'));
+      else if (key === 'creditos')
+        main.append(n('span', 'Sin CFDI recibidos suyos: exposición cero.', 'muted'));
+      const peor2913 = hits.some(h => h.severity === 'bad') ? 'bad'
+        : hits.some(h => h.severity === 'warn') ? 'warn' : 'dim';
+      row.append(main, statusPill(peor2913 === 'bad' ? 'bad' : peor2913 === 'warn' ? 'warn' : 'dim',
+        peor2913 === 'bad' ? 'Grave' : peor2913 === 'warn' ? 'Precaución' : 'Menor'));
+      det.append(row);
+    }
+    panelEl.append(det);
+  }
   return panelEl;
+}
+/* La clase en llano de cada fuente, para su tarjeta (2.4.0):
+   la misma distinción del veredicto — las de operaciones
+   inexistentes son las listas negras de verdad; firmes y
+   exigibles son créditos fiscales; el resto, supuestos del
+   art. 69. Sale del id de la fuente, no de textos nuevos. */
+function listsClaseFuente240(source) {
+  if (source.id === '69b' || source.id === '69b-bis') return 'Lista negra · operaciones inexistentes';
+  if (source.id === '69-firmes' || source.id === '69-exigibles') return 'Créditos fiscales · art. 69';
+  return 'Supuesto del art. 69';
 }
 function listsScreen() {
   if (!LISTS_VIEW.data) { loadLists(); return [panel('Listas negras', 'Cargando los listados y tu padrón…')]; }
   const data = LISTS_VIEW.data;
   const wrap = n('div');
-  /* Resumen de un vistazo (2.0.1): la foto con su fecha abre la
-     vista; las fuentes, el validador y el padrón quedan debajo. */
-  wrap.append(listsResumenPanel201(data));
-  /* Fuentes oficiales */
-  const sourcesPanel = panel('Listados oficiales del SAT', 'Se descargan solos cada día. Si uno lleva más de 48 horas sin actualizar, PacoSAT avisa: vigilar con datos viejos es peor que no vigilar.');
+  /* Tarjeta protagonista (2.4.0): el veredicto abre la vista;
+     debajo, los golpes por clase y las fuentes en tarjetas
+     compactas; el validador y el padrón quedan debajo. */
+  wrap.append(listsVeredictoPanel240(data));
+  const gruposPanel = listsGruposPanel240(data);
+  if (gruposPanel) wrap.append(gruposPanel);
+  /* Fuentes oficiales, en tarjetas compactas (2.4.0): cada una
+     con su clase en llano, su estado, su última comprobación y
+     su acción real — Actualizar en las automáticas; carga
+     manual y «Buscar en el SAT ↗» en las dos manuales. */
+  const sourcesPanel = panel('Las fuentes, una a una', 'Los listados automáticos se descargan solos cada día. Si uno lleva más de 48 horas sin actualizar, PacoSAT avisa: vigilar con datos viejos es peor que no vigilar. Los dos manuales no tienen archivo oficial descargable: se revisan a mano en el SAT.');
   const grid = n('div', undefined, 'sat-grid');
   for (const source of data.sources) {
     const card = n('article', undefined, 'sat-card');
     const head = n('div', undefined, 'sat-card-head');
     head.append(n('strong', source.label), listStatePill(source));
+    if (source.manual) head.append(statusPill('dim', 'Manual'));
     const meta = n('div', undefined, 'sat-meta');
     /* Los tramos se unen con « · » explícito (1.11.0): como nodos
        sueltos salían pegados («14,830 registrosDescargado: …»). */
-    const bits = [source.count ? source.count.toLocaleString('es-MX') + ' registros' : 'Sin registros cargados'];
-    if (source.fetched) bits.push('Descargado: ' + localDateTime(source.fetched));
+    const bits = [listsClaseFuente240(source),
+      source.count ? source.count.toLocaleString('es-MX') + ' registros' : 'Sin registros cargados'];
+    if (source.fetched) bits.push('Última comprobación: ' + localDateTime(source.fetched));
     if (source.declared) bits.push('La fuente declara: ' + source.declared);
     if (source.manual) bits.push('Este listado no tiene descarga automática oficial: se carga su archivo a mano.');
     meta.append(n('span', bits.join(' · ')));
     card.append(head, meta);
+    /* (2.9.13 · Bloque C) Las dos fuentes manuales explican
+       su «Sin cargar» en la propia tarjeta, sin tecnicismos:
+       el SAT no publica esos listados como archivo, así que
+       no existe descarga automática posible — verificado el
+       17 nov 2026 —; se consultan en la página del SAT o se
+       carga el archivo a mano si se consigue. */
+    if (source.manual)
+      card.append(n('p', 'El SAT no publica este listado como archivo: por eso no existe descarga automática posible, ' +
+        'ni aquí ni en ningún programa. Se consulta en la página del SAT con el botón «Buscar en el SAT ↗» de abajo, ' +
+        'o, si consigues el archivo por tu cuenta, lo cargas a mano con «Cargar archivo CSV» y el cruce se hace al momento.', 'muted'));
     if (source.error && source.count > 0 && source.fetched)
-      card.append(n('p', 'La actualización de hoy falló (' + source.error + ') El cruce sigue usando la última copia válida, del ' +
-        localDateTime(source.fetched) + '.', 'muted'));
-    else if (source.error) card.append(n('p', 'Último intento: ' + source.error, 'error-text'));
+      card.append(n('p', 'La actualización de hoy falló: ' + listsErrorLlano232(source.error) +
+        '. El cruce sigue usando la última copia válida, del ' +
+        localDateTime(source.fetched) + '. No tienes que hacer nada: se reintenta sola en la próxima actualización.', 'muted'));
+    else if (source.error) card.append(n('p', 'Último intento: ' + listsErrorLlano232(source.error) +
+      '. Todavía no hay copia de este listado con la que cruzar tu padrón; se reintenta solo en la actualización diaria.', 'error-text'));
     const actions = n('div', undefined, 'sat-actions');
     if (source.url) {
       const update = n('button', 'Actualizar ahora', 'soft');
@@ -210,6 +415,17 @@ function listsScreen() {
       const importBtn = n('button', 'Cargar archivo CSV', 'soft');
       importBtn.onclick = () => file.click();
       actions.append(importBtn, file);
+      /* Fuentes manuales (2.4.0): junto a la carga, el enlace
+         oficial del SAT declarado en el catálogo (enlaceSat de
+         sat-lists.mjs, verificado el 17 nov 2026) — la consulta
+         se hace en el SAT y el archivo que salga se carga aquí. */
+      if (source.enlaceSat) {
+        const enlaceSat = n('a', 'Buscar en el SAT ↗');
+        enlaceSat.href = source.enlaceSat;
+        enlaceSat.target = '_blank';
+        enlaceSat.rel = 'noopener';
+        actions.append(enlaceSat);
+      }
     }
     card.append(actions);
     grid.append(card);
@@ -218,8 +434,14 @@ function listsScreen() {
   if (data.lastCancelled) sourcesPanel.append(n('p', 'Última cancelación pedida por ti: ' + localDateTime(data.lastCancelled) +
     ' — la actualización se detuvo y se conservó la copia anterior de cada listado.', 'muted'));
   wrap.append(sourcesPanel);
-  /* Validador */
-  const validator = panel('Validar una empresa', 'Escribe un RFC o parte del nombre: se busca en TODOS los listados cargados, aunque no sea tu contraparte.');
+  /* Validador (2.8.0 · diseño 22): ya no es una pantalla
+     paralela — vive DENTRO del padrón, como su buscador:
+     validar es buscar en el padrón y en los listados, con su
+     veredicto y su documento. Se monta en el padrón, tras su
+     resumen (más abajo). */
+  const validator = n('section', undefined, 'lists-validar280');
+  validator.append(n('h3', 'Validar una empresa'),
+    n('p', 'Escribe un RFC o parte del nombre: se busca en el padrón y en TODOS los listados cargados, aunque no sea tu contraparte.', 'muted'));
   const vrow = n('div', undefined, 'filterbar');
   const vinput = input('search', { placeholder: 'RFC o nombre de la empresa…', 'aria-label': 'RFC o nombre a validar' });
   const vbtn = n('button', 'Validar', 'primary');
@@ -244,7 +466,6 @@ function listsScreen() {
   vinput.onkeydown = event => { if (event.key === 'Enter') runValidate(); };
   vrow.append(vinput, vbtn);
   validator.append(vrow, vout);
-  wrap.append(validator);
   /* Padrón */
   const counts = { bad: 0, warn: 0, clean: 0 };
   for (const cp of data.counterparts) {
@@ -252,20 +473,21 @@ function listsScreen() {
     else if (cp.severity === 'warn' || cp.severity === 'dim') counts.warn++;
     else counts.clean++;
   }
-  const registry = panel('Padrón de contrapartes', 'Toda empresa que te factura o a la que facturas, más las que agregues. «Exposición» es lo que te ha facturado quien aparece en un listado: ese dinero es el que el SAT podría cuestionar.');
+  const registry = panel('Padrón de contrapartes', 'Toda empresa que te factura o a la que facturas, más las que agregues. «Exposición» es lo que te ha facturado quien aparece en un listado: ese dinero es el que el SAT podría cuestionar. Validar una empresa es buscarla aquí, en el propio padrón.');
   const summary = n('div', undefined, 'traffic-strip');
   summary.append(statusPill(counts.bad ? 'bad' : 'ok', counts.bad + ' con alerta grave'),
     statusPill(counts.warn ? 'warn' : 'ok', counts.warn + ' con precaución'),
     statusPill('ok', counts.clean + ' sin coincidencias'),
     statusPill('dim', data.counterparts.length + ' en el padrón'));
   registry.append(summary);
+  registry.append(validator);
   /* Imprimir el padrón tal cual se ve (2.0.1 · nº 2): el mismo
      patrón de imprimirVista201 — membrete y la lista en
      pantalla, con su estado en los listados y su exposición. */
   if (typeof imprimirVista201 === 'function') {
     const imprimirPadron = n('button', 'Imprimir el padrón', 'soft');
     imprimirPadron.type = 'button';
-    imprimirPadron.onclick = () => imprimirVista201('Listas del SAT · padrón de contrapartes',
+    imprimirPadron.onclick = () => imprimirVista201('Listas negras · padrón de contrapartes',
       'El padrón cruzado con los listados oficiales cargados, tal cual se ve en pantalla.',
       ['Contraparte', 'RFC', 'Estado en los listados', 'En qué lista consta', 'Te ha facturado'],
       data.counterparts.map(cp => [cp.name || cp.rfc, cp.rfc,
@@ -336,48 +558,37 @@ function listsScreen() {
       statusPill(cp.severity === 'bad' ? 'bad' : cp.severity === 'warn' ? 'warn' : cp.severity === 'dim' ? 'dim' : 'ok',
         cp.severity === 'bad' ? 'En lista · grave' : cp.severity === 'warn' ? 'En lista' :
         cp.severity === 'dim' ? 'En lista · menor' : cp.severity === 'ok' ? 'Regularizada' : 'Limpia'));
-    const actions = n('div', undefined, 'row-actions');
-    /* «Ver sus CFDI» (1.13.1): un clic a la evidencia — Facturas
-       queda filtrado por el RFC de esta contraparte (y por su
-       dirección si solo tiene una), con el chip de búsqueda
-       visible y quitable como cualquier filtro. */
-    if (cp.detalle && (cp.detalle.recibidos || cp.detalle.emitidos)) {
-      const ver = n('button', 'Ver sus CFDI', 'soft');
-      ver.onclick = event => { event.stopPropagation(); verCfdiDeContraparte(cp); };
-      actions.append(ver);
-    }
-    const cert = n('button', 'Constancia', 'soft');
-    cert.onclick = event => { event.stopPropagation(); printListsCertificate(cp, data.sources); };
-    actions.append(cert);
-    /* Expediente legal en un clic (1.25.0, AGREGAR 6): el ZIP con
-       los XML de la contraparte, sus validaciones de listas, el
-       resumen de saldos y tus constancias vigentes — lo que
-       pediría una defensa, armado por el servidor. Hace falta el
-       contribuyente seleccionado (scope): el expediente es de UN
-       RFC tuyo con esa contraparte. */
-    const expediente = n('button', 'Expediente legal', 'soft');
-    expediente.onclick = async event => {
-      event.stopPropagation();
+    /* (2.9.9 · D2) UN solo botón de acciones por fila: el ⋯,
+       con TODAS las acciones de antes dentro, mismas palabras
+       y mismo efecto: «Ver sus CFDI» (1.13.1: Facturas filtrado
+       por esta contraparte), «Constancia», «Expediente legal»
+       (1.25.0, AGREGAR 6: el ZIP armado por el servidor; hace
+       falta el contribuyente seleccionado, scope) y, en las
+       manuales, «Editar» y «Quitar» (con su confirmación). */
+    const itC = [];
+    const push = (label, fn, danger) => itC.push({ label, fn, danger });
+    if (cp.detalle && (cp.detalle.recibidos || cp.detalle.emitidos))
+      push('Ver sus CFDI', () => verCfdiDeContraparte(cp));
+    push('Constancia', () => printListsCertificate(cp, data.sources));
+    push('Expediente legal', async () => {
       try {
         check(scope, 'Elige arriba el contribuyente: el expediente es de un RFC tuyo con esta contraparte.');
-        expediente.disabled = true; expediente.textContent = 'Armando el expediente…';
-        const data = await satApi('salidas/expediente', { rfc: scope, contraparte: cp.rfc });
-        download(new Blob([Uint8Array.from(atob(data.content), c => c.charCodeAt(0))], { type: data.type }), data.name);
+        const dataExp = await satApi('salidas/expediente', { rfc: scope, contraparte: cp.rfc });
+        download(new Blob([Uint8Array.from(atob(dataExp.content), c => c.charCodeAt(0))], { type: dataExp.type }), dataExp.name);
         toast('Expediente de ' + (cp.name || cp.rfc) + ' descargado.', 'ok');
       } catch (error) { toast(error.message, 'error'); }
-      finally { expediente.disabled = false; expediente.textContent = 'Expediente legal'; }
-    };
-    actions.append(expediente);
+    });
     if (cp.source === 'manual') {
-      const edit = n('button', 'Editar', 'soft');
-      edit.onclick = event => { event.stopPropagation(); counterpartDialog(cp); };
-      const remove = n('button', 'Quitar', 'danger-soft');
-      remove.onclick = async event => { event.stopPropagation();
-        if (!confirm('¿Quitar a ' + cp.rfc + ' del padrón manual? Seguirá apareciendo si tiene CFDI tuyos.')) return;
-        await satApi('lists/counterparts/remove', { rfc: cp.rfc }); await loadLists(); };
-      actions.append(edit, remove);
+      push('Editar', () => counterpartDialog(cp));
+      push('Quitar', async () => {
+        /* Confirmación con el diálogo propio (2.9.7 · D4). */
+        dialog('Quitar del padrón manual',
+          [n('p', '¿Quitar a ' + cp.rfc + ' del padrón manual? Seguirá apareciendo si tiene CFDI tuyos.')],
+          async () => { await satApi('lists/counterparts/remove', { rfc: cp.rfc }); await loadLists(); }, 'Quitar'); }, true);
     }
-    row.append(actions);
+    const mC = cardMenu1312('Más opciones de esta contraparte');
+    mC._setItems1312(itC);
+    row.append(mC);
     registry.append(row);
   }
   if (!data.counterparts.length) registry.append(n('p', 'El padrón se llena solo con tus CFDI; también puedes agregar empresas a mano.', 'empty'));

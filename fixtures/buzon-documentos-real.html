@@ -1,0 +1,1766 @@
+<!DOCTYPE html><html lang="es"><head>
+         <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+      <script>
+        if (window.top!= window.self)
+           top.window.location.href =   window.location.href;
+     </script>
+		     
+		 
+									
+				
+				<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	 
+       <title>
+         BUZÓN TRIBUTARIO</title>
+     <meta charset="UTF-8">
+     <meta name="description" content="Portal de trámites y servicios sat">
+     <meta content="width=device-width, initial-scale=1" name="viewport">
+
+     <link type="text/css" rel="stylesheet" href="/satys/css/all_private.css?1.1"><link rel="shortcut icon" href="/satys/css/favicon.ico" type="image/vnd.microsoft.icon">                                        					    
+        <script type="text/javascript" src="/satys/js/jquery.js"></script>
+		<script type="text/javascript" src="/satys/js/jquery-ui/jquery-ui.min.js"></script>
+		<script type="text/javascript" src="/satys/js/datatables.js"></script>
+		<script type="text/javascript" src="/satys/js/datatables.responsive.js"></script>
+		<script type="text/javascript" src="/satys/js/swipe.js"></script>
+		<script type="text/javascript" src="/satys/js/jsp.js"></script>
+		<script type="text/javascript" src="/satys/js/main.js"></script>
+        <script type="text/javascript" src="/satys/js/owl.carousel.min.js"></script>   
+		<script type="text/javascript" src="/satys/js/hammer.min.js"></script>
+        <script type="text/javascript" src="/satys/js/sequence.min.js"></script>
+	    <script src="/satys/entrada/sliderengine/amazingslider.js"></script>
+        <script src="/satys/entrada/sliderengine/initslider-1.js"></script>                       
+        <script type="text/javascript" src="/satys/js/moment.min.js"></script>
+	    <link type="text/css" rel="stylesheet" href="/satys/css/fullcalendar.min.css">
+	    
+	    <script type="text/javascript" src="/satys/js/fullcalendar.min.js"></script>
+	    <script type="text/javascript" src="/satys/js/es.js"></script>			
+	    <link type="text/css" rel="stylesheet" href="/satys/css/owl.carousel.css">
+
+
+
+<script>
+			   var isMobile = {
+			Android: function() {
+				return navigator.userAgent.match(/Android/i);
+			},
+			BlackBerry: function() {
+				return navigator.userAgent.match(/BlackBerry/i);
+			},
+			iOS: function() {
+				return navigator.userAgent.match(/iPhone|iPad|iPod/i);
+			},
+			Opera: function() {
+				return navigator.userAgent.match(/Opera Mini/i);
+			},
+			Windows: function() {
+				return navigator.userAgent.match(/IEMobile/i);
+			},
+			any: function() {
+				return (isMobile.Android() || isMobile.BlackBerry() || isMobile.iOS() || isMobile.Opera() || isMobile.Windows());
+			}
+		};	 
+	   </script>
+
+
+
+			
+		
+	</head>
+	<body class="buzon" style="opacity: 1;">
+
+	
+				
+			
+				
+				
+				
+				
+				
+				
+	
+
+		
+
+
+
+	  <div id="wrapper">
+		
+		
+     		  
+
+                                
+     			
+					
+					
+					
+					
+	                
+						 
+							
+												
+						
+										
+					
+
+
+
+
+   
+   
+
+
+
+	
+
+
+
+
+
+
+	 
+		
+		
+		
+		
+		
+			
+	<!-- Literales -->
+	
+		
+	
+	
+
+			 
+										
+					
+		   			
+
+
+
+
+	
+<hr id="libuz" style="position:absolute;top:62px;width:100%;border:none;height:1px; background-color: #e6e6e6;z-index:99;">
+	<div id="top_bar" style="display: block;">
+		<div class="pw">
+   		     
+				
+    					 
+			 
+	
+	
+
+	
+	
+	
+	
+	
+    
+    
+
+    
+	
+	
+
+	<ul id="menu" class="fecha">
+		<li>	        
+			<span>
+					
+				18 de noviembre de 2026 06:07:55 AM
+			</span>
+		</li>
+	</ul> 
+
+
+			
+				
+				
+		    
+					&nbsp;
+					<div id="srch">
+						
+						
+						
+					</div>
+	
+		    		<script>
+						var autocompleteTitleAction = '/cs/Satellite?pagename=Common%2FLogic%2FSAT_AutocompleteTitle';
+						var locale = '1462228413195';
+						var URLAdvancedSearch ='/buzon/buscar';
+						var lt_busquedaavanzada =  'Búsqueda Avanzada';
+						$(function() {
+						 	$( "#desktopformE #mob_search_inputE" ).autocomplete({
+								source: function(request, response) {		 
+								if(request.term.trim().length>=3){
+							    $.ajax({
+								    url: autocompleteTitleAction , 
+								    dataType: "json",
+								    data: { q: request.term,locale: locale},
+								    success: function( data ) {						             
+								        response( $.map( data, function( item ) {
+								        return {						          
+								            value: item.value,
+											  link: item.link,
+								        }
+								        }));
+								    },
+								    error: function (request,status,error) {						     
+								    }
+							    });
+								}
+						    },
+							 minLength: 3,   
+								position: { my: "center top+2", at: "center bottom" }
+							})
+							.autocomplete( "instance" )._renderItem = function( ul, item ) {
+						var elemento  ="";
+						                    if ( item.value == "Busqueda avanzada >"){
+						                       elemento =   $( "<li   class='ui-menu-item advanced_search_autoc green'   style ='color:#347733;font-size:11px;line-height:20px;'   onclick=\"window.location=\'' + URLAdvancedSearch + '\';\"   > " + item.link + " </li>" )
+								 	.appendTo( ul );				                     
+						                    }else{
+						                       elemento =   $( "<li  >" )				
+								 	.append( "<a      onclick='busquesaAvanzadaClickE(\"" + item.value + "\")'  >" + item.value + "</a>" )
+									.appendTo( ul );				
+						                   }			
+								return elemento;
+							};
+						});				
+						function busquesaAvanzadaClickE(valor){  
+						   document.forms["form_predicE"].words.value=valor;
+						   document.forms["form_predicE"].submit();
+						}
+						
+				</script>
+					
+		</div>
+	</div>
+
+	<script>
+		$(document).ready(function() {
+			var autocompleteTitleAction = '/cs/Satellite?pagename=Common%2FLogic%2FSAT_AutocompleteTitle';
+		    var locale = '1462228413195';
+			if($('#keyword').size()>0){
+				$('#keyword').typeahead({
+			        hint: true,
+			        highlight: true,
+			        minLength: 4
+			    }, {
+			    	displayKey: 'value',
+			        source: function (keyword, process) {
+			            $.getJSON(autocompleteTitleAction, {keyword: keyword, locale: locale}, function(json) {
+			                process(json);               
+			            });
+			        }
+			    });
+			}
+		});
+	</script>
+	
+
+				
+			
+			<div id="logo_bar">
+				<div class="pw ovevi">
+ 
+					 
+														
+                                                    
+			       			
+			       				
+			       			
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+	
+	
+	
+	
+	
+		
+	
+
+
+
+	
+
+	
+	    
+	    
+	
+	
+		
+	
+	 
+    	
+    	
+    	
+    	
+    	
+	
+	
+	
+	
+	        
+	
+		
+		
+		
+				
+		
+	
+	
+	
+		
+		
+	
+      						
+<div class="logo">
+	
+	
+			
+<img src="/satys/img/logo3.png" alt="logos shcp y sat" id="logo" usemap="#workmap">
+	
+<map name="workmap">
+  <area shape="rect" coords="2,2,146,40" alt="gob.mx" href="https://www.gob.mx/sat" target="_blank">
+  <area shape="rect" coords="152,2,368,40" alt="shcp y sat" href="/buzon">
+</map>
+</div>
+    <div class="nav-menu-buzon"> 
+		<span id="page_title">
+			<a href="/buzon">
+				
+					
+					
+						<div class="contribuyente"> Buzón Tributario de  <big class="colortxt" style="text-transform: capitalize;">&nbsp;mano fil</big>
+
+						
+
+
+						</div>
+							    	
+						    		
+			</a>
+			<div id="menu-top-buzon"></div>
+			<div id="menu-top-buzon-none" style="display: none;"></div>
+	    </span>
+		
+		<div id="icox" style="display: block;">	
+		
+			
+					
+					
+					 
+						
+						
+						
+						
+									
+					
+						
+						
+																
+						
+						
+							
+						
+			        	
+
+<div class="navbar">
+
+  <a href="/iniciar-expediente/sin-medios-de-contacto/" style="font-size:20px; font-family:icons; padding:2px 3px;">R</a>
+  <a href="#news">&nbsp;</a>
+  <div class="dropdown">
+    <button class="dropbtn">Mis expedientes
+    </button>
+    <div class="dropdown-content">
+      
+			  
+			
+			
+			
+
+
+
+
+
+
+
+
+ 	
+ 	
+	
+ 	
+ 		
+  	  	
+	
+		
+	
+
+
+
+
+
+
+	
+		<!-- Filtramos la lista por idioma -->
+		
+		
+			
+		
+	
+
+
+	
+	
+     
+    
+    
+	
+		 
+			
+				
+				
+								
+				 
+					
+					
+					
+					
+				
+
+  
+															
+                															
+			
+				
+										
+									
+					 
+			   	
+
+	      		
+	      
+			   	
+			
+				
+				
+								
+				 
+					
+					
+					
+					
+				
+
+  
+															
+                															
+			
+				
+										
+									
+					 
+			   	
+
+	      		
+	      
+			   	
+			
+				
+				
+								
+				 
+					
+					
+					
+					
+				
+
+  
+															
+                															
+			
+				
+										
+									
+					 
+			   	
+
+	      		
+	      
+			   	
+			
+				
+	
+	
+    
+
+
+			 
+			 
+			  
+								  
+	
+			  
+			 						   		   	  				
+				
+				
+				
+					
+                                     
+
+				  
+				   			
+							
+							
+							
+																	
+							
+							
+								
+							
+								
+												 
+		
+	
+							<a href="/iniciar-expediente/mis-documentos/">Mis documentos</a>  
+									
+
+												
+											        
+										        
+										   		   	  				
+				
+				
+				
+					
+                                     
+
+				  
+				   			
+							
+							
+							
+																	
+							
+							
+								
+							
+								
+												 
+		
+	
+							<a href="/iniciar-expediente/mis-notificaciones/">Mis notificaciones</a>  
+									
+
+												
+											        
+										        
+										   		   	  				
+				
+				
+				
+					
+                                     
+
+				  
+				   			
+							
+							
+							
+																	
+							
+							
+								
+							
+								
+												 
+		
+	
+							<a href="/iniciar-expediente/mis-comunicados/">Mis comunicados</a>  
+									
+
+												
+											        
+										        
+						
+             
+				
+										        
+ 		
+	
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+    </div>
+  </div> 
+<a href="https://wwwmat.sat.gob.mx/operacion/00834/servicios-disponibles-del-buzon-tributario">Servicios Disponibles</a>
+ <a href="#news">&nbsp;</a>
+
+</div>               						
+						
+
+			<div id="campo-busqueda">
+				
+				
+									
+						 
+							
+							
+							
+							
+										
+						
+							          					
+								
+													
+								
+									
+									
+									
+								
+		
+
+								
+									
+									
+									
+									
+								
+						        
+
+							  <a href="javascript:salir('/cs/Satellite?childpagename=Common%2FLogic%2FCOMMON_Logout&amp;packedargs=locale%3D1462228413195&amp;pagename=TySWrapper')"> 			
+									<span style="font-family: SoberanaSans;font-size: 13px;font-weight: lighter;letter-spacing: 0;vertical-align: bottom; display: inline;">
+									<p class="btInicio" style="display: block; margin-top:10px">Cerrar sesión</p></span></a><p><a href="javascript:salir('/cs/Satellite?childpagename=Common%2FLogic%2FCOMMON_Logout&amp;packedargs=locale%3D1462228413195&amp;pagename=TySWrapper')">
+									
+								</a> 
+
+	</p><div id="mdsalir" style="padding:0;border:0;display:none">
+		<div class="modal_data" style="background-color: #F2F4F4;padding:18px 50px;margin-top:2px;">
+	<p>¿Desea contestar la encuesta de satisfacción?</p>
+			</div>
+	
+	</div>
+
+
+								<script type="text/javascript">
+									function logout() {
+										var r = confirm('¿Deseas cerrar tu sesión?');
+										if(r == true) {
+											document.cookie="sat_portalamara=true; domain=.sat.gob.mx; path=/; secure=true";
+											var url_logout = '/cs/Satellite?childpagename=Common%2FLogic%2FCOMMON_Logout&packedargs=locale%3D1462228413195&pagename=TySWrapper';
+											window.location=url_logout;	
+										}
+									}
+
+							 function salir(sruta){
+										document.cookie="sat_portalamara=true; domain=.sat.gob.mx; path=/; secure=true";
+									  $('#mdsalir').data('ruta',sruta).dialog({
+									                  open: function (event, ui) {
+											  $('.ui-dialog').css('z-index',103);
+											  $('.ui-widget-overlay').css('z-index',102);
+												$('.ui-dialog').css('top',10);
+											 },
+                                                                          modal: true,
+									  width:'auto',
+									   buttons: [
+									        {
+									            text: "Si",
+									            class: 'buttonx',
+									            click: function() {
+									            	 window.open('https://aplicacionesc.mat.sat.gob.mx/BuzonTributario.Presentacion/generales/EncuestaSatisfaccion/Index.html','_blank');
+									            	 window.location=sruta;
+									            }
+									        },
+									        {
+									            text: "No",
+									            class: 'buttonx',
+									            click: function() {		 
+									            	 window.location=sruta;
+													
+									            }
+									        }
+									    ],
+									  });
+
+									  $('.ui-dialog-titlebar').hide();
+
+									 }
+
+
+
+
+								</script>						
+							
+						
+					
+							
+			</div>
+				
+		</div>	
+		
+
+
+
+   <script>
+	   
+	     if( isMobile.any() ){
+	    		    	 
+	    	 $('.tooltip').click(function(e) {
+	    	     e.preventDefault();	    	   
+	    	 });
+	    	 
+	    	 
+  $('.tooltip').bind('touchstart touchend ', function(e) {    				
+				  if (e.type=='touchend'){	
+					
+				   var now = new Date().getTime();
+				   var lastTouch = $(this).data('lastTouch') || now + 1 ;
+				   var delta = now - lastTouch;
+				   if(delta<800 && delta>0){						  
+ 						 if (this.target!=""){
+							  window.open(this.href,'otragob');
+						 }else{
+						      window.location.href= this.href;
+						 }			
+				   }
+					e.preventDefault();				   
+				    $(this).data('lastTouch', now);  				 
+				  }else{			
+					e.preventDefault();				 
+					if($(this).children('span').css('visibility') != 'visible')
+					{
+						$(this).siblings().children('span').css('visibility','hidden');
+
+						if ($(this).siblings().children('span').last().children().length > 0 ) {
+						$(this).siblings().children('span').last().css('visibility','visible');
+						}
+
+						e.preventDefault();
+						
+						$(this).siblings().css('color', '#727272');
+						$(this).css('color', '#347733');
+						$(this).children('span').css('visibility','visible');
+						$(this).children('span').css('width','80px');
+						$(this).children('span').css('opacity','0.9');
+						$(this).children('span').css('top','28px');
+						$(this).children('span').css('right','-11px');
+						$(this).children('span').css('font-size','12px');
+						$(this).children('span').css('letter-spacing','normal');
+						$(this).children('span').css('z-index','99999999 !important');
+						$(this).children('span').css('position','absolute');
+					$(this).children('span').css('height','16px');		
+					}
+					  				      					
+				  } 				 
+			   });
+			   }
+	   
+
+
+	     $(window).ready(function () {
+	         toolmob();
+	     });
+	     
+	     $(window).resize(function () {
+	         toolmob();
+	     });
+
+	     function toolmob() {
+	    	 $("#mob_icons a.tooltip span:first").each(function () {
+				var xle = $(this).offset().left;
+	             if( xle < 25 ) {
+	            	 $(this).addClass( 'izqui' );
+	             }
+	             else {
+	            	 $(this).removeClass( 'izqui' );
+	             }
+	    	});
+	    	 
+	    	 $("#icons a.tooltip span:first").each(function () {
+					var xle = $(this).offset().left;
+		             if( xle < 25 ) {
+		            	 $(this).addClass( 'izqui' );
+		             }
+		             else {
+		            	 $(this).removeClass( 'izqui' );
+		             }
+		    	});
+	    	 
+	    	 $("#mob_icons a.tooltip span").each(function () {
+					var xle = $(this).offset().left+8;
+		    	     if(xle + $(this).outerWidth() > $( window ).width() ){
+		            	 $(this).addClass( 'derec' );
+		             }
+		             else {
+		            	 $(this).removeClass( 'derec' );
+		             }
+		    	});	    	 
+	    	 
+	     }
+	     
+
+
+
+
+		</script>
+  
+  
+
+	</div>
+
+			       				
+												
+					
+				</div>
+			</div>
+			<!-- Se pinta los logo bar de la seccion privada para moviles -->
+			 
+												
+	       			
+	       				
+	       			
+
+
+
+
+ 
+ 
+ 
+
+
+    
+    
+
+
+
+
+			
+					
+	        
+					
+					
+					
+					
+					
+					
+			
+
+ <div id="mobile_header">
+	<div id="mob_page_title">
+		<a href="/home">
+		
+			
+			
+			Buzón Tributario de MFI6212158B4| mano fil
+					    	
+			
+      </a>
+	<div id="menu-top-buzon2"></div><div id="menu-top-buzon-none2"></div>
+</div>
+                
+ 	<div id="mob_head">
+ 		
+			
+			
+		
+		<script>
+						function  validar(){	
+							var format = /[!@#$%^&*()_+\=\[\]{};':"\\|,.<>\/?]/;
+							var valor = $("#mob_search_input").val();
+						 	if (valor.trim().length<3){
+								alert ("Debe escribir por lo menos 3 letras");
+								return false;
+						    }
+						 	else if(format.test(valor)) {
+						 	    alert('La bÃÂºsqueda contiene caracteres especiales.');
+						 	   return false;
+						 	}						 							 	
+						 	else{
+								return true; 
+							}
+						}
+		</script>
+					<div id="mob_search">
+                		<form id="desktopform" action="/buzon/resultado-busqueda" method="get" onsubmit="return validar()">
+							<input type="text" id="mob_search_input" name="words" placeholder="Buscar" title="" data-advancedtext="BÃÂºsqueda avanzada" data-advancedlink="/buzon/buscar" class="ui-autocomplete-input" autocomplete="off" style="">				 
+							<input type="hidden" id="tipobusqueda" name="tipobusqueda" value="predictiva" style="">
+	 						<input type="hidden" id="locale" name="locale" value="1462228413195" style="">					
+							<input type="image" src="/satys/img/menu_search.png" alt="Buscar" style="">
+						</form>
+					</div>
+					<form id="form_predic" action="/buzon/resultado-busqueda" method="get">											 
+						<input type="hidden" name="locale" value="1462228413195" style="">
+						<input type="hidden" name="tipobusqueda" value="predictiva" style="">
+						<input type="hidden" name="words" id="words" value="" style="">
+					</form>						
+		    		<script>
+						var autocompleteTitleAction = '/cs/Satellite?pagename=Common%2FLogic%2FSAT_AutocompleteTitle';
+						var locale = '1462228413195';
+						var URLAdvancedSearch ='/buzon/buscar';
+						var lt_busquedaavanzada =  'Búsqueda Avanzada';
+						$(function() {
+						 	$( "#desktopform #mob_search_input" ).autocomplete({
+								source: function(request, response) {						
+								if(request.term.trim().length>=3){	
+								    $.ajax({
+									    url: autocompleteTitleAction , 
+									    dataType: "json",
+									    data: { q: request.term,locale: locale},
+									    success: function( data ) {
+									        response( $.map( data, function( item ) {
+									        return {
+									            value: item.value,
+												  link: item.link,
+									        }
+									        }));
+									    },
+									    error: function (request,status,error) {
+									    }
+								    });
+								}
+								 
+								},
+							 	minLength: 3,   
+								position: { my: "center top+2", at: "center bottom" }
+							})
+							.autocomplete( "instance" )._renderItem = function( ul, item ) {
+								var elemento  ="";
+			                    if ( item.value == "Busqueda avanzada >"){
+									elemento =   $( "<li   class='ui-menu-item advanced_search_autoc green'   style ='color:#347733;font-size:11px;line-height:20px;'   onclick=\"window.location=\'' + URLAdvancedSearch + '\';\"   > " + item.link + " </li>" )				
+								 	.appendTo( ul );				                     
+			                    }else{
+									elemento =   $( "<li  >" )
+								 	.append( "<a      onclick='busquesaAvanzadaClick(\"" + item.value + "\")'  >" + item.value + "</a>" )
+									.appendTo( ul );				
+								}
+								return elemento;
+							};
+						
+						});
+						function busquesaAvanzadaClick(valor)
+						{
+						  // alert ("valor" +  valor);
+						   //alert (document.forms["form_predic"].words.value);
+						   document.forms["form_predic"].words.value=valor;
+						   document.forms["form_predic"].submit();
+						}
+					 
+						function  validarE(){	
+							var format = /[!@#$%^&*()_+\=\[\]{};':"\\|,.<>\/?]/;
+							var valor = $("#mob_search_inputE").val();
+					 
+						 	if (valor.trim().length<3){
+								alert ("Debe escribir por lo menos 3 letras");
+								return false;
+						      }
+						 	else if(format.test(valor)) {
+						 	    alert('La bÃÂºsqueda contiene caracteres especiales.');
+						 	   return false;
+						 	}							 	
+						 	else{
+								return true; 
+							}
+						}
+						
+					</script>
+		<div id="mob_icons">
+			
+			
+				
+			
+				
+				
+				
+				
+				
+					
+			<a href="/buzon/ultimas-noticias">E</a>
+			
+					
+			
+								
+			
+				
+				
+				
+				
+				
+					
+			<a href="/buzon/calendario">D</a>
+			
+			<!-- Se construye la ruta a la pag Normatividad -->
+			
+								
+			
+				
+				
+				
+				
+				
+						
+			<a href="/buzon/normatividad">B</a>
+			
+			<!-- Se construye la ruta a la pag Contacto -->
+			
+								
+			
+				
+				
+				
+				
+				
+						
+			<a href="/buzon/contacto">U</a>
+			
+			<!-- Se construye la ruta a la pag OrientaciÃ¯Â¿Â½n -->
+			
+								
+			
+				
+				
+				
+				
+				
+			
+			<a href="/buzon/consultas-de-orientacion">C</a>
+			
+			<!-- Obteniendo la url de Ayuda -->    
+			
+								
+			  
+			
+				
+				
+				
+				
+				
+			  			
+			<a href="/buzon/ayuda">A</a>
+			
+			
+				
+			
+				
+				
+				
+				
+				
+			
+					
+			
+							
+			<a href="https://wwwdevmat.sat.gob.mx/app/seg/cont/accesoC?url=/buzon&amp;idSessionBit=0">S</a>
+		</div>
+	</div>
+</div>
+
+			       				
+										
+			
+	
+			<div id="action_bar2" class="desk">
+
+				<div class="pw">
+					
+				
+				</div>
+				
+			</div>
+
+			<script type="text/javascript">
+				$(".click").click(function(e){
+					window.location = e.delegateTarget.attributes.href.nodeValue;
+				});
+
+                                 $(".click2").click(function(e){
+					//window.open ( e.delegateTarget.attributes.href.nodeValue,e.delegateTarget.attributes.target.nodeValue);
+                                        window.location = e.delegateTarget.attributes.href.nodeValue;
+				});
+				
+				$('.ab_bz').mouseover(function()
+				{
+					ab_reset();
+					
+					$(this).addClass('ab_active');
+					
+					var n = $(this).attr('data_i');
+					
+					$('#ab_sub_' + n).show();
+				});
+				
+				$('.ab_sub, #action_bar').mouseleave(ab_reset);
+				
+				function ab_reset()
+				{
+					$('.ab_bz').removeClass('ab_active');
+					$('.ab_sub').hide();
+				}
+
+				$("body").addClass("buzon");
+			</script>
+	
+			<div class="clear margin_bottom_10"></div>
+
+     		
+     		
+		
+		
+		
+			
+			
+			
+			
+			
+		
+
+
+
+
+
+    
+    							    
+
+
+
+
+    
+        
+	
+    
+		
+	
+    
+
+
+
+
+	
+	
+
+
+<div id="breadcrumbs" class="pw">
+	
+	
+		
+			
+
+			
+				
+					
+			
+				
+				
+					
+					 
+						
+						
+						
+						
+						
+					
+					
+					
+						
+							
+							
+								
+														
+								
+								
+																			
+						
+					 
+					 <span>&gt;</span> Mis documentos
+					
+				
+				
+		
+	
+</div>
+
+
+		
+		<div id="content">
+			<div class="pw">
+			    <div id="header" class="full_width">
+					<h1></h1>
+				</div>
+				
+				<div class="fullm">
+				
+				
+						
+						
+						
+						
+									
+                                                    
+                                                        	
+			
+						<iframe id="iframetoload" class="child-div" style="height: 730px; border: 0 none; margin-top: 20px; scrolling:no;" src="https://tramitesdigitales.sat.gob.mx/decreto.presentacion/FormularioGenerico/TablaDatosFormularioGenerico.aspx?e3zvXEgGFv43RorWFpMB=HBgsmGlVgNJ1qBVzbKqXLLm%2bYrVratUbaOUtsQPs5DBKqNh5uG%2bzk8xZOd59p22POVcYSrNrtkHT7osOxEhIzXUPPLAZjdqlm7LZLnzVDZIPVlnPBHM9KQ%3d%3d"></iframe>	
+									
+						
+					
+				</div>	
+							
+				<div class="clear"></div>
+				
+				<!-- Se pinta la seccion SubMetro si existe -->
+		       	 
+														
+		       			
+
+
+
+	
+
+	
+		
+	
+		
+	
+		
+	
+	
+	    
+	    
+		
+	
+	
+	    
+	    
+	
+	<div class="banners">
+	
+	</div>
+	<div class="clear"></div>
+  
+					
+				
+				
+			</div>
+			
+			
+			
+				
+					
+	       			
+					
+						
+						
+                                              
+					      
+
+ 
+	 
+
+		
+		
+	
+
+
+
+ 	<div id="footer">
+		
+	</div> 
+<div id="pantalla" style="display:none">f</div> 
+<a id="myButtonFAQSAT" class="tooltip">x
+<span>OrientaSAT</span>
+</a>	
+
+<script>
+
+$(document).ready(myfunction);
+
+$(window).resize(function(){
+	var cha = $("#myButtonFAQSAT");
+	var w = $(window).width();
+	if (w>486){
+	cha.insertBefore("#icons #refere");
+	}else{
+	  cha.insertBefore("#mob_icons #refere");
+	}
+}); 
+
+</script>
+
+<script>	
+$(document).ready(dddd);
+function dddd() { 
+
+var myElem = document.getElementById('myElement');         
+if (myElem) {
+  var barra= parseInt($( "#myElement" ).css("width"));  
+  if (barra<=480){
+  try {  
+       var iframetoloadTopPosition = jQuery('#breadcrumbs').offset().top;
+       if (iframetoloadTopPosition!=0 )
+            jQuery('html, body').animate({scrollTop: iframetoloadTopPosition}, 500);	
+      } catch(err) {}
+   }
+}
+
+
+
+
+    if(typeof SAT_POR_32_init=== 'function') { 
+           SAT_POR_32_init();
+    } 
+   $('#mob_menu_selectBusqueda').selectmenu({change:mobileMenu2}).selectmenu( "menuWidget" ).addClass( "overf" );
+
+   $('#dd_menu_busqueda').selectmenu({change:mobileMenu2}).selectmenu( "menuWidget" ).addClass( "overf" );
+}				
+
+function mobileMenu2(e,d) { 	
+
+
+
+
+	var url = d.item.value;
+	var cat_id = d.item.element[0].id;
+	setFilterAndGoToMobile(cat_id,url);
+	eraseCookie("satfilter");
+	createCookie("satfilter", cat_id, 365);	
+	enviarLink (url);
+}
+
+function msieversion() {
+	var ua = window.navigator.userAgent
+	var msie = ua.indexOf ("MSIE ")
+	if ( msie > 0 )      
+	   return parseInt (ua.substring (msie+5, ua.indexOf (".", msie )))
+	else                 
+	  return 0
+}
+ 	
+function validaNavbarIE(){
+ var ua = String(navigator.userAgent);		
+ if(ua.indexOf("Firefox/") < 0 
+	&& ua.indexOf("Chrome/") < 0
+	&& ua.indexOf("Opera/") < 0
+	&& ua.indexOf("Safari/") < 0){			
+		$(".enlace_f").hide();			
+		$(".enlace_i").show();		
+		
+
+	    if (msieversion()!=9){			
+			$(".enlace_i9").hide();
+		} else {
+	        $(".enlace_f9").hide();	
+	    }
+    }else { 
+			$(".enlace_i9").hide();
+	}
+}
+	
+validaNavbarIE();
+$(document).ready(ajusteMenu);
+
+function ajusteMenu(){
+     $('#dd_menu').selectmenu({change:mobileMenu});	
+     $('#mob_menu_select').selectmenu({change:mobileMenu});
+}                 
+var myElem = document.getElementById('myElement');         
+
+if (myElem) {
+  var barra= parseInt($( "#myElement" ).css("width"));  
+  if (barra<=480){
+  try {  
+       var iframetoloadTopPosition = jQuery('#breadcrumbs').offset().top;
+       if (iframetoloadTopPosition!=0 )
+            jQuery('html, body').animate({scrollTop: iframetoloadTopPosition}, 800);	
+      } catch(err) {}
+   }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ function mobileMenuFix()
+{ 
+ try {  
+  $( ".advanced_search_autoc" ).hide();
+  $( ".ui-menu-item" ).hide();
+  $( ".ui-autocomplete" ).hide();
+ } catch(err) {}     
+
+ try { 
+   $( "#desktopformE #mob_search_inputE" ).autocomplete('disable');
+    $( "#desktopformE #mob_search_inputE" ).autocomplete('enable');
+ } catch(err) {}     
+
+ $('#mob_menu_select').selectmenu("destroy").selectmenu();
+ $('#mob_menu_select').selectmenu({change:mobileMenu});
+ try { 
+  $('#dd_menu').selectmenu("destroy").selectmenu();
+  $('#dd_menu').selectmenu({change:mobileMenu});
+ } catch(err) {}  
+  try { 
+  $('#dd_menu_busqueda').selectmenu("destroy").selectmenu();
+  $('#dd_menu_busqueda').selectmenu({change:mobileMenu2}).selectmenu( "menuWidget" ).addClass( "overf" );
+ } catch(err) {}
+ 
+ try { 
+  $('#mob_menu_selectBusqueda').selectmenu("destroy").selectmenu();
+  $('#mob_menu_selectBusqueda').selectmenu({change:mobileMenu2}).selectmenu( "menuWidget" ).addClass( "overf" );
+ } catch(err) {}
+   
+ $('#select_foldername').selectmenu("destroy").selectmenu();  
+
+ try {
+ $('#sortby_inline').selectmenu("destroy").selectmenu();
+ $('#sortby_inline').selectmenu({
+					change:ordenamientoTipo 
+				});
+} catch(err) {}
+				
+
+
+
+
+ 
+ try {
+  $('#idx').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try {  
+ $('#categorySelect').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try {
+ $('#subcategorySelect').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try {
+ $('#sortby').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try {
+ $('#total').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try { 
+ $('#typevent').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try {
+ $('#number').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try {
+ $('#typeid').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ try {  
+ $('#ui-id-73').selectmenu("destroy").selectmenu();
+  } catch(err) {}
+ if(typeof changeCategoryFn=== 'function') { 
+         $('#categorySelect').selectmenu({change:changeCategoryFn});
+ } 
+ //$("div.ab_containb").css({"margin-left":"-300px"});
+ //$("div.ab_containb").addClass("rezised-menu");
+  							 
+ $(document).ready(changerezise);  	
+}
+
+
+
+
+
+
+jQuery(function($) {
+    if (/chrom(e|ium)/.test(navigator.userAgent.toLowerCase())) {
+        $('body').css('opacity', '1.0') 
+    }
+})
+
+
+
+
+
+$(".pw").on('touchend', 'area', function () {
+   // window.location = $(this).attr("href");
+       var el = $(this);
+    var link = el.attr('href');
+    var tar = el.attr('target');
+    
+    window.open(link,tar);
+});
+
+
+
+
+
+if (!isMobile.any()){
+$('.topnav>li a.dec').each(function(){ 
+	var wid=$(this).width()+30;
+	$(this).css('width',wid+'px');
+});
+}
+
+ 
+if (!isMobile.any()){
+$( ".topnav li " ).hover(
+  function() {          
+     
+	$( this ).find("span").each(function(index) {	             
+			 $(this ).css("font-weight", "500");
+			 if (index == 0){
+			  $( this ).animate({
+				 fontSize : "38px",				  
+				}, 50, function() {				 
+				});		 
+			 } 			  
+			 if (index == 1){			 
+			  $( this ).animate({
+				 fontSize : "15px",				  
+				}, 50, function() {				 
+				});		 
+			 } 			  
+	});			
+  }, function() {  
+      var negrita = $( this ).find("a").css("font-weight");  	    
+	 $( this ).find("span").each(function(index) {	 
+			  if (index == 0){
+			  $(this ).css("font-weight", "normal");		   	       
+			  $( this ).animate({
+				 fontSize : "36px"
+				}, 50, function() {				 
+				});		 
+			 } 			  
+			 if (index == 1){			 
+			 $(this ).css("font-weight", negrita);		   	       
+			  $( this ).animate({
+				 fontSize : "13px"					  
+				}, 50, function() {				 
+				});		 
+			 }
+		  
+          $( this ).css("font-size","");         		 
+		  $( this ).css("font-weight","");         		 
+	});				 	 	 
+  }
+);
+}
+
+
+
+</script>
+
+
+
+
+
+				
+			
+		</div>
+	</div>
+	
+
+
+<ul class="ui-autocomplete ui-front ui-menu ui-widget ui-widget-content" id="ui-id-1" tabindex="0" style="display: none;"></ul><span role="status" aria-live="assertive" aria-relevant="additions" class="ui-helper-hidden-accessible"></span></body></html>
+<!-- ===== MARCO (iframe): https://tramitesdigitales.sat.gob.mx/decreto.presentacion/FormularioGenerico/TablaDatosFormularioGenerico.aspx?e3zvXEgGFv43RorWFpMB=HBgsmGlVgNJ1qBVzbKqXLLm%2bYrVratUbaOUtsQPs5DBKqNh5uG%2bzk8xZOd59p22POVcYSrNrtkHT7osOxEhIzXUPPLAZjdqlm7LZLnzVDZIPVlnPBHM9KQ%3d%3d ===== -->
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head id="Head1"><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description"><meta name="author"><title>
+	Datos Formulario Genérico
+</title><link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,700;1,400;1,700&amp;display=swap" rel="stylesheet"><link rel="stylesheet" type="text/css" href="css/dataTables.bootstrap.min.css"><link href="css/buzoncss.css" rel="stylesheet">
+
+    <script type="text/javascript" src="js/jquery.min.js"></script>
+
+    <script type="text/javascript" src="js/bootstrap.min.js"></script>
+
+    <script type="text/javascript" src="js/jquery.dataTables.min.js"></script>
+
+    <script type="text/javascript" src="js/dataTables.bootstrap.min.js"></script>
+
+    <script type="text/javascript" src="js/misScripts.js"></script>
+
+    <script type="text/javascript">
+        //script paginación tabla
+        //cambiar nombre id de la tabla example
+        $(document).ready(function () {
+            $('#tablaRespons').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $('#tablaRespons2015').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $('#tablaResponsIMSS').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $.extend($.fn.dataTable.defaults, {
+                ordering: false
+            });
+            $('#tablaResponsEF').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $.extend($.fn.dataTable.defaults, {
+                ordering: false
+            });
+            $('#tablaResponsLC').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+    </script>
+
+</head>
+<body class="pull-left">
+    <form name="form1" method="post" action="TablaDatosFormularioGenerico.aspx?e3zvXEgGFv43RorWFpMB=HBgsmGlVgNJ1qBVzbKqXLLm%2bYrVratUbaOUtsQPs5DBKqNh5uG%2bzk8xZOd59p22POVcYSrNrtkHT7osOxEhIzXUPPLAZjdqlm7LZLnzVDZIPVlnPBHM9KQ%3d%3d" id="form1">
+<div>
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" style="">
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" style="">
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="mD+OS9uuAuJ8QYd+TYOXqQUMpGYi1KvxBg+uC7KgZGjyUnoGNc4al7NaIyFTWO+LsEm3w0/nCgBkd2kide67bSSRLZZozV2MFh+8rXnXwVqdNU3SJPlUHNp8B1q/BntHWS/5wN5GX81WvhACYflMjoahf/zdoglcANf5xI0cSujqdqaXLrP8RQYD+Dqy7sb+8dVHOUmfJ2YZxQ6fyiHKjQaYNphvSofNJn+C0Q7/9s0UPPONiQRc/4RgzDVrQIjKUfGn7c7IavXgOpjzyuKc0Ao8LcBz3PolBu53CIR8tqsQDz1c3+l1K7GhrJ6lE+2Gpw+SKYl36o9tu/aPqRdDHghKtcYi1kE3x1SbpeNORrpVnSaeLM50SutPDj9nwCb9mFaL3ntXjbfyJbKQ/qCXsZvpcm2SzBC6BmSS24a68+n5eQ7hC/qJECjBldCfe1+4ECWTH3Y/6aNPwsISoylA8WH8uzoEjYITSPugcxOTJW+q0HvzZzHjLgbpnWvLDsonzAaPPG4L+WysDcKUvQwC/Honrg3D3AEkJqT7KzZKgjPTNFbs1Dupll5YVUeSz57ApLPvCaam2E9MAYB7cHsnyoTkrVMxxRd7wgiB+vd+ANv9xP1j6r+Y7M6IKt0qZXE04EDDvFdp3crHuUGL+8OcVRjDaYZyuro6C9kw9Ed4hJkkRzC60hFlCnUYH0+fuXtpbnHNm3hExuyBeUEdFKnr9xSMTVc4IEdFMD+WCWyy/9Pdk6Z+eMQ8qc7kCSJmg1kvhwAmDA3aOv7eRshaaeGtf2h3M29Dl1wXfiG2gi43YUuXyIqjLCxSFivaI+xhcNERyju5yyCPNcO1wwmitjwNemrTMVU1+nPpUd4ARxnOpbYc2ygy6601kSpQGwKn2KzMQAXFo0eg2R/s6RtEmq3M0gl/rWjndfX4MjdxKU/wK8Tpv+8Ul/m78k2QfW088HWTssq/HzO66hj8aKs56XG+HRMJ6+t0GJkq2yMLwiKGzxXD8WGj8DYyUfI8yB+5yhG/Kq+N5ux31tgTL0SjtKFAsGUiFLklWCJLE3a/Flzxo/G/9NLjvoTNA7TcHNVBVvLboit2S2llnc4fPM36WBv2r19sHkru0CXv1yli1jByM6PcpB6/moN9CL00Z9td14nG++ubMvkdrG81v9uoUCacgspvXYyR3+OqtVmibR2bI7wjHHtAhpH+R1hQrVTFsK9ps/dOGiOJbzB6hH3X00fTIfUtEhc=" style="">
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['form1'];
+if (!theForm) {
+    theForm = document.form1;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<div>
+
+	<input type="hidden" name="__VIEWSTATEENCRYPTED" id="__VIEWSTATEENCRYPTED" value="" style="">
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="r2nzgza+uPEfC9U9Y9AIM8nQUXnroQMvwHHvratm9ZNMIHeD/jjpYIao46yEEAYahkmZftzDQsrmOFFtNxA5/oFO87ueSJA8sfnrD5DgWyFwnM6d" style="">
+</div>
+    <input type="hidden" name="hfIdCatalogo" id="hfIdCatalogo" style="">
+    <table class="table" style="font-family: Noto Sans,sans-serif;" cellspacing="0" width="100%">
+        <tbody><tr>
+            <td style="width: 180px">
+                <div id="accordion" role="tablist" aria-multiselectable="true">
+                    <div>
+                        <div class="encabezadoDecreto text-center" style="font-family: Noto Sans,sans-serif;">
+                            Información
+                        </div>
+                    </div>
+                    <br>
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingOne">
+                            <a href="#collapseOne" id="aClasificadorUno" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseOne">
+                            </a>
+                        </div>
+                        <div id="collapseOne" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingOne">
+                            
+                        </div>
+                    </div>
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingTwo">
+                            <a href="#collapseTwo" id="aClasificadorDos" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseTwo">
+                            </a>
+                        </div>
+                        <div id="collapseTwo" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingTwo">
+                            
+                        </div>
+                    </div>
+                    
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingThree">                           
+                            
+                        </div>                        
+                    </div>
+                    
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingFour">   
+                            <a href="#collapseFour" id="aClasificadorCuatro" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseFour">
+                            </a>
+                        </div>  
+                        <div id="collapseFour" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingFour">
+                            
+                        </div>                        
+                    </div>
+                    
+                    
+                      <div class="panel panel-default ">
+                        <div class="panel panel-title text-center" role="tab" id="headingFive">   
+                            <a href="#collapseFive" id="aClasificadorCinco" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseFive">Cobranza</a>
+                        </div>  
+                        <div id="collapseFive" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingFive">
+                            
+                                    <table id="lvClasificadorCinco_table1" width="100%" class="table table-condensed table-bordered" style="font-family: Noto Sans,sans-serif;">
+
+		
+                                    <tbody><tr id="lvClasificadorCinco_ctrl0_Tr2">
+			<td id="lvClasificadorCinco_ctrl0_Td4" class="small smallest">
+                                            <a id="lvClasificadorCinco_ctrl0_lknBtnVerDetalleFive" href="javascript:__doPostBack('lvClasificadorCinco$ctrl0$lknBtnVerDetalleFive','')" style="color: Black; text-align:center;">Líneas de captura</a>
+                                        </td>
+		</tr>
+		
+                                </tbody></table>
+
+                                
+                        </div>                        
+                    </div>
+                    
+                </div>
+            </td>
+            <td style="width: 730px">
+                
+                
+                
+                
+                
+                 
+                
+                 
+            </td>
+        </tr>
+    </tbody></table>
+    </form>
+
+
+</body></html>

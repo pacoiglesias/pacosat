@@ -1,3 +1,22 @@
+/* ===== Lecturas de comunicados fijadas en el panel
+   (2.9.14 · punto 6) =====
+   Lo que «Leer» trae vive AQUÍ, por folio, fuera de cualquier
+   pintado: la lectura tarda ~1 minuto (medido en vivo el 18
+   nov: 68,4 s) y el resultado no puede depender de que Paco
+   siga mirando esta pantalla cuando el paseo vuelve. Al
+   volver, el cuerpo queda fijado en la tarjeta del propio
+   comunicado — salir del panel y regresar lo vuelve a pintar
+   desde este almacén, sin pedirlo otra vez — y si el paseo
+   falla, el motivo queda escrito en la tarjeta, no solo en
+   un aviso pasajero. Este almacén es la capa de SESIÓN; el
+   respaldo durable es el del SERVIDOR (la tabla
+   buzon_lecturas: la vista lo trae como lecturasAqui2914 y
+   la tarjeta lo enseña como «Leído aquí» con su «Ver» sin
+   paseo) — porque satApi no tiene timeout y la respuesta
+   llega si la página sigue viva, pero una pestaña que iOS
+   descarta durante el paseo no vuelve nunca: la copia que
+   manda es la guardada en la casa. */
+const buzonLecturas2914 = new Map();
 /* ===== Buzón Tributario del SAT (1.24.0, punto 1) =====
    La bandeja de notificaciones de la AUTORIDAD para el
    contribuyente elegido: la consulta la corre el servidor con la
@@ -8,67 +27,17 @@
    es POST /api/tributario/run y cancelar POST
    /api/tributario/cancel, con el diario por pasos en la propia
    pantalla, como en Declaraciones. */
-let tribCache = null;
-function tribSinAbrirFor(rfc) {
-  const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
-  if (map) return Number(map[rfc]?.sinAbrir || 0);
-  return tribCache && tribCache.rfc === rfc ? Number(tribCache.sinAbrir || 0) : 0;
-}
-function tribConsultadoFor(rfc) {
-  const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
-  if (map) return Boolean(map[rfc]);
-  return Boolean(tribCache && tribCache.rfc === rfc && tribCache.ultimaConsulta);
-}
-/* La próxima «tenida por notificada» de un RFC (1.27.0): Hoy la
-   nombra junto al contador de sin abrir, porque el plazo corre
-   aunque nadie abra la notificación. */
-function tribTenidaFor(rfc) {
-  const map = typeof satData !== 'undefined' && satData ? satData.tributario : null;
-  if (map && map[rfc]?.proximaTenida) return map[rfc].proximaTenida;
-  return tribCache && tribCache.rfc === rfc ? tribCache.proximaTenida || null : null;
-}
-/* Talón vacío deliberado (1.31.0, punto B): el Buzón Tributario
-   no lleva contador-inventario en el menú — su conteo de sin
-   abrir se ve en su tarjeta y en su pantalla. La función se
-   conserva porque Hoy y los flujos la siguen llamando; el
-   ESTADO en texto de su entrada del menú (2.0.2) lo pinta
-   pintarBuzonMenu202, justo debajo, no este talón. */
-function paintTribBadge() { /* sin distintivo desde la 1.31.0 */ }
-/* ===== Estado del Buzón en su entrada del menú (2.0.2) =====
-   Una sola línea corta bajo «Buzón», con la MISMA fuente que la
-   pantalla y la tarjeta de Hoy: la vista del servidor
-   (tribOverview, GET /api/tributario?rfc=) — sinAbrir,
-   comunicadosNoLeidos y comunicadosFecha de la última consulta
-   buena, y ultimaConsulta. Nada nuevo se calcula: si hay sin
-   abrir, eso manda; si no, los comunicados sin leer con su
-   fecha; sin pendientes, la fecha de la última consulta; nunca
-   consultado, se dice. La función de texto es pura (recibe la
-   vista y devuelve la línea) para que la suite la juzgue con
-   vistas de mentira hechas con los campos reales. */
-const MESES_MENU202 = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-function fechaCortaMenu202(ms) {
-  const d = new Date(Number(ms));
-  if (!ms || Number.isNaN(d.getTime())) return '';
-  return d.getDate() + ' ' + MESES_MENU202[d.getMonth()] +
-    (d.getFullYear() !== new Date().getFullYear() ? ' ' + d.getFullYear() : '');
-}
-function buzonMenuTexto202(data) {
-  if (!data || (!data.ultimaConsulta && !data.total)) return 'Sin consultar todavía';
-  if (Number(data.sinAbrir) > 0) return Number(data.sinAbrir) + ' sin abrir';
-  if (Number(data.comunicadosNoLeidos) > 0)
-    return Number(data.comunicadosNoLeidos) + ' comunicados sin leer' +
-      (data.comunicadosFecha ? ' · ' + fechaCortaMenu202(data.comunicadosFecha) : '');
-  return 'Sin pendientes' + (data.ultimaConsulta ? ' · ' + fechaCortaMenu202(data.ultimaConsulta) : '');
-}
-async function pintarBuzonMenu202() {
-  const el = document.getElementById('buzon-menu-estado202');
-  if (!el) return;
-  if (typeof satToken === 'undefined' || !satToken || !scope) { el.textContent = ''; return; }
-  try {
-    const data = await satApi('tributario?rfc=' + encodeURIComponent(scope));
-    if (el.isConnected) el.textContent = buzonMenuTexto202(data);
-  } catch { if (el.isConnected) el.textContent = ''; }
-}
+/* ===== Puente en ui.part (2.9.0 · Bloque D) =====
+   Este fichero viaja DIFERIDO junto a buzon-ui.part en la
+   parte 'buzon'. Su estado compartido (tribCache), sus ayudas
+   del primer pintado (tribSinAbrirFor, tribConsultadoFor,
+   tribTenidaFor), su talón de distintivo (paintTribBadge), el
+   estado único del Buzón (buzonEstado290, buzonMenuTexto202,
+   pintarBuzonMenu202, con MESES_MENU202 y fechaCortaMenu202),
+   la sede (paseoNasCliente250) y la línea del ejecutor en el
+   menú (pintarEjecutorMenu250) viven en el PUENTE de ui.part
+   (sección «Puente de la parte diferida Buzón»), en una sola
+   copia — aquí no se redeclaran. */
 /* ===== Ejecutor local del SAT (1.29.0) =====
    La ejecución contra el portal corre en TU equipo (tu sesión,
    tu IP): PacoSAT encola los trabajos y este panel enseña si el
@@ -125,6 +94,10 @@ function executorPairCodeBoton(contenedor) {
    su última señal. En línea, sin tarjeta. La consume
    Declaraciones con view.ejecutor, de la propia vista. */
 function executorGuiaCard(estado, alTerminar) {
+  /* Paseo en casa (2.8.0): en sede NAS no hay guía de espera
+     del ejecutor — el paseo corre desde casa, no espera a
+     ningún equipo. */
+  if (paseoNasCliente250()) return null;
   if (!estado || estado.enLinea) return null;
   const box = n('div', undefined, 'aviso-card executor-guia');
   if (!estado.emparejado) {
@@ -158,10 +131,22 @@ function executorStatusLine() {
   const ir = n('button', 'Abrir el Ejecutor local', 'soft');
   ir.type = 'button';
   ir.onclick = () => { satTab = 'ejecutor'; navigate('sat'); };
-  bar.append(ir);
+  /* El botón NO se pinta hasta saber la sede (2.9.0 · Bloque
+     C): pintarlo «mientras carga» lo enseñaba también en sede
+     NAS, donde abrir el ejecutor no es ningún paso del Buzón.
+     En sede remota entra con el resto de la línea al resolver. */
   (async () => {
     try {
       const data = await satApi('executor/overview');
+      /* Paseo en casa (2.8.0): la sede viaja en esta misma
+         vista (data.paseo) — en sede NAS la línea dice que el
+         paseo se hace desde casa y no ofrece el ejecutor como
+         paso: el Buzón no espera a ningún equipo. */
+      if (data.paseo === 'nas' || paseoNasCliente250()) {
+        bar.replaceChildren(statusPill('ok', 'El paseo se hace desde casa (tu NAS)'),
+          n('span', 'El Buzón se consulta desde tu NAS, con tu e.firma guardada: tu ejecutor queda como reserva.', 'muted'));
+        return;
+      }
       const pill = bar.querySelector('.pill, span');
       const hijos = [statusPill(data.enLinea ? 'ok' : 'warn',
         data.enLinea ? 'Ejecutor despierto en tu equipo'
@@ -179,29 +164,56 @@ function executorStatusLine() {
 }
 function executorPanel() {
   const wrap = panel('Ejecutor local del SAT',
-    'Las consultas del Buzón y de Declaraciones se navegan desde tu equipo, con tu sesión de e.firma por RFC. PacoSAT ordena, registra y archiva lo que vuelve verificado.');
+    /* Paseo en casa (2.8.0): el panel sigue entero (paridad:
+       es la reserva y el modo de los clientes), pero en sede
+       NAS su cabecera dice la verdad de esta instalación. */
+    paseoNasCliente250()
+      ? 'Tu ejecutor queda como reserva en esta instalación: el Buzón y las Declaraciones se pasean desde casa, desde tu NAS, con la e.firma guardada. PacoSAT ordena, registra y archiva lo que vuelve verificado.'
+      : 'Las consultas del Buzón y de Declaraciones se navegan desde tu equipo, con tu sesión de e.firma por RFC. PacoSAT ordena, registra y archiva lo que vuelve verificado.');
   wrap.dataset.destino200b = 'ejecutor';
   const body = n('div');
   wrap.append(body);
+  /* Sin servidor (1.29.1, D6 — su casa desde la 2.8.0 es ESTA
+     pantalla, diseño 20): la entrada del ejecutor dice qué
+     falta en vez de desaparecer. */
+  if (typeof satToken === 'undefined' || !satToken) {
+    body.append(n('p', 'El ejecutor se empareja y se consulta desde el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver su estado, su cola y emparejar tu equipo.'));
+    return wrap;
+  }
   const pintar = data => {
     body.replaceChildren();
     const activos = (data.ejecutores || []).filter(ex => !ex.revocado);
+    /* Verdad de sede (2.9.0 · Bloque C): en sede NAS este
+       destino es una tarjeta INFORMATIVA — el paseo se hace
+       desde casa y el ejecutor de PC no se usa: nada de
+       «dormido», nada de despertar, ningún estado acusatorio.
+       El emparejamiento sigue abajo, como reserva que es. */
+    const sedeNas290 = data.paseo === 'nas' || paseoNasCliente250();
     const bar = n('div', undefined, 'traffic-strip');
-    bar.append(statusPill(data.enLinea ? 'ok' : 'warn',
-      data.enLinea ? 'Ejecutor despierto en tu equipo'
-        : !activos.length ? 'Todavía no has emparejado ningún equipo'
-        : 'Tu ejecutor está dormido'));
-    if (data.enCola) bar.append(statusPill('warn', number.format(data.enCola) + ' en cola'));
-    if (data.enCurso) bar.append(statusPill('dim', number.format(data.enCurso) + ' en curso'));
-    /* Despierto: «Abrir ejecutor» discreto en la misma franja
-       (nº 31). Dormido: el botón va con su explicación, abajo. */
-    if (data.enLinea && typeof ejecutarAqui201 === 'function') bar.append(ejecutarAqui201(false));
-    body.append(bar);
+    if (sedeNas290) {
+      bar.append(statusPill('ok', 'El paseo se hace desde casa (tu NAS)'));
+      body.append(bar);
+      body.append(n('p', 'En esta instalación los paseos los hace el NAS desde casa; el ejecutor de PC no se usa. ' +
+        'Su estado no detiene ningún paseo: el Buzón y las Declaraciones se consultan desde el NAS con la e.firma guardada. ' +
+        'El ejecutor queda como reserva por si algún día cambias la sede.', 'muted'));
+    } else {
+      bar.append(statusPill(data.enLinea ? 'ok' : 'warn',
+        data.enLinea ? 'Ejecutor despierto en tu equipo'
+          : !activos.length ? 'Todavía no has emparejado ningún equipo'
+          : 'Tu ejecutor está dormido'));
+      if (data.enCola) bar.append(statusPill('warn', number.format(data.enCola) + ' en cola'));
+      if (data.enCurso) bar.append(statusPill('dim', number.format(data.enCurso) + ' en curso'));
+      /* Despierto: «Abrir ejecutor» discreto en la misma franja
+         (nº 31). Dormido: el botón va con su explicación, abajo. */
+      if (data.enLinea && typeof ejecutarAqui201 === 'function') bar.append(ejecutarAqui201(false));
+      body.append(bar);
+    }
     /* La guía de la espera, también en el panel (1.29.1, D5):
-       qué es el ejecutor y qué paso toca, no solo la pastilla. */
-    if (!data.enLinea && !activos.length)
+       qué es el ejecutor y qué paso toca, no solo la pastilla.
+       En sede NAS no hay guía de espera: no se espera a nadie. */
+    if (!sedeNas290 && !data.enLinea && !activos.length)
       body.append(n('p', 'El ejecutor es el programa que corre en tu PC, junto a tu Chrome: PacoSAT le encarga las consultas del SAT y él las navega con tu sesión y tu e.firma. Empareja tu equipo con el botón de abajo y los trabajos en cola saldrán solos.', 'muted'));
-    else if (!data.enLinea) {
+    else if (!sedeNas290 && !data.enLinea) {
       const ultimo = activos.reduce((max, ex) => Math.max(max, Number(ex.ultimoVisto) || 0), 0);
       body.append(n('p', ultimo
         ? 'Última señal de tu equipo: ' + fmtFechaHora(ultimo) + '. Lo normal es que esté despierto solo (arranca con tu equipo); si está cerrado, despiértalo aquí y los trabajos en cola saldrán solos.'
@@ -214,28 +226,51 @@ function executorPanel() {
         body.append(actos);
       }
     }
+    /* Un equipo, una fila (2.9.0 · Bloque C dedup de
+       revocados; 2.9.13 · A7 lo completa): TODOS los accesos
+       del mismo equipo — vivos, dormidos y revocados — se
+       enseñan en UNA fila con su cuenta («×N»), su estado más
+       fresco y UN solo «Revocar acceso» que apaga todos sus
+       accesos vivos. La auditoría en vivo vio el mismo equipo
+       tres veces con dos botones de revocar. */
+    const gruposEjecutor2913 = new Map();
     for (const ex of data.ejecutores || []) {
+      const clave = ex.nombre || 'Ejecutor';
+      const lista = gruposEjecutor2913.get(clave) || [];
+      lista.push(ex);
+      gruposEjecutor2913.set(clave, lista);
+    }
+    for (const [nombre2913, grupo2913] of gruposEjecutor2913) {
+      const vivos2913 = grupo2913.filter(ex => !ex.revocado);
+      const fresco2913 = grupo2913.reduce((a, b) =>
+        (Number(b.ultimoVisto) || 0) > (Number(a.ultimoVisto) || 0) ? b : a, grupo2913[0]);
       const row = n('div', undefined, 'cp-row');
-      row.append(n('span', (ex.nombre || 'Ejecutor') + ' · ' + (ex.revocado
+      row.append(n('span', nombre2913 + (grupo2913.length > 1 ? ' ×' + grupo2913.length : '') + ' · ' + (!vivos2913.length
         ? 'acceso REVOCADO: su token ya no funciona'
-        : ex.enLinea
-          ? 'en línea (visto ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(ex.ultimoVisto) : '') + ')'
-          : 'sin conexión desde ' + (ex.ultimoVisto ? (typeof fmtFechaHora === 'function' ? fmtFechaHora(ex.ultimoVisto) : '') : 'nunca'))));
+        : vivos2913.some(ex => ex.enLinea)
+          ? 'en línea (visto ' + (typeof fmtFechaHora === 'function' ? fmtFechaHora(fresco2913.ultimoVisto) : '') + ')'
+          : 'sin conexión desde ' + (fresco2913.ultimoVisto ? (typeof fmtFechaHora === 'function' ? fmtFechaHora(fresco2913.ultimoVisto) : '') : 'nunca'))));
       /* Revocar (1.29.0, H-1.2): si el equipo se pierde o el token
          se filtra, este gesto lo apaga al instante; los trabajos
          en curso vuelven a la cola y el gesto queda en el
          Registro. Re-emparejar crea un token nuevo. */
-      if (!ex.revocado) {
+      if (vivos2913.length) {
         const revocar = n('button', 'Revocar acceso', 'soft small');
         revocar.type = 'button';
         revocar.onclick = async () => {
-          if (!confirm('¿Revocar el acceso de «' + (ex.nombre || 'Ejecutor') + '»? Su token dejará de funcionar al instante y sus trabajos en curso volverán a la cola. Podrás emparejar el equipo de nuevo cuando quieras.')) return;
-          revocar.disabled = true;
-          try {
-            await satApi('executor/revoke', { id: ex.id });
-            toast('Acceso revocado: ese token ya no funciona.', 'ok');
-            pintar(await satApi('executor/overview'));
-          } catch (error) { toast(error.message, 'error'); revocar.disabled = false; }
+          /* Confirmación con el diálogo propio (2.9.7 · D4): el
+             mismo patrón que la revocación de llaves API de la
+             2.9.5 — fuera la confirmación nativa del navegador. */
+          dialog('Revocar el acceso',
+            [n('p', '¿Revocar el acceso de «' + nombre2913 + '»? Su token dejará de funcionar al instante y sus trabajos en curso volverán a la cola. Podrás emparejar el equipo de nuevo cuando quieras.')],
+            async () => {
+              revocar.disabled = true;
+              try {
+                for (const ex of vivos2913) await satApi('executor/revoke', { id: ex.id });
+                toast('Acceso revocado: ese token ya no funciona.', 'ok');
+                pintar(await satApi('executor/overview'));
+              } catch (error) { toast(error.message, 'error'); revocar.disabled = false; }
+            }, 'Revocar');
         };
         row.append(revocar);
       }
@@ -249,15 +284,18 @@ function executorPanel() {
     {
       const vivos = (data.trabajos || []).filter(j => ['en-cola', 'reclamado', 'en-curso'].includes(j.estado));
       const row = n('div', undefined, 'cp-row');
+      /* Qué cuenta cada contador, dicho en su sitio (2.9.0 ·
+         Bloque C): esta cola es SOLO la del ejecutor (trabajos
+         que una PC recogería); la tarjeta de actividad cuenta
+         las solicitudes en espera de TODO el sistema — no son
+         el mismo número y ya no se contradicen en silencio. */
       row.append(n('span', 'Cola de trabajos: ' + number.format(vivos.length) +
         (vivos.length === 1 ? ' trabajo vivo' : ' trabajos vivos') +
-        ' — cada uno vive en su tarjeta, arriba en esta misma pantalla.'));
-      if (vivos.length) {
-        const irTarjetas = n('button', 'Ver en su tarjeta', 'soft small');
-        irTarjetas.type = 'button';
-        irTarjetas.onclick = () => document.querySelector('.tramite-grid')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
-        row.append(irTarjetas);
-      }
+        ' — es la cola del ejecutor: los trabajos que una PC recogería. La tarjeta de actividad cuenta aparte las solicitudes en espera de todo el sistema.'));
+      /* Sin botón «Ver en su tarjeta» (2.3.2 · m-17): su único
+         efecto era desplazar hasta la parrilla de trámites de
+         esta misma pantalla. La parrilla y los trabajos quedan
+         intactos; el conteo de la cola se queda como texto. */
       body.append(row);
     }
     /* Contextual (2.0, 2.6): con un equipo ya emparejado, el
@@ -277,15 +315,17 @@ function tributarioScreen() {
   const wrap = n('div');
   if (typeof satToken === 'undefined' || !satToken) {
     wrap.append(panel('Buzón Tributario', 'El Buzón Tributario se consulta desde el servidor de tu casa (el NAS): abre PacoSAT desde el servidor para ver las notificaciones del SAT.'));
-    /* El ejecutor tampoco desaparece sin servidor (1.29.1, D6):
-       su entrada queda visible diciendo qué falta — se empareja
-       y se consulta desde el servidor, como el Buzón. */
-    wrap.append(panel('Ejecutor local del SAT', 'El ejecutor se empareja y se consulta desde el servidor de tu casa (el NAS), igual que el Buzón: abre PacoSAT desde el servidor para ver su estado, su cola y emparejar tu equipo.'));
+    /* (2.8.0 · diseño 20) El panel del ejecutor sale del Buzón
+       también sin servidor (antes, 1.29.1 D6, quedaba aquí una
+       tarjeta suya): el ejecutor vive en su pantalla «Tu
+       ejecutor» — entrada propia del menú — y su estado, en la
+       línea de estado de Hoy. El Buzón es del Buzón. */
     return [wrap];
   }
   const head = panel('Buzón Tributario · ' + (scope || 'sin contribuyente'),
     'Las notificaciones que el SAT deja en su buzón oficial para este RFC. PacoSAT solo las LISTA: no abre ninguna, porque abrirla puede darla por notificada e iniciar plazos. Abrirlas es tu gesto, en el portal oficial.');
   head.dataset.destino200b = 'buzon';
+  head.classList.add('protagonista280'); /* (2.8.0 · diseño 7) */
   const body = n('div');
   head.append(body);
   wrap.append(head);
@@ -303,6 +343,7 @@ function tributarioScreen() {
   let running = false;
   let verArchivadas = false;
   let verPapelera = false;
+  let relojStop290 = null;
   let poller = null;
   const stopPoller = () => { if (poller) { clearInterval(poller); poller = null; } };
   const paint = data => {
@@ -310,6 +351,7 @@ function tributarioScreen() {
     if (typeof satData !== 'undefined' && satData) {
       satData.tributario = satData.tributario || {};
       if (data.total || data.ultimaConsulta) satData.tributario[rfc] = { total: data.total || 0, sinAbrir: data.sinAbrir || 0,
+        ultimaConsulta: data.ultimaConsulta || null,
         proximaTenida: data.proximaTenida || null };
     }
     paintTribBadge();
@@ -338,17 +380,47 @@ function tributarioScreen() {
       cancelar.type = 'button';
       cancelar.onclick = async () => {
         cancelar.disabled = true;
-        try { await satApi('tributario/cancel', { rfc }); toast('Cancelación pedida: la consulta se detiene en el punto seguro.', 'ok'); }
+        try { await satApi('tributario/cancel', { rfc }); toast('Cancelación pedida: la consulta se detiene en segundos, en el punto seguro en el que esté.', 'ok'); }
         catch (error) { toast(error.message, 'error'); cancelar.disabled = false; }
       };
       bar.append(cancelar);
     }
     body.append(bar);
-    if (isRunning && progreso.step)
-      body.append(n('p', progreso.step, 'today-line'));
+    /* Paso VIVO y reloj honesto (2.9.0 · bloque B, pieza 3): el
+       paso que se ve es el detail vivo de la entrada de actividad
+       de este RFC — el último que el servidor narra, con sus
+       reintentos — y junto a él, el tiempo transcurrido desde su
+       since real, repintado cada segundo SOLO en esa línea. Sin
+       entrada de actividad legible, manda el paso de la vista. */
+    if (relojStop290) { relojStop290(); relojStop290 = null; }
+    if (isRunning) {
+      const vivo290 = typeof pasoVivo290 === 'function' ? pasoVivo290('tributario', rfc) : null;
+      const paso290 = String(vivo290?.detail || progreso.step || 'Consultando el buzón…');
+      const linea290 = n('p', undefined, 'today-line paso-vivo290');
+      linea290.append(n('span', paso290, 'paso-vivo-texto290'));
+      const reloj290 = n('span', '', 'foco-reloj290');
+      reloj290.dataset.reloj290 = 'tributario';
+      linea290.append(document.createTextNode(' · '), reloj290);
+      body.append(linea290);
+      const desde290 = Number(vivo290?.since) || Number(progreso.at) || 0;
+      if (desde290 && typeof relojTranscurrido290 === 'function')
+        relojStop290 = relojTranscurrido290(reloj290, desde290);
+    }
+    /* (2.9.9 · D5) Los párrafos explicativos del Buzón viven
+       tras un «Ver más»: la lista manda en la cara y el texto
+       íntegro queda a un toque, en este mismo desplegable. */
+    let ayuda299 = null;
+    const parrafoAyuda299 = texto => {
+      if (!ayuda299) {
+        ayuda299 = n('details', undefined, 'seal-details');
+        ayuda299.append(n('summary', 'Ver más · Cómo funciona este buzón'));
+        body.append(ayuda299);
+      }
+      ayuda299.append(n('p', texto, 'today-line'));
+    };
     if (data.sinAbrir)
-      body.append(n('p', 'Son notificaciones de la autoridad para ' + rfc + '. PacoSAT te las enseña en lista; ' +
-        'para leer su contenido entra tú al portal oficial del SAT y ábrelas allí: ese gesto puede iniciar sus plazos.', 'today-line'));
+      parrafoAyuda299('Son notificaciones de la autoridad para ' + rfc + '. PacoSAT te las enseña en lista; ' +
+        'para leer su contenido entra tú al portal oficial del SAT y ábrelas allí: ese gesto puede iniciar sus plazos.');
     /* El plazo corre aunque nadie abra (1.27.0): la fecha en que
        la más antigua se tiene por notificada va en voz alta —
        no abrir NO congela nada (arts. 134-I y 135 del CFF). */
@@ -369,17 +441,294 @@ function tributarioScreen() {
       body.append(n('p', 'Comunicados: ' + (data.comunicadosNoLeidos === 0 ? 'ninguno sin leer' :
         number.format(data.comunicadosNoLeidos) + ' sin leer') +
         ' (contados en la consulta del ' + buzonCuando(data.comunicadosFecha) + ', sin abrir ninguno).', 'today-line'));
+    /* Buzón completo, la lista (2.9.4): las secciones que la
+       última consulta buena LISTÓ — «Mis comunicados» con
+       cada mensaje (su asunto, su fecha y su folio, sin
+       abrir ninguno) y «Mis documentos» con su lista — con
+       la misma dignidad que la bandeja de notificaciones:
+       lo que la consulta trajo se enseña aquí; la sección
+       que no concluyó se dice con su motivo, no se esconde
+       ni se finge vacía. */
+    const completo294 = data.buzonCompleto240 || null;
+    /* ===== Buzón rediseñado (2.9.13 · Bloque B): los
+       comunicados sin leer son TARJETAS con su «Leer» — el
+       gesto que Paco pidió: al tocarlo, el sistema va al
+       Buzón, abre ESE comunicado y enseña su cuerpo como
+       documento aquí dentro. Los leídos van agrupados por
+       hilo (mismo folio: el «Registro…» con su «Respuesta…»),
+       plegados. Las NOTIFICACIONES de abajo no cambian: se
+       listan sin abrir, sin botón de abrir (reloj legal). El
+       «leído» de cada tarjeta lo dice el SAT en la siguiente
+       consulta: aquí no se finge ninguna marca local. */
+    /* El documento de un comunicado abierto: su cabecera y su
+       cuerpo como documento — y, si el cuerpo era un puntero
+       y la visita siguió su enlace (2.9.14 · punto 7), el
+       detalle enlazado debajo, con su nombre propio o con lo
+       que el destino ES en palabras llanas —. Lo usan el
+       diálogo del momento y la tarjeta fijada: un solo
+       documento, dos sitios. */
+    const comunicadoDoc2914 = (res, msg) => {
+      const cab = n('div', undefined, 'trib-com-doc2913-cab');
+      cab.append(n('strong', res.asunto || msg.asunto || 'Comunicado del SAT'));
+      cab.append(n('p', (res.fecha || msg.fecha || '') +
+        (res.folio ? ' · Folio ' + res.folio : '') + ' · Buzón Tributario del SAT', 'today-line'));
+      const cuerpo = n('div', undefined, 'trib-com-doc2913');
+      for (const linea of String(res.cuerpo || '').split(/\n+/))
+        if (linea.trim()) cuerpo.append(n('p', linea.trim()));
+      if (!cuerpo.childNodes.length) cuerpo.append(n('p', 'El SAT enseñó este comunicado sin texto.'));
+      const det = res.detalleEnlace || null;
+      if (det) {
+        cuerpo.append(n('strong', 'El detalle que enlaza este comunicado:'));
+        if (det.estado === 'texto') {
+          const lineasDet = String(det.texto || '').split(/\n+/).filter(l => l.trim());
+          for (const linea of lineasDet) cuerpo.append(n('p', linea.trim()));
+          if (!lineasDet.length) cuerpo.append(n('p', 'La página enlazada no enseñó texto.'));
+        } else if (det.estado === 'formulario')
+          cuerpo.append(n('p', 'La página que enlaza es un formulario del portal: se rellena allí, con tu gesto — su contenido no se trae.'));
+        else if (det.estado === 'descarga')
+          cuerpo.append(n('p', 'El enlace de este comunicado descarga un archivo: no se trae su contenido.'));
+        else
+          cuerpo.append(n('p', 'La página que enlaza no cargó en esta visita: no consta su contenido.'));
+      }
+      return [cab, cuerpo];
+    };
+    /* La zona de la lectura DENTRO de la tarjeta (2.9.14 ·
+       punto 6): la marcha con su fase y su reloj y el aviso
+       llano de duración, el documento fijado con su «Cerrar»
+       que lo repliega, o el motivo del fallo escrito. Se
+       compone desde el almacén de la parte: cualquier
+       repintado — salir del panel y volver incluidos — la
+       recompone tal cual, sin pedir nada otra vez. */
+    const lecturaZona2914 = (msg, lectura) => {
+      const zona = n('div', undefined, 'trib-com-doc2913');
+      zona.dataset.buzonLectura2914 = msg.folio;
+      if (lectura.estado === 'guardada') {
+        /* La copia del SERVIDOR (2.9.14 · punto 6, con
+           respaldo): este comunicado ya se leyó aquí y su
+           cuerpo vive en el almacén de la casa — la tarjeta
+           lo nombra «Leído aquí» y su «Ver» lo despliega
+           DESDE ESE ALMACÉN, sin paseo nuevo: instantáneo y
+           a prueba de cortes. Su «leído» ante el SAT sigue
+           siendo el que diga el SAT: la copia se nombra como
+           lo que es, nunca como marca oficial. */
+        const linea = n('p', undefined, 'today-line');
+        linea.append(statusPill('ok', 'Leído aquí'));
+        linea.append(n('span', 'Se leyó aquí' +
+          (lectura.leidoAquiEn && typeof fmtFechaHora === 'function'
+            ? ' el ' + fmtFechaHora(lectura.leidoAquiEn) : '') +
+          ' y su texto quedó guardado en PacoSAT. Su «leído» ante el SAT lo dirá el SAT en la próxima consulta.'));
+        zona.append(linea);
+        const ver = n('button', 'Ver', 'soft small');
+        ver.type = 'button';
+        ver.dataset.buzonLecturaVer2914 = '1';
+        ver.onclick = () => {
+          buzonLecturas2914.set(msg.folio, { estado: 'ok', asunto: lectura.asunto || '',
+            fecha: lectura.fecha || '', folio: msg.folio, cuerpo: lectura.cuerpo || '',
+            detalleEnlace: lectura.detalleEnlace || null });
+          if (body.isConnected) paint(data);
+        };
+        zona.append(ver);
+      } else if (lectura.estado === 'leyendo') {
+        const linea = n('p', undefined, 'today-line');
+        linea.append(n('span', 'Leyendo en el Buzón…'));
+        const reloj = n('span', '', 'foco-reloj290');
+        linea.append(document.createTextNode(' · '), reloj);
+        zona.append(linea);
+        zona.append(n('p', 'Tarda alrededor de un minuto: PacoSAT está entrando al Buzón y abriendo este comunicado por ti. Puedes irte a otra pantalla: al volver, el comunicado quedará abierto aquí, en su tarjeta.', 'today-line'));
+        if (typeof relojTranscurrido290 === 'function')
+          relojTranscurrido290(reloj, lectura.since || Date.now());
+      } else if (lectura.estado === 'ok') {
+        for (const el of comunicadoDoc2914(lectura, msg)) zona.append(el);
+        const cerrar = n('button', 'Cerrar', 'soft small');
+        cerrar.type = 'button';
+        cerrar.dataset.buzonLecturaCerrar2914 = '1';
+        cerrar.onclick = () => { buzonLecturas2914.delete(msg.folio); if (body.isConnected) paint(data); };
+        zona.append(cerrar);
+      } else {
+        zona.append(n('p', 'No se pudo leer este comunicado: ' + (lectura.error || 'sin detalle'), 'error-text'));
+        const cerrar = n('button', 'Quitar aviso', 'soft small');
+        cerrar.type = 'button';
+        cerrar.dataset.buzonLecturaCerrar2914 = '1';
+        cerrar.onclick = () => { buzonLecturas2914.delete(msg.folio); if (body.isConnected) paint(data); };
+        zona.append(cerrar);
+      }
+      return zona;
+    };
+    const leerComunicado2913 = async (msg, boton) => {
+      /* (2.9.14 · punto 6) La marcha se VE y el resultado no
+         se pierde. El defecto en vivo (18 nov, 22:04): Paco
+         tocó «Leer» y «no desplegó nada» — la ruta SÍ
+         funcionaba (la misma llamada devolvió el cuerpo en
+         68,4 s), pero durante ese minuto la única señal era
+         el botón en «Leyendo…» y el cuerpo solo vivía en un
+         diálogo del momento: si cambiaba de pantalla, la
+         respuesta no se pintaba nunca y no quedaba rastro.
+         Ahora el estado vive en el almacén de la parte y la
+         tarjeta lo pinta: fase y reloj mientras lee, el
+         documento fijado al volver — también tras salir y
+         regresar — y el motivo escrito si el paseo falla.
+         El diálogo del momento se conserva, pero ya no es el
+         único sitio donde el cuerpo existe. */
+      buzonLecturas2914.set(msg.folio, { estado: 'leyendo', since: Date.now() });
+      if (body.isConnected) paint(data);
+      try {
+        const res = await satApi('buzon/comunicado', { rfc, folio: msg.folio });
+        if (!res?.ok) throw new Error(res?.error || 'El SAT no enseñó el cuerpo de este comunicado.');
+        buzonLecturas2914.set(msg.folio, { estado: 'ok', asunto: res.asunto || '',
+          fecha: res.fecha || '', folio: res.folio || msg.folio, cuerpo: res.cuerpo || '',
+          detalleEnlace: res.detalleEnlace || null });
+        if (body.isConnected) {
+          paint(data);
+          /* El diálogo es la cortesía del momento: si algo
+             fallara al enseñarlo, el documento ya quedó
+             fijado en la tarjeta — no se marca error una
+             lectura que sí llegó. */
+          try {
+            dialog('Comunicado del SAT', comunicadoDoc2914(res, msg), null);
+            toast('Comunicado abierto: queda fijado en su tarjeta. En la lista seguirá «sin leer» hasta que la próxima consulta lo lea del SAT.', 'ok');
+          } catch { /* el documento fijado en la tarjeta manda */ }
+        }
+      } catch (error) {
+        buzonLecturas2914.set(msg.folio, { estado: 'error',
+          error: String(error?.message || error || 'sin detalle') });
+        if (body.isConnected) paint(data);
+        toast(error.message, 'error');
+      }
+    };
+    if (completo294?.comunicados) {
+      const secCom294 = completo294.comunicados;
+      const itemsCom2913 = secCom294.concluyente ? (secCom294.items || []) : [];
+      const sinLeer2913 = itemsCom2913.filter(m => !m.leido);
+      const leidos2913 = itemsCom2913.filter(m => m.leido);
+      const headCom2913 = n('div', undefined, 'trib-sec-head2913');
+      headCom2913.append(n('strong', 'Mis comunicados'));
+      headCom2913.append(statusPill(sinLeer2913.length ? 'warn' : 'ok',
+        secCom294.concluyente
+          ? (sinLeer2913.length ? number.format(sinLeer2913.length) + ' sin leer' : 'Ninguno sin leer')
+          : 'Sin constar en esta consulta'));
+      body.append(headCom2913);
+      if (secCom294.concluyente && itemsCom2913.length) {
+        for (const msg294 of sinLeer2913) {
+          const card294 = n('div', undefined, 'trib-com-card2913');
+          const main294 = n('div', undefined, 'cp-main');
+          main294.append(n('strong', msg294.asunto || 'Comunicado del SAT'));
+          main294.append(n('p', (msg294.fecha || '') + (msg294.folio ? ' · Folio ' + msg294.folio : ''), 'today-line'));
+          card294.append(main294);
+          if (msg294.folio) {
+            const leer294 = n('button', 'Leer', 'primary small trib-com-leer2913');
+            leer294.type = 'button';
+            leer294.onclick = () => leerComunicado2913(msg294, leer294);
+            /* (2.9.14 · punto 6) La lectura de ESTE comunicado
+               se pinta en su tarjeta: en marcha (botón en
+               «Leyendo…» y la zona con su fase y su reloj),
+               fijada al volver, con su motivo escrito si el
+               paseo falló — o, si el SERVIDOR ya guarda su
+               copia de una lectura anterior, como «Leído
+               aquí» con su «Ver» sin paseo (el respaldo que
+               sobrevive a pestañas muertas y páginas nuevas:
+               el almacén de sesión solo no bastaba). */
+            const lectura294 = buzonLecturas2914.get(msg294.folio) ||
+              (data.lecturasAqui2914?.[msg294.folio]
+                ? { estado: 'guardada', ...data.lecturasAqui2914[msg294.folio] } : null);
+            if (lectura294?.estado === 'leyendo') {
+              leer294.disabled = true;
+              leer294.textContent = 'Leyendo…';
+            }
+            card294.append(leer294);
+            if (lectura294) card294.append(lecturaZona2914(msg294, lectura294));
+          }
+          body.append(card294);
+        }
+        if (leidos2913.length) {
+          const hilos2913 = new Map();
+          for (const msg294 of leidos2913) {
+            const clave = msg294.folio || ('sin-folio-' + (msg294.asunto || ''));
+            const lista = hilos2913.get(clave) || [];
+            lista.push(msg294);
+            hilos2913.set(clave, lista);
+          }
+          for (const [clave2913, hilo2913] of hilos2913) {
+            if (hilo2913.length === 1) {
+              const msg294 = hilo2913[0];
+              const row294 = n('div', undefined, 'cp-row trib-row');
+              row294.append(statusPill('dim', 'Leído'));
+              const main294 = n('div', undefined, 'cp-main');
+              main294.append(n('span', (msg294.asunto || 'Comunicado del SAT') +
+                (msg294.fecha ? ' · ' + msg294.fecha : '') + (msg294.folio ? ' · ' + msg294.folio : '')));
+              row294.append(main294);
+              body.append(row294);
+            } else {
+              const titular2913 = hilo2913.find(m => !/respuesta/i.test(m.asunto || '')) || hilo2913[0];
+              const contenedor2913 = n('div');
+              for (const msg294 of hilo2913) {
+                const row294 = n('div', undefined, 'cp-row trib-row');
+                row294.append(statusPill('dim', 'Leído'));
+                const main294 = n('div', undefined, 'cp-main');
+                main294.append(n('span', (msg294.asunto || 'Comunicado del SAT') +
+                  (msg294.fecha ? ' · ' + msg294.fecha : '')));
+                row294.append(main294);
+                contenedor2913.append(row294);
+              }
+              body.append(plegable290('Hilo · ' + (titular2913.asunto || 'Comunicado del SAT') +
+                (clave2913.startsWith('sin-folio-') ? '' : ' · ' + clave2913) +
+                ' · ' + hilo2913.length + ' mensajes leídos', contenedor2913));
+            }
+          }
+        }
+      } else if (secCom294.concluyente) {
+        body.append(empty('Sin comunicados', secCom294.soloConteos
+          ? 'La última consulta contó los comunicados sin traer su lista: cuando el SAT enseñe la lista, cada uno traerá su «Leer».'
+          : 'La última consulta no trajo comunicados para este RFC.'));
+      } else {
+        body.append(empty('Los comunicados no constan en esta consulta',
+          'El SAT no enseñó esta bandeja en esta consulta: no consta su contenido, no es un cero.'));
+        const reintentar294 = n('button', 'Reintentar la consulta', 'soft trib-reintentar2913');
+        reintentar294.type = 'button';
+        reintentar294.onclick = () => run();
+        body.append(reintentar294);
+      }
+    }
+    if (completo294?.documentos) {
+      const secDoc294 = completo294.documentos;
+      const headDoc2913 = n('div', undefined, 'trib-sec-head2913');
+      headDoc2913.append(n('strong', 'Mis documentos'));
+      body.append(headDoc2913);
+      if (secDoc294.concluyente && (secDoc294.items || []).length) {
+        for (const doc294 of secDoc294.items) {
+          const row294 = n('div', undefined, 'cp-row trib-row');
+          const main294 = n('div', undefined, 'cp-main');
+          main294.append(n('span',
+            (doc294.nombre || 'Documento del SAT') +
+            (doc294.fecha ? ' · ' + doc294.fecha : '') +
+            (doc294.estado ? ' · ' + doc294.estado : '')));
+          row294.append(main294);
+          body.append(row294);
+        }
+      } else if (secDoc294.concluyente) {
+        body.append(n('p', 'Sin documentos en la última consulta.', 'today-line'));
+      } else {
+        /* (2.9.13 · B12) La cara dice la frase llana y trae su
+           reintento; el motivo técnico íntegro queda fuera de
+           la cara (antes se volcaba el párrafo entero). */
+        body.append(empty('Mis documentos no constan en esta consulta',
+          'El SAT no enseñó esta bandeja en esta consulta: no consta su contenido, no es un cero.'));
+        const reintentarDoc2913 = n('button', 'Reintentar la consulta', 'soft trib-reintentar2913');
+        reintentarDoc2913.type = 'button';
+        reintentarDoc2913.onclick = () => run();
+        body.append(reintentarDoc2913);
+      }
+    }
     /* Consulta automática semanal (1.28.0, P3): la pantalla dice
        cuándo toca la siguiente sin que nadie pulse nada. Semanal
        porque la no abierta se tiene por notificada al 4.º día:
        una cadencia mayor podría descubrirla con los efectos ya
        corriendo. */
-    body.append(n('p', (data.proximaAuto
+    parrafoAyuda299((data.proximaAuto
       ? 'Consulta automática: PacoSAT revisa este buzón solo, cada semana — la siguiente toca el ' +
         new Date(data.proximaAuto).toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long' }) +
         '. El botón «Consultar ahora» sigue valiendo en cualquier momento.'
       : 'Consulta automática semanal activada: la primera revisión sola llega en el próximo ciclo del sistema; el botón «Consultar ahora» vale en cualquier momento.') +
-      (data.archivadas ? ' En local hay ' + number.format(data.archivadas) + ' archivada(s) (opiniones e informativos): no vuelven a esta vista aunque el SAT las siga enseñando.' : ''), 'today-line'));
+      (data.archivadas ? ' En local hay ' + number.format(data.archivadas) + ' archivada(s) (opiniones e informativos): no vuelven a esta vista aunque el SAT las siga enseñando.' : ''));
     /* «Sin abrir» se dice UNA vez en esta pantalla (1.32.1,
        B4): en la pastilla de estado. La antigua línea
        «Vigilancia: N sin abrir…» repetía el conteo por tercera
@@ -544,26 +893,41 @@ function tributarioScreen() {
        qué hizo la máquina, plegada como detalle. */
     const runs = data.runs || [];
     if (runs.length) {
-      const details = n('details', undefined, 'decl-diario');
-      const summary = n('summary', 'Diario de consultas');
-      details.append(summary);
+      /* Expandible con cableado propio (2.9.0 · Bloque C): el
+         <details> nativo no desplegaba en producción (la
+         auditoría lo probó muerto); plegable290 garantiza el
+         despliegue con estado propio. */
+      const diarioContenido290 = n('div', undefined, 'decl-diario');
       for (const run of runs) {
         const block = n('div', undefined, 'decl-diario-run');
-        block.append(n('p', (run.ok ? '✓ ' : '✗ ') + buzonCuando(run.started) + ' · ' +
+        const lineaRun240 = n('p', buzonCuando(run.started) + ' · ' +
           (run.ok ? run.encontradas + ' en la bandeja, ' + run.sinAbrir + ' sin abrir'
             : (run.error || 'sin detalle')) +
-          (run.attempts > 1 ? ' · ' + run.attempts + ' intentos' : ''), run.ok ? 'muted' : 'error-text'));
+          (run.attempts > 1 ? ' · ' + run.attempts + ' intentos' : ''), run.ok ? 'muted' : 'error-text');
+        lineaRun240.dataset.estado = run.ok ? 'aldia' : 'error';
+        block.append(lineaRun240);
         for (const step of run.steps || [])
-          block.append(n('p', '· ' + (step.paso || '') + (step.detalle ? ' — ' + step.detalle : ''), 'muted'));
+          block.append(n('p', '· ' + (step.paso || step.text || '') + (step.detalle ? ' — ' + step.detalle : ''), 'muted'));
         if (!run.ok) {
           /* La página guardada del fallo (1.27.0): verla o
              bajarla sin repetir la consulta a ciegas. */
           const evidencia = evidenceButtons('tributario', run);
           if (evidencia) block.append(evidencia);
         }
-        details.append(block);
+        /* La evidencia por sección (2.9.3): la página de
+           «Mis comunicados» / «Mis documentos» de ESTA
+           corrida, concluyeran o no — se enseña en toda
+           corrida que la guardó, también en las buenas: una
+           sección que no concluye en una corrida buena es
+           justo el caso que hay que poder mirar. */
+        const evidenciaSeccion = typeof seccionEvidenceButtons293 === 'function'
+          ? seccionEvidenceButtons293(run) : null;
+        if (evidenciaSeccion) block.append(evidenciaSeccion);
+        diarioContenido290.append(block);
       }
-      body.append(details);
+      body.append(typeof plegable290 === 'function'
+        ? plegable290('Diario de consultas', diarioContenido290, 'buzon-diario')
+        : diarioContenido290);
     }
   };
   const refresh = async () => {
@@ -608,15 +972,24 @@ function tributarioScreen() {
       toast(error.message, 'error');
     }
   };
-  /* Esqueleto de carga (1.25.0), como en el resto de pantallas. */
-  const tribSkel = n('div', undefined, 'skel');
-  tribSkel.setAttribute('aria-busy', 'true');
-  tribSkel.setAttribute('aria-label', 'Cargando el Buzón Tributario');
-  for (let i = 0; i < 3; i++) tribSkel.append(n('div', undefined, 'skel-block'));
-  body.append(tribSkel);
+  /* Primero el estado GUARDADO (2.9.0 · Bloque C): si ya hay
+     una vista de este RFC en la sesión, se pinta al instante
+     y la lectura fresca la sustituye al llegar — la pantalla
+     ya no pasa ~1 minuto en esqueleto esperando en serie. */
+  if (tribCache && tribCache.rfc === rfc && (tribCache.ultimaConsulta || tribCache.total)) {
+    paint(tribCache);
+    body.append(n('p', 'Actualizando con la última lectura del servidor…', 'muted'));
+  } else {
+    /* Esqueleto de carga (1.25.0), como en el resto de pantallas. */
+    const tribSkel = n('div', undefined, 'skel');
+    tribSkel.setAttribute('aria-busy', 'true');
+    tribSkel.setAttribute('aria-label', 'Cargando el Buzón Tributario');
+    for (let i = 0; i < 3; i++) tribSkel.append(n('div', undefined, 'skel-block'));
+    body.append(tribSkel);
+  }
   (async () => {
     try { await refresh(); }
-    catch (error) { if (body.isConnected) body.replaceChildren(n('p', error.message, 'error-text')); }
+    catch (error) { if (body.isConnected && !tribCache) body.replaceChildren(n('p', error.message, 'error-text')); }
   })();
   return [wrap];
 }

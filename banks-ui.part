@@ -34,14 +34,23 @@ function bancosScreen() {
       for (const cuenta of cuentas)
         position.append(n('p', cuenta.banco + (cuenta.nombre ? ' · ' + cuenta.nombre : '') +
           ': $' + cuenta.saldo + ' — saldo de ' + cuenta.mes + '.', 'today-line'));
-      if (meses.size > 1)
-        position.append(n('p', '⚠ Ojo: el total suma saldos de meses distintos (' + [...meses].sort().join(', ') +
-          '): cada cuenta aporta su último estado archivado. Sube el estado que falta y la posición queda de un solo mes.', 'today-line'));
+      if (meses.size > 1) {
+        const avisoMeses240 = n('p', 'Ojo: el total suma saldos de meses distintos (' + [...meses].sort().join(', ') +
+          '): cada cuenta aporta su último estado archivado. Sube el estado que falta y la posición queda de un solo mes.', 'today-line');
+        avisoMeses240.dataset.estado = 'atencion';
+        position.append(avisoMeses240);
+      }
     }
     body.append(position);
     /* Tanda 6: el botón único protagonista y las vistas nuevas. */
     body.append(bancosAutoPanel200f(draw, data));
     body.append(bancosConciliacionPanel200f());
+    /* (2.8.0 · diseño 9) La conciliación asistida/CSV que
+       vivía en Dinero se muda aquí: la conciliación vive
+       solo en Bancos y Dinero enlaza. */
+    if (typeof reconcilePanel === 'function')
+      body.append(reconcilePanel(typeof paidByMap === 'function' ? paidByMap() : new Map()));
+    body.append(bancosReglasPanel240());
     body.append(bancosSinRastroPanel201());
     body.append(bancosContrapartesPanel200f());
     if (!data.accounts.length) {
@@ -76,6 +85,28 @@ function bankAccountPanel(account, draw) {
     account.missing.length ? 'Faltan ' + account.missing.length + ' meses: ' + account.missing.slice(0, 4).join(', ') + (account.missing.length > 4 ? '…' : '') : 'Sin meses faltantes'));
   strip.append(statusPill(account.chainBroken ? 'bad' : 'ok', account.chainBroken ? 'Cadena de saldos ROTA (ver el mes marcado)' : 'Cadena de saldos continua'));
   panelEl.append(strip);
+  /* (2.9.13 · mejora 17) El saldo de la cuenta, EN GRANDE, y
+     el mes que falta con su botón de subirlo A LA VISTA: el
+     botón deja el formulario de subida de abajo con ese mes
+     puesto y lleva hasta él — el estado que falta no se
+     queda en una pastilla sin gesto. El gráfico de
+     movimientos es el saldo vivo de debajo (90 días). */
+  if (account.position) {
+    const heroSaldo2913 = n('div', undefined, 'total-hero');
+    heroSaldo2913.append(n('span', 'Saldo al cierre de ' + mesTexto200f(account.position.month), 'tramite-detalle'),
+      n('strong', '$' + account.position.closing, 'banco-saldo2913'));
+    panelEl.append(heroSaldo2913);
+  }
+  let subirFalta2913 = null;
+  if (account.missing.length) {
+    const filaFalta2913 = n('div', undefined, 'cp-row');
+    filaFalta2913.append(n('span', 'Falta el estado de ' + mesTexto200f(account.missing[0]) +
+      (account.missing.length > 1 ? ' (y ' + (account.missing.length - 1) + ' más)' : '') + '.'));
+    subirFalta2913 = n('button', 'Subir el estado de ' + mesTexto200f(account.missing[0]), 'primary small');
+    subirFalta2913.type = 'button';
+    filaFalta2913.append(subirFalta2913);
+    panelEl.append(filaFalta2913);
+  }
   /* Asignar el RFC dueño a la cuenta EXISTENTE (el servidor lo
      acepta desde la 1.22.0 — M1 —; el control llega en la
      1.27.0): una cuenta sin dueño, o con el dueño equivocado,
@@ -115,7 +146,11 @@ function bankAccountPanel(account, draw) {
       async () => { await satApi('banks/statements/delete', { id: statement.id }); announce('Estado eliminado.'); refresh(); }, 'Quitar estado');
     row.append(del);
     panelEl.append(row);
-    if (statement.chainDetail) panelEl.append(n('p', '⚠ ' + statement.chainDetail, 'error-text'));
+    if (statement.chainDetail) {
+      const cadena240 = n('p', statement.chainDetail, 'error-text');
+      cadena240.dataset.estado = 'atencion';
+      panelEl.append(cadena240);
+    }
   }
   /* V13 · Saldo vivo (1.31.0): la línea del saldo de esta
      cuenta en los últimos 90 días, bajo sus estados. */
@@ -139,6 +174,13 @@ function bankAccountPanel(account, draw) {
     } catch (error) { toast(error.message, 'error'); }
   };
   form.append(fieldWrap('Mes del estado', month), fieldWrap('PDF', file), upload);
+  /* El botón del mes que falta (mejora 17) aterriza aquí:
+     pone su mes en este formulario y trae la vista hasta él. */
+  if (subirFalta2913) subirFalta2913.onclick = () => {
+    month.value = account.missing[0];
+    form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    file.focus();
+  };
   const delAccount = n('button', 'Eliminar esta cuenta y sus estados', 'soft');
   delAccount.onclick = () => dialog('Eliminar esta cuenta y sus estados',
     [n('p', 'Se elimina la cuenta completa con TODOS sus estados archivados y su conciliación. No hay deshacer: si solo sobra un estado, quítalo a él desde su fila.')],
@@ -310,14 +352,31 @@ function bancosAutoPanel200f(draw, data) {
     const archivo = event.dataTransfer?.files?.[0];
     if (archivo) procesarArchivo(archivo);
   });
+  /* El pegado, por instancia VIVA (integración 2.3.2, hallazgo
+     de camino de B5): el oyente de `paste` vive en document y
+     se registra UNA sola vez (window.__bancosPegar201), pero
+     ya no queda ligado a la primera instancia del panel —
+     cada instancia nueva se anuncia como la actual en
+     window.__bancosPegarActual201 y el oyente delega en ESA:
+     su panel (isConnected), su caja y su procesarArchivo.
+     Antes, al salir de Bancos y volver, el panel nuevo no
+     tenía oyente y el viejo comprobaba su propio isConnected
+     (ya falso): el pegado quedaba mudo. Así no se duplica
+     ningún oyente por muchas veces que se entre en Bancos,
+     y una instancia muerta nunca procesa: la actual es la
+     conectada o el gesto se ignora, como el drop, que se
+     liga a cada panel y muere con él. */
+  if (typeof window !== 'undefined')
+    window.__bancosPegarActual201 = { panelEl, procesarArchivo };
   if (typeof document !== 'undefined' && !window.__bancosPegar201) {
     window.__bancosPegar201 = true;
     document.addEventListener('paste', event => {
-      if (!panelEl.isConnected || typeof page === 'undefined' || page !== 'dinero' ||
+      const actual = window.__bancosPegarActual201;
+      if (!actual || !actual.panelEl.isConnected || typeof page === 'undefined' || page !== 'dinero' ||
           typeof dineroTab === 'undefined' || dineroTab !== 'bancos') return;
       if (document.querySelector('dialog[open]')) return;
       const archivo = [...(event.clipboardData?.files || [])][0];
-      if (archivo) { event.preventDefault(); procesarArchivo(archivo); }
+      if (archivo) { event.preventDefault(); actual.procesarArchivo(archivo); }
     });
   }
   return panelEl;
@@ -615,5 +674,124 @@ function bancosContrapartesPanel200f() {
     } catch (error) { out.replaceChildren(n('p', 'No se pudo sumar: ' + error.message, 'error-text')); }
   };
   panelEl.append(fieldWrap('Contribuyente', rfcSel), fieldWrap('Periodo', perSel), ver, out);
+  return panelEl;
+}
+
+/* ===== Reglas de clasificación de gastos sin factura
+   (2.4.0 · WServ2, ítem 11) =====
+   El editor vive AQUÍ, en Bancos, junto a la conciliación que
+   lista los pagos sin factura: es su sitio natural. Las reglas
+   (patrón de concepto → categoría llana) viven en el servidor
+   y se APLICAN AL SERVIR: en cuanto se guarda una regla, los
+   movimientos que ya hay salen clasificados — por eso el
+   panel lo dice en pantalla y no hay botón de «aplicar».
+   Clasificar NUNCA concilia ni mueve dinero: el movimiento
+   sigue sin factura y contando como tal en los totales. Las
+   tres reglas de ejemplo llegan como SUGERIDAS: no clasifican
+   nada hasta que se añaden con un toque. */
+function bancosReglasPanel240() {
+  const panelEl = panel('Gastos sin factura: clasificación por concepto',
+    'Tus reglas dicen qué es cada gasto sin factura según el texto de su concepto bancario (sin distinguir acentos ni mayúsculas). La categoría se aplica al servir: en cuanto guardas una regla, los movimientos que ya hay quedan clasificados en el acto, sin tocar nada más. Clasificar no concilia ni mueve dinero: el movimiento sigue sin factura.');
+  const box = n('div');
+  panelEl.append(box);
+  let reglas = [];
+  let editandoId = null;
+  const pintar = async () => {
+    box.replaceChildren(n('p', 'Leyendo tus reglas y los movimientos sin factura…', 'muted'));
+    try {
+      const [datosReglas, datosMovs] = await Promise.all([
+        satApi('banks/reglas240'), satApi('banks/movements')]);
+      reglas = datosReglas.reglas || [];
+      box.replaceChildren();
+      /* Los sin factura, con su categoría y la regla que la puso. */
+      const sinFactura = (datosMovs.movements || []).filter(mv => mv.sinFactura);
+      box.append(n('h3', 'Movimientos sin factura (' + sinFactura.length + ')'));
+      if (!sinFactura.length) box.append(n('p', 'No hay movimientos marcados sin factura todavía.', 'muted'));
+      for (const mv of sinFactura.slice(0, 30)) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill(mv.categoria ? 'ok' : 'dim', mv.categoria || 'Sin categoría'),
+          n('span', mv.date + ' · ' + (mv.concept || '') + ' · $' + mv.amount +
+            (mv.reglaCategoria ? ' · por tu regla «' + mv.reglaCategoria.patron + '»' : '')));
+        box.append(row);
+      }
+      if (sinFactura.length > 30) box.append(n('p', '…y ' + (sinFactura.length - 30) + ' más (se enseñan los 30 primeros).', 'muted'));
+      /* Las reglas, con crear / editar / quitar. */
+      box.append(n('h3', 'Tus reglas'));
+      if (!reglas.length) box.append(n('p', 'Todavía no tienes reglas: sin regla no se inventa ninguna categoría.', 'muted'));
+      for (const regla of reglas) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill('dim', regla.categoria),
+          n('span', 'si el concepto contiene «' + regla.patron + '» → ' + regla.categoria));
+        const editar = n('button', 'Editar', 'soft small');
+        editar.type = 'button';
+        editar.onclick = () => { editandoId = regla.id; patronIn.value = regla.patron; categoriaIn.value = regla.categoria; guardarBtn.textContent = 'Guardar la regla editada'; patronIn.focus(); };
+        const quitar = n('button', 'Quitar', 'soft small');
+        quitar.type = 'button';
+        quitar.onclick = async () => {
+          try {
+            const r = await satApi('banks/reglas240', { reglas: reglas.filter(x => x.id !== regla.id) });
+            reglas = r.reglas || [];
+            toast('Regla quitada: sus movimientos quedan sin categoría, como antes de la regla.', 'ok');
+            pintar();
+          } catch (error) { toast(error.message, 'error'); }
+        };
+        row.append(editar, quitar);
+        box.append(row);
+      }
+      /* Sugeridas: un toque las convierte en reglas tuyas. */
+      const sugeridas = (datosReglas.sugeridas || [])
+        .filter(s => !reglas.some(r => r.patron === s.patron && r.categoria === s.categoria));
+      if (sugeridas.length) {
+        box.append(n('h3', 'Sugeridas (no se aplican hasta que las añadas)'));
+        for (const s of sugeridas) {
+          const row = n('div', undefined, 'cp-row');
+          row.append(statusPill('dim', s.categoria),
+            n('span', 'si el concepto contiene «' + s.patron + '» → ' + s.categoria));
+          const anadir = n('button', 'Añadir esta regla', 'soft small');
+          anadir.type = 'button';
+          anadir.onclick = async () => {
+            try {
+              const r = await satApi('banks/reglas240', { reglas: [...reglas, { patron: s.patron, categoria: s.categoria }] });
+              reglas = r.reglas || [];
+              toast('Regla añadida: ya clasifica los movimientos que casan, también los que ya había.', 'ok');
+              pintar();
+            } catch (error) { toast(error.message, 'error'); }
+          };
+          row.append(anadir);
+          box.append(row);
+        }
+      }
+      /* El formulario de crear / editar. */
+      const form = n('div', undefined, 'sat-form');
+      form.append(fieldWrap('El concepto bancario contiene…', patronIn),
+        fieldWrap('Categoría (texto llano)', categoriaIn), guardarBtn);
+      if (editandoId) {
+        const cancelar = n('button', 'Cancelar la edición', 'soft small');
+        cancelar.type = 'button';
+        cancelar.onclick = () => { editandoId = null; patronIn.value = ''; categoriaIn.value = ''; guardarBtn.textContent = 'Crear la regla'; pintar(); };
+        form.append(cancelar);
+      }
+      box.append(form);
+    } catch (error) { box.replaceChildren(n('p', 'No se pudieron leer las reglas: ' + error.message, 'error-text')); }
+  };
+  const patronIn = input('text', { placeholder: 'comisión, impuesto, nómina…', maxlength: '80' });
+  const categoriaIn = input('text', { placeholder: 'Comisiones, Impuestos en ventanilla…', maxlength: '60' });
+  const guardarBtn = n('button', 'Crear la regla', 'primary');
+  guardarBtn.type = 'button';
+  guardarBtn.onclick = async () => {
+    const patron = patronIn.value.trim(), categoria = categoriaIn.value.trim();
+    if (!patron || !categoria) { toast('Escribe el texto del concepto y su categoría.', 'error'); return; }
+    try {
+      const lista = editandoId
+        ? reglas.map(r => r.id === editandoId ? { ...r, patron, categoria } : r)
+        : [...reglas, { patron, categoria }];
+      const r = await satApi('banks/reglas240', { reglas: lista });
+      reglas = r.reglas || [];
+      editandoId = null; patronIn.value = ''; categoriaIn.value = ''; guardarBtn.textContent = 'Crear la regla';
+      toast('Regla guardada: ya clasifica en el acto los movimientos que casan, también los que ya había.', 'ok');
+      pintar();
+    } catch (error) { toast(error.message, 'error'); }
+  };
+  pintar();
   return panelEl;
 }

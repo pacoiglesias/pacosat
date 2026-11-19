@@ -1,3 +1,13 @@
+/* ===== Dinero · parte DIFERIDA «dinero» (2.4.0 · W6b) =====
+   Esta fuente ya NO viaja en el bloque principal: el servidor la
+   sirve en /parte/dinero y el cargador la inyecta al entrar en
+   Dinero (y en la precarga en reposo). Su estado compartido
+   (dineroMarcados, dineroServerInfo y compañía), el cálculo
+   paidByMap/balanceOf y setInvoiceTerm viven en el PUENTE de
+   ui.part (sección W6b), una sola copia; monthlyTotals también
+   vive en ui.part y esta parte lo lee en tiempo de llamada.
+   Aquí quedan la pantalla, la cascada del mes (WC2), la
+   antigüedad de saldos y la conciliación. */
 /* ===== Dinero (1.6.17) =====
    Por cobrar y por pagar desde la relación Pagos↔facturas persistida
    en el desglose: saldos con antigüedad por contraparte, facturas
@@ -14,22 +24,13 @@
    11 nov): las canceladas salen de los saldos abiertos y de la antigua
    alerta de «canceladas con pago», y se enseñan en su línea propia
    «Canceladas en el periodo», fuera de los totales — como el papel. */
-/* Pagos marcados en esta sesión (el saldo oficial vive en el servidor):
-   mismo patrón que visorMarcados en el Visor de comprobantes. */
-const dineroMarcados = new Set();
-/* Folio y vencimiento del servidor por UUID (1.18.0): la respuesta
-   de /api/money ya trae el folio del CFDI y la fecha de vencimiento
-   según el calendario de la contraparte; las filas los enseñan en
-   cuanto llegan, sin esperar a que el cálculo local los adivine. */
-/* Canceladas del servidor (1.20.0): /api/money las trae APARTE
-   (número e importe total) con el criterio único — fuera de los
-   saldos, en su línea propia — y la pantalla prefiere esa cifra
-   cuando ya llegó; si no, la calcula en local con la misma regla. */
-let dineroServerInfo = new Map(), dineroServerCargado = false, dineroCanceladasSrv = null;
 /* Estado del refresco con el servidor (1.26.0): la pantalla lo
    dice — antes el fetch fallaba en silencio (.catch vacío) y
    Paco veía saldos viejos sin saberlo. */
 let dineroRefresh = '';
+/* Filtro de las píldoras del resumen (2.3.2 · m-9): '' = todo,
+   'cobrar' / 'pagar' = solo ese panel, con su chip de vuelta. */
+let dineroFiltro232 = '';
 function dineroVenceTexto(due) {
   if (!due) return '';
   const dias = Math.round((Date.parse(due + 'T12:00:00') - Date.now()) / 86400000);
@@ -40,21 +41,6 @@ function dineroVenceTexto(due) {
   if (dias < 0) return ' · 🔴 vencido hace ' + (-dias) + (dias === -1 ? ' día' : ' días') + ' (venció el ' + humana + ')';
   if (dias === 0) return ' · vence hoy (' + humana + ')';
   return ' · vence el ' + humana;
-}
-function paidByMap() {
-  const paidBy = new Map();
-  for (const payment of invoices) {
-    if (payment.kind !== 'P' || !payment.fiscal?.payments) continue;
-    for (const pago of payment.fiscal.payments.pagos || [])
-      for (const doc of pago.documentos || [])
-        paidBy.set(doc.idDocumento, (paidBy.get(doc.idDocumento) || 0n) + moneyCents(doc.impPagado));
-  }
-  return paidBy;
-}
-function balanceOf(row, paidBy) {
-  const total = totalCents(row);
-  const paid = row.fiscal?.paymentMethod === 'PUE' ? total : (paidBy.get(row.id) || 0n);
-  return { total, paid, balance: total - paid, method: row.fiscal?.paymentMethod || '' };
 }
 const AGE_BUCKETS = [[0, 30, '0–30 días'], [31, 60, '31–60 días'], [61, 90, '61–90 días'], [91, Infinity, 'Más de 90 días']];
 const ageDaysOf = row => Math.max(0, Math.floor((Date.now() - Date.parse(row.date)) / 86400000));
@@ -83,8 +69,17 @@ function dineroScreen() {
      desaparece de Dinero: la detección de una cancelación sigue
      viviendo en la Vigilancia y en el Centro de Avisos, que no
      cambian. */
-  const open = invoices.filter(row => row.kind === 'I').map(row => ({ row, ...balanceOf(row, paidBy),
-    state: invoiceStateOf(row) })).filter(item => item.balance > 0n && item.state !== 'Cancelado' &&
+  const open = invoices.filter(row => row.kind === 'I' && !row.archived).map(row => {
+    const local = { row, ...balanceOf(row, paidBy), state: invoiceStateOf(row) };
+    /* La foto del servidor manda por fila (2.9.0 · Bloque C):
+       si el servidor trae esta factura, su pagado y su saldo
+       son los de la cifra canónica (REP + marcas a mano);
+       una fila saldada a mano sale de la lista en vez de
+       enseñar «Pagado $0.00» junto a «ya está saldado». */
+    const srv = dineroServerInfo.get(row.id);
+    if (srv) { local.paid = moneyCents(srv.paid || '0'); local.balance = moneyCents(srv.balance || '0'); local.total = moneyCents(srv.total || '0'); }
+    return local;
+  }).filter(item => item.balance > 0n && item.state !== 'Cancelado' &&
     !dineroMarcados.has(item.row.id));
   const receivable = open.filter(item => own.has(item.row.from.rfc) && (!scope || item.row.from.rfc === scope));
   const payable = open.filter(item => own.has(item.row.to.rfc) && (!scope || item.row.to.rfc === scope));
@@ -109,16 +104,49 @@ function dineroScreen() {
       ['Sentido', 'Contraparte', 'Fecha', 'Total del CFDI', 'Saldo'], filasImp);
   };
   imprimirDinero.append(btnImprimirDinero);
-  wrap.append(imprimirDinero);
   /* Resumen */
-  const summary = panel('El dinero, de un vistazo', 'Saldos abiertos calculados desde tus complementos de pago: si una factura PPD no tiene complemento, su saldo es el total; las PUE nacen pagadas.');
+  const summary = panel('El dinero, de un vistazo', 'Saldos abiertos con el cálculo único del sistema: lo pagado es lo de los complementos de pago (REP) más lo marcado pagado a mano; si una factura PPD no tiene ni lo uno ni lo otro, su saldo es el total; las PUE nacen pagadas y las canceladas no entran.');
+  /* (2.8.0 · diseño 9) La protagonista abre la pantalla: la
+     fila de «Imprimir saldos» ya no se le adelanta. */
+  summary.classList.add('protagonista280');
+  summary.dataset.protagonista280 = 'dinero';
   const strip = n('div', undefined, 'traffic-strip');
   const sum = items => items.reduce((acc, item) => acc + item.balance, 0n);
-  const bajarA = id => () => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); };
-  strip.append(statusPill(receivable.length ? 'warn' : 'ok', 'Por cobrar: $' + centsLabel(sum(receivable)), '', bajarA('dinero-por-cobrar')),
-    statusPill(payable.length ? 'warn' : 'ok', 'Por pagar: $' + centsLabel(sum(payable)), '', bajarA('dinero-por-pagar')),
-    statusPill('dim', open.length + ' facturas con saldo abierto'));
+  /* Las píldoras NAVEGAN a Dinero ya filtrado (2.3.2 · m-9):
+     dejan la pantalla solo con su panel y su chip para
+     volver; ya no se limitan a desplazar. La tercera es un
+     conteo sin destino: se pinta como texto, no como botón. */
+  const irFiltrado232 = filtro => () => { dineroFiltro232 = filtro; render(); };
+  /* Las cifras protagonistas son las CANÓNICAS (2.9.0 ·
+     Bloque C): la misma función que Preguntas y Cierre usan,
+     sobre la foto del servidor cuando está cargada. */
+  const canonCobrar290 = porCobrarCanonico290(scope || '');
+  const canonPagar290 = porPagarCanonico290(scope || '');
+  const pillCobrar240 = statusPill(receivable.length ? 'warn' : 'ok', 'Por cobrar: $' + centsLabel(canonCobrar290.cents), 'Ver solo lo por cobrar', irFiltrado232('cobrar'));
+  const pillPagar240 = statusPill(payable.length ? 'warn' : 'ok', 'Por pagar: $' + centsLabel(canonPagar290.cents), 'Ver solo lo por pagar', irFiltrado232('pagar'));
+  strip.append(pillCobrar240, pillPagar240,
+    statusPill('dim', open.length + ' facturas con saldo abierto', '', null, true));
+  /* Destello de cifra (2.4.0 · W5b2, pieza 3 aplicada): las
+     dos cifras protagonistas destellan al actualizarse el
+     pulso SOLO si su valor cambió de verdad (memoria por
+     clave de marcarCifraPulso240, en ui.part). */
+  if (pillCobrar240.children?.[1]) marcarCifraPulso240(pillCobrar240.children[1], 'dinero-cobrar', 'Por cobrar: $' + centsLabel(canonCobrar290.cents));
+  if (pillPagar240.children?.[1]) marcarCifraPulso240(pillPagar240.children[1], 'dinero-pagar', 'Por pagar: $' + centsLabel(canonPagar290.cents));
   summary.append(strip);
+  /* Sparkline de la protagonista de Dinero (pieza 1): la
+     serie mensual de lo emitido que alimenta su gráfica,
+     con su periodo nombrado; sin serie, no se pinta. */
+  const sparkDinero240 = typeof sparklineBloque240 === 'function'
+    ? sparklineBloque240(dineroSerieMensual240(6), 'Emitido por mes · últimos 6 meses', 'Tendencia de lo emitido por mes, últimos 6 meses') : null;
+  if (sparkDinero240) summary.append(sparkDinero240);
+  if (dineroFiltro232) {
+    const chip = n('div', undefined, 'actions');
+    const verTodo = n('button', 'Ver todo Dinero', 'soft small');
+    verTodo.type = 'button';
+    verTodo.onclick = () => { dineroFiltro232 = ''; render(); };
+    chip.append(n('span', dineroFiltro232 === 'cobrar' ? 'Viendo solo: Por cobrar' : 'Viendo solo: Por pagar', 'muted'), verTodo);
+    summary.append(chip);
+  }
   if (cancNumero > 0) {
     /* La línea propia de las canceladas: número e importe, FUERA
        de los totales de arriba. Sin alarma: no son una deuda. */
@@ -136,20 +164,39 @@ function dineroScreen() {
      vencimiento y el Excel de saldos es la acción de cabecera
      de la pantalla. */
   wrap.append(summary);
+  wrap.append(imprimirDinero);
   /* El trabajo primero (Di1): cobrar y pagar tras el resumen;
      antigüedad y gráficas, después y plegadas; 360 y
-     conciliación conservan su sitio al final. */
-  wrap.append(balancePanel('Por cobrar', 'Lo que te deben: facturas emitidas a crédito (PPD) sin cobro completo.', receivable, 'to', 'Ya me pagaron'));
-  wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. Cada fila dice cuándo vence según el calendario de la contraparte.', payable, 'from', 'Ya se pagó'));
-  const graficasFold = n('details', undefined, 'seal-details');
-  graficasFold.append(n('summary', 'Antigüedad y gráficas'),
-    dineroAntiguedadPanel1310(), dineroFlujoPanel1310(), dineroMonthPanel(receivable, payable));
-  wrap.append(graficasFold);
-  wrap.append(dineroForecastPanel());
-  wrap.append(dineroMesPanel201());
-  wrap.append(expectedPanel());
-  wrap.append(counterpart360Panel(paidBy));
-  wrap.append(reconcilePanel(paidBy));
+     conciliación conservan su sitio al final. Con el filtro
+     de las píldoras (2.3.2 · m-9) la pantalla enseña SOLO el
+     panel pedido; sin filtro, todo como siempre.
+     (2.8.0 · diseño 9) El resto va agrupado en secciones
+     plegables por tema — Previsión y el mes · Por
+     contraparte — y la Conciliación vive SOLO en Bancos:
+     aquí queda su enlace (el panel de conciliación se monta
+     en Bancos, junto a la suya). */
+  if (!dineroFiltro232 || dineroFiltro232 === 'cobrar')
+    wrap.append(balancePanel('Por cobrar', 'Lo que te deben: facturas emitidas a crédito (PPD) sin cobro completo.', receivable, 'to', 'Ya me pagaron'));
+  if (!dineroFiltro232 || dineroFiltro232 === 'pagar')
+    wrap.append(balancePanel('Por pagar', 'Lo que debes: facturas recibidas a crédito (PPD) sin pago completo. Cada fila dice cuándo vence según el calendario de la contraparte.', payable, 'from', 'Ya se pagó'));
+  if (!dineroFiltro232) {
+    const graficasFold = n('details', undefined, 'seal-details');
+    graficasFold.append(n('summary', 'Antigüedad y gráficas'),
+      dineroAntiguedadPanel1310(), dineroAntiguedadContrapartePanel240(receivable, payable),
+      dineroCascadaPanel240(), dineroFlujoPanel1310(), dineroMonthPanel(receivable, payable));
+    wrap.append(graficasFold);
+    const previsionFold280 = n('details', undefined, 'seal-details');
+    previsionFold280.append(n('summary', 'Previsión y el mes'),
+      dineroForecastPanel(), dineroMesPanel201(), expectedPanel());
+    wrap.append(previsionFold280);
+    const contraparteFold280 = n('details', undefined, 'seal-details');
+    contraparteFold280.append(n('summary', 'Por contraparte'), counterpart360Panel(paidBy));
+    wrap.append(contraparteFold280);
+    const conciliaLink280 = panel('Conciliación bancaria');
+    conciliaLink280.append(n('p', 'La conciliación vive en Bancos: allí se cruzan los movimientos de tus estados con tus facturas, por cuenta y periodo.'));
+    conciliaLink280.append(action('Ir a Bancos', () => { dineroTab = 'bancos'; navigate('bancos'); }, 'primary', 'check'));
+    wrap.append(conciliaLink280);
+  }
   return [wrap];
 }
 /* F14 · Antigüedad de saldos por vencimiento (1.31.0): las
@@ -223,6 +270,223 @@ function dineroAntiguedadPanel1310() {
       ' en saldos abiertos — no entra en las cubetas porque no consta su fecha de vencimiento.', 'muted'));
   return panelEl;
 }
+/* ===== Antigüedad de saldos POR CONTRAPARTE (2.4.0 · castigo 9) =====
+   Otra pregunta que la antigüedad por vencimiento de arriba: no
+   «cuánto lleva vencido» sino «de cuándo es el saldo vivo de cada
+   contraparte». Las bandas son las de AGE_BUCKETS de siempre
+   (0–30 / 31–60 / 61–90 / más de 90 días desde la FECHA de la
+   factura) y el saldo es el cálculo reconciliado de la pantalla
+   (balanceOf vía paidByMap: importe − pagado, PUE nacen pagadas,
+   canceladas fuera): esta función NO suma nada por su cuenta,
+   solo reparte los items que dineroScreen ya calculó. Cada
+   contraparte y cada banda son un botón que navega a Facturas
+   con el filtro de esa contraparte (setInvoiceTerm, el salto de
+   la casa). Pintado en tarjetas por contraparte con sus bandas
+   como chips de estado (icono y palabra, data-estado de W5a),
+   nunca como tabla pelada. */
+/*ANTIGUEDAD240-INICIO*/
+const edadDias240 = (row, ahoraMs) =>
+  Math.max(0, Math.floor((((ahoraMs === undefined ? Date.now() : ahoraMs) - Date.parse(row.date)) / 86400000)));
+function antiguedadContraparte240(items, partyField, ahoraMs) {
+  const porCp = new Map();
+  for (const item of items || []) {
+    if (!item?.row || !(item.balance > 0n)) continue;
+    const party = item.row[partyField] || {};
+    if (!party.rfc) continue;
+    if (!porCp.has(party.rfc)) porCp.set(party.rfc, { rfc: party.rfc, name: party.name || party.rfc, total: 0n,
+      bandas: AGE_BUCKETS.map(([min, max, label]) => ({ min, max, label, cents: 0n, count: 0 })) });
+    const cp = porCp.get(party.rfc);
+    const edad = edadDias240(item.row, ahoraMs);
+    const banda = cp.bandas.find(candidata => edad >= candidata.min && edad <= candidata.max);
+    if (banda) { banda.cents += item.balance; banda.count++; }
+    cp.total += item.balance;
+  }
+  return [...porCp.values()].sort((a, b) => (b.total > a.total ? 1 : -1));
+}
+/*ANTIGUEDAD240-FIN*/
+const BANDA_ESTADO240 = ['aldia', 'esperando', 'atencion', 'error'];
+function dineroAntiguedadContrapartePanel240(receivable, payable) {
+  const panelEl = panel('Antigüedad por contraparte',
+    'El saldo vivo de cada contraparte según los días desde la fecha de su factura. Toca una contraparte o una de sus bandas para ver sus facturas.');
+  let algo = false;
+  for (const [titulo, items, partyField] of [['Por cobrar', receivable, 'to'], ['Por pagar', payable, 'from']]) {
+    const contrapartes = antiguedadContraparte240(items, partyField);
+    if (!contrapartes.length) continue;
+    algo = true;
+    panelEl.append(n('h3', titulo));
+    for (const cp of contrapartes) {
+      const tarjeta = n('div', undefined, 'cp-row');
+      const main = n('div', undefined, 'cp-main');
+      main.append(n('strong', cp.name), n('span', cp.rfc, 'muted'),
+        n('strong', 'Saldo vivo $' + centsLabel(cp.total)));
+      tarjeta.append(main);
+      const ver = n('button', 'Ver sus facturas', 'soft small');
+      ver.type = 'button';
+      ver.onclick = () => { setInvoiceTerm(cp.rfc); navigate('invoices'); };
+      tarjeta.append(ver);
+      panelEl.append(tarjeta);
+      const bandas = n('div', undefined, 'traffic-strip');
+      cp.bandas.forEach((banda, indice) => {
+        if (!banda.count) return;
+        const chip = n('button', undefined, 'estado240');
+        chip.type = 'button';
+        chip.dataset.estado = BANDA_ESTADO240[indice] || 'sindatos';
+        chip.dataset.banda240 = banda.label;
+        chip.dataset.rfc240 = cp.rfc;
+        chip.textContent = banda.label + ' · $' + centsLabel(banda.cents) + ' · ' +
+          banda.count + (banda.count === 1 ? ' factura' : ' facturas');
+        chip.title = 'Ver las facturas de ' + cp.name + ' en Facturas';
+        chip.onclick = () => { setInvoiceTerm(cp.rfc); navigate('invoices'); };
+        bandas.append(chip);
+      });
+      panelEl.append(bandas);
+    }
+  }
+  if (!algo) panelEl.append(n('p', 'Sin saldos abiertos: no hay antigüedad que contar.', 'empty'));
+  return panelEl;
+}
+/* ===== Sparkline de Dinero (2.4.0 · W5b2, pieza 1) =====
+   La serie mensual que YA alimenta la gráfica y los totales
+   de esta pantalla: monthlyTotals() (ui.part) — lo emitido
+   por mes del ámbito en pantalla, sumando los RFC del ámbito
+   como hace el comparativo mensual. La sparkline de la
+   tarjeta protagonista enseña esa misma serie, sin ejes;
+   con menos de dos meses con datos, no se pinta. */
+function dineroSerieMensual240(mesesMax = 6) {
+  const porMes = new Map();
+  for (const group of monthlyTotals().values())
+    for (const [key, g] of group.months)
+      porMes.set(key, (porMes.get(key) || 0n) + g.issuedCents);
+  return [...porMes.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+    .slice(-mesesMax).map(([mes, cents]) => ({ mes, cents }));
+}
+/* ===== Cascada del mes (2.4.0 · castigo 10) =====
+   El dinero que de verdad se movió en el mes, en tres escalones:
+   ingreso cobrado → gasto pagado → saldo vivo (= cobrado −
+   pagado). Las cifras salen de los CFDI que la vista ya recibe,
+   con la MISMA regla de Dinero: una factura PUE nace pagada (su
+   importe entra en su mes de emisión) y una PPD entra cuando su
+   complemento de pago la paga (el impPagado del documento, en el
+   mes de la fechaPago del complemento — nunca dos veces: el
+   documento de una PUE no se vuelve a contar). Las canceladas
+   quedan fuera, con el criterio único. Lo que NO viaja en los
+   datos de esta vista y por tanto NO entra ni se aproxima: los
+   pagos marcados a mano sin complemento (money/mark-paid guarda
+   la marca en el servidor, sin fecha de pago en la copia del
+   cliente) — el panel lo dice en su propio texto. */
+/*CASCADA240-INICIO*/
+function cascadaMes240(rows, monthKey, propios) {
+  let cobrado = 0n, pagado = 0n;
+  const porId = new Map();
+  for (const row of rows || []) if (row?.kind === 'I' && row.id) porId.set(row.id, row);
+  const cancelada = row => typeof invoiceStateOf === 'function' && invoiceStateOf(row) === 'Cancelado';
+  for (const row of rows || []) {
+    if (!row) continue;
+    if (row.kind === 'I') {
+      if (row.fiscal?.paymentMethod !== 'PUE' || cancelada(row)) continue;
+      if (String(row.date || '').slice(0, 7) !== monthKey) continue;
+      if (propios.has(row.from?.rfc)) cobrado += totalCents(row);
+      else if (propios.has(row.to?.rfc)) pagado += totalCents(row);
+    } else if (row.kind === 'P') {
+      for (const pago of row.fiscal?.payments?.pagos || []) {
+        if (String(pago.fechaPago || '').slice(0, 7) !== monthKey) continue;
+        for (const doc of pago.documentos || []) {
+          const factura = porId.get(doc.idDocumento);
+          if (!factura || cancelada(factura) || factura.fiscal?.paymentMethod === 'PUE') continue;
+          const cents = moneyCents(doc.impPagado);
+          if (propios.has(factura.from?.rfc)) cobrado += cents;
+          else if (propios.has(factura.to?.rfc)) pagado += cents;
+        }
+      }
+    }
+  }
+  return { cobrado, pagado, saldo: cobrado - pagado };
+}
+/*CASCADA240-FIN*/
+/* La gráfica: SVG propio de la casa (sin librerías), tres
+   escalones con sus importes rotulados en pesos y la diferencia
+   del paso intermedio («− $…») escrita entre el cobrado y el
+   saldo. El saldo puede ser negativo: su escalón baja de la
+   línea base y se rotula con su signo. */
+function dineroCascadaSvg240(cobrado, pagado, saldo, monthKey) {
+  const wrap = n('div', undefined, 'chart-wrap');
+  wrap.dataset.cascada240 = monthKey;
+  if (!cobrado && !pagado) {
+    wrap.append(n('p', 'Sin cobros ni pagos registrados en ' + monthName(monthKey) +
+      ': la cascada queda a cero. Cuando un complemento de pago o una factura PUE caiga en el mes, sus escalones aparecerán aquí.', 'empty'));
+    return wrap;
+  }
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (tag, attrs, text) => {
+    const node = document.createElementNS(NS, tag);
+    for (const [name, value] of Object.entries(attrs || {})) node.setAttribute(name, value);
+    if (text) node.textContent = text;
+    return node;
+  };
+  const maximo = Math.max(Number(cobrado), Number(saldo), 0);
+  const minimo = Math.min(Number(saldo), 0);
+  const escala = Math.max(maximo - minimo, 1);
+  const W = 640, top = 34, base = 196, plotH = base - top;
+  const y = valor => base - (Number(valor) - minimo) / escala * plotH;
+  const svg = el('svg', { viewBox: '0 0 ' + W + ' 236', class: 'chart', role: 'img',
+    'aria-label': 'Cascada de ' + monthName(monthKey) + ': cobrado $' + centsLabel(cobrado) +
+      ', pagado $' + centsLabel(pagado) + ', saldo vivo $' + centsLabel(saldo) });
+  const barra = (cx, desde, hasta, clase, titulo) => {
+    const y1 = y(desde > hasta ? desde : hasta), y2 = y(desde > hasta ? hasta : desde);
+    const rect = el('rect', { x: cx - 55, y: y1, width: 110, height: Math.max(2, y2 - y1), rx: 3, class: clase });
+    rect.append(el('title', {}, titulo));
+    return rect;
+  };
+  const valor = (cx, yPos, texto, clase) => el('text', { x: cx, y: yPos, 'text-anchor': 'middle', class: clase || 'chart-val' }, texto);
+  const centros = [110, 320, 530];
+  /* Escalón 1: lo cobrado, desde cero. */
+  svg.append(barra(centros[0], 0n, cobrado, 'bar-cobrar',
+      'Ingresó (cobrado) en ' + monthName(monthKey) + ': $' + centsLabel(cobrado)),
+    valor(centros[0], y(cobrado) - 8, '$' + centsLabel(cobrado)),
+    valor(centros[0], base + 20, 'Ingresó · cobrado'));
+  /* Escalón 2: lo pagado, flotando entre el cobrado y el saldo. */
+  svg.append(barra(centros[1], cobrado, saldo, 'bar-pagar',
+      'Salió (pagado) en ' + monthName(monthKey) + ': $' + centsLabel(pagado)),
+    valor(centros[1], y(Math.max(Number(cobrado), Number(saldo))) - 8, '− $' + centsLabel(pagado)),
+    valor(centros[1], base + 20, 'Salió · pagado'));
+  /* Escalón 3: el saldo vivo del mes, desde cero. */
+  svg.append(barra(centros[2], 0n, saldo, saldo >= 0n ? 'bar-cobrar' : 'bar-pagar',
+      'Saldo vivo de ' + monthName(monthKey) + ': $' + centsLabel(saldo)),
+    valor(centros[2], saldo >= 0n ? y(saldo) - 8 : y(saldo) + 16, '$' + centsLabel(saldo)),
+    valor(centros[2], base + 20, 'Saldo vivo del mes'));
+  /* Conectores entre escalones: la caída se ve, no solo se lee. */
+  for (const [x1, x2, nivel] of [[centros[0] + 55, centros[1] - 55, cobrado], [centros[1] + 55, centros[2] - 55, saldo]]) {
+    const linea = el('line', { x1, y1: y(nivel), x2, y2: y(nivel), class: 'grid-line' });
+    linea.setAttribute('stroke-dasharray', '4 3');
+    svg.append(linea);
+  }
+  svg.append(el('line', { x1: 6, y1: y(0), x2: W - 6, y2: y(0), class: 'chart-axis' }));
+  wrap.append(svg);
+  const resumen = n('div', undefined, 'chart-legend');
+  resumen.append(n('span', 'Ingresó (cobrado): $' + centsLabel(cobrado)),
+    n('span', 'Salió (pagado): $' + centsLabel(pagado)),
+    n('strong', 'Saldo vivo: $' + centsLabel(saldo) + ' (cobrado − pagado)'));
+  wrap.append(resumen);
+  return wrap;
+}
+function dineroCascadaPanel240() {
+  const panelEl = panel('La cascada del mes',
+    'Lo cobrado, lo pagado y lo que queda, del mes elegido: sale de tus complementos de pago (con su fecha) y de las facturas PUE, que nacen pagadas. ' +
+    'Los pagos marcados a mano sin complemento no traen fecha en esta copia y no entran: se dice aquí, no se aproximan.');
+  const mes = input('month', { value: new Date().toISOString().slice(0, 7) });
+  mes.setAttribute('aria-label', 'Mes de la cascada');
+  const body = n('div');
+  const pintar = () => {
+    if (!mes.value) return;
+    const propios = new Set(scope ? [scope] : people.map(person => person.id));
+    const cifras = cascadaMes240(invoices, mes.value, propios);
+    body.replaceChildren(dineroCascadaSvg240(cifras.cobrado, cifras.pagado, cifras.saldo, mes.value));
+  };
+  mes.onchange = pintar;
+  panelEl.append(fieldWrap('Mes', mes), body);
+  pintar();
+  return panelEl;
+}
 /* V6 · Gráfica única de flujo (1.31.0): barras mensuales de
    entradas contra salidas de los últimos 12 meses, desde los
    movimientos bancarios de los estados archivados
@@ -240,7 +504,16 @@ function dineroFlujoPanel1310() {
     body.append(n('p', 'Los movimientos del banco viven en la copia del servidor (el NAS).', 'empty'));
     return panelEl;
   }
-  body.append(n('p', 'Cargando los movimientos del banco…', 'muted'));
+  /* Esqueleto con forma de gráfica mientras llegan (2.4.0 ·
+     W5b2, pieza 4b): la silueta .sk-graf de W5a y la palabra
+     de carga; el dato lo sustituye al pintar, sin parpadeo
+     extra si llega al instante (replaceChildren directo). */
+  body.setAttribute('aria-busy', 'true');
+  const skelFlujo240 = n('div', undefined, 'esqueleto');
+  skelFlujo240.setAttribute('aria-hidden', 'true');
+  skelFlujo240.dataset.esqueleto240 = '1';
+  skelFlujo240.append(n('div', undefined, 'sk-graf'));
+  body.append(skelFlujo240, n('p', 'Cargando los movimientos del banco…', 'muted'));
   (async () => {
     try {
       if (!dineroFlujoCache1310 || Date.now() - dineroFlujoCache1310.at > 30000) {
@@ -249,12 +522,21 @@ function dineroFlujoPanel1310() {
       }
       if (body.isConnected) dineroFlujoPintar1310(body, dineroFlujoCache1310.movements);
     } catch (error) {
-      if (body.isConnected) body.replaceChildren(n('p', 'No se pudieron cargar los movimientos: ' + error.message, 'error-text'));
+      /* El contenido real (aunque sea el error) sustituye al
+         esqueleto: el contenedor sale del estado ocupado
+         (corrección visual 2.4.0). */
+      if (body.isConnected) { body.removeAttribute('aria-busy'); body.replaceChildren(n('p', 'No se pudieron cargar los movimientos: ' + error.message, 'error-text')); }
     }
   })();
   return panelEl;
 }
 function dineroFlujoPintar1310(body, movements) {
+  /* Al pintar el contenido real se retira el aria-busy del
+     contenedor (corrección visual 2.4.0): este div ES el que
+     llevaba el esqueleto y replaceChildren solo cambiaba sus
+     hijos — el atributo quedaba para siempre y la pantalla
+     nunca salía del estado «ocupado». */
+  body.removeAttribute('aria-busy');
   const centsDe = mv => mv.amountCents !== undefined ? Number(mv.amountCents) : Number(moneyCents(mv.amount || '0'));
   const porMes = new Map();
   for (const mv of movements) {
@@ -461,6 +743,10 @@ function dineroMonthPanel(receivable, payable) {
   wrap.append(legend, svg);
   return wrap;
 }
+/* (2.9.9 · D3) Filas visibles por panel de saldos: la lista
+   corta en 25 y «Ver más» trae las siguientes sin perder la
+   pantalla (el límite vive por título de panel). */
+const dineroLimites299 = {};
 function balancePanel(title, description, items, partyField, paidLabel = 'Ya se pagó') {
   const panelEl = panel(title, description);
   /* Ancla para las pastillas del resumen (1.29.0, barrido):
@@ -477,12 +763,18 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
     const group = byParty.get(party.rfc);
     group.items.push(item); group.total += item.balance;
   }
+  const limite299 = dineroLimites299[title] || 25;
+  let vistas299 = 0, quedan299 = false;
   for (const group of [...byParty.values()].sort((a, b) => (b.total > a.total ? 1 : -1))) {
+    const ordenados299 = group.items.sort((a, b) => a.row.date.localeCompare(b.row.date));
+    if (vistas299 >= limite299) { quedan299 = true; break; }
     const head = n('div', undefined, 'cp-row');
     head.append(n('strong', group.name), n('span', group.rfc, 'muted'),
       statusPill('warn', 'Saldo $' + centsLabel(group.total)));
     panelEl.append(head);
-    for (const item of group.items.sort((a, b) => a.row.date.localeCompare(b.row.date))) {
+    for (const item of ordenados299) {
+      if (vistas299 >= limite299) { quedan299 = true; break; }
+      vistas299++;
       const row = n('div', undefined, 'cp-row clickable');
       const main = n('div', undefined, 'cp-main');
       /* Total, pagado y saldo en líneas separadas (sistema-visual §4:
@@ -490,8 +782,18 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
          se nombra por su FOLIO (1.18.0) y enseña el vencimiento del
          calendario de la contraparte, no solo la edad. */
       const folioFila = item.row.fiscal ? ((item.row.fiscal.serie ? item.row.fiscal.serie + '-' : '') + (item.row.fiscal.folio || '')) : '';
-      main.append(n('span', (folioFila ? 'Folio ' + folioFila + ' · ' : '') + dateLabel(item.row.date) +
-          dineroVenceTexto(dineroServerInfo.get(item.row.id)?.due) + ' · ' + ageDaysOf(item.row) + ' días'),
+      /* UNA sola cuenta de días por fila (2.9.0 · Bloque C):
+         el vencimiento del calendario de la contraparte, que
+         ya trae su cuenta («vencido hace N días»); sin
+         vencimiento que conste, la antigüedad desde la fecha
+         del CFDI, ETIQUETADA como antigüedad. Antes la fila
+         enseñaba las dos cuentas a la vez y se contradecían
+         («vencido hace 2876 días · 2936 días»). */
+      const dueFila290 = dineroServerInfo.get(item.row.id)?.due;
+      const diasFila290 = dueFila290
+        ? dineroVenceTexto(dueFila290)
+        : ' · antigüedad: ' + diasTexto290(ageDaysOf(item.row)) + ' desde su fecha';
+      main.append(n('span', (folioFila ? 'Folio ' + folioFila + ' · ' : '') + dateLabel(item.row.date) + diasFila290),
         n('span', 'Total $' + centsLabel(item.total), 'muted'),
         n('span', 'Pagado $' + centsLabel(item.paid), 'muted'),
         n('strong', 'Saldo $' + centsLabel(item.balance)));
@@ -501,19 +803,20 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
       const faltaSrv = dineroServerInfo.get(item.row.id)?.falta;
       if (faltaSrv) main.append(n('span', faltaSrv, 'muted'));
       row.append(main);
-      /* Un toque (1.11.0): sin diálogo, sin fecha; la fila se actualiza
-         en el sitio. Solo en la copia del servidor, como en el Visor:
-         el pago manual vive en el servidor (el NAS). */
-      const payBtn = n('button', paidLabel, 'primary small');
-      payBtn.disabled = !(typeof satToken !== 'undefined' && satToken);
-      payBtn.title = payBtn.disabled ? 'Disponible en la copia del servidor (el NAS)' : 'Registrar el pago por el saldo vivo, con un toque';
-      payBtn.onclick = event => { event.stopPropagation(); dineroMarkPaid(item, row, paidLabel); };
-      row.append(payBtn);
-      /* Menú ⋯ universal (1.31.2): la fila entera ya abría la
-         factura al clic, sin decirlo; el menú lo hace visible
-         y añade el salto a la factura dentro de Facturas. */
+      /* (2.9.9 · D2) UN solo botón de acciones por fila: el ⋯.
+         Dentro viven TODAS las acciones de antes, con las mismas
+         palabras y el mismo efecto: el pago de un toque (1.11.0:
+         sin diálogo, sin fecha; la fila se actualiza en el sitio;
+         solo en la copia del servidor, como en el Visor — sin
+         servidor el gesto lo dice, como decía el título del botón
+         deshabilitado), ver la factura y verla en Facturas. */
       const menuSaldo1312 = cardMenu1312('Más opciones de este saldo');
       menuSaldo1312._setItems1312([
+        { label: paidLabel, fn: () => {
+            if (!(typeof satToken !== 'undefined' && satToken)) {
+              toast('Disponible en la copia del servidor (el NAS)', 'error'); return;
+            }
+            dineroMarkPaid(item, row, paidLabel); } },
         { label: 'Ver la factura', fn: () => invoiceDetail(item.row) },
         { label: 'Verla en Facturas', fn: () => { term = item.row.id; invoicePage = 0; navigate('invoices'); } }
       ]);
@@ -522,6 +825,14 @@ function balancePanel(title, description, items, partyField, paidLabel = 'Ya se 
       row.onclick = () => invoiceDetail(item.row);
       panelEl.append(row);
     }
+  }
+  /* (2.9.9 · D3) «Ver más»: trae las siguientes 25 filas del
+     panel sin salir de la pantalla. */
+  if (quedan299) {
+    const foot299 = n('div', undefined, 'table-foot');
+    foot299.append(n('span', 'Ves ' + number.format(vistas299) + ' de ' + number.format(items.length) + ' saldos'),
+      action('Ver más', () => { dineroLimites299[title] = limite299 + 25; render(); }, 'soft'));
+    panelEl.append(foot299);
   }
   return panelEl;
 }
@@ -776,8 +1087,9 @@ function counterpart360Panel(paidBy) {
     const listNote = n('p', '', 'muted');
     body.append(listNote);
     if (satToken) satApi('lists/validate', { query: rfc }).then(result => {
+      listNote.dataset.estado = 'atencion';
       listNote.textContent = result.matches.length ?
-        '⚠ Consta en listados: ' + result.matches.map(match => match.label + ' (' + match.detail + ')').join(' · ') :
+        'Atención: consta en listados: ' + result.matches.map(match => match.label + ' (' + match.detail + ')').join(' · ') :
         'Sin coincidencias en los listados oficiales cargados.';
     }).catch(() => { listNote.textContent = ''; });
     /* Calendario de pago de la contraparte (1.7.4, criterio 6): el
@@ -808,11 +1120,6 @@ function counterpart360Panel(paidBy) {
   panelEl.append(select, body);
   if (parties.size) fill();
   return panelEl;
-}
-function setInvoiceTerm(value) {
-  /* El buscador de Facturas filtra por UUID/RFC: se reutiliza el
-     mismo estado que usa el buscador global. */
-  term = value; invoiceState = ''; invoiceKind = ''; month = ''; invoicePage = 0;
 }
 /* Conciliación: movimientos (CSV: fecha, concepto, cargo, abono) contra
    facturas y pagos. Función pura reutilizable por Bancos (1.6.19). */
@@ -901,10 +1208,22 @@ async function renderAssistedReconcile(out) {
     if (activeConfirmed.length) {
       out.append(n('h3', 'Vínculos confirmados'));
       for (const match of activeConfirmed) {
-        const row = n('div', undefined, 'cp-row');
-        row.append(statusPill('ok', 'Conciliado'),
-          n('span', (match.movement?.date || '') + ' · ' + (match.movement?.concept || '') + ' · $' + match.amount +
-            ' → ' + match.invoices.map(inv => inv.uuid.slice(0, 8) + '…').join(' + ') + ' (' + (RECONCILE_MODE_LABEL[match.mode] || match.mode) + ')'));
+        /* (2.9.13 · mejora 18) El vínculo DIBUJADO: el
+           movimiento a la izquierda, la(s) factura(s) a la
+           derecha y el estado del cruce en el conector de en
+           medio — qué casa con qué se ve, no se lee en una
+           frase. El dato es el mismo de siempre. */
+        const row = n('div', undefined, 'concil-par2913');
+        const ladoMov = n('div', undefined, 'concil-lado2913');
+        ladoMov.append(n('small', 'Movimiento del banco'),
+          n('span', (match.movement?.date || '') + ' · ' + (match.movement?.concept || '')),
+          n('strong', '$' + match.amount));
+        const conector = n('div', undefined, 'concil-conector2913');
+        conector.append(statusPill('ok', 'Conciliado'),
+          n('span', RECONCILE_MODE_LABEL[match.mode] || match.mode, 'muted'));
+        const ladoFac = n('div', undefined, 'concil-lado2913');
+        ladoFac.append(n('small', match.invoices.length > 1 ? 'Facturas' : 'Factura'),
+          n('span', match.invoices.map(inv => inv.uuid.slice(0, 8) + '…').join(' + ')));
         const undo = n('button', 'Deshacer', 'soft');
         undo.onclick = async () => {
           try { await satApi('reconcile/undo', { matchId: match.id });
@@ -912,7 +1231,7 @@ async function renderAssistedReconcile(out) {
             renderAssistedReconcile(out);
           } catch (error) { toast(error.message, 'error'); }
         };
-        row.append(undo);
+        row.append(ladoMov, conector, ladoFac, undo);
         out.append(row);
       }
     }
