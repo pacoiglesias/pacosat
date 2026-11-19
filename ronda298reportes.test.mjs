@@ -166,6 +166,10 @@ const INSPECT = () => {
 const executablePath = [join(homedir(), '.cache/ms-playwright/chromium-1248/chrome-linux64/chrome'),
   join(homedir(), '.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell')]
   .find(p => existsSync(p));
+if (!executablePath && process.env.CI) {
+  console.log('OMITIDA EN CI: sin Chromium de Playwright en este entorno; la prueba de navegador real corre en la máquina de Paco (diseño e872570).');
+  process.exit(0);
+}
 assert.ok(executablePath, 'Chromium de Playwright disponible');
 const browser = await chromium.launch({ executablePath, args: ['--no-sandbox'] });
 try {
