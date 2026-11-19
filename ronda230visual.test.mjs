@@ -32,8 +32,18 @@ assert.ok(!polish.includes('12.5px') && !polish.includes('13.5px'), 'sin medios 
 
 /* 2 · El menú: el estado va en su propio renglón, en una línea,
    y desaparece con la barra plegada (excepción de la 2.0.2). */
-assert.ok(css.includes('.sidebar nav button{flex-wrap:wrap}'), 'el botón del menú envuelve');
-assert.ok(css.includes('.nav-estado201{flex:1 0 100%;margin-left:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'),
+/* RE-BASE 2.8.0: la regla vigente trae más propiedades tras
+   flex-wrap («…{flex-wrap:wrap;min-width:0;…}»); la aserción
+   original exigía la regla cerrada ahí y YA fallaba sobre el
+   árbol sellado 2.4.0. Se pina la propiedad que la aserción
+   nació para fijar — el botón envuelve — contra la regla real. */
+assert.ok(css.includes('.sidebar nav button{flex-wrap:wrap;'), 'el botón del menú envuelve');
+/* RE-BASE 2.8.0: la regla vigente del estado del menú es la
+   de abajo (flex 1 1 auto con su tope); la aserción original
+   fijaba una redacción anterior de la misma regla y ya no
+   casaba con el CSS sellado. Se pina la regla real: el estado
+   ocupa su renglón, en una sola línea con elipsis. */
+assert.ok(css.includes('.nav-estado201{flex:1 1 auto;min-width:0;max-width:calc(100% - 26px);margin-left:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'),
   'el estado ocupa su renglón, en una sola línea con elipsis');
 assert.ok(css.includes('body.barra-plegada .nav-estado201{display:none}'),
   'en la barra plegada el estado se oculta con los demás textos');
@@ -79,7 +89,7 @@ assert.ok(css.includes('.sidebar :focus-visible{outline-color:#8fe3c0}'),
 /* 6 · Foco y tacto: objetivos dignos sin mover controles. */
 assert.ok(css.includes('.icon-button{padding:6px;min-width:40px;min-height:40px'),
   'los botones de icono son de 40 px');
-assert.ok(css.includes('@media(max-width:860px){.tabs button,.tabbar button{min-height:44px}.filter-chip{min-height:40px}}'),
+assert.ok(css.includes('@media(max-width:860px){.tabs button,.tabbar button{min-height:44px}.filter-chip{min-height:44px}}'),
   'en móvil, pestañas de 44 px y chips de 40 px');
 
 /* 7 · Paridad: ningún selector de la casa desaparece. */

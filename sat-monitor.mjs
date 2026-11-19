@@ -225,6 +225,12 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
   /* Una consulta al SAT con su guardado: la usan la tanda automática
      (tick) y la revisión manual por lotes (processNow), sin duplicar. */
   async function checkOne(item, time) {
+    /* Transición detectada en ESTA consulta (2.4.0, castigo 1):
+       Vigente → Cancelado. Su aviso sale EN EL MOMENTO de la
+       detección — al cerrar el guardado, sin esperar a que el
+       tick recorra la cola de alertas — por cualquier vía que
+       llegue la consulta (tanda, «Revisar ahora» o forzada). */
+    let transicionCancelada = false;
     try {
       const result = await checkSat(item);
       db.exec('BEGIN IMMEDIATE');
@@ -248,7 +254,10 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
         try { prevState = item.result ? JSON.parse(item.result).state || '' : ''; } catch { prevState = ''; }
         db.prepare("UPDATE cfdi_watch SET checked=?,result=?,next=?,error='' WHERE id=?").run(time, JSON.stringify(result), next, item.id);
         if (result.state === 'Cancelado' && prevState !== 'Cancelado') {
-          if (prevState === 'Vigente') db.prepare('INSERT OR IGNORE INTO cancellation_alert(id,due) VALUES (?,?)').run(item.id, time);
+          if (prevState === 'Vigente') {
+            db.prepare('INSERT OR IGNORE INTO cancellation_alert(id,due) VALUES (?,?)').run(item.id, time);
+            transicionCancelada = true;
+          }
           else db.prepare('INSERT OR IGNORE INTO cancellation_seen(id,at) VALUES (?,?)').run(item.id, time);
         }
         /* Solicitud de cancelación en proceso (1.27.0): se abre
@@ -264,6 +273,23 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
         }
         db.exec('COMMIT');
       } catch (error) { db.exec('ROLLBACK'); throw error; }
+      /* Aviso EN EL MOMENTO (2.4.0, castigo 1): la transición se
+         avisa aquí mismo, al detectarla, con la fila ya guardada
+         — el callback de la casa compone el aviso con folio,
+         emisor e importe y lo deja en el canal de alertas/correo.
+         Si el aviso sale, la fila queda marcada enviada y el
+         barrido del tick no lo repite; si falla, la fila queda
+         pendiente con su vencimiento y el tick lo reintenta como
+         hasta ahora (red de seguridad, nunca duplicado: la marca
+         `sent` es la cerradura). Los descubrimientos (sin estado
+         anterior «Vigente») NO usan esta vía: siguen en su
+         resumen único, como manda la 1.13.1. */
+      if (transicionCancelada && notifyCancellation) {
+        try {
+          if (await notifyCancellation(saved.get(item.id)))
+            db.prepare('UPDATE cancellation_alert SET sent=? WHERE id=?').run(now(), item.id);
+        } catch { /* queda pendiente: el tick lo reintenta */ }
+      }
       return true;
     } catch (error) { db.prepare('UPDATE cfdi_watch SET error=?,next=? WHERE id=?').run(text(error.message).slice(0, 180), time + HOUR, item.id); return false; }
   }
@@ -401,6 +427,12 @@ export function createMonitor(db, { now = Date.now, checkSat = querySat, refresh
         await checkOne(item, time);
       }
       if (notifyCancellation) {
+        /* Red de seguridad (2.4.0, castigo 1): el aviso de una
+           transición ya salió EN EL MOMENTO de detectarla (en
+           checkOne); esta pasada solo recoge las filas que aquel
+           intento no pudo entregar (el callback falló), con su
+           reintento de siempre. Las ya enviadas llevan `sent` y
+           no se tocan: un evento, un aviso. */
         const alerts = db.prepare('SELECT id FROM cancellation_alert WHERE sent IS NULL AND due<=? ORDER BY due LIMIT 10').all(time);
         for (const { id } of alerts) {
           db.prepare('UPDATE cancellation_alert SET due=? WHERE id=?').run(time + 15 * 60000, id);

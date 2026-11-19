@@ -229,7 +229,9 @@ function wrapText(text, maxWidth, size, bold = false) {
   if (current) lines.push(current);
   return lines.length ? lines : [''];
 }
-/* Documento: { title, subtitle, generated (texto libre, p. ej.
+/* Documento: { title, subtitle, rfc (opcional, 2.4.0 · W5b1: si
+   no viene, la portada lo busca en el subtítulo/título),
+   generated (texto libre, p. ej.
    «Generado el 10 de noviembre de 2026, 18:30 h»), sections:
    [{ heading, note, lines: [texto], table: { columns:
    [{title, width (fracción), align}], rows: [[celdas]],
@@ -246,11 +248,56 @@ export function buildPdf(doc) {
     ops.push({ raw: `BT /${bold ? 'F2' : 'F1'} ${size} Tf ${color} rg 1 0 0 1 ${x.toFixed(1)} ${yy.toFixed(1)} Tm (`, text: value, tail: ') Tj ET' });
   };
   const line = (x1, yy, x2, grey = '0.75 0.75 0.75') => ops.push(`${grey} RG 0.6 w ${x1.toFixed(1)} ${yy.toFixed(1)} m ${x2.toFixed(1)} ${yy.toFixed(1)} l S`);
+  const rect = (x, yy, w, h, color) => ops.push(`${color} rg ${x.toFixed(1)} ${yy.toFixed(1)} ${w.toFixed(1)} ${h.toFixed(1)} re f`);
   const ensure = height => { if (y - height < PAGE.mb) newPage(); };
 
+  /* Portada de documento (2.4.0 · W5b1, pieza 8): TODOS los
+     reportes que salen de buildPdf abren con la marca del faro
+     — la misma geometría del faroSvg de mail-layout.mjs (torre
+     azul #175c9e, lámpara y haces dorados, mar) dibujada en
+     vectorial, sin imágenes —, el nombre de la casa, el título,
+     el RFC del documento y su fecha de generación; y cierran
+     con el pie de siempre ampliado (RFC + generación). El RFC
+     sale de doc.rfc si el llamador lo pasa; si no, del subtítulo
+     o el título cuando ahí viaja (los llamadores actuales lo
+     llevan en el subtítulo). Las cifras no se tocan: esto es
+     solo la plantilla. El comentario «% PACOSAT-FARO» viaja en
+     el flujo para que la prueba juzgue la portada sobre el
+     propio PDF, como el bloque QR. */
+  const FARO_AZUL = '0.09 0.36 0.62', FARO_ORO = '1 0.82 0.40';
+  const docRfc = String(doc.rfc || '').trim() ||
+    ((String(doc.subtitle || '') + ' ' + String(doc.title || ''))
+      .match(/[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}/) || [''])[0];
+  /* Plantilla de encabezado (2.9.13 · Bloque E, orden de
+     Paco): cuando el documento trae `partes`, el encabezado
+     es la plantilla única de los reportes — línea 1 el tipo
+     como título, línea 2 las partes (nombre y RFC de cada
+     una, una sola vez), línea 3 el generado con la marca y
+     la versión —. Sin la palabra «PacoSAT» suelta junto al
+     faro (la marca gráfica ES el faro y la línea 3 ya la
+     nombra), sin línea «RFC:» aparte y sin la segunda línea
+     del pie, que repetía RFC y generado en cada hoja. Los
+     documentos que no son reportes (la representación de un
+     CFDI, el combinado) conservan su portada de siempre. */
+  const plantilla2913 = typeof doc.partes === 'string' && doc.partes.length > 0;
   y = PAGE.h - PAGE.mt;
-  text(doc.title, PAGE.ml, y, 17, true); y -= 20;
-  if (doc.subtitle) { text(doc.subtitle, PAGE.ml, y, 10.5, false, '0.25 0.25 0.25'); y -= 14; }
+  ops.push('% PACOSAT-FARO portada con la marca del faro');
+  const fTop = y;
+  rect(PAGE.ml + 11, fTop - 27, 8, 20, FARO_AZUL);
+  rect(PAGE.ml + 11, fTop - 15, 8, 2.6, '1 1 1');
+  rect(PAGE.ml + 11, fTop - 21, 8, 2.6, '1 1 1');
+  rect(PAGE.ml + 9, fTop - 8, 12, 4.4, FARO_ORO);
+  rect(PAGE.ml + 13.4, fTop - 7.2, 3.2, 2.8, '1 1 1');
+  rect(PAGE.ml + 1, fTop - 7.6, 7, 2.2, FARO_ORO);
+  rect(PAGE.ml + 22, fTop - 7.6, 7, 2.2, FARO_ORO);
+  line(PAGE.ml, fTop - 30, PAGE.ml + 30, FARO_AZUL);
+  if (!plantilla2913) text('PacoSAT', PAGE.ml + 40, fTop - 11, 13, true, FARO_AZUL);
+  text(fitText(doc.title, usable - 40, 15, true), PAGE.ml + 40, fTop - 26, 15, true);
+  y = fTop - 38;
+  if (plantilla2913) {
+    for (const wrapped of wrapText(doc.partes, usable, 10.5)) { text(wrapped, PAGE.ml, y, 10.5, false, '0.25 0.25 0.25'); y -= 14; }
+  } else if (doc.subtitle) { text(doc.subtitle, PAGE.ml, y, 10.5, false, '0.25 0.25 0.25'); y -= 14; }
+  if (!plantilla2913 && docRfc) { text('RFC: ' + docRfc, PAGE.ml, y, 9, true, '0.25 0.25 0.25'); y -= 12; }
   if (doc.generated) { text(doc.generated, PAGE.ml, y, 8.5, false, '0.45 0.45 0.45'); y -= 8; }
   line(PAGE.ml, y, PAGE.w - PAGE.mr, '0.2 0.35 0.55'); y -= 16;
 
@@ -294,7 +341,15 @@ export function buildPdf(doc) {
       }
       for (const total of table.totals || []) {
         if (y - 14 < PAGE.mb) { newPage(); }
-        y -= 2; line(PAGE.ml, y + 9, PAGE.w - PAGE.mr, '0.2 0.35 0.55');
+        y -= 2;
+        /* Bloque visual de totales (2.4.0 · W5b1, pieza 8): la
+           fila de totales se pinta sobre una banda con el acento
+           de la marca a la izquierda — un bloque que se encuentra
+           de un vistazo, no una fila más de la tabla. */
+        ops.push('% PACOSAT-TOTALES bloque visual de totales');
+        rect(PAGE.ml, y - 4, usable, 17, '0.93 0.96 0.99');
+        rect(PAGE.ml, y - 4, 3, 17, FARO_AZUL);
+        line(PAGE.ml, y + 9, PAGE.w - PAGE.mr, '0.2 0.35 0.55');
         total.forEach((value, i) => {
           const c = table.columns[i];
           /* La etiqueta del total («Total (sin canceladas)») no cabe
@@ -364,8 +419,16 @@ export function buildPdf(doc) {
       if (typeof op === 'string') parts.push(enc(op + '\n'));
       else { parts.push(enc(op.raw)); parts.push(toLatin1(op.text)); parts.push(enc(op.tail + '\n')); }
     }
-    const footer = `PacoSAT · ${doc.title} · página ${index + 1} de ${totalPages}`;
+    const footer = `PacoSAT · Faro Fiscal · ${doc.title} · página ${index + 1} de ${totalPages}`;
     pushText(footer, PAGE.ml, 30, 8, false, '0.5 0.5 0.5');
+    /* Segunda línea del pie (2.4.0 · W5b1, pieza 8): el RFC del
+       documento y su fecha de generación viajan en cada hoja.
+       (2.9.13 · Bloque E) En los reportes de la plantilla el
+       pie NO la lleva: repetiría el RFC y el generado que el
+       encabezado ya trae una sola vez. */
+    const pie240 = plantilla2913 ? '' :
+      [docRfc ? 'RFC: ' + docRfc : '', doc.generated || ''].filter(Boolean).join(' · ');
+    if (pie240) pushText(pie240, PAGE.ml, 19, 7.5, false, '0.5 0.5 0.5');
     return Buffer.concat(parts);
   });
 
@@ -459,15 +522,15 @@ export function buildConciliacionPdf(conciliacion, meta = {}) {
           e.invoice ? nombreContraparteConc(e.invoice, cuenta.account?.rfc) + ' · ' +
             String(e.uuid || '').slice(0, 8) + '…' : String(e.uuid || '').slice(0, 8) + '…']) } });
   }
-  return buildPdf({ title: 'Conciliación bancaria · ' + (meta.mes || conciliacion?.month || ''),
-    subtitle: meta.rfc || 'Todas las cuentas', generated: meta.generado || '', sections });
+  return buildPdf({ title: 'Conciliación de Bancos · ' + (meta.mes || conciliacion?.month || ''),
+    partes: meta.partes || '', subtitle: meta.rfc || 'Todas las cuentas', generated: meta.generado || '', sections });
 }
 
 export function buildConciliacionXlsx(conciliacion, meta = {}) {
   const porCuenta = Array.isArray(conciliacion?.porCuenta) ? conciliacion.porCuenta : [];
   const resumen = [
-    ['Qué es este archivo', 'Conciliación bancaria de ' + (meta.mes || conciliacion?.month || '') +
-      (meta.rfc ? ' de ' + meta.rfc : ' de todas las cuentas') + ' — la misma de la pantalla Bancos'],
+    ['Reporte', 'Conciliación de Bancos · ' + (meta.mes || conciliacion?.month || '')],
+    ['Contribuyente', meta.partes || (meta.rfc ? meta.rfc : 'Todas las cuentas')],
     ['Regla de cruce', conciliacion?.regla || ''],
     ['Generado', meta.generado || '']];
   for (const cuenta of porCuenta)

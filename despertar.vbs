@@ -14,6 +14,17 @@
 ' si el ejecutor sale con el código 42 (se auto-actualizó), lo
 ' relanza con la versión nueva, igual que hacía el .bat.
 '
+' Restauración tras crash inmediato (2.3.2, B-2): si el ejecutor
+' muere a los pocos segundos de arrancar (menos de 15 s) con un
+' código que no es 0 ni 42, cuenta como crash inmediato y el
+' contador (despertar-crashes.txt) sube; el contador sobrevive
+' entre invocaciones. Si los crashes inmediatos se repiten
+' (2 seguidos), lo más probable es una instalación mezclada que
+' no carga: se restaura la copia anterior (actualizacion-
+' anterior\, que el ejecutor guarda antes de cada actualización)
+' sobre esta carpeta y se relanza con lo restaurado. Un arranque
+' sano (0, 42 o una vida de 15 s o más) pone el contador a cero.
+'
 ' Aquí no hay secretos impresos ni pedidos a nadie: la dirección
 ' de PacoSAT sale de url.txt de ESTA carpeta (o la de siempre) y
 ' la llave, de token.txt de ESTA carpeta — el servidor no sabe
@@ -53,6 +64,36 @@ Function YaCorre()
   Next
 End Function
 
+Function LeerContadorCrashes()
+  LeerContadorCrashes = 0
+  Dim texto
+  texto = LeerPrimeraLinea(carpeta & "\despertar-crashes.txt")
+  If IsNumeric(texto) Then LeerContadorCrashes = CInt(texto)
+End Function
+
+Sub GuardarContadorCrashes(n)
+  Dim ts
+  Set ts = fso.CreateTextFile(carpeta & "\despertar-crashes.txt", True)
+  ts.WriteLine CStr(n)
+  ts.Close
+End Sub
+
+Sub RestaurarAnterior()
+  Dim origen, f, sub
+  If Not fso.FolderExists(carpeta & "\actualizacion-anterior") Then Exit Sub
+  Set origen = fso.GetFolder(carpeta & "\actualizacion-anterior")
+  On Error Resume Next
+  For Each f In origen.Files
+    f.Copy carpeta & "\" & f.Name, True
+  Next
+  For Each sub In origen.SubFolders
+    If LCase(sub.Name) <> "efirma-local" Then
+      fso.CopyFolder sub.Path, carpeta & "\" & sub.Name, True
+    End If
+  Next
+  On Error GoTo 0
+End Sub
+
 If YaCorre() Then
   WScript.Quit 0
 End If
@@ -77,9 +118,35 @@ env.Item("PACOSAT_EFIRMA_DIR") = carpeta & "\efirma-local"
 
 ' Arranque oculto (ventana 0), esperando la salida: el 42 es
 ' «me actualicé solo», y se relanza igual que en arrancar.bat.
-Dim codigoSalida
+' Un crash inmediato repetido restaura la copia anterior (2.3.2).
+Dim codigoSalida, inicio, duracion, crashes, seguir
+crashes = LeerContadorCrashes()
 Do
+  seguir = False
+  inicio = Timer
   codigoSalida = shell.Run("node """ & carpeta & "\ejecutor-local.mjs""", 0, True)
-Loop While codigoSalida = 42
+  duracion = Timer - inicio
+  If duracion < 0 Then duracion = duracion + 86400
+  If codigoSalida = 42 Then
+    GuardarContadorCrashes 0
+    crashes = 0
+    seguir = True
+  ElseIf codigoSalida = 0 Then
+    GuardarContadorCrashes 0
+    crashes = 0
+  ElseIf duracion < 15 Then
+    crashes = crashes + 1
+    GuardarContadorCrashes crashes
+    If crashes >= 2 And fso.FolderExists(carpeta & "\actualizacion-anterior") Then
+      RestaurarAnterior
+      GuardarContadorCrashes 0
+      crashes = 0
+      seguir = True
+    End If
+  Else
+    GuardarContadorCrashes 0
+    crashes = 0
+  End If
+Loop While seguir
 
 WScript.Quit 0

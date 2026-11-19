@@ -72,9 +72,9 @@ function makeHarness(options = {}) {
 /* ===== 1 · ESTÁTICAS ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.3.0', 'la versión vigente es 2.0.1 (las enmiendas anteriores viajan dentro, acumulativas; la 2.0.1 reconstruye los motores contra el mapa real)');
+  assert.equal(pkg.version, '2.9.14', 'la versión vigente es 2.0.1 (las enmiendas anteriores viajan dentro, acumulativas; la 2.0.1 reconstruye los motores contra el mapa real)');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella con la versión vigente');
+  assert.ok(html.includes('"version":"2.9.14"'), 'el artefacto se sella con la versión vigente');
   const ui = read('ui.part'), sat = read('sat-ui.part'), mon = read('monitor-ui.part'),
     avisos = read('avisos-ui.part'), money = read('money-ui.part'), pagos = read('pagos-ui.part'),
     prob = read('problemas-ui.part'), trib = read('tributario-ui.part'), wf = read('workflows.part'),
@@ -107,8 +107,11 @@ function makeHarness(options = {}) {
      1.32.1, F3 — la misma doctrina que Avisos arriba: la cara
      lleva Ver CFDI + PDF + XML y lo secundario vive en el
      menú; invoiceActions es el constructor de la lista y del
-     detalle). */
-  assert.ok(wf.includes("{ label: 'Archivar', fn: () => cfdiArchivar1311(row)"), 'Archivar de Facturas vive en su menú ⋯');
+     detalle). RE-BASE 2.9.9 (mandato D2): la fila ya no lleva
+     directos — invoiceActions compone TODAS las acciones con
+     push() dentro del único ⋯ de la fila, con las mismas
+     palabras; el literal sigue a esa forma. */
+  assert.ok(wf.includes("push('Archivar', () => cfdiArchivar1311(row)"), 'Archivar de Facturas vive en su menú ⋯');
   assert.ok(wf.includes("cardMenu1312('Más opciones de esta factura')"), 'la fila de Facturas tiene su menú ⋯');
 
   /* Barra de progreso: estados con progreso real y pintado en
@@ -117,8 +120,18 @@ function makeHarness(options = {}) {
   assert.ok(sat.includes('salida.buzon.progreso'), 'Buzón expone su progreso');
   assert.ok(sat.includes('progreso: { fase: progreso.step'), 'Constancia/Opinión exponen fase e inicio reales');
   assert.ok(sat.includes('t.progresoSlot.replaceChildren(jobProgress1312(e.progreso))'), 'la tarjeta pinta su barra');
-  assert.ok(mon.includes('jobsBox.append(jobProgress1312({'), 'la Actividad pinta la barra de todo trabajo vivo');
-  assert.ok(mon.includes('desde: entry.since || 0, done: entry.done, total: entry.total'), 'la Actividad alimenta la barra con since/done/total del servidor');
+  /* RE-BASE 2.8.0 (diseño 1): la franja ya no construye la
+     barra en línea — desde la corrección visual 2.4.0 compone
+     cada entrada con actividadLinea240 y su barra con
+     actividadProgreso240 (ui.part), y la 2.8.0 la aprieta a
+     «solo con conteo real». Las dos aserciones anteriores
+     fijaban la pintura previa a esa corrección y YA fallaban
+     sobre el árbol sellado 2.4.0; se re-pinan contra la
+     composición vigente, con la misma exigencia: la barra de
+     todo trabajo vivo se pinta y se alimenta del servidor. */
+  assert.ok(mon.includes('if (progreso240) jobsBox.append(progreso240)'), 'la Actividad pinta la barra de todo trabajo vivo (vía actividadProgreso240)');
+  assert.ok(ui.includes('done: entry?.done, total: entry?.total'), 'la barra se alimenta con done/total del servidor');
+  assert.ok(ui.includes('if (!tieneConteo) return null'), 'sin conteo real no hay barra: el estado se dice una vez, en la línea (diseño 1)');
 
   /* Barra de plazo con tramos: Avisos y Buzón Tributario. */
   assert.ok(avisos.includes('plazoBar1312(aviso.creado, aviso.vence)'), 'Avisos pinta su barra de plazo');

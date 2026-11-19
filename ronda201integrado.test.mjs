@@ -29,8 +29,10 @@ import {
        es un no-op declarado que no lanza;
    (3) el lanzador despertar.vbs: consulta WMI de instancia
        única ceñida a ESTA carpeta, arranque oculto (ventana 0),
-       relanzado tras la auto-actualización (salida 42) y el
-       mismo entorno que arrancar.bat (PACOSAT_URL de url.txt,
+       relanzado tras la auto-actualización (salida 42) y, desde
+       la 2.3.2 (B2a), restauración de la copia anterior ante un
+       crash inmediato repetido (contador despertar-crashes.txt),
+       y el mismo entorno que arrancar.bat (PACOSAT_URL de url.txt,
        token de token.txt, Chrome, PACOSAT_EFIRMA_DIR);
    (4) el instalador: su rama de instalación viva va ANTES que
        el canje del código (no repite emparejamiento ni toca
@@ -143,8 +145,24 @@ assert.ok(vbs.includes('If YaCorre() Then') && vbs.includes('WScript.Quit 0'),
   'si ya corre: éxito silencioso, no hace nada');
 assert.ok(vbs.includes('shell.Run("node """ & carpeta & "\\ejecutor-local.mjs""", 0, True)'),
   'arranque OCULTO: ventana 0 y esperando la salida');
-assert.ok(vbs.includes('Loop While codigoSalida = 42'),
-  'la auto-actualización (salida 42) relanza, como hacía arrancar.bat');
+/* Re-baseline 2.3.2 (integración 2, resto de B2a): el bucle ya
+   no es «Loop While codigoSalida = 42» a secas — B2a lo dejó
+   mandando sobre la bandera «seguir», porque despertar ahora
+   hace DOS cosas al salir el ejecutor: relanzar ante la
+   auto-actualización (42) y, ante un crash inmediato repetido,
+   restaurar la copia anterior y relanzar con lo restaurado.
+   El contrato nuevo es ese, completo: */
+assert.ok(vbs.includes('Loop While seguir'),
+  'el bucle de relanzamiento manda sobre la bandera «seguir» (2.3.2, B2a)');
+assert.ok(vbs.includes('If codigoSalida = 42 Then') && vbs.includes('seguir = True'),
+  'la auto-actualización (salida 42) relanza, como hacía arrancar.bat: pone «seguir» y el bucle repite');
+assert.ok(vbs.includes('despertar-crashes.txt') && vbs.includes('duracion < 15'),
+  'un crash inmediato (salida distinta de 0/42 en menos de 15 s) se cuenta en despertar-crashes.txt');
+assert.ok(vbs.includes('crashes >= 2') && vbs.includes('RestaurarAnterior') &&
+    vbs.includes('actualizacion-anterior'),
+  'con 2 crashes inmediatos seguidos se restaura actualizacion-anterior y se relanza con lo restaurado');
+assert.ok(vbs.includes('GuardarContadorCrashes 0'),
+  'un arranque sano (0, 42 o una vida de 15 s o más) pone el contador de crashes a cero');
 for (const pieza of ['PACOSAT_URL', 'url.txt', 'https://pacosat.iglesiasmurrieta.com',
     'PACOSAT_EXECUTOR_TOKEN', 'token.txt', 'PACOSAT_CHROMIUM_PATH',
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',

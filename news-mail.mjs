@@ -92,12 +92,16 @@ export function composeNewsMail(notice, rows, total = rows.length, opts = {}) {
     String(row.efos).toLowerCase() +
     ' — no la deduzcas ni acredites su IVA sin revisar su materialidad.';
   for (const row of shown) {
+    /* m-2 (2.3.2): la línea de texto plano también lleva el UUID
+       (las tarjetas HTML ya lo llevaban): ningún correo sale sin
+       los datos que prueban cada comprobante. */
     lines.push('· ' + (fechaLarga(row.fecha) || 'sin fecha') +
       ' · ' + (row.counterpartName || 'Sin nombre registrado') + ' (' + (row.counterpartRfc || '—') + ')' +
       ' · ' + (row.folio ? 'folio ' + (row.serie ? row.serie + '-' : '') + row.folio : 'sin folio') +
       ' · $' + importeShow(row.total) +
       (row.estado ? ' · ' + row.estado : '') +
-      ' · ' + claseWord(row));
+      ' · ' + claseWord(row) +
+      (row.uuid ? ' · UUID ' + row.uuid : ''));
     const avisoEfos = efosAviso(row);
     if (avisoEfos) lines.push('  ' + avisoEfos);
   }

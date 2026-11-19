@@ -188,18 +188,55 @@ async function clickTramiteLink(page, candidates, onStep = null) {
    del portal, el fallo se clasifica como ruta-muerta y el
    mensaje NOMBRA la dirección que la devolvió. La detección
    lee el diagnóstico o el texto visible, con guardas: una
-   doble sin diagnostics()/text() no clasifica nada. */
+   doble sin diagnostics()/text() no clasifica nada.
+   Corrección 2.3.1 (17 nov 2026, evidencia de la corrida real
+   de declaraciones de hoy): diagnostics() del driver
+   (sat-doc-browser.mjs) devuelve un HTML COMPUESTO — el de la
+   página principal MÁS el de cada iframe, concatenados tras
+   el marcador «<!-- ===== MARCO (iframe): <url> ===== -->» —,
+   y la versión anterior declaraba muerta la página si ese
+   compuesto contenía «Página no encontrada», aunque el texto
+   viniera de un IFRAME (el marco del trámite apuntando él
+   solo a /app/seg/null) con la principal sana en su
+   aterrizaje: entre el paso «Aterrizaje del portal» y la
+   clasificación «Ruta muerta» distaron 140 ms, sin tiempo
+   material para que la principal navegara a la ruta muerta.
+   Desde esta ronda la muerte se juzga SOLO por la página
+   principal: (a) su URL es /app/seg/null (page.url() o la
+   del diagnóstico); (b) el HTML de la principal — el
+   compuesto RECORTADO en el primer marcador de marco —
+   contiene «Página no encontrada»; o (c) su texto lo dice
+   (el text() del driver real solo lee el body de la página
+   principal, no es compuesto). Que un iframe esté en la 404
+   NUNCA clasifica la página entera como muerta. La señal de
+   URL es la fiable de las dos corridas que sí murieron de
+   verdad: su URL final, la de la principal, era
+   https://wwwmat.sat.gob.mx/app/seg/null. */
 async function paginaMuerta(page) {
   try {
+    let urlPrincipal = '';
+    if (page && typeof page.url === 'function') {
+      try { urlPrincipal = String(page.url() || ''); } catch { /* página en transición */ }
+      if (urlPrincipal && /\/app\/seg\/null/.test(urlPrincipal))
+        return { muerta: true, url: urlPrincipal };
+    }
     if (page && typeof page.diagnostics === 'function') {
       const d = await page.diagnostics().catch(() => null);
-      const html = typeof d?.html === 'string' ? d.html : '';
-      if (html && /Página no encontrada/i.test(html)) return { muerta: true, url: String(d.url || '') };
-      if (d) return { muerta: false, url: String(d.url || '') };
+      if (d) {
+        const du = String(d.url || '');
+        if (du && /\/app\/seg\/null/.test(du)) return { muerta: true, url: du };
+        const compuesto = typeof d.html === 'string' ? d.html : '';
+        const corte = compuesto.indexOf('<!-- ===== MARCO (iframe):');
+        const htmlPrincipal = corte >= 0 ? compuesto.slice(0, corte) : compuesto;
+        if (htmlPrincipal && /Página no encontrada/i.test(htmlPrincipal))
+          return { muerta: true, url: du || urlPrincipal };
+        return { muerta: false, url: du || urlPrincipal };
+      }
     }
     if (page && typeof page.text === 'function') {
       const t = await page.text().catch(() => '');
-      if (typeof t === 'string' && /Página no encontrada/i.test(t)) return { muerta: true, url: '' };
+      if (typeof t === 'string' && /Página no encontrada/i.test(t))
+        return { muerta: true, url: urlPrincipal };
     }
   } catch { /* la detección nunca tumba la corrida */ }
   return { muerta: false, url: '' };
@@ -210,6 +247,25 @@ function fallaRutaMuerta(url) {
     ': esa ruta del portal ya no responde — no es que falte un enlace en una portada, es que la ' +
     'dirección misma está muerta. La página desde la que se navegó (la de decisión) y la final ' +
     'quedan guardadas en el diario de la corrida.');
+}
+/* Variante de ENTRADA de la ruta muerta (2.3.2, constructor
+   P — misma evidencia que su gemela de sat-tributario.mjs:
+   corrida buzon-listar del 17 nov 2026, runId
+   1d36cce9-e5f8-4ff5-809a-3cf7cedd7aed, hasDecisionHtml=false):
+   SOLO para el chequeo de entrada de entrarPortalNuevo, el
+   paginaMuerta que recibe la página tal como llega al paseo,
+   antes de clicar ni navegar a ningún sitio. Ahí no hubo
+   página desde la que se navegara: afirmar que una página
+   de decisión quedó guardada sería falso en este sitio. El
+   texto de entrada dice solo lo probado: la página ya estaba
+   muerta, no se consultó ni se descargó nada y la sesión se
+   descarta para entrar de nuevo con la e.firma. Los sitios
+   de mitad de paseo conservan fallaRutaMuerta tal cual. */
+function fallaRutaMuertaEntrada(url) {
+  return failure('ruta-muerta',
+    'La página ya estaba en la página muerta del portal («Página no encontrada», ' +
+    (url || '(sin dirección legible)') + ') antes de navegar a ningún sitio: no se consultó ni ' +
+    'se descargó nada y la sesión se descarta para entrar de nuevo con la e.firma.');
 }
 /* Aterrizaje real del portal (1.27.0, bloque C — evidencia viva
    del 11 nov 2026): tras el acceso con e.firma el portal NO deja
@@ -385,7 +441,10 @@ function fallaEjercicioPrevioPortal(ejercicio) {
    funciona en este portal). */
 async function entrarPortalNuevo(page, onStep, opciones = {}) {
   const muertaEntrada = await paginaMuerta(page);
-  if (muertaEntrada.muerta) throw fallaRutaMuerta(muertaEntrada.url);
+  /* Texto de ENTRADA (2.3.2): la página llega ya muerta al
+     paseo — la variante honesta no afirma ninguna página de
+     decisión guardada. */
+  if (muertaEntrada.muerta) throw fallaRutaMuertaEntrada(muertaEntrada.url);
   let salto = await clicSeguro(page, 'Nuevo portal de pagos provisionales');
   if (salto) {
     const muerta = await paginaMuerta(page);
@@ -490,28 +549,96 @@ async function fillConsultaNueva(page, ejercicio, periodicidadMensual, onStep) {
   await sleep(800);
 }
 
-/* Las filas de la consulta, con espera: el portal nuevo puede
-   tardar en pintar la tabla tras el envío (postback). Si la
-   página enseña su «sin resultados», la espera termina con la
-   lista vacía — un año sin presentadas es un desenlace, no un
-   fallo de lectura —. Sin lector de filas en el driver, el
-   paso se nombra y se clasifica: mejor un error claro que una
-   lista vacía fingida. */
-async function leerFilasConsulta(page, onStep) {
+/* La página de resultados, capturada UNA vez para la
+   evidencia: el diagnostics() del driver (foto + HTML de la
+   página tal como quedó, con sus marcos). Sin diagnostics()
+   en el driver no hay evidencia que capturar y la lectura
+   sigue: la evidencia nunca tumba la corrida. */
+async function capturarResultadosDiag(page) {
+  if (!page || typeof page.diagnostics !== 'function') return null;
+  try { return await page.diagnostics(); } catch { return null; }
+}
+
+/* Las filas de la consulta, con espera — TRES desenlaces, no
+   dos (2.3.2, constructor P2; evidencia viva del 17 nov 2026:
+   las corridas de declaraciones-recuperar
+   47496edb-5e1f-4f62-b1dc-07c08001f6ed y
+   e0af7105-4c4c-4aa8-a773-8dfce3cb0e4a caminaron TODO el
+   portal nuevo — segundo acceso en loginda OK, pstcdypisr
+   dentro, «Consulta De la declaración abierta», «Formulario
+   de búsqueda enviado: ejercicio 2026 · periodicidad
+   mensual» — y cerraron con «Resultados leídos: 0 filas»,
+   ok:true, 0 documentos y NINGUNA evidencia guardada
+   (hasShot/hasHtml/hasDecisionShot/hasDecisionHtml todos
+   false). Verdad de contraste, del mapa real levantado a
+   mano el 16 nov 2026: en ese mismo portal y ejercicio
+   constan 13 declaraciones de Mano Fil en 2026. Un 0 sin
+   constancia se dio por bueno: ese es el defecto que esta
+   ronda corrige):
+   (a) FILAS (>0): la tabla se pobló — se devuelven las filas
+       y la evidencia de la página de resultados.
+   (b) VACÍO CONFIRMADO: la página enseña su marcador de
+       vacío — los DOS patrones estrictos de siempre
+       (/sin resultados|no se encontraron/i; no se añade
+       ningún patrón sin evidencia de página que lo enseñe)
+       —: un año sin presentadas es un desenlace, no un
+       fallo, y también lleva su evidencia.
+   (c) NO CONCLUYENTE: vence el plazo sin filas y sin
+       marcador — el portal no confirmó NADA —: se lanza un
+       failure de clase nueva 'no-concluyente' con el
+       diagnostics() de la página de resultados en
+       error.diag (la fontanería de diag en errores de la
+       fábrica: el catch de createSatDeclFetch solo adjunta
+       el suyo si el error no trae ya uno). Jamás un [] que el
+       llamador convierta en «Resultados leídos: 0 filas» ok.
+   El plazo sube de 15 s a 60 s: la familia de portales del
+   SAT tarda ~30 s en poblar marcos (medido en vivo en el
+   Buzón, 16 nov 2026) y 15 s quedó corto en las dos corridas
+   de hoy. Mientras se espera, el paso «Esperando los
+   resultados del portal…» sale cada ~10 s, como el
+   esperarBandeja del buzón. opciones.plazoResultadosMs es la
+   costura de prueba (las dobles no esperan un minuto); sin
+   ella manda el plazo real de 60 s. Sin lector de filas en
+   el driver, el paso se nombra y se clasifica: mejor un
+   error claro que una lista vacía fingida. */
+export const DECL_RESULTADOS_PLAZO_MS = 60_000;
+async function leerFilasConsulta(page, onStep, opciones = {}) {
   if (typeof page.portalNuevoResults !== 'function') {
     throw failure('respuesta-inesperada',
       'La consulta «De la declaración» no devolvió una tabla legible: el navegador no supo ' +
       'leer sus filas. La página que enseñó queda guardada en el diario de la corrida.');
   }
-  const limite = Date.now() + 15_000;
+  const plazoMs = Number.isFinite(Number(opciones?.plazoResultadosMs)) && Number(opciones.plazoResultadosMs) > 0
+    ? Number(opciones.plazoResultadosMs) : DECL_RESULTADOS_PLAZO_MS;
+  const ejercicio = opciones?.ejercicio ?? '';
+  const limite = Date.now() + plazoMs;
+  let avisado = 0;
   for (;;) {
     const rows = await page.portalNuevoResults().catch(() => []);
-    if (Array.isArray(rows) && rows.length) return rows;
+    if (Array.isArray(rows) && rows.length)
+      return { rows, resultadosDiag: await capturarResultadosDiag(page) };
     let texto = '';
     try { texto = typeof page.text === 'function' ? await page.text() : ''; } catch { texto = ''; }
-    if (/sin resultados|no se encontraron/i.test(String(texto || ''))) return [];
-    if (Date.now() >= limite) return [];
-    await sleep(1200);
+    if (/sin resultados|no se encontraron/i.test(String(texto || '')))
+      return { rows: [], resultadosDiag: await capturarResultadosDiag(page) };
+    const ahora = Date.now();
+    if (ahora >= limite) {
+      const error = failure('no-concluyente',
+        'El portal no confirmó si hay declaraciones' + (ejercicio ? ' del ejercicio ' + ejercicio : '') +
+        ': la página de resultados no enseñó ni las filas ni su aviso de «sin resultados» dentro del ' +
+        'plazo de espera. Esta corrida NO cuenta como «0 declaraciones» — no es un año vacío ' +
+        'confirmado — y la página de resultados queda guardada en el diario de la corrida, para ' +
+        'ver qué enseñó el portal sin repetir la corrida a ciegas.');
+      const diag = await capturarResultadosDiag(page);
+      if (diag) error.diag = diag;
+      throw error;
+    }
+    if (!avisado || ahora - avisado >= 10_000) {
+      notifyStep(onStep, 'Esperando los resultados del portal…',
+        'la tabla de la consulta puede tardar en poblarse; sigo leyendo sin dar el año por vacío');
+      avisado = ahora;
+    }
+    await sleep(Math.min(1200, Math.max(50, limite - ahora)));
   }
 }
 
@@ -555,7 +682,8 @@ async function fetchPresentadasPortalNuevo({ page, ejercicio, periodicidadMensua
   notifyStep(onStep, 'Formulario de búsqueda enviado',
     'ejercicio ' + ejercicio + (periodicidadMensual ? ' · periodicidad mensual' : '') +
     ' · el listado del año se filtra en PacoSAT');
-  const crudas = await leerFilasConsulta(page, onStep);
+  const lectura = await leerFilasConsulta(page, onStep, { ...opciones, ejercicio });
+  const crudas = lectura.rows;
   let rows = (crudas || []).map((row, i) => normalizaFilaPortal(row, ejercicio, i)).filter(Boolean);
   if (typeof filtro === 'function') rows = rows.filter(filtro);
   notifyStep(onStep, 'Resultados leídos', rows.length + (rows.length === 1 ? ' fila' : ' filas'));
@@ -573,7 +701,13 @@ async function fetchPresentadasPortalNuevo({ page, ejercicio, periodicidadMensua
       warnings.push('El acuse de la operación ' + row.operacion + ' apareció en la lista pero su PDF no llegó.');
     }
   }
-  return { documents, warnings, found: rows.length };
+  /* Evidencia en TODA corrida (2.3.2, constructor P2): la
+     página de resultados capturada al concluir la lectura
+     (filas o vacío confirmado) viaja en el resultado como
+     resultadosDiag — también en las corridas buenas, no solo
+     con errores (las dos corridas del 17 nov 2026 cerraron ok
+     sin ninguna evidencia guardada). */
+  return { documents, warnings, found: rows.length, resultadosDiag: lectura.resultadosDiag || null };
 }
 
 /* Conector (a): mensuales de un ejercicio (y periodo opcional).
@@ -866,6 +1000,30 @@ export async function fetchTransacciones({ page, ejercicio = 0, selectors = DECL
   return { documents: [], warnings: [], transactions, found: transactions.length };
 }
 
+/* ¿Una captura ES la página muerta del portal? Su URL es
+   la ruta degenerada /app/seg/null o su HTML es la 404
+   genérica («Página no encontrada», 156 B en producción).
+   Corrección 2.3.1 (17 nov 2026, misma evidencia que
+   paginaMuerta): el HTML del diagnóstico es COMPUESTO y
+   esta función decide qué captura viaja como página de
+   decisión — se juzga solo la principal, recortando el
+   compuesto en el primer marcador de marco, para que un
+   marco en la 404 no condene una portada sana.
+   Exportada a nivel de módulo en la 2.3.2 (m-21/D-3), en
+   paridad con su hermana buzonDiagEsMuerto de
+   sat-tributario.mjs, para que la batería discrimine su
+   recorte: la lógica es la misma de la clausura original,
+   sin un token cambiado; solo cambian ubicación y
+   visibilidad. */
+export function esDiagMuerto(diag) {
+  if (!diag) return false;
+  if (/\/app\/seg\/null/.test(String(diag.url || ''))) return true;
+  if (typeof diag.html !== 'string') return false;
+  const corte = diag.html.indexOf('<!-- ===== MARCO (iframe):');
+  const htmlPrincipal = corte >= 0 ? diag.html.slice(0, corte) : diag.html;
+  return /Página no encontrada/i.test(htmlPrincipal);
+}
+
 /* Fábrica con el puerto que espera el servicio:
    satDeclFetch({ rfc }, { tipo, ejercicio, periodo }) ->
    { documents: [...], warnings: [...], found }.
@@ -928,14 +1086,8 @@ export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () 
        nada; el que viaja es este, con la URL de la portada
        desde la que se intentó entrar al trámite. */
     let diagDecision = null;
-    /* ¿Una captura ES la página muerta del portal? Su URL es
-       la ruta degenerada /app/seg/null o su HTML es la 404
-       genérica («Página no encontrada», 156 B en producción). */
-    const esDiagMuerto = (diag) => {
-      if (!diag) return false;
-      if (/\/app\/seg\/null/.test(String(diag.url || ''))) return true;
-      return typeof diag.html === 'string' && /Página no encontrada/i.test(diag.html);
-    };
+    /* esDiagMuerto vive a nivel de módulo y exportada
+       (2.3.2, m-21/D-3), en paridad con buzonDiagEsMuerto. */
     try {
       if (paginaViva) {
         page = paginaViva;
@@ -1017,10 +1169,16 @@ export function createSatDeclFetch({ resolveCredentials, launchDriver, now = () 
         : await fetchMensuales({ page, ejercicio, periodo: String(query?.periodo || ''), selectors, onStep: step, opciones: opcionesMotor });
       if (esTransacciones) return result;
       if (!result.found) {
+        /* Vacío confirmado (2.3.2, constructor P2): el aviso
+           honesto de siempre, PERO con la evidencia de la
+           página de resultados adjunta (resultadosDiag) —
+           un 0 confirmado también deja constancia, no solo
+           los fallos. (El 0 NO confirmado ya no llega aquí:
+           leerFilasConsulta lo lanza como 'no-concluyente'.) */
         return { documents: [], warnings: ['El portal no mostró declaraciones ' +
           (tipo === 'anual' ? 'anuales' : 'mensuales') + ' presentadas de ' + ejercicio +
           ' para este RFC: puede que no se haya presentado ninguna o que la búsqueda necesite otro periodo.'],
-          found: 0 };
+          found: 0, resultadosDiag: result.resultadosDiag || null };
       }
       if (!result.documents.length) {
         throw failure('paso-interactivo', 'El portal mostró ' + result.found + ' declaración(es) ' +

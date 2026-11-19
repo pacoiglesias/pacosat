@@ -36,6 +36,18 @@ const OWN = 'MFI6212158B4';
 const ROOT = import.meta.dirname;
 const read = name => readFileSync(join(ROOT, name), 'utf8');
 const html = read('Faro-Fiscal.html');
+/* RE-BASE integración 2.4.0 (W6/W6b): la marca por trámite de
+   las tarjetas del Centro SAT vive hoy en la parte diferida
+   de Descargas (sat-ui) y paintActivity en la de Vigilancia.
+   El ancla de (d) se busca en artefacto + parte (mismo
+   literal). El arnés sirve las partes desde lazy.json por el
+   fetch y el head EJECUTA los scripts inyectados, como el
+   navegador con el cargador real (patrón de
+   tests/ronda240diferidas): sin eso, el lanzador-puente de
+   Declaraciones se re-invoca en bucle cuando un render pide
+   la parte y el fetch no la trae de verdad. Ninguna aserción
+   cambia de fuerza ni de total. */
+const lazy = JSON.parse(read('lazy.json'));
 const AHORA = Date.parse('2026-11-15T19:00:00Z');
 const T_PUERTA = Date.parse('2026-11-13T19:02:00Z');   /* la foto vieja */
 const T_SENAL = Date.parse('2026-11-14T23:02:00Z');    /* última señal: sábado */
@@ -117,6 +129,7 @@ function makeBootContext() {
   const byId = new Map();
   const metas = { 'meta[name="pacosat-token"]': { content: 'token-de-prueba' },
     'meta[name="pacosat-cloud"]': { content: '1' } };
+  const headEl = new FakeElement('head');
   const documentStub = {
     getElementById: id => {
       if (!byId.has(id)) byId.set(id, new FakeElement('div'));
@@ -131,12 +144,16 @@ function makeBootContext() {
     removeEventListener: () => {},
     documentElement: new FakeElement('html'),
     body: new FakeElement('body'),
-    head: new FakeElement('head'),
+    head: headEl,
     activeElement: null,
     title: ''
   };
   const fetchStub = async url => {
     const target = String(url);
+    const parteM = /\/parte\/(\w+)/.exec(target);
+    if (parteM) { const src = lazy.partes[parteM[1]]?.source || '';
+      return { ok: true, status: 200, headers: { get: () => 'text/javascript' },
+        json: async () => ({}), text: async () => src, blob: async () => new Blob([]) }; }
     let body = {};
     if (target.includes('storage/rev')) body = { rev: 1 };
     else if (target.includes('storage?')) body = [];
@@ -164,6 +181,13 @@ function makeBootContext() {
   });
   context.window = context;
   context.self = context;
+  /* El head ejecuta los scripts inyectados (las partes
+     diferidas), como el navegador al aterrizar una parte. */
+  headEl.appendChild = kid => {
+    if (kid && typeof kid.textContent === 'string' && kid.textContent)
+      vm.runInContext(kid.textContent, context, { filename: 'parte-diferida' });
+    return kid;
+  };
   return context;
 }
 const textoDe = el => {
@@ -298,7 +322,7 @@ const TERCERO = 'XEXX010101000';
 {
   assert.ok(html.includes("irDestino200b('avisos', primerAvisoId"), 'O5: el «Ver» de avisos lleva el id del primer aviso');
   assert.ok(html.includes("card.dataset.destino200b = 'aviso-' + aviso.id"), 'O5: la tarjeta de Avisos se marca con su id');
-  assert.ok(html.includes("card.dataset.destino200b = clave"), 'O5: las tarjetas del Centro SAT se marcan por trámite');
+  assert.ok((html + lazy.partes.descargas.source).includes("card.dataset.destino200b = clave"), 'O5: las tarjetas del Centro SAT se marcan por trámite');
   const context = await bootCliente();
   const destino = new FakeElement('article');
   context.__destino = destino;
@@ -316,9 +340,21 @@ const TERCERO = 'XEXX010101000';
 
 /* ===== (e) Centro SAT: el trabajo accionable vive en su tarjeta ===== */
 {
-  assert.ok(html.includes('franjaDuplica200b'), 'corrección 3: la franja global se suprime donde el trabajo ya tiene sitio');
-  assert.ok(html.includes('Cola de trabajos:'), 'corrección 3: la pestaña Ejecutor enseña la cola como conteo con enlace');
+  /* RE-BASE integración 2.4.0: franjaDuplica200b vive hoy en la
+     parte de Vigilancia (paintActivity); el ancla se busca en
+     artefacto + parte, con el mismo literal. */
+  assert.ok((html + lazy.partes.monitor.source).includes('franjaDuplica200b'), 'corrección 3: la franja global se suprime donde el trabajo ya tiene sitio');
+  /* RE-BASE integración 2.9.0 (Bloque D): la «Cola de trabajos»
+     vive en executorPanel, que viaja hoy en la parte diferida
+     'buzon' (tributario-ui.part); el ancla se busca en
+     artefacto + parte, con el mismo literal. */
+  assert.ok((html + lazy.partes.buzon.source).includes('Cola de trabajos:'), 'corrección 3: la pestaña Ejecutor enseña la cola como conteo con enlace');
   const context = await bootCliente();
+  /* RE-BASE integración 2.4.0: paintActivity vive en la parte
+     de Vigilancia; el cargador real la trae (y antes que ella
+     a Descargas, por su dependencia de orden). */
+  await vm.runInContext("ensureLazyPart('monitor')", context);
+  for (let i = 0; i < 20; i++) await new Promise(r => setTimeout(r, 0));
   ponerSatData(context, { rest: { active: false }, puerta: {}, ejecutor: EJECUTOR_VIVO, pendingProfiles: [], profiles: [] });
   const trabajo = { kind: 'ejecutor', label: 'Consultar el Buzón', phase: 'En cola', detail: '', state: 'esperando',
     since: AHORA - 3600000, done: 0, total: 0, canStop: true, jobId: 'job-t2' };
@@ -326,10 +362,25 @@ const TERCERO = 'XEXX010101000';
   vm.runInContext('activityView = { running: [__trabajo], paused: [], recent: [], nextAuto: 0 }; page = "sat"; paintActivity();', context);
   const cajaSat = context.document.getElementById('activity-jobs');
   assert.ok(cajaSat.hidden || !cajaSat.children.length, 'corrección 3: en Centro SAT la franja NO pinta el trabajo (vive en su tarjeta)');
+  /* RE-BASE 2.9.0 (Bloque C, auditoría viva T1): en Hoy la
+     franja tampoco pinta — Hoy tiene su panel propio
+     «Actividad del sistema» y la tarjeta salía duplicada. La
+     franja vive en las pantallas sin panel propio.
+     RE-BASE 2.9.9 (mandato D1 de la auditoría visual): la
+     franja ya no se ve en NINGÚN panel — compone siempre
+     (contrato D8) pero el trabajo se mira en los paneles
+     propios (Hoy, Novedades, Buzón, Declaraciones, Centro
+     SAT) y en la línea fina de la barra superior, con su
+     Detener. Las aserciones de abajo fijan ese contrato. */
   vm.runInContext('page = "home"; paintActivity();', context);
   const cajaHoy = context.document.getElementById('activity-jobs');
-  assert.ok(!cajaHoy.hidden && cajaHoy.children.length >= 2, 'corrección 3: fuera de Centro SAT la franja sí enseña el trabajo con su barra');
-  console.log('OK 2.0·T2 · (e) un trabajo, un sitio — franja muda en Centro SAT, viva en Hoy.');
+  assert.ok(cajaHoy.hidden || !cajaHoy.children.length, 'corrección 3: en Hoy la franja no pinta (el trabajo vive en su panel propio)');
+  vm.runInContext('page = "invoices"; paintActivity();', context);
+  const cajaFuera = context.document.getElementById('activity-jobs');
+  assert.ok(cajaFuera.hidden && cajaFuera.children.length >= 2, 'corrección 3: fuera de los paneles propios la franja compone pero NO se ve (2.9.9 · D1: el trabajo vive en la línea fina de la barra, con su Detener)');
+  const linea299 = context.document.getElementById('barra-trabajos299');
+  assert.ok(linea299 && /trabajo/.test(linea299.textContent || ''), 'corrección 3: la línea fina de la barra superior enseña el trabajo en curso con su conteo (2.9.9 · D1)');
+  console.log('OK 2.0·T2 · (e) un trabajo, un sitio — franja muda en todas partes desde la 2.9.9 (D1); el trabajo vive en su panel propio o en la línea fina de la barra.');
 }
 
 /* ===== Piezas 6 y 10: cabecera móvil y Pagos colapsado (fuente) ===== */

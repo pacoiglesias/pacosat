@@ -87,7 +87,9 @@ function renderCiecDynamic(profile, card) {
     const progress = profile.progress;
     if (progress) {
       const box = n('div', undefined, 'sat-progress');
-      box.append(n('p', (progress.running ? '⏳ ' : progress.ok === false ? '⚠ ' : '✓ ') + (progress.step || ''), 'sat-progress-head'));
+      const cabezaProgreso240 = n('p', progress.step || '', 'sat-progress-head');
+      cabezaProgreso240.dataset.estado = progress.running ? 'encurso' : progress.ok === false ? 'atencion' : 'aldia';
+      box.append(cabezaProgreso240);
       /* Corridas visuales (1.13.0): fases con estado sobre el
          diario de líneas; si la corrida cayó, el problema con el
          modelo único y su gesto. */
@@ -135,9 +137,11 @@ function renderCiecDynamic(profile, card) {
       details.append(n('summary', 'Diario de descargas'));
       for (const run of profile.runs) {
         const item = n('div', undefined, 'sat-run');
-        item.append(n('p', (run.ok ? '✓ ' : '⚠ ') + localDateTime(run.started) +
+        const lineaCorrida240 = n('p', localDateTime(run.started) +
           (run.ok ? ' · ' + run.added + ' nuevas · ' + run.duplicates + ' ya estaban · de ' + run.found + ' encontradas'
-            : ' · no terminó')));
+            : ' · no terminó'));
+        lineaCorrida240.dataset.estado = run.ok ? 'aldia' : 'atencion';
+        item.append(lineaCorrida240);
         /* Fases de la corrida y, si cayó o quedó incompleta, el
            problema con el modelo único y su evidencia (1.13.0). */
         if (run.steps?.length) item.append(runPhasesEl(CIEC_PHASES, run.steps, run.ok ? 'ok' : 'failed'));

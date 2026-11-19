@@ -35,6 +35,24 @@ const KEY = 'f'.repeat(64);
 const OWN = 'AAA010101AAA';
 const ROOT = import.meta.dirname;
 const read = name => readFileSync(join(ROOT, name), 'utf8');
+/* RE-BASE integración 2.4.0 (W6/W6b): declAniosPanel vive en
+   la parte diferida de Declaraciones y paintActivity /
+   activityEntryText en la de Vigilancia. El arnés inyecta en
+   el contexto las fuentes de las partes DESDE lazy.json (lo
+   que el navegador recibe), en el orden del cargador
+   (descargas antes que monitor). Ninguna aserción cambia:
+   solo el arranque aprende dónde viven hoy las funciones. */
+/* RE-BASE integración 2.9.0 (Bloque D): el Buzón se difiere
+   como W6 — executorGuiaCard, tributarioScreen y
+   executorPanel viven hoy en la parte diferida 'buzon'. El
+   arnés la inyecta con el mismo mecanismo (inyectarPartes)
+   en los bloques que los ejercen. Ninguna aserción cambia:
+   solo el arranque aprende dónde viven hoy las funciones. */
+const lazy = JSON.parse(read('lazy.json'));
+const inyectarPartes = (context, ...nombres) => {
+  for (const nombre of nombres)
+    vm.runInContext(lazy.partes[nombre].source, context, { filename: 'parte-' + nombre });
+};
 
 function makeHarness(options = {}) {
   const clock = { t: Date.parse('2026-11-12T14:00:00Z') };
@@ -285,6 +303,7 @@ const filasDe = (el, clase) => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   vm.runInContext(script, context, { filename: 'Faro-Fiscal.html#script' });
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
+  inyectarPartes(context, 'declaraciones', 'buzon');
   assert.equal(vm.runInContext('typeof declAniosPanel', context), 'function');
   assert.equal(vm.runInContext('typeof declAniosVista', context), 'function');
   assert.equal(vm.runInContext('typeof executorGuiaCard', context), 'function');
@@ -428,6 +447,7 @@ const filasDe = (el, clase) => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   vm.runInContext(script, context, { filename: 'Faro-Fiscal.html#script' });
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
+  inyectarPartes(context, 'descargas', 'monitor');
   const entrada = { kind: 'ejecutor', key: 'ejecutor', state: 'esperando', enPausa: true,
     label: 'Trabajos del SAT esperando tu equipo',
     detail: '2 trabajos en cola: todavía no has emparejado ningún equipo',
@@ -463,6 +483,11 @@ const filasDe = (el, clase) => {
   vm.runInContext(script, context, { filename: 'Faro-Fiscal.html#script' });
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
   const settle = async () => { for (let i = 0; i < 8; i++) await new Promise(r => setTimeout(r, 0)); };
+  /* RE-BASE integración 2.9.0 (Bloque D): tributarioScreen y
+     executorPanel viven en la parte diferida 'buzon'; el
+     arnés la inyecta antes de ejercerlos, como el cargador
+     real al entrar en sus vistas. */
+  inyectarPartes(context, 'buzon');
   /* D6: el panel del ejecutor se monta en el Buzón Tributario
      AUNQUE no haya contribuyente elegido (el retorno temprano
      que lo escondía), y la pestaña de Centro SAT lo monta tal
@@ -518,7 +543,23 @@ const filasDe = (el, clase) => {
   /* Re-baseline 1.32.1 (auditoría A3): el botón se llama
      «Revisar avisos ahora» — sigue diciendo la verdad de lo
      que hace (recalcular al momento), en la palabra llana. */
-  assert.ok(textoAvisos.includes('Revisar avisos ahora'), 'D7: el botón dice la verdad de lo que hace');
+  /* RE-BASE 2.9.0 (Bloque C, auditoría viva · duplicados;
+     destapada por el Bloque D tras D8, que abortaba la suite
+     antes de llegar aquí): el segundo «Revisar avisos ahora»
+     salió del contenido de la pantalla — el gesto vive UNA
+     vez, como acción principal de Avisos: su rótulo en el
+     mapa de pantallas y su despacho (avisosRecalcular) en el
+     botón principal. La fuerza D7 se conserva: el rótulo
+     veraz existe, es único y es el de la acción que
+     recalcula; y la pantalla ya no lo duplica. */
+  assert.ok(!textoAvisos.includes('Revisar avisos ahora'),
+    'D7·2.9.0: la pantalla no duplica el gesto (vive una vez, en su acción principal)');
+  assert.ok(read('ui.part').includes("avisos: ['Avisos'") &&
+    read('ui.part').includes("'Revisar avisos ahora'"),
+    'D7: el botón dice la verdad de lo que hace — «Revisar avisos ahora» es la acción principal de Avisos');
+  assert.ok(read('workflows.part').includes("if (page === 'avisos')") &&
+    read('workflows.part').includes('avisosRecalcular'),
+    'D7: la acción principal de Avisos despacha el recálculo veraz');
   /* D7 comportamiento: mismo payload → «sin cambios» con hora;
      error de red → error visible y botón rehabilitado; con
      cambios → el delta se anuncia. satApi se sustituye en la VM
@@ -562,8 +603,11 @@ const filasDe = (el, clase) => {
   const pantallaTrib = trib.slice(trib.indexOf('function tributarioScreen'));
   assert.ok(pantallaTrib.indexOf('wrap.append(executorStatusLine())') < pantallaTrib.indexOf('if (!scope)'),
     'B2: en el Buzón la línea del ejecutor se monta antes del retorno de «sin contribuyente»');
+  /* RE-BASE 2.8.0 (diseño 20): el panel del ejecutor salió del
+     Buzón; el aviso D6 vive en la pantalla «Tu ejecutor»
+     (executorPanel, en este mismo fichero). */
   assert.ok(trib.includes('El ejecutor se empareja y se consulta desde el servidor'),
-    'D6: sin servidor, la entrada del ejecutor dice qué falta en vez de desaparecer');
+    'D6: sin servidor, la entrada del ejecutor dice qué falta en vez de desaparecer (en su pantalla, 2.8.0)');
   assert.ok(!ejecutor.includes('Ajustes/Centro SAT → Ejecutor'), 'D6: fuera la documentación falsa del ejecutor');
   assert.ok(ejecutor.includes('Centro SAT › Ejecutor local'), 'D6: la cabecera del ejecutor dice dónde se empareja de verdad');
   assert.ok(!avisos.includes("'Actualizar ahora'"), 'D7: fuera el rótulo que fingía una actualización');

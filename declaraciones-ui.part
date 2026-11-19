@@ -22,8 +22,10 @@
    constan y el gesto que toca: recuperar ese mes del SAT con la
    misma acción de recuperación de siempre, ahora acotada al
    periodo, o abrir sus documentos). */
-const DECL_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+/* DECL_MESES vive en el PUENTE de ui.part (2.4.0 · W6): esta
+   parte viaja diferida (/parte/declaraciones) y los nombres de
+   mes los usan también pantallas del bloque principal (Buzón
+   Tributario, Hoy). La parte los lee del puente ya cargado. */
 /* ===== Grupo de Declaraciones del expediente vivo (2.0.1) =====
    En Documentos, las declaraciones viven en su grupo, por
    ejercicio y con sus meses — no mezcladas en la lista plana
@@ -81,8 +83,24 @@ function declaracionesGrupo201() {
           if (entrada) {
             const acts = n('div', undefined, 'actions');
             acts.append(action('Ver', () => viewDocOnline(entrada)),
-              action('Descargar', () => downloadDocOnline(entrada)),
-              action('Archivar', () => docArchivar1311(entrada)));
+              action('Descargar', () => downloadDocOnline(entrada)));
+            /* «Enviar» junto a «Descargar» (2.4.0 · W4c): este
+               grupo SOLO pinta acuses (filtro clase==='acuse'
+               arriba) y la ruta /api/enviar, clase «acuse», espera
+               el id de la fila en la tabla declaraciones —
+               doc.id de ESTA vista (declaracionesOverview lo
+               manda como id: row.id), NO doc.fileId (que es el id
+               de la entrada en el expediente, el que usa
+               «Descargar») ni el id de una corrida (decl_runs).
+               El fichero para Compartir/WhatsApp es el de la
+               entrada del expediente, como en «Descargar». */
+            if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+              acts.append(enviarBoton240({
+                nombre: entrada.name || ((doc.label || 'Acuse') + ' · ' + rfc + '.pdf'),
+                asunto: 'PacoSAT · ' + (doc.label || 'Acuse') + ' · ' + rfc,
+                correo: { clase: 'acuse', id: doc.id },
+                archivo: () => enviarBlobDocumento240(entrada) }));
+            acts.append(action('Archivar', () => docArchivar1311(entrada)));
             fila.append(acts);
           }
           bloque.append(fila);
@@ -142,33 +160,34 @@ const DECL_MESES_MIN = DECL_MESES.map(nombre => nombre.toLowerCase());
    «Vencida» — dice la verdad de los registros: «Sin recuperar ·
    no consta en tu expediente». Y la pieza 12 añade el estado
    intermedio con la línea del despacho citada. */
-const DECL_ESTADO_TEXTO = { presentada: '✓ Presentada', pendiente: 'Pendiente',
-  'sin-recuperar': 'Sin recuperar · no consta en tu expediente',
-  'pagada-sin-acuse': 'Pagada según la línea del despacho — falta bajar el acuse',
-  'no-toca': 'Aún no toca' };
+/* DECL_ESTADO_TEXTO vive en el PUENTE de ui.part (2.4.0 · W6):
+   la parte diferida de Reportes (outputs) también lo lee. */
 const DECL_ESTADO_PILL = { presentada: 'ok', pendiente: 'warn', 'sin-recuperar': 'bad',
   'pagada-sin-acuse': 'warn', 'no-toca': 'dim' };
 /* La pastilla DE LA CELDA es corta por diseño (1.29.1): la frase
    entera («Sin recuperar · no consta en tu expediente») no cabe
    en una tarjeta del mapa y la desbordaba; la frase completa
    vive en DECL_ESTADO_TEXTO y se lee en el detalle del mes. */
-const DECL_ESTADO_PILL_TEXTO = { presentada: '✓ Presentada', pendiente: 'Pendiente',
+const DECL_ESTADO_PILL_TEXTO = { presentada: 'Presentada', pendiente: 'Pendiente',
   'sin-recuperar': 'Sin recuperar', 'pagada-sin-acuse': 'Falta el acuse',
   'no-toca': 'Aún no toca' };
-/* «2026-11-17» → «17 de noviembre de 2026»; lo que el portal no
-   dio en ISO se enseña tal cual, como hace el resto de la sección. */
-function declFechaLarga(iso) {
-  if (!/^\d{4}-\d{2}-\d{2}/.test(iso || '')) return iso || '';
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return d + ' de ' + DECL_MESES_MIN[m - 1] + ' de ' + y;
+/* La pastilla de la celda con su icono de la familia (2.4.0 · W5b3):
+   el texto ya no lleva glifo; el estado va en data-estado (W5a). */
+const DECL_ESTADO_ICONO240 = { presentada: 'aldia', pendiente: 'esperando',
+  'sin-recuperar': 'error', 'pagada-sin-acuse': 'atencion', 'no-toca': 'sindatos' };
+function declPill240(estado) {
+  const pill = n('span', DECL_ESTADO_PILL_TEXTO[estado] || estado, 'decl-pill decl-pill-' + estado);
+  pill.dataset.estado = DECL_ESTADO_ICONO240[estado] || 'sindatos';
+  return pill;
 }
-function declFechaCorta(iso) {
-  if (!/^\d{4}-\d{2}-\d{2}/.test(iso || '')) return iso || '';
-  const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
-  return d + ' ' + DECL_MESES_MIN[m - 1].slice(0, 3) + ' ' + y;
-}
-let declEjercicio = new Date().getFullYear();
+/* declFechaLarga, declFechaCorta y declEjercicio viven en el
+   PUENTE de ui.part (2.4.0 · W6): las fechas las pintan también
+   el Buzón Tributario y Hoy, y el ejercicio lo fijan lanzadores
+   del bloque principal antes de que esta parte cargue. */
 let declCache = null;
+/* Reloj del paseo en curso (2.9.0 · bloque B, pieza 3): la
+   parada del intervalo de la tarjeta fijada de esta pantalla. */
+let declRelojStop290 = null;
 /* ===== Estado de Declaraciones en su entrada del menú (2.0.2) =====
    Una sola línea corta bajo «Declaraciones», con la MISMA fuente
    que su pantalla ya lee: el diario de corridas
@@ -196,17 +215,20 @@ function declMenuTexto202(runs) {
    el texto de siempre desde el diario de corridas: no se
    inventa ningún conteo. faltaMes puede venir como periodo
    «2026-10» o como nombre: el periodo se nombra por su mes. */
-function declFaltaMes230(faltaMes) {
-  const texto = String(faltaMes || '').trim();
-  const periodo = texto.match(/^\d{4}-(\d{2})/);
-  if (periodo) {
-    const nombre = (typeof DECL_MESES !== 'undefined' ? DECL_MESES : [])[Number(periodo[1]) - 1];
-    if (nombre) return nombre.toLowerCase();
-  }
-  return texto;
-}
+/* declFaltaMes230 vive en el PUENTE de ui.part (2.4.0 · W6):
+   la foto por RFC de Hoy también lo llama. */
 function declMenuTexto230(resumen, runs) {
   if (resumen && resumen.hayDatos) {
+    /* (2.9.13 · A9) Un solo criterio, el de la tarjeta del
+       mapa: «N de 12 meses» presentados. Antes el menú contaba
+       operaciones conocidas («13 de 2026») y la tarjeta meses
+       («10 de 12»): el mismo año con dos números. Si el
+       servidor aún no trae el campo, se cae al texto de
+       siempre sin inventar el conteo. */
+    if (Number.isFinite(Number(resumen.mesesPresentados))) {
+      const base = Number(resumen.mesesPresentados) + ' de 12 meses';
+      return resumen.faltaMes ? base + ' · falta ' + declFaltaMes230(resumen.faltaMes) : base + ' · al día';
+    }
     const base = Number(resumen.conocidas) + ' de ' + resumen.ejercicio;
     return resumen.faltaMes ? base + ' · falta ' + declFaltaMes230(resumen.faltaMes) : base + ' · al día';
   }
@@ -344,9 +366,13 @@ function declFallbackPanel(fill, hayError) {
       };
       const resp = await satApiGuardar('declaraciones/upload', payload, comprobar);
       await logEvent('Acuse de declaración archivado a mano · ' + scope);
-      note.textContent = resp.filed === false
-        ? 'Ese documento ya constaba guardado: el mapa ya lo enseñaba.'
-        : '✓ Guardado: el mapa ya enseña la declaración como presentada y el PDF queda en Expedientes.';
+      if (resp.filed === false) {
+        delete note.dataset.estado;
+        note.textContent = 'Ese documento ya constaba guardado: el mapa ya lo enseñaba.';
+      } else {
+        note.dataset.estado = 'aldia';
+        note.textContent = 'Guardado: el mapa ya enseña la declaración como presentada y el PDF queda en Expedientes.';
+      }
       await refresh();
       fill();
     } catch (error) { note.textContent = error.message; }
@@ -406,50 +432,174 @@ function declVida230(op) {
     tieneDeclaracion: Boolean(op.tieneDeclaracion)
   };
 }
+/* Las acciones de UN documento de la lista única (2.9.9 ·
+   D4a): Ver (con la palabra de su clase: «Ver acuse» /
+   «Ver declaración» / «Ver»), Descargar y Enviar — los
+   mismos gestos y el mismo mapeo de ids de siempre
+   ({clase:'acuse'|'formulario', id: doc.id}, el de la tabla
+   declaraciones; doc.fileId es solo el fichero). Vive en un
+   solo sitio para que la fila de la operación y la fila del
+   documento suelto no puedan divergir. */
+function declDocAcciones299(doc, etiquetaVer) {
+  const acts = [];
+  const open = n('button', doc.fileId ? etiquetaVer : 'Ver en Expedientes', 'soft small');
+  open.onclick = () => doc.fileId
+    ? viewDocOnline({ id: doc.fileId, rfc: scope, kind: doc.label || 'Declaración',
+        name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' })
+    : navigate('docs');
+  acts.push(open);
+  if (doc.fileId) {
+    const bajar = n('button', 'Descargar', 'soft small');
+    bajar.onclick = () => downloadDocOnline({ id: doc.fileId,
+      name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' });
+    acts.push(bajar);
+    if (doc.clase === 'acuse' && doc.id &&
+        typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+      acts.push(enviarBoton240({
+        nombre: (doc.label || 'Acuse') + ' · ' + scope + '.pdf',
+        asunto: 'PacoSAT · ' + (doc.label || 'Acuse') + ' · ' + scope,
+        correo: { clase: 'acuse', id: doc.id },
+        archivo: () => enviarBlobDocumento240({ id: doc.fileId,
+          name: (doc.label || 'Acuse') + ' · ' + scope + '.pdf' }) }, 'soft small'));
+    if (doc.clase !== 'acuse' && doc.id &&
+        typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+      acts.push(enviarBoton240({
+        nombre: (doc.label || 'Declaración') + ' · ' + scope + '.pdf',
+        asunto: 'PacoSAT · ' + (doc.label || 'Declaración') + ' · ' + scope,
+        correo: { clase: 'formulario', id: doc.id },
+        archivo: () => enviarBlobDocumento240({ id: doc.fileId,
+          name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' }) }, 'soft small'));
+  }
+  return acts;
+}
+/* ===== La lista ÚNICA de folios, acuses y declaraciones
+   (2.9.9 · D4a; funde la pieza 15 de la 2.3.0, el panel de
+   folios de la 1.25.0 y la lista de documentos del ejercicio)
+   =====
+   La auditoría cazó el mismo folio contado TRES veces en la
+   pantalla: en «Línea de vida de cada declaración», en
+   «Folios de tus acuses» y en la lista de documentos. Aquí
+   hay UNA fila por operación — la del cruce que la vista ya
+   consume (view.cruce201.operacionesConocidas, que el
+   servidor compone UNA vez desde documentos y folios) — y
+   cada fila conserva TODO lo que las tres enseñaban: el
+   folio (= nº de operación), su estado (pastilla del
+   registro de folios), el periodo, la línea de presentación
+   de declVida230 (fecha + nº de operación), si hay
+   declaración guardada, «Ver acuse», «Ver declaración»,
+   Descargar y Enviar por documento, «Bajar el acuse» si
+   falta, «Reimprimir el acuse» y «Borrar» del registro de
+   folios, y en su «Ver más» la nota del folio y la línea de
+   captura si alguna fuente la trae. Los documentos cuya
+   operación no consta en el cruce conservan su fila propia
+   con el texto y los gestos de la lista de siempre. */
 function declLineasVida230(view, fill) {
-  const box = n('div', undefined, 'decl-vida230');
-  const ops = (view?.cruce201?.operacionesConocidas || []).map(declVida230).filter(Boolean);
-  if (!ops.length) return box;
-  box.append(n('h4', 'Línea de vida de cada declaración'));
-  const crudas = new Map((view.cruce201.operacionesConocidas || []).map(o => [String(o.operacion), o]));
+  const filas = [];
+  const docs = view.documentos || [];
+  const registros = new Map((view.folios || []).map(f => [String(f.folio), f]));
+  const crudas = new Map((view.cruce201?.operacionesConocidas || []).map(o => [String(o.operacion), o]));
   const docDe = (op, clase) => {
     const cruda = crudas.get(op.operacion);
     const idDoc = clase === 'acuse' ? cruda?.documentoAcuseId : cruda?.documentoDeclaracionId;
-    return (view.documentos || []).find(d => d.fileId && d.clase === clase &&
+    return docs.find(d => d.fileId && d.clase === clase &&
       ((idDoc && d.id === idDoc) || d.operacion === op.operacion));
   };
-  for (const op of ops) {
+  const consumidos = new Set();
+  /* (2.9.13 · A9) Un periodo con dos presentaciones reales se
+     rotula: «la primera» y «la que la sustituyó» — antes los
+     periodos 2026-01/02/03 salían dos veces con distinto
+     número de operación y nada decía cuál mandaba. El orden
+     sale de la fecha de presentación del propio cruce. */
+  const rolPorOperacion2913 = new Map();
+  {
+    const porPeriodo2913 = new Map();
+    for (const cruda of crudas.values()) {
+      if (!cruda?.operacion || !cruda?.periodo) continue;
+      const lista = porPeriodo2913.get(cruda.periodo) || [];
+      lista.push(cruda);
+      porPeriodo2913.set(cruda.periodo, lista);
+    }
+    for (const lista of porPeriodo2913.values()) {
+      if (lista.length < 2) continue;
+      const ordenadas = [...lista].sort((a, b) =>
+        String(a.fechaPresentacion || '').localeCompare(String(b.fechaPresentacion || '')) ||
+        String(a.operacion).localeCompare(String(b.operacion)));
+      ordenadas.forEach((cruda, i) => rolPorOperacion2913.set(String(cruda.operacion),
+        i === 0 ? 'la primera' : i === ordenadas.length - 1 ? 'la que la sustituyó' : 'una presentación intermedia'));
+    }
+  }
+  for (const cruda of crudas.values()) {
+    const op = declVida230(cruda);
+    if (!op) continue;
+    const reg = registros.get(op.operacion);
     const fila = n('div', undefined, 'cp-row decl-vida-row230');
-    fila.append(n('span', op.presentada));
-    if (op.tieneAcuse) {
-      const doc = docDe(op, 'acuse');
-      if (doc) {
-        const ver = n('button', 'Ver acuse', 'soft small');
-        ver.type = 'button';
-        ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: scope, kind: doc.label || 'Acuse',
-          name: (doc.label || 'Acuse') + ' · ' + scope + '.pdf' });
-        fila.append(ver);
-      } else fila.append(n('span', 'Acuse guardado', 'muted'));
-    } else {
+    fila.dataset.operacion = op.operacion;
+    if (reg) fila.append(statusPill(reg.estado === 'con-acuse' ? 'ok' : reg.estado === 'pendiente' ? 'warn' : 'dim',
+      reg.estado === 'con-acuse' ? 'Con acuse' : reg.estado === 'pendiente' ? 'Pendiente' : 'Visto'));
+    fila.append(n('span', op.presentada + (op.periodo ? ' · periodo ' + op.periodo : '') +
+      (rolPorOperacion2913.get(op.operacion) ? ' · ' + rolPorOperacion2913.get(op.operacion) : '')));
+    const docAcuse = docDe(op, 'acuse'), docDecl = docDe(op, 'declaracion');
+    if (docAcuse) consumidos.add(docAcuse);
+    if (docDecl) consumidos.add(docDecl);
+    if (docAcuse) fila.append(...declDocAcciones299(docAcuse, 'Ver acuse'));
+    else if (op.tieneAcuse) fila.append(n('span', 'Acuse guardado', 'muted'));
+    else {
       fila.append(n('span', 'Sin acuse todavía', 'muted'));
       const bajar = n('button', 'Bajar el acuse', 'soft small');
       bajar.type = 'button';
       bajar.onclick = () => declRun('mensuales', fill, bajar, op.periodo || '');
       fila.append(bajar);
     }
-    if (op.tieneDeclaracion) {
-      const doc = docDe(op, 'declaracion');
-      if (doc) {
-        const ver = n('button', 'Ver declaración', 'soft small');
-        ver.type = 'button';
-        ver.onclick = () => viewDocOnline({ id: doc.fileId, rfc: scope, kind: doc.label || 'Declaración',
-          name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' });
-        fila.append(ver);
-      } else fila.append(n('span', 'Declaración guardada', 'muted'));
-    } else fila.append(n('span', 'Sin declaración guardada', 'muted'));
-    box.append(fila);
+    if (docDecl) fila.append(...declDocAcciones299(docDecl, 'Ver declaración'));
+    else fila.append(n('span', op.tieneDeclaracion ? 'Declaración guardada' : 'Sin declaración guardada', 'muted'));
+    if (reg && reg.estado !== 'con-acuse') {
+      const reimprimir = n('button', 'Reimprimir el acuse', 'primary small');
+      reimprimir.onclick = async () => {
+        reimprimir.disabled = true; reimprimir.textContent = 'Entrando al portal…';
+        try {
+          const data = await satApi('declaraciones/folio-run', { rfc: scope, folioId: reg.id });
+          const result = data.result || {};
+          if (!result.ok) toast(result.error || 'La reimpresión no pudo completarse.', 'error');
+          else toast(result.saved ? 'Acuse recuperado y archivado en Expedientes.' :
+            'El portal no devolvió el acuse de ese folio.', result.saved ? 'ok' : 'error');
+          fill(data.view);
+        } catch (error) { toast(error.message, 'error'); fill(); }
+        finally { reimprimir.disabled = false; reimprimir.textContent = 'Reimprimir el acuse'; }
+      };
+      fila.append(reimprimir);
+    }
+    if (reg) {
+      const borrar = n('button', 'Borrar', 'soft small');
+      borrar.onclick = async () => {
+        try { await satApi('declaraciones/folios/delete', { rfc: scope, id: reg.id }); fill(); }
+        catch (error) { toast(error.message, 'error'); }
+      };
+      fila.append(borrar);
+    }
+    const extras = [];
+    if (reg?.nota) extras.push(reg.nota);
+    const captura299 = cruda.lineaCaptura || reg?.lineaCaptura || '';
+    if (captura299) extras.push('Línea de captura ' + captura299);
+    if (extras.length) {
+      const det = n('details', undefined, 'decl-vermas299');
+      det.append(n('summary', 'Ver más'), n('p', extras.join(' · '), 'muted'));
+      fila.append(det);
+    }
+    filas.push(fila);
   }
-  return box;
+  for (const doc of docs) {
+    if (consumidos.has(doc)) continue;
+    const fila = n('div', undefined, 'cp-row');
+    fila.dataset.operacion = String(doc.operacion || '');
+    fila.append(statusPill(doc.clase === 'acuse' ? 'warn' : 'ok', doc.clase === 'acuse' ? 'Acuse' : 'Declaración'),
+      n('span', doc.label + ' · ' + (doc.tipo === 'mensual' ? 'periodo ' + doc.periodo : 'ejercicio ' + doc.ejercicio) +
+        (doc.fechaPresentacion ? ' · presentada el ' + (/^\d{4}-\d{2}-\d{2}/.test(doc.fechaPresentacion)
+          ? doc.fechaPresentacion.slice(0, 10) : doc.fechaPresentacion) : '') +
+        (doc.operacion ? ' · operación ' + doc.operacion : '')));
+    fila.append(...declDocAcciones299(doc, 'Ver'));
+    filas.push(fila);
+  }
+  return filas;
 }
 function declaracionesSection() {
   const section = panel('Declaraciones y acuses',
@@ -485,6 +635,56 @@ function declaracionesSection() {
     runAnual.onclick = () => declRun('anual', fill, runAnual);
     head.append(runMensuales, runAnual);
     body.append(head);
+    /* Trabajo en curso FIJADO ARRIBA (2.4.0 · W1, P3 «que sepa
+       lo que ocurre cada momento»): la recuperación viva de esta
+       vista abre la pantalla en su propia tarjeta — paso en
+       vivo, barra con el tiempo desde su inicio real y su
+       Cancelar EN la tarjeta — no enterrada tras el mapa. Es
+       el ÚNICO sitio de la corrida en esta pantalla: el bloque
+       que antes vivía tras el resumen del mapa se movió aquí
+       (paridad: mismo paso, mismo Cancelar, mismo efecto). */
+    if (view.progreso?.running) {
+      const progFijado240 = n('div', undefined, 'decl-progreso decl-progreso-fijada240');
+      progFijado240.dataset.trabajoFijado240 = 'declaraciones';
+      const pasoFijado240 = n('span', view.progreso.step || 'Recuperando…');
+      pasoFijado240.dataset.estado = 'encurso';
+      progFijado240.append(n('strong', 'Recuperación en curso · ' + scope), pasoFijado240);
+      /* El reloj transcurrido de la gemela del Buzón (2.9.0 ·
+         pieza 3): desde el since real de su entrada de actividad
+         (o la marca de la vista), cada segundo, solo en su línea. */
+      if (declRelojStop290) { declRelojStop290(); declRelojStop290 = null; }
+      const vivoDecl290 = typeof pasoVivo290 === 'function' ? pasoVivo290('declaraciones', scope) : null;
+      const relojDecl290 = n('span', '', 'foco-reloj290');
+      relojDecl290.dataset.reloj290 = 'declaraciones';
+      progFijado240.append(relojDecl290);
+      const desdeDecl290 = Number(vivoDecl290?.since) || Number(view.progreso.at) || 0;
+      if (desdeDecl290 && typeof relojTranscurrido290 === 'function')
+        declRelojStop290 = relojTranscurrido290(relojDecl290, desdeDecl290);
+      if (typeof jobProgress1312 === 'function')
+        progFijado240.append(jobProgress1312({ fase: view.progreso.step || '', desde: view.progreso.at || 0,
+          done: view.progreso.done, total: view.progreso.total, estado: 'curso' }));
+      const cancelFijado240 = n('button', 'Cancelar recuperación', 'soft small danger');
+      cancelFijado240.type = 'button';
+      cancelFijado240.onclick = async () => {
+        cancelFijado240.disabled = true; cancelFijado240.textContent = 'Cancelando…';
+        try {
+          const data = await satApi('declaraciones/cancel', { rfc: scope, ejercicio: declEjercicio });
+          fill(data.view);
+          toast('Cancelación pedida: la corrida se detiene en el servidor y lo parcial se descarta.', 'ok');
+        } catch (error) {
+          /* Respuesta perdida = resultado desconocido: se
+             re-lee la vista antes de enseñar el error; si la
+             corrida ya no corre, la cancelación consta. */
+          try {
+            const fresca240 = await satApi('declaraciones?rfc=' + encodeURIComponent(scope) + '&ejercicio=' + declEjercicio);
+            if (!fresca240.progreso?.running) { fill(fresca240); toast('Cancelación registrada: la corrida ya no corre.', 'ok'); return; }
+          } catch { /* sin re-lectura: manda el error original */ }
+          toast(error.message, 'error'); cancelFijado240.disabled = false; cancelFijado240.textContent = 'Cancelar recuperación';
+        }
+      };
+      progFijado240.append(cancelFijado240);
+      body.append(progFijado240);
+    }
     /* Programación fija de acuses (2.3.0 · pieza 14): se dice
        en llano junto a las descargas de la vista, sin controles
        nuevos — la programación es fija, no un ajuste. */
@@ -523,30 +723,17 @@ function declaracionesSection() {
     if (!mapa.resumen.pendientes && !mapa.resumen.sinRecuperar && !mapa.resumen.pagadasSinAcuse)
       resumen.append(n('span', 'Sin pendientes: el año va al día con lo que consta.', 'muted'));
     body.append(resumen);
-    /* Progreso de una recuperación en curso, con su Cancelar
-       (piezas 9/10): la corrida vive en el servidor; cancelar la
-       detiene y descarta lo parcial. */
-    if (view.progreso?.running) {
-      const prog = n('div', undefined, 'decl-progreso');
-      prog.append(n('span', '⏳ ' + view.progreso.step));
-      const cancel = n('button', 'Cancelar recuperación', 'soft small danger');
-      cancel.type = 'button';
-      cancel.onclick = async () => {
-        cancel.disabled = true; cancel.textContent = 'Cancelando…';
-        try {
-          const data = await satApi('declaraciones/cancel', { rfc: scope, ejercicio: declEjercicio });
-          fill(data.view);
-          toast('Cancelación pedida: la corrida se detiene en el servidor y lo parcial se descarta.', 'ok');
-        } catch (error) { toast(error.message, 'error'); cancel.disabled = false; cancel.textContent = 'Cancelar recuperación'; }
-      };
-      prog.append(cancel);
-      body.append(prog);
-    }
+    /* El progreso de la recuperación en curso ya no se pinta
+       aquí (2.4.0 · W1): vive FIJADO ARRIBA, justo tras la
+       cabecera de la vista, en su tarjeta con su Cancelar —
+       un trabajo, un sitio. */
     const sinRecuperar = mapa.meses.filter(mes => mes.estado === 'sin-recuperar');
     if (sinRecuperar.length) {
-      body.append(n('p', '⚠ ' + sinRecuperar.map(mes => DECL_MESES[Number(mes.periodo.slice(5, 7)) - 1]).join(', ') +
+      const alertaDecl240 = n('p', sinRecuperar.map(mes => DECL_MESES[Number(mes.periodo.slice(5, 7)) - 1]).join(', ') +
         (sinRecuperar.length === 1 ? ' pasó' : ' pasaron') +
-        ' su fecha límite y no consta recuperado en tu expediente (pudo presentarse por otra vía: si fue así, recupéralo y el mapa lo marca): tócalo en el mapa para ver su detalle.', 'decl-alerta'));
+        ' su fecha límite y no consta recuperado en tu expediente (pudo presentarse por otra vía: si fue así, recupéralo y el mapa lo marca): tócalo en el mapa para ver su detalle.', 'decl-alerta');
+      alertaDecl240.dataset.estado = 'atencion';
+      body.append(alertaDecl240);
     }
     const detalle = n('div');
     let seleccion = null;
@@ -592,8 +779,8 @@ function declaracionesSection() {
       if (celda.estado === 'presentada') {
         box.append(n('p', 'Presentada el ' + declFechaLarga(celda.fechaPresentacion) +
           (celda.operacion ? ' · Nº de operación ' + celda.operacion : '') + '.'));
-        box.append(n('p', 'Declaración: ' + (celda.declaracion ? 'recuperada ✓' : 'sin recuperar') +
-          ' · Acuse: ' + (celda.acuse ? 'recuperado ✓' : 'sin recuperar') + '.', 'muted'));
+        box.append(n('p', 'Declaración: ' + (celda.declaracion ? 'recuperada' : 'sin recuperar') +
+          ' · Acuse: ' + (celda.acuse ? 'recuperado' : 'sin recuperar') + '.', 'muted'));
       } else if (celda.estado === 'pendiente') {
         box.append(n('p', esAnual
           ? 'La anual se presenta entre enero y marzo: la fecha límite es el ' + declFechaLarga(celda.limite) + '.'
@@ -631,6 +818,36 @@ function declaracionesSection() {
           bajar.onclick = () => downloadDocOnline({ id: doc.fileId,
             name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' });
           row.append(bajar);
+          /* «Enviar» junto a «Descargar» (2.4.0 · W4c en el
+             acuse; W2c añade el formulario): la ruta
+             /api/enviar espera doc.id — el id de la fila en la
+             tabla declaraciones, que declaracionesOverview
+             manda en esta vista — y NO doc.fileId (el id del
+             expediente, el de «Descargar»). Cada fila manda la
+             clase que le corresponde a doc.clase: «acuse» en
+             la del acuse y «formulario» en la de la
+             declaración; el servidor rechaza la cruzada. */
+          if (doc.clase === 'acuse' && doc.id &&
+              typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+            row.append(enviarBoton240({
+              nombre: (doc.label || 'Acuse') + ' · ' + scope + '.pdf',
+              asunto: 'PacoSAT · ' + (doc.label || 'Acuse') + ' · ' + scope,
+              correo: { clase: 'acuse', id: doc.id },
+              archivo: () => enviarBlobDocumento240({ id: doc.fileId,
+                name: (doc.label || 'Acuse') + ' · ' + scope + '.pdf' }) }, 'soft small'));
+          /* Y la fila del FORMULARIO gana el suyo (2.4.0 ·
+             W2c): la clase «formulario» de la misma ruta, que
+             el servidor distingue de «acuse» por row.clase —
+             cada fila se manda con la clase que le corresponde
+             a doc.clase, nunca cruzada. */
+          if (doc.clase !== 'acuse' && doc.id &&
+              typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+            row.append(enviarBoton240({
+              nombre: (doc.label || 'Declaración') + ' · ' + scope + '.pdf',
+              asunto: 'PacoSAT · ' + (doc.label || 'Declaración') + ' · ' + scope,
+              correo: { clase: 'formulario', id: doc.id },
+              archivo: () => enviarBlobDocumento240({ id: doc.fileId,
+                name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' }) }, 'soft small'));
         }
         box.append(row);
       }
@@ -700,10 +917,12 @@ function declaracionesSection() {
          estado arriba; la fecha que importa debajo. */
       const linea1 = n('span', undefined, 'decl-cell-top');
       linea1.append(n('strong', DECL_MESES[Number(mes.periodo.slice(5, 7)) - 1] || mes.periodo),
-        n('span', DECL_ESTADO_PILL_TEXTO[mes.estado] || mes.estado, 'decl-pill decl-pill-' + mes.estado));
+        declPill240(mes.estado));
       cell.append(linea1,
         n('small', mes.estado === 'presentada' ? declFechaCorta(mes.fechaPresentacion)
-          : mes.estado === 'no-toca' ? 'no toca'
+          /* Sin repetir la pastilla (2.9.0 · Bloque C): la
+             celda decía «Aún no toca» y debajo «no toca». */
+          : mes.estado === 'no-toca' ? 'aún no es su periodo'
           : (mes.estado === 'sin-recuperar' ? 'límite el ' : 'vence el ') + declFechaCorta(mes.limite)));
       cell.onclick = () => { seleccion = { tipo: 'mensual', periodo: mes.periodo }; marcar(mes.periodo, cell); pintarDetalle(); };
       celdas.set(mes.periodo, cell);
@@ -714,10 +933,10 @@ function declaracionesSection() {
       cell.type = 'button';
       const linea1 = n('span', undefined, 'decl-cell-top');
       linea1.append(n('strong', 'Declaración anual ' + view.ejercicio),
-        n('span', DECL_ESTADO_PILL_TEXTO[mapa.anual.estado] || mapa.anual.estado, 'decl-pill decl-pill-' + mapa.anual.estado));
+        declPill240(mapa.anual.estado));
       cell.append(linea1,
         n('small', mapa.anual.estado === 'presentada' ? declFechaCorta(mapa.anual.fechaPresentacion)
-          : mapa.anual.estado === 'no-toca' ? 'no toca'
+          : mapa.anual.estado === 'no-toca' ? 'aún no es su periodo'
           : (mapa.anual.estado === 'sin-recuperar' ? 'límite el ' : 'vence el ') + declFechaCorta(mapa.anual.limite)));
       cell.onclick = () => { seleccion = { tipo: 'anual' }; marcar('anual', cell); pintarDetalle(); };
       celdas.set('anual', cell);
@@ -739,44 +958,19 @@ function declaracionesSection() {
        servicio oficial de acuses trabaja POR FOLIO — el panel de
        folios y la recuperación por año completo viven debajo del
        mapa, con su límite dicho en voz alta. */
-    /* Línea de vida de cada operación conocida (2.3.0 ·
-       pieza 15): Presentada → Acuse → Declaración, desde el
-       cruce que esta misma vista ya consume. */
-    body.append(declLineasVida230(view, fill));
+    /* (2.9.9 · D4a) La línea de vida, los folios y la lista de
+       documentos del ejercicio son UNA sola lista: la pinta
+       declFoliosPanel con las filas de declLineasVida230 —
+       el mismo folio ya no se cuenta tres veces —. */
     body.append(declFoliosPanel(view, fill), declAniosPanel(view, fill), declComoFunciona());
-    /* Documentos recuperados del ejercicio: declaración y acuse,
-       distinguidos, como lista completa del archivo. */
+    /* Sin ningún documento recuperado, la invitación de
+       siempre cierra la pantalla (la lista única ya enseñó
+       los folios que consten sin documento). */
     if (!view.documentos.length) {
       body.append(empty('Nada descargado todavía para este ejercicio',
         'Pulsa «Descargar declaraciones del SAT»: PacoSAT entra al portal con tu e.firma y archiva aquí lo que encuentre presentado.'));
       return;
     }
-    const list = n('div');
-    for (const doc of view.documentos) {
-      const row = n('div', undefined, 'cp-row');
-      row.append(statusPill(doc.clase === 'acuse' ? 'warn' : 'ok', doc.clase === 'acuse' ? 'Acuse' : 'Declaración'),
-        n('span', doc.label + ' · ' + (doc.tipo === 'mensual' ? 'periodo ' + doc.periodo : 'ejercicio ' + doc.ejercicio) +
-          (doc.fechaPresentacion ? ' · presentada el ' + (/^\d{4}-\d{2}-\d{2}/.test(doc.fechaPresentacion)
-            ? doc.fechaPresentacion.slice(0, 10) : doc.fechaPresentacion) : '') +
-          (doc.operacion ? ' · operación ' + doc.operacion : '')));
-      /* Un clic en «Ver» abre el documento dentro de la app
-         (1.10.2); sin fileId en la fila, queda el camino de siempre
-         a Expedientes. */
-      const open = n('button', doc.fileId ? 'Ver' : 'Ver en Expedientes', 'soft small');
-      open.onclick = () => doc.fileId
-        ? viewDocOnline({ id: doc.fileId, rfc: scope, kind: doc.label || 'Declaración',
-            name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' })
-        : navigate('docs');
-      row.append(open);
-      if (doc.fileId) {
-        const bajar = n('button', 'Descargar', 'soft small');
-        bajar.onclick = () => downloadDocOnline({ id: doc.fileId,
-          name: (doc.label || 'Declaración') + ' · ' + scope + '.pdf' });
-        row.append(bajar);
-      }
-      list.append(row);
-    }
-    body.append(list);
   };
   /* Pintado al instante (1.31.1): la pantalla NUNCA espera en
      blanco a que el servidor responda. Con mapa conocido de
@@ -815,7 +1009,14 @@ function declaracionesSection() {
    misma recuperación de siempre, acotada a ese folio. */
 function declFoliosPanel(view, fill) {
   const box = n('div');
-  box.append(n('h4', 'Folios de tus acuses'));
+  /* (2.9.9 · D4a) UNA sola lista: la línea de vida, los
+     folios y los documentos del ejercicio viven fundidos
+     en las filas de declLineasVida230 — una fila por
+     operación, con todo lo que cada lista enseñaba —.
+     El panel conserva sus dos gestos propios: descubrir
+     los folios en el SAT y apuntar uno a mano (abajo). */
+  box.dataset.declLista299 = '1';
+  box.append(n('h4', 'Acuses y declaraciones de este ejercicio'));
   /* El sermón de cómo trabaja el servicio de acuses ya no abre
      el panel (1.29.1, D4): vive en el «Cómo funciona» plegado al
      final de la pantalla; aquí quedan las acciones. */
@@ -835,38 +1036,9 @@ function declFoliosPanel(view, fill) {
     finally { descubrir.disabled = false; descubrir.textContent = 'Descubrir los folios en el SAT'; }
   };
   box.append(descubrir);
-  const folios = view.folios || [];
-  if (!folios.length) box.append(n('p', 'Todavía no consta ningún folio de este ejercicio. Apunta el primero abajo o recupera una declaración: su folio queda aprendido solo.', 'empty'));
-  for (const registro of folios) {
-    const row = n('div', undefined, 'cp-row');
-    row.append(statusPill(registro.estado === 'con-acuse' ? 'ok' : registro.estado === 'pendiente' ? 'warn' : 'dim',
-        registro.estado === 'con-acuse' ? 'Con acuse' : registro.estado === 'pendiente' ? 'Pendiente' : 'Visto'),
-      n('span', (registro.tipo === 'anual' ? 'Anual' : 'Mensual') +
-        (registro.periodo ? ' · ' + registro.periodo : '') + ' · folio ' + registro.folio));
-    if (registro.estado !== 'con-acuse') {
-      const run = n('button', 'Reimprimir el acuse', 'primary small');
-      run.onclick = async () => {
-        run.disabled = true; run.textContent = 'Entrando al portal…';
-        try {
-          const data = await satApi('declaraciones/folio-run', { rfc: scope, folioId: registro.id });
-          const result = data.result || {};
-          if (!result.ok) toast(result.error || 'La reimpresión no pudo completarse.', 'error');
-          else toast(result.saved ? 'Acuse recuperado y archivado en Expedientes.' :
-            'El portal no devolvió el acuse de ese folio.', result.saved ? 'ok' : 'error');
-          fill(data.view);
-        } catch (error) { toast(error.message, 'error'); fill(); }
-        finally { run.disabled = false; run.textContent = 'Reimprimir el acuse'; }
-      };
-      row.append(run);
-    }
-    const borrar = n('button', 'Borrar', 'soft small');
-    borrar.onclick = async () => {
-      try { await satApi('declaraciones/folios/delete', { rfc: scope, id: registro.id }); fill(); }
-      catch (error) { toast(error.message, 'error'); }
-    };
-    row.append(borrar);
-    box.append(row);
-  }
+  const filas299 = declLineasVida230(view, fill);
+  if (!filas299.length) box.append(n('p', 'Todavía no consta ningún folio de este ejercicio. Apunta el primero abajo o recupera una declaración: su folio queda aprendido solo.', 'empty'));
+  box.append(...filas299);
   const tipo = n('select');
   for (const [value, label] of [['mensual', 'Mensual'], ['anual', 'Anual']]) {
     const option = n('option', label); option.value = value; tipo.append(option);
@@ -930,7 +1102,7 @@ function declAniosPanel(view, fill) {
     row.append(n('strong', anio.rotulo),
       n('span', anio.mesesConAcuse + ' de 12 meses con acuse' +
         (anio.mesesConDecl ? ' · ' + anio.mesesConDecl + ' con declaración' : '') +
-        ' · anual ' + (anio.anual ? 'con acuse ✓' : 'sin acuse') +
+        ' · anual ' + (anio.anual ? 'con acuse' : 'sin acuse') +
         ' · ' + anio.folios + ' folio(s)' + (anio.foliosPendientes ? ' (' + anio.foliosPendientes + ' pendientes)' : '')),
       anio.completo ? statusPill('ok', 'Año completo') : statusPill('warn', 'Incompleto'));
     if (!anio.completo && anio.ejercicio) {

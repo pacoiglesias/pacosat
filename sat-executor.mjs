@@ -178,10 +178,37 @@ export function assertNoCredentialMaterial(value, path = 'resultado', trail = ''
 
 /* Separa lo narrativo/evidencia de un resultado (pasos, error,
    avisos y diag: se redacta y se conserva) de lo estructural
-   (se barre con assertNoCredentialMaterial). */
+   (se barre con assertNoCredentialMaterial). resultadosDiag
+   (2.3.2, constructor P2) es evidencia de la misma clase: la
+   foto/HTML de la página de resultados de una corrida de
+   declaraciones — también de las BUENAS —; si quedara en lo
+   estructural, su captura en base64 se rechazaría como
+   material de credenciales y la evidencia se perdería.
+   comunicados/documentos (2.4.0, WC1b): las secciones del
+   Buzón completo que el motor lista en «Mis comunicados» y
+   «Mis documentos» son de la MISMA clase — texto visible de
+   unas bandejas, con su motivo en prosa cuando no concluyen —;
+   si quedaran en lo estructural, un motivo largo o con forma
+   de bloque codificado tumbaría entero un resultado bueno, y
+   validateBuzonResult ni siquiera las devolvía (el hueco que
+   esta tanda cierra). Viajan por lo narrativo y se validan
+   APARTE, con su forma propia, en sanitizeBuzonSecciones240:
+   listas acotadas de filas de texto, nada ejecutable y los
+   fragmentos con forma de secreto redactados, no rechazados.
+   comunicadosDiag/documentosDiag (2.9.3): la evidencia POR
+   SECCIÓN del Buzón — la página de «Mis comunicados» o
+   «Mis documentos» al concluir o agotar su plazo, con su
+   inventario de marcos — es evidencia de la misma clase que
+   resultadosDiag: si quedara en lo estructural, su captura
+   en base64 se rechazaría como material de credenciales y
+   la sección que no concluye quedaría sin su única prueba.
+   Viaja por lo narrativo y se sanea como cualquier diag,
+   con los marcos saneados como texto narrativo. */
 function splitNarrative(result) {
-  const { steps, diag, diagDecision, error, warnings, ...estructural } = result || {};
-  return { steps, diag, diagDecision, error, warnings, estructural };
+  const { steps, diag, diagDecision, resultadosDiag, error, warnings,
+    comunicados, documentos, comunicadosDiag, documentosDiag, ...estructural } = result || {};
+  return { steps, diag, diagDecision, resultadosDiag, error, warnings,
+    comunicados, documentos, comunicadosDiag, documentosDiag, estructural };
 }
 
 /* Los pasos de una traza quedan en texto corto y con los
@@ -355,10 +382,95 @@ export function classifyBuzonRow(row = {}) {
   return 'atencion';
 }
 
+/* ---------- Buzón completo (2.4.0, WC1b): las secciones ----------
+   Forma que el motor (sat-tributario.mjs, castigo 4 de WC1)
+   devuelve y que aquí se conserva ENTERA cuando viene bien
+   formada:
+   - comunicados: { concluyente, items: [{ fecha, asunto,
+     leido, folio }], noLeidos, leidos, soloConteos, motivo? }
+     (el folio de cada mensaje viaja desde la 2.9.4: el
+     lector construido desde la página real lo trae de la
+     propia fila del portal)
+   - documentos:  { concluyente, items: [{ fecha, nombre,
+     estado }], motivo? }
+   Validación de forma, con el criterio de lo narrativo:
+   - Solo viajan las claves conocidas; una clave rara en una
+     fila (o un valor que no es el texto/booleano/número que
+     toca) RECHAZA ESA FILA, no el resultado; una clave rara
+     de sección se descarta y la sección sigue.
+   - Tamaños acotados como el resto: máx. 200 filas (el motor
+     emite máx. 100), fecha ≤ 40, asunto/nombre ≤ 300, estado
+     ≤ 80 y motivo ≤ 600, todo pasado por redactExecutorText:
+     un fragmento con forma de secreto se redacta y se
+     conserva el resto, jamás se tumba la corrida por él.
+   - concluyente/soloConteos solo valen como booleanos
+     estrictos (cualquier otra cosa es false); los conteos
+     viajan como enteros ≥ 0 o null si no son un número.
+   - Una sección que no es un objeto (o cuyo items no es una
+     lista) se descarta ENTERA: el campo queda ausente, que
+     es como el servidor ya trata el «no consta» de las
+     réplicas viejas. Sin sección en la entrada, sin sección
+     en la salida: paridad con el resultado de siempre. */
+const BUZON_SECCION_MAX_ITEMS240 = 200;
+function buzonTexto240(valor, tope) {
+  return typeof valor === 'string' ? redactExecutorText(valor.slice(0, tope)) : null;
+}
+function buzonConteo240(valor) {
+  if (valor === null || valor === undefined || !Number.isFinite(Number(valor))) return null;
+  return Math.max(0, Math.floor(Number(valor)));
+}
+function buzonFila240(fila, campos) {
+  if (!fila || typeof fila !== 'object' || Array.isArray(fila)) return null;
+  if (Object.keys(fila).some(clave => !campos.includes(clave))) return null;
+  const limpia = {};
+  for (const campo of campos) {
+    if (!(campo in fila)) continue;
+    if (campo === 'leido') {
+      if (typeof fila.leido !== 'boolean') return null;
+      limpia.leido = fila.leido;
+    } else {
+      const tope = campo === 'fecha' ? 40 : campo === 'estado' || campo === 'folio' ? 80 : 300;
+      const texto = buzonTexto240(fila[campo], tope);
+      if (texto === null) return null;
+      limpia[campo] = texto;
+    }
+  }
+  return limpia;
+}
+function buzonSeccion240(seccion, campos, { conConteos = false } = {}) {
+  if (!seccion || typeof seccion !== 'object' || Array.isArray(seccion)) return undefined;
+  if (!Array.isArray(seccion.items)) return undefined;
+  const limpia = { concluyente: seccion.concluyente === true,
+    items: seccion.items.slice(0, BUZON_SECCION_MAX_ITEMS240)
+      .map(fila => buzonFila240(fila, campos)).filter(Boolean) };
+  if (conConteos) {
+    if ('noLeidos' in seccion) limpia.noLeidos = buzonConteo240(seccion.noLeidos);
+    if ('leidos' in seccion) limpia.leidos = buzonConteo240(seccion.leidos);
+    if ('soloConteos' in seccion) limpia.soloConteos = seccion.soloConteos === true;
+  }
+  if ('motivo' in seccion) {
+    const motivo = buzonTexto240(seccion.motivo, 600);
+    if (motivo !== null) limpia.motivo = motivo;
+  }
+  return limpia;
+}
+export function sanitizeBuzonSecciones240(result = {}) {
+  const comunicados = buzonSeccion240(result?.comunicados,
+    ['fecha', 'asunto', 'leido', 'folio'], { conConteos: true });
+  const documentos = buzonSeccion240(result?.documentos,
+    ['fecha', 'nombre', 'estado']);
+  const secciones = {};
+  if (comunicados !== undefined) secciones.comunicados = comunicados;
+  if (documentos !== undefined) secciones.documentos = documentos;
+  return secciones;
+}
+
 export function validateBuzonResult(result = {}) {
   /* Solo lo estructural se barre; lo narrativo y la evidencia
      del mismo resultado los trata validateExecutorResult con
-     redacción (corrección H-1.1). */
+     redacción (corrección H-1.1). Las secciones del Buzón
+     completo van en lo narrativo (splitNarrative) y se
+     validan con su forma propia, sin pasar por este barrido. */
   assertNoCredentialMaterial(splitNarrative(result).estructural, 'resultado del buzón');
   for (const op of result.operations || []) {
     const nombre = String(op?.tipo || op?.name || op || '');
@@ -378,6 +490,10 @@ export function validateBuzonResult(result = {}) {
     !Number.isFinite(Number(result.comunicadosNoLeidos)) ? null :
     Math.max(0, Math.floor(Number(result.comunicadosNoLeidos)));
   return { notifications, comunicadosNoLeidos,
+    /* Buzón completo (2.4.0, WC1b): las secciones saneadas se
+       conservan enteras; sin sección en la entrada (réplicas
+       viejas) el campo no nace y el retorno es el de siempre. */
+    ...sanitizeBuzonSecciones240(result),
     counts: { total: notifications.length, sinAbrir: notifications.filter(row => !row.abierta).length } };
 }
 
@@ -462,7 +578,8 @@ export function validateExecutorResult(job = {}, result = {}) {
     warnings: (narrativo.warnings || []).map(w => redactExecutorText(String(w).slice(0, 400))).slice(0, 20),
     error: redactExecutorText(String(narrativo.error || '').slice(0, 500)),
     errorKind: String(result.errorKind || '').slice(0, 60),
-    diag: null, diagDecision: null };
+    diag: null, diagDecision: null, resultadosDiag: null,
+    comunicadosDiag: null, documentosDiag: null };
   const sanearDiag = crudo => {
     let screenshot = null;
     if (crudo.screenshotBase64) {
@@ -484,11 +601,43 @@ export function validateExecutorResult(job = {}, result = {}) {
      muerta solo conservaba la 404 genérica, que no dice nada. */
   if (narrativo.diagDecision && typeof narrativo.diagDecision === 'object')
     out.diagDecision = sanearDiag(narrativo.diagDecision);
+  /* La evidencia de RESULTADOS (2.3.2, P2): la página que la
+     consulta enseñó al concluir la lectura de declaraciones,
+     saneada como cualquier diag — viaja en corridas buenas y
+     malas; el servidor la guarda como foto/HTML de la corrida
+     (decl_runs) también en las buenas. */
+  if (narrativo.resultadosDiag && typeof narrativo.resultadosDiag === 'object')
+    out.resultadosDiag = sanearDiag(narrativo.resultadosDiag);
+  /* La evidencia POR SECCIÓN del Buzón (2.9.3): la página de
+     «Mis comunicados» / «Mis documentos» al concluir o agotar
+     su plazo — foto y HTML saneados como cualquier diag, y
+     su inventario de marcos (la URL de cada marco y una
+     muestra de su texto visible) saneado como texto
+     narrativo: acotado y con los fragmentos con forma de
+     secreto redactados, nunca rechazado. El servidor la
+     guarda en el diario de la corrida espejo con
+     saveRunSeccionDiag, como en la sede local. */
+  const sanearDiagSeccion = crudo => {
+    const limpio = sanearDiag(crudo);
+    limpio.marcos = Array.isArray(crudo.marcos) ? crudo.marcos.slice(0, 40).map(marco => ({
+      url: String(marco?.url || '').slice(0, 300),
+      texto: redactExecutorText(String(marco?.texto || '').slice(0, 600)) })) : [];
+    return limpio;
+  };
+  if (narrativo.comunicadosDiag && typeof narrativo.comunicadosDiag === 'object')
+    out.comunicadosDiag = sanearDiagSeccion(narrativo.comunicadosDiag);
+  if (narrativo.documentosDiag && typeof narrativo.documentosDiag === 'object')
+    out.documentosDiag = sanearDiagSeccion(narrativo.documentosDiag);
   if (job.kind === 'buzon-listar') {
     const buzon = validateBuzonResult(result);
     out.notifications = buzon.notifications;
     out.counts = buzon.counts;
     out.comunicadosNoLeidos = buzon.comunicadosNoLeidos;
+    /* Buzón completo (2.4.0, WC1b): las secciones validadas
+       pasan al resultado del protocolo; sin sección validada
+       el campo no nace (paridad con las réplicas viejas). */
+    if (buzon.comunicados !== undefined) out.comunicados = buzon.comunicados;
+    if (buzon.documentos !== undefined) out.documentos = buzon.documentos;
   }
   if (job.kind === 'puerta-probar') {
     /* La puerta solo declara «abre» y la operación de entrar:

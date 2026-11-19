@@ -33,33 +33,57 @@ import { createPacoSATService } from './local-server.mjs';
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const read = name => readFileSync(join(ROOT, name), 'utf8');
 
-/* ---------- A1 · El menú: 11 destinos, en su orden ---------- */
+/* ---------- A1 · El menú: sus destinos, en su orden ---------- */
 {
   const layout = read('layout.part');
   const nav = layout.match(/<nav aria-label="Navegación principal">([\s\S]*?)<\/nav>/)?.[1] || '';
   const navDestinos = nav.replace(/<div id="nav-jobs"[\s\S]*?<\/div>/, '');
   const views = [...navDestinos.matchAll(/data-view="([a-z]+)"/g)].map(m => m[1]);
-  assert.deepEqual(views, ['home', 'invoices', 'dinero', 'docs', 'tributario', 'declaraciones',
-    'avisos', 'reportes', 'lists', 'salud', 'settings'],
-    'el menú trae Buzón y Declaraciones como entradas propias, tras Documentos (2.0.2)');
-  assert.ok(layout.includes('<button data-view="tributario"><svg><use href="#i-buzontrib"/></svg> Buzón ' +
+  /* RE-BASE integración 2.4.0 (W4d): la barra de navegación
+     creció a 22 destinos con rótulos y descripciones (cada
+     botón lleva title y su punto de puerta); el pin de 11
+     destinos de la 2.0.2 quedó superado. Se re-pina la lista
+     EXACTA de hoy y los literales EXACTOS de los dos botones —
+     Buzón y Declaraciones siguen siendo entradas propias con
+     su icono y su span de estado, que es lo que esta suite
+     nació para fijar. */
+  /* RE-BASE 2.8.0 (diseño 3): «Descargados del SAT» (coverage)
+     se funde en «Descargar del SAT» — la casa única de
+     descargas — y su destino sale del menú: 21 destinos. */
+  assert.deepEqual(views, ['home', 'avisos', 'buzon', 'contribuyentes', 'invoices', 'docs',
+    'declaraciones', 'tributario', 'archivo', 'dinero', 'pagos', 'reportes', 'salidas',
+    'descargar', 'monitor', 'lists', 'ejecutor', 'registro', 'salud',
+    'preguntas', 'settings'],
+    'el menú trae Buzón y Declaraciones como entradas propias (2.0.2; barra de 21 destinos tras la fusión de descargas de la 2.8.0)');
+  /* RE-BASE 2.8.0 (diseño 19): «Buzón» pasa a llamarse «Buzón
+     del SAT» — «Recibidos» (hoy «Novedades») y «Buzón» se
+     pisaban — y su title dice la misma verdad con las palabras
+     nuevas. Se re-pina el literal EXACTO nuevo. */
+  /* RE-BASE 2.9.0: la auditoría viva ordenó retirar los puntos
+     decorativos del menú (nav-dot240: grises idénticos sin
+     leyenda, no afirmaban estado) y el Bloque C los retiró de
+     todos los destinos. Se re-pinan los literales EXACTOS sin
+     el span del punto, conservando icono + span de estado
+     (buzon-menu-estado202 / decl-menu-estado202), que es lo
+     que esta suite nació para fijar. */
+  assert.ok(layout.includes('<button data-view="tributario" title="Buzón del SAT — Las notificaciones del SAT para este RFC, sin abrir ninguna: PacoSAT las lista por ti"><svg><use href="#i-buzontrib"/></svg> Buzón del SAT ' +
     '<span id="buzon-menu-estado202" class="nav-estado201"></span></button>'),
-    'la entrada del Buzón lleva su icono y su span de estado');
-  assert.ok(layout.includes('<button data-view="declaraciones"><svg><use href="#i-decl"/></svg> Declaraciones ' +
+    'la entrada del Buzón del SAT lleva su icono y su span de estado');
+  assert.ok(layout.includes('<button data-view="declaraciones" title="Declaraciones — El mapa de tus declaraciones por año y mes: qué consta, qué falta y cómo se descarga"><svg><use href="#i-decl"/></svg> Declaraciones ' +
     '<span id="decl-menu-estado202" class="nav-estado201"></span></button>'),
     'la entrada de Declaraciones lleva su icono y su span de estado');
   assert.ok(layout.includes('id="lists-menu-estado201"'), 'Listas conserva su estado en la entrada');
   /* La barra inferior móvil no cambia: «Más» abre ESTE menú. */
   const bottom = layout.slice(layout.indexOf('bottombar'));
   assert.ok(bottom.includes('id="more-button"'), 'la barra móvil conserva su «Más»');
-  console.log('OK 2.0.2 · A1 — menú de 11 destinos con Buzón y Declaraciones propios y sus spans de estado.');
+  console.log('OK 2.0.2 · A1 — menú de 22 destinos (W4d) con Buzón y Declaraciones propios y sus spans de estado.');
 }
 
 /* ---------- A2 · El enrutado: data-view abre su pantalla ---------- */
 {
   const html = read('Faro-Fiscal.html');
   const ui = read('ui.part');
-  assert.ok(html.includes("tributario: ['Buzón Tributario'"), 'la ficha del Buzón consta en el mapa de pantallas');
+  assert.ok(html.includes("tributario: ['Buzón del SAT'"), 'la ficha del Buzón del SAT consta en el mapa de pantallas (2.8.0 · diseño 19)');
   assert.ok(html.includes("declaraciones: ['Declaraciones'"), 'la ficha de Declaraciones consta en el mapa');
   assert.ok(html.includes('tributario: tributarioScreen'), 'tributario se resuelve a su pantalla en el render');
   assert.ok(html.includes('declaraciones: declaracionesScreen'), 'declaraciones se resuelve a su pantalla en el render');
@@ -71,7 +95,13 @@ const read = name => readFileSync(join(ROOT, name), 'utf8');
 
 /* ---------- A3 · Los textos de estado salen de los campos reales ---------- */
 {
-  const trib = read('tributario-ui.part');
+  /* RE-BASE 2.9.0 (Bloque D, diferimiento del Buzón): el estado
+     del Buzón (MESES_MENU202 → pintarBuzonMenu202) vive hoy en
+     el PUENTE de ui.part — es ayuda del primer pintado del
+     menú — y la pantalla viaja en la parte diferida 'buzon'.
+     El segmento se extrae de su casa nueva; las aserciones
+     sobre los textos no cambian ni en número ni en fuerza. */
+  const trib = read('ui.part');
   const decl = read('declaraciones-ui.part');
   const ctx = vm.createContext({ Date, Number, String });
   vm.runInContext(trib.slice(trib.indexOf('const MESES_MENU202'),
@@ -185,9 +215,9 @@ const makeService = (options = {}) => {
 
 /* ---------- Sellos de la versión ---------- */
 {
-  assert.equal(JSON.parse(read('package.json')).version, '2.3.0', 'la versión del paquete es 2.0.2');
-  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.3.0'"), 'el ejecutor declara 2.0.2 (solo el sello)');
-  assert.ok(read('Faro-Fiscal.html').includes('"version":"2.3.0"'), 'el artefacto se sella 2.0.2');
-  assert.ok(read('final-ui.part').includes("version: '2.3.0'"), 'la nota de novedades es la de esta versión');
+  assert.equal(JSON.parse(read('package.json')).version, '2.9.14', 'la versión del paquete es 2.0.2');
+  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.9.14'"), 'el ejecutor declara 2.0.2 (solo el sello)');
+  assert.ok(read('Faro-Fiscal.html').includes('"version":"2.9.14"'), 'el artefacto se sella 2.0.2');
+  assert.ok(read('final-ui.part').includes("version: '2.9.14'"), 'la nota de novedades es la de esta versión');
   console.log('OK 2.0.2 · sellos — paquete, ejecutor, artefacto y novedades en 2.0.2.');
 }

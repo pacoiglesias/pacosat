@@ -35,6 +35,10 @@ let registroTextoTimer230 = null;
    14 nov): copiar lo visible como texto limpio y poder
    limpiarlo sin miedo, con Deshacer. */
 let registroUltimoLote = null;
+/* (2.9.9 · D3) Página del Registro: 25 sucesos y «Ver más»
+   trae los siguientes sin perder filtros (el límite vive
+   fuera de pintar() para sobrevivir a sus repintados). */
+let registroLimite299 = 25;
 const REGISTRO_ORIGEN = { paco: 'Paco', sistema: 'Sistema', ejecutor: 'Tu equipo' };
 function registroLineaTexto(item) {
   const fecha = typeof fmtFechaHora === 'function' ? fmtFechaHora(item.at)
@@ -129,14 +133,21 @@ function registroScreen() {
     borrarVisible.onclick = async () => {
       const claves = data.items.map(item => item.clave).filter(Boolean);
       if (!claves.length) { toast('Lo visible no trae claves que borrar.', 'error'); return; }
-      if (!confirm('¿Ocultar las ' + claves.length + ' entradas visibles del Registro? No se toca ningún diario de origen y se puede deshacer.')) return;
-      borrarVisible.disabled = true;
-      try {
-        const hecho = await satApi('registro/borrar', { claves });
-        registroUltimoLote = { lote: hecho.lote, cuantas: hecho.ocultadas };
-        toast('Ocultadas ' + hecho.ocultadas + ' entrada(s). Tienes «Deshacer» arriba del Registro.', 'ok');
-        pintar();
-      } catch (error) { toast(error.message, 'error'); borrarVisible.disabled = false; }
+      /* Confirmación con el diálogo propio de la casa (2.9.7 · D4):
+         fuera la confirmación nativa del navegador, que en el
+         navegador real se traga y el gesto moría en silencio — el
+         mismo patrón de la revocación de llaves de la 2.9.5. */
+      dialog('Ocultar entradas del Registro',
+        [n('p', '¿Ocultar las ' + claves.length + ' entradas visibles del Registro? No se toca ningún diario de origen y se puede deshacer.')],
+        async () => {
+          borrarVisible.disabled = true;
+          try {
+            const hecho = await satApi('registro/borrar', { claves });
+            registroUltimoLote = { lote: hecho.lote, cuantas: hecho.ocultadas };
+            toast('Ocultadas ' + hecho.ocultadas + ' entrada(s). Tienes «Deshacer» arriba del Registro.', 'ok');
+            pintar();
+          } catch (error) { toast(error.message, 'error'); borrarVisible.disabled = false; }
+        }, 'Ocultar');
     };
     filtros.append(copiarTodo, borrarVisible);
     body.append(filtros);
@@ -176,9 +187,30 @@ function registroScreen() {
        del momento, para corregir desde el propio log. */
     const list = n('div', undefined, 'activity-list reg-timeline');
     let diaActual = '';
+    /* Ráfagas agrupadas (2.9.0 · Bloque C): entradas idénticas
+       consecutivas (mismo texto, clase y RFC) se enseñan UNA
+       vez con su cuenta «×N» y su hora primera y última — la
+       auditoría contó 40 correos iguales en 25 minutos
+       ocupando la pantalla. El grupo conserva la primera
+       entrada (su traza y su evidencia) y cuenta las demás. */
+    const itemsAgrupados290 = [];
     for (const item of itemsVisibles201) {
+      const prev = itemsAgrupados290[itemsAgrupados290.length - 1];
+      if (prev && prev.texto === item.texto && prev.clase === item.clase && prev.rfc === item.rfc && !item.detalle && !prev.detalle) {
+        prev.veces290 = (prev.veces290 || 1) + 1;
+        prev.ultima290 = item.at;
+      } else itemsAgrupados290.push({ ...item });
+    }
+    let impresos299 = 0;
+    for (const item of itemsAgrupados290) {
+      if (impresos299 >= registroLimite299) break;
+      impresos299++;
+      /* La fecha de día va en minúsculas (2.3.2 · m-25): en
+         español los días y meses no se capitalizan, y la
+         cabecera .reg-dia ya no lleva text-transform que los
+         suba a mitad de frase. */
       const dia = new Date(item.at).toLocaleDateString('es-MX',
-        { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toLocaleLowerCase('es-MX');
       if (dia !== diaActual) {
         diaActual = dia;
         list.append(n('h3', dia, 'reg-dia'));
@@ -186,17 +218,28 @@ function registroScreen() {
       const [nivel, etiqueta] = REGISTRO_CLASE[item.clase] || ['dim', 'Acción'];
       const row = n('div', undefined, 'activity-item' + (item.clase === 'fallo' ? ' reg-fallo' : ''));
       const linea = n('div', undefined, 'reg-linea');
-      linea.append(statusPill(nivel, etiqueta),
+      /* (2.9.13 · mejora 22) Cada suceso con el ICONO de su
+         tipo en la línea de tiempo: conexión, acción o fallo
+         se distinguen de un vistazo, antes de leer. */
+      const icono2913 = n('span', undefined, 'reg-icono2913');
+      icono2913.dataset.clase = item.clase || 'accion';
+      icono2913.append(icon(item.clase === 'fallo' ? 'alert' : item.clase === 'conexion' ? 'sync' : 'arrow'));
+      linea.append(icono2913, statusPill(nivel, etiqueta),
         n('span', typeof fmtFechaHora === 'function' ? fmtFechaHora(item.at) : '', 'sat-step-time'),
         n('span', item.texto +
+          (item.veces290 > 1 ? ' · repetido ' + item.veces290 + ' veces seguidas' : '') +
           (item.rfc ? ' · ' + item.rfc : '') +
           (item.origen === 'paco' ? ' · lo lanzaste tú' : item.origen === 'sistema' ? ' · lo hizo el sistema solo' : '')));
       if (item.evidencia && (item.evidencia.hasShot || item.evidencia.hasHtml ||
           item.detalle?.hasDecisionShot || item.detalle?.hasDecisionHtml)) {
+        /* (2.9.9 · D2) La evidencia va en UN solo menú: la fila
+           del Registro no tiene ningún otro botón de acciones,
+           así que su ⋯ ES el menú «Evidencia» (su aria-label lo
+           nombra) y dentro viven todas las piezas de antes. */
         const evidencia = evidenceButtons(item.evidencia.motor,
           { id: item.evidencia.runId, hasShot: item.evidencia.hasShot, hasHtml: item.evidencia.hasHtml,
             hasDecisionShot: Boolean(item.detalle?.hasDecisionShot),
-            hasDecisionHtml: Boolean(item.detalle?.hasDecisionHtml) });
+            hasDecisionHtml: Boolean(item.detalle?.hasDecisionHtml) }, true);
         if (evidencia) linea.append(evidencia);
       }
       row.append(linea);
@@ -227,6 +270,15 @@ function registroScreen() {
       list.append(row);
     }
     body.append(list);
+    /* (2.9.9 · D3) «Ver más»: los siguientes 25 sucesos, con los
+       filtros en curso (pintar() vuelve a pedir con ellos). */
+    if (itemsAgrupados290.length > registroLimite299) {
+      const foot299 = n('div', undefined, 'table-foot');
+      foot299.append(n('span', 'Ves ' + number.format(Math.min(registroLimite299, itemsAgrupados290.length)) +
+          ' de ' + number.format(itemsAgrupados290.length) + ' sucesos'),
+        action('Ver más', () => { registroLimite299 += 25; pintar(); }, 'soft'));
+      body.append(foot299);
+    }
   };
   pintar();
   return [wrap];

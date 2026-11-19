@@ -43,7 +43,65 @@ function reportesScreen201() {
   const mesDef = anioDef + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
   const lista = panel('Los reportes, en un solo sitio',
     'Cada reporte con su periodo y su salida: PDF para papel, Excel para trabajar e Imprimir para la vista en pantalla. Todo sale del cálculo único, como en sus pantallas.');
-  const filaReporte = (titulo, detalle, periodoEl, botones) => {
+  /* (2.9.13 · mejora 19) La PORTADA de la pantalla de
+     reportes: el ejercicio en cifras grandes con su gráfico
+     de emitidos y recibidos por mes — la misma cara que la
+     plantilla de encabezado lleva a cada PDF y Excel de
+     salidas (Bloque E): título, partes una sola vez y la
+     línea de generado. Los totales son los del ámbito, sin
+     canceladas, como los de Totales. */
+  {
+    const anio = anioDef;
+    let emT = 0n, reT = 0n;
+    const porMes2913 = new Map();
+    for (const row of invoices) {
+      if (rowCancelled(row)) continue;
+      if (scope && row.from.rfc !== scope && row.to.rfc !== scope) continue;
+      if (row.currency && row.currency !== 'MXN') continue;
+      const mes = String(row.date || '').slice(0, 7);
+      if (!mes.startsWith(String(anio))) continue;
+      const role = roles(row);
+      const celda = porMes2913.get(mes) || { em: 0n, re: 0n };
+      if (role.issued) { emT += totalCents(row); celda.em += totalCents(row); }
+      if (role.received) { reT += totalCents(row); celda.re += totalCents(row); }
+      porMes2913.set(mes, celda);
+    }
+    const portada2913 = n('div', undefined, 'reportes-portada2913');
+    const cifras2913 = n('div', undefined, 'reportes-cifras2913');
+    const cifra2913 = (etiqueta, valor) => {
+      const d = n('div', undefined, 'reporte-cifra2913');
+      d.append(n('small', etiqueta), n('strong', valor, 'reporte-cifra-num2913'));
+      return d;
+    };
+    cifras2913.append(
+      cifra2913('Emitidos en ' + anio, '$' + centsLabel(emT)),
+      cifra2913('Recibidos en ' + anio, '$' + centsLabel(reT)));
+    portada2913.append(cifras2913);
+    const mesesCon2913 = [...porMes2913.keys()].sort();
+    if (mesesCon2913.length) {
+      const maxMes2913 = mesesCon2913.reduce((m, k) => {
+        const c = porMes2913.get(k);
+        return c.em > m ? c.em : c.re > m ? c.re : m;
+      }, 0n);
+      const barras2913 = n('div', undefined, 'graf-barras2913');
+      for (const mes of mesesCon2913) {
+        const c = porMes2913.get(mes);
+        const par2913 = n('div', undefined, 'graf-par2913');
+        for (const [valor, clase] of [[c.em, 'emitidos'], [c.re, 'recibidos']]) {
+          const b = n('div', undefined, 'graf-barra2913 ' + clase);
+          b.style.height = (maxMes2913 > 0n ? Math.max(3, Number(valor * 64n / maxMes2913)) : 3) + 'px';
+          b.title = mes + ' · ' + clase + ': $' + centsLabel(valor);
+          par2913.append(b);
+        }
+        const col2913 = n('div', undefined, 'graf-col2913');
+        col2913.append(par2913, n('span', mes.slice(5), 'graf-mes2913'));
+        barras2913.append(col2913);
+      }
+      portada2913.append(barras2913);
+    }
+    lista.append(portada2913);
+  }
+  const filaReporte = (titulo, detalle, periodoEl, botones, enviarOpts) => {
     const fila = n('div', undefined, 'cp-row');
     const main = n('div', undefined, 'cp-main');
     main.append(n('strong', titulo), n('span', detalle, 'muted'));
@@ -56,9 +114,41 @@ function reportesScreen201() {
       b.onclick = () => hacer(b);
       acts.append(b);
     }
+    /* «Enviar» junto a las descargas (2.4.0 · W4a; correo
+       real desde W2b): estos reportes los genera el servidor
+       al momento, y la ruta de correo ya los adjunta con la
+       clase «reporte» — el servidor los REGENERA desde la
+       referencia cerrada { tipo, rfc, periodo } que cada fila
+       compone al pulsar, la misma que usa su «Descargar».
+       WhatsApp y Compartir siguen con el PDF de la fila,
+       pedido con la misma petición que su botón «PDF». */
+    if (enviarOpts && typeof enviarBoton240 === 'function' &&
+        (typeof guestMode === 'undefined' || !guestMode)) {
+      const b = enviarBoton240(enviarOpts, undefined, 'Enviar este reporte');
+      b.dataset.reporteEnviar240 = titulo;
+      b.title = 'Enviar · ' + titulo;
+      b.setAttribute('aria-label', 'Enviar · ' + titulo);
+      acts.append(b);
+    }
     fila.append(acts);
     lista.append(fila);
     return fila;
+  };
+  /* Las opciones se componen AL PULSAR (función): la
+     referencia de correo —tipo, RFC y periodo— es la del
+     momento, la misma que usa el «Descargar» de la fila.
+     correoDe devuelve la referencia de la clase «reporte»
+     (2.4.0 · W2b); sin ella, la tarjeta va solo con
+     WhatsApp/Compartir y su explicación. */
+  const enviarReporte240 = (nombre, hacerArchivo, correoDe) => () => {
+    const nombreReal = typeof nombre === 'function' ? nombre() : nombre;
+    return {
+      nombre: nombreReal,
+      asunto: 'PacoSAT · ' + nombreReal,
+      correo: correoDe ? correoDe() : null,
+      correoNota: correoDe ? undefined :
+        'Este reporte se genera al momento y no está entre los que el correo de PacoSAT puede adjuntar: mándalo por WhatsApp o Compartir, o descárgalo y adjúntalo desde tu correo.',
+      archivo: hacerArchivo };
   };
   const inputAnio = valor => {
     const el = input('number', { value: valor, min: 2019, max: anioDef + 1, 'aria-label': 'Ejercicio' });
@@ -87,7 +177,9 @@ function reportesScreen201() {
       imprimirVista201('Totales ' + anio, 'Emitidos y recibidos por mes, sin contar cancelados en los totales.',
         ['Mes', 'Emitidos', 'Total emitidos', 'Recibidos', 'Total recibidos'], filas);
     }]
-  ]);
+  ], enviarReporte240(() => 'Reporte de Totales ' + (Number(anioTotales.value) || anioDef),
+    () => enviarBlobSalida240('salidas/pdf', { kind: 'totales', rfc: rfc(), year: Number(anioTotales.value) || anioDef }),
+    () => ({ clase: 'reporte', tipo: 'totales-pdf', rfc: rfc(), year: Number(anioTotales.value) || anioDef })));
   /* Por contraparte (PDF de salidas, kind contraparte). Sin
      Excel real para este reporte: no se pinta botón de Excel. */
   const cps = new Map();
@@ -107,7 +199,9 @@ function reportesScreen201() {
         imprimirVista201('Reporte por contraparte · ' + (cps.get(picker.value) || picker.value),
           number.format(filas.length) + ' comprobante(s).', ['Fecha', 'Folio', 'Emisor → receptor', 'Total'], filas);
       }]
-    ]);
+    ], enviarReporte240('Reporte por contraparte',
+      () => enviarBlobSalida240('salidas/pdf', { kind: 'contraparte', rfc: rfc(), contraparte: picker.value }),
+      () => ({ clase: 'reporte', tipo: 'contraparte-pdf', rfc: rfc(), contraparte: picker.value })));
   }
   /* Por mes: el reporte del periodo (PDF periodo, Excel de
      facturas del mes e Imprimir con la plantilla de siempre). */
@@ -127,7 +221,9 @@ function reportesScreen201() {
       }
       printPeriodReport(clave, rowsMes, { issuedTotal, receivedTotal, issuedIva, receivedIva });
     }]
-  ]);
+  ], enviarReporte240(() => 'Reporte del mes ' + (mesInput.value || mesDef),
+    () => enviarBlobSalida240('salidas/pdf', { kind: 'periodo', rfc: rfc(), month: mesInput.value || mesDef }),
+    () => ({ clase: 'reporte', tipo: 'periodo-pdf', rfc: rfc(), mes: mesInput.value || mesDef })));
   /* Declaraciones del ejercicio (PDF y Excel de salidas). */
   const anioDecl = inputAnio(anioDef);
   filaReporte('Declaraciones', 'El mapa del ejercicio: qué consta presentado, qué falta y qué se recuperó.', anioDecl, [
@@ -146,7 +242,9 @@ function reportesScreen201() {
       } catch (error) { toast(error.message, 'error'); }
       b.disabled = false;
     }]
-  ]);
+  ], enviarReporte240(() => 'Reporte de Declaraciones ' + (Number(anioDecl.value) || anioDef),
+    () => enviarBlobSalida240('salidas/pdf', { kind: 'declaraciones', rfc: rfc(), year: Number(anioDecl.value) || anioDef }),
+    () => ({ clase: 'reporte', tipo: 'declaraciones-pdf', rfc: rfc(), year: Number(anioDecl.value) || anioDef })));
   /* Dinero y saldos (PDF de saldos y Excel de dinero). */
   filaReporte('Dinero y saldos', 'Lo que debes y lo que te deben, con el saldo de cada factura.', null, [
     ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'saldos', rfc: rfc() }, b), 'primary'],
@@ -154,14 +252,33 @@ function reportesScreen201() {
     ['Imprimir', () => {
       const paidBy = paidByMap();
       const own = new Set(people.map(person => person.id));
-      const open = invoices.filter(row => row.kind === 'I').map(row => ({ row, ...balanceOf(row, paidBy), state: invoiceStateOf(row) }))
+      /* La misma foto que Dinero (2.9.0 · Bloque C): con la
+         foto del servidor cargada, pagado y saldo salen de
+         ella (REP + marcas a mano); sin servidor, el cálculo
+         local con archivadas fuera — una sola cifra. */
+      const open = invoices.filter(row => row.kind === 'I' && !row.archived).map(row => {
+        const item = { row, ...balanceOf(row, paidBy), state: invoiceStateOf(row) };
+        const srv = typeof dineroServerInfo !== 'undefined' ? dineroServerInfo.get(row.id) : null;
+        if (srv) { item.paid = moneyCents(srv.paid || '0'); item.balance = moneyCents(srv.balance || '0'); }
+        return item;
+      })
         .filter(item => item.balance > 0n && item.state !== 'Cancelado');
       const filas = [];
       for (const item of open.filter(i => own.has(i.row.from.rfc))) filas.push(['Por cobrar', item.row.to.name || item.row.to.rfc, dateLabel(item.row.date), '$' + centsLabel(item.balance)]);
       for (const item of open.filter(i => own.has(i.row.to.rfc))) filas.push(['Por pagar', item.row.from.name || item.row.from.rfc, dateLabel(item.row.date), '$' + centsLabel(item.balance)]);
-      imprimirVista201('Dinero · saldos abiertos', 'Las canceladas no entran en los saldos.', ['Sentido', 'Contraparte', 'Fecha', 'Saldo'], filas);
+      /* Los totales de la hoja salen de LA función canónica
+         (2.9.0 · Bloque C): la misma que Dinero y Preguntas —
+         la suma de las filas y el total impreso no pueden
+         volver a contar dos historias. */
+      const totCobrar290 = porCobrarCanonico290();
+      const totPagar290 = porPagarCanonico290();
+      filas.push(['Por cobrar · TOTAL', totCobrar290.filas + ' factura(s) con saldo', '', '$' + centsLabel(totCobrar290.cents)]);
+      filas.push(['Por pagar · TOTAL', totPagar290.filas + ' factura(s) con saldo', '', '$' + centsLabel(totPagar290.cents)]);
+      imprimirVista201('Dinero · saldos abiertos', 'Las canceladas no entran en los saldos. Los totales son la cifra canónica del sistema: complementos de pago y marcas de pagado a mano contados, archivadas y canceladas fuera.', ['Sentido', 'Contraparte', 'Fecha', 'Saldo'], filas);
     }]
-  ]);
+  ], enviarReporte240('Reporte de Dinero y saldos',
+    () => enviarBlobSalida240('salidas/pdf', { kind: 'saldos', rfc: rfc() }),
+    () => ({ clase: 'reporte', tipo: 'saldos-pdf', rfc: rfc() })));
   /* Conciliación de Bancos (2.0.1: sin salidas propias;
      2.3.0 · pieza 13: ya las tiene). PDF y Excel reales del
      mes elegido contra GET /api/reportes/conciliacion, como
@@ -183,12 +300,19 @@ function reportesScreen201() {
     ['PDF', bajarConciliacion230('pdf'), 'primary'],
     ['Excel', bajarConciliacion230('xlsx')],
     ['Ver e imprimir en Bancos', () => navigate('bancos')]
-  ]);
+  ], enviarReporte240(() => 'Conciliación de Bancos ' + (mesConciliacion.value || mesDef), async () => {
+    const mes = mesConciliacion.value || mesDef;
+    const blob = await satApiBlob('reportes/conciliacion?rfc=' + encodeURIComponent(rfc()) +
+      '&mes=' + encodeURIComponent(mes) + '&formato=pdf');
+    return { blob, nombre: 'conciliacion-' + rfc() + '-' + mes + '.pdf' };
+  }, () => ({ clase: 'reporte', tipo: 'conciliacion-pdf', rfc: rfc(), mes: mesConciliacion.value || mesDef })));
   /* Avisos (PDF y Excel de salidas, kind avisos). */
   filaReporte('Avisos', 'El parte de avisos del RFC: lo que está mal, lo que falta y lo que vence.', null, [
     ['PDF', b => descargarSalida1310('salidas/pdf', { kind: 'avisos', rfc: scope }, b), 'primary'],
     ['Excel', b => descargarSalida1310('salidas/xlsx', { kind: 'avisos', rfc: scope }, b)]
-  ]);
+  ], enviarReporte240('Reporte de Avisos',
+    () => enviarBlobSalida240('salidas/pdf', { kind: 'avisos', rfc: scope }),
+    () => ({ clase: 'reporte', tipo: 'avisos-pdf', rfc: scope })));
   wrap.append(lista);
   /* El resto de salidas (cierre, ZIP del mes, destinos) sigue
      en su pantalla: Reportes agrupa los reportes, no entierra
@@ -197,7 +321,15 @@ function reportesScreen201() {
     'El cierre guiado, el ZIP del mes y las salidas para tu contadora y para el banco viven en su pantalla, a un toque.');
   cierreLink.append(action('Abrir Cierre y reportes', () => navigate('salidas'), 'primary', 'check'));
   wrap.append(cierreLink);
-  return [wrap];
+  /* (2.8.0 · diseño 5) Los totales por RFC y mes y el gráfico
+     mensual se mudan aquí desde la pestaña «Reportes» de
+     Cierre, que desaparece: Reportes es la única superficie
+     de reportes y nada de lo que aquella pestaña enseñaba se
+     pierde. */
+  const salidas280 = [wrap];
+  if (typeof totalsPanel === 'function') salidas280.push(totalsPanel());
+  if (typeof monthlyChart === 'function') salidas280.push(monthlyChart());
+  return salidas280;
 }
 const DECL_MES_REP201 = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
@@ -259,6 +391,23 @@ function salidasScreen() {
   printBtn.onclick = () => printPeriodReport(OUT.month, monthInvoices, { issuedTotal, receivedTotal, issuedIva, receivedIva });
   const csvBtn = n('button', 'Descargar CSV del mes', 'soft');
   csvBtn.onclick = () => download(new Blob(['\uFEFF', periodCsv(OUT.month)], { type: 'text/csv;charset=utf-8' }), 'reporte-' + OUT.month + '.csv');
+  /* «Enviar» junto a «Descargar CSV» (2.4.0 · W4a): el CSV se
+     compone en el cliente y no encaja en el conjunto cerrado
+     de la ruta de correo — su tarjeta ofrece WhatsApp y
+     Compartir con el mismo fichero que se descarga aquí. El
+     «Enviar por correo» de al lado es el camino viejo de
+     siempre (mail/send con el CSV adjunto) y no se toca. */
+  if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode)) {
+    const csvEnviar = enviarBoton240(() => ({
+      nombre: 'reporte-' + OUT.month + '.csv',
+      asunto: 'PacoSAT · Reporte ' + OUT.month,
+      correo: null,
+      correoNota: 'Este CSV se compone en tu aparato, no lo genera el servidor, y por eso no está entre los que el correo de PacoSAT puede adjuntar por la ruta de Enviar: mándalo por WhatsApp o Compartir, o usa el «Enviar por correo» de esta misma fila, que lo adjunta por el camino de siempre.',
+      archivo: async () => ({ blob: new Blob(['\uFEFF', periodCsv(OUT.month)], { type: 'text/csv;charset=utf-8' }),
+        nombre: 'reporte-' + OUT.month + '.csv' }) }));
+    csvEnviar.dataset.enviarCsv240 = '1';
+    reportActions.append(csvEnviar);
+  }
   const mailBtn = n('button', 'Enviar por correo', 'soft');
   mailBtn.onclick = () => composeMailDialog({ subject: 'PacoSAT · Reporte ' + OUT.month,
     text: 'Adjunto el reporte del mes ' + OUT.month + ' generado por PacoSAT.',
@@ -343,6 +492,18 @@ function salidasDisenadasPanel() {
       ['Excel de Avisos', 'salidas/xlsx', () => ({ kind: 'avisos', rfc: rfc() }), 'xlsx:avisos'],
       ['Excel de Dinero', 'salidas/xlsx', () => ({ kind: 'dinero', rfc: rfc() }), 'xlsx:dinero']]]
   ];
+  /* La referencia de correo (clase «reporte», 2.4.0 · W2b)
+     de cada salida PRINCIPAL de tarjeta: el servidor regenera
+     ese mismo artefacto desde { tipo, rfc, periodo }. Las
+     salidas del ⋯ no llevan «Enviar» (nada escondido), como
+     mandó W4a; su catálogo de servidor existe igual para
+     cuando el coordinador las saque a la cara. */
+  const correoSalida240 = {
+    'pdf:cierre': () => ({ clase: 'reporte', tipo: 'cierre-pdf', rfc: rfc(), mes: OUT.month }),
+    'xlsx:pagos': () => ({ clase: 'reporte', tipo: 'pagos-xlsx', rfc: rfc() }),
+    'pdf:declaraciones': () => ({ clase: 'reporte', tipo: 'declaraciones-pdf', rfc: rfc(), year: OUT.month.slice(0, 4) }),
+    'pdf:totales': () => ({ clase: 'reporte', tipo: 'totales-pdf', rfc: rfc(), year: OUT.month.slice(0, 4) })
+  };
   for (const [titulo, salidas] of destinos) {
     const card = n('div', undefined, 'kpi');
     card.append(n('strong', titulo));
@@ -358,6 +519,25 @@ function salidasDisenadasPanel() {
       const ultima = n('span', 'Sin generar todavía', 'muted');
       ultima.dataset.salidaUltima = clave;
       fila.append(btn, ultima);
+      /* «Enviar» junto a la salida principal (2.4.0 · W4a;
+         correo real desde W2b): visible en la cara de la
+         tarjeta, como manda el pedido — las del ⋯ no llevan
+         el suyo (nada de Enviar escondido en el menú). La
+         salida principal de cada tarjeta tiene su referencia
+         de la clase «reporte» en correoSalida240: el servidor
+         la regenera y la adjunta; WhatsApp y Compartir siguen
+         con el artefacto de la misma petición de descarga. */
+      if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode)) {
+        const env = enviarBoton240(() => ({
+          nombre: label + ' · ' + OUT.month,
+          asunto: 'PacoSAT · ' + label,
+          correo: correoSalida240[clave] ? correoSalida240[clave]() : null,
+          correoNota: correoSalida240[clave] ? undefined :
+            'Esta salida se genera al momento y no está entre las que el correo de PacoSAT puede adjuntar: mándala por WhatsApp o Compartir, o descárgala y adjúntala desde tu correo.',
+          archivo: () => enviarBlobSalida240(ruta, typeof payload === 'function' ? payload() : payload) }));
+        env.dataset.enviarSalida240 = clave;
+        fila.append(env);
+      }
       card.append(fila);
     });
     const resto = salidas.slice(1);
@@ -376,7 +556,7 @@ function salidasDisenadasPanel() {
     if (!last || !panelEl.isConnected) return;
     for (const el of panelEl.querySelectorAll('[data-salida-ultima]')) {
       const at = last[el.dataset.salidaUltima];
-      if (at) el.textContent = 'Última generación: ' + localDate(at);
+      if (at) { el.textContent = 'Última generación: ' + localDate(at) + ' · '; el.append(frescura240(at)); }
     }
   })();
   /* Reporte por contraparte: se elige quién y sale su PDF con
@@ -393,6 +573,16 @@ function salidasDisenadasPanel() {
     const btn = n('button', 'PDF por contraparte', 'soft');
     btn.onclick = () => salidaDescargar('salidas/pdf', { kind: 'contraparte', rfc: rfc(), contraparte: picker.value }, btn);
     row.append(picker, btn);
+    /* «Enviar» junto al PDF por contraparte (2.4.0 · W4a;
+       correo real desde W2b): la clase «reporte» con tipo
+       contraparte-pdf y la misma referencia { rfc,
+       contraparte } que usa su descarga. */
+    if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+      row.append(enviarBoton240(() => ({
+        nombre: 'PDF por contraparte · ' + picker.value,
+        asunto: 'PacoSAT · Reporte por contraparte',
+        correo: { clase: 'reporte', tipo: 'contraparte-pdf', rfc: rfc(), contraparte: picker.value },
+        archivo: () => enviarBlobSalida240('salidas/pdf', { kind: 'contraparte', rfc: rfc(), contraparte: picker.value }) })));
     panelEl.append(row);
   }
   return panelEl;
@@ -431,6 +621,18 @@ function manoFilPanel() {
   const xlsxBtn = n('button', 'Descargar el reporte en Excel', 'soft');
   xlsxBtn.onclick = () => salidaDescargar('salidas/reporte-manofil', { ...payload(), format: 'xlsx' }, xlsxBtn);
   actions.append(pdfBtn, xlsxBtn);
+  /* «Enviar» junto a las descargas del Reporte Mano Fil
+     (2.4.0 · W4a; correo real desde W2b): la clase «reporte»
+     con tipo manofil-pdf y la misma referencia de periodo
+     que usa su descarga (mes, o desde/hasta en modo rango);
+     el servidor lo regenera con el RFC fijo de Mano Fil. */
+  if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+    actions.append(enviarBoton240(() => ({
+      nombre: 'Reporte Mano Fil · ' + (MFPERIODO.mode === 'mes' ? OUT.month : desde.value + ' a ' + hasta.value),
+      asunto: 'PacoSAT · Reporte Mano Fil',
+      correo: { clase: 'reporte', tipo: 'manofil-pdf', rfc: RFC,
+        ...(MFPERIODO.mode === 'mes' ? { mes: OUT.month } : { desde: desde.value, hasta: hasta.value }) },
+      archivo: () => enviarBlobSalida240('salidas/reporte-manofil', { ...payload(), format: 'pdf' }) })));
   panelEl.append(modoRow, mesRow, rangoRow, actions);
   sync();
   return panelEl;
@@ -449,14 +651,58 @@ function periodCsv(month) {
   }
   return rows.map(row => row.map(escape).join(',')).join('\r\n');
 }
+/* ===== Frescura visible de los datos del SAT (2.4.0 · W5b1,
+   pieza 7) ===== Contrato en polish.part (.frescura240): la edad
+   sale del timestamp que la vista ya trae y el texto «hace X» lo
+   pone haceText (problemas-ui.part); aquí solo se clasifica el
+   tramo y se compone barra + texto, nunca solo el color. */
+function frescuraEdad240(at) {
+  const ts = typeof at === 'number' ? at : Date.parse(at);
+  if (!Number.isFinite(ts)) return '';
+  const edad = Date.now() - ts;
+  if (edad < 86400000) return 'fresco';
+  if (edad <= 7 * 86400000) return 'viejo';
+  return 'caduco';
+}
+function frescura240(at) {
+  const edad = frescuraEdad240(at);
+  const wrap = n('span', undefined, 'frescura240');
+  if (!edad) { wrap.append(n('span', 'sin fecha registrada', 'frescura240-texto')); return wrap; }
+  wrap.dataset.edad = edad;
+  const track = n('span', undefined, 'frescura240-track');
+  track.append(n('i', undefined, 'frescura240-fill'));
+  wrap.append(track, n('span', haceText(typeof at === 'number' ? at : Date.parse(at)), 'frescura240-texto'));
+  return wrap;
+}
 function printPeriodReport(month, rows, totals) {
   const section = $('print-report');
   section.replaceChildren();
   const head = n('div', undefined, 'report-head');
-  head.append(n('h1', 'Reporte del periodo ' + month), n('p', installName + (scope ? ' · ' + scope : ' · Sin contribuyente')));
+  /* Impresión diseñada (2.4.0 · W5b1, pieza 8): la misma marca
+     del faro que la portada mensual (el logo de la instalación
+     si lo hay), el RFC en el membrete y la fecha de generación;
+     los totales van en su bloque (.report-totales), no en una
+     línea más del cuerpo. Las cifras no cambian: son las que
+     ya calculaba esta función. */
+  if (typeof appSettings !== 'undefined' && appSettings.logoData) {
+    const logo = n('img', undefined, 'report-logo');
+    logo.src = appSettings.logoData;
+    logo.alt = '';
+    head.append(logo);
+  }
+  head.append(n('div', (typeof appSettings !== 'undefined' && appSettings.installName || 'PacoSAT') + ' · REPORTE DEL PERIODO', 'hero-kicker'),
+    n('h1', 'Reporte del periodo ' + month),
+    n('p', (scope ? scope : 'Sin contribuyente') + ' · Generado el ' + localDateTime(Date.now()), 'report-meta'));
   const body = n('div', undefined, 'report-body');
-  body.append(n('p', 'Emitidos: $' + centsLabel(totals.issuedTotal) + ' (IVA trasladado $' + centsLabel(totals.issuedIva) +
-    ') · Recibidos: $' + centsLabel(totals.receivedTotal) + ' (IVA acreditable $' + centsLabel(totals.receivedIva) + ').'));
+  const totalesBloque = n('div', undefined, 'report-totales');
+  const rtItem = (label, value) => { const item = n('div', undefined, 'rt-item');
+    item.append(n('small', label), n('strong', value)); return item; };
+  totalesBloque.append(
+    rtItem('Emitidos', '$' + centsLabel(totals.issuedTotal)),
+    rtItem('IVA trasladado', '$' + centsLabel(totals.issuedIva)),
+    rtItem('Recibidos', '$' + centsLabel(totals.receivedTotal)),
+    rtItem('IVA acreditable', '$' + centsLabel(totals.receivedIva)));
+  body.append(totalesBloque);
   const table = n('table');
   const thead = n('thead'); const htr = n('tr');
   for (const label of ['Fecha', 'Folio', 'UUID', 'Contraparte', 'Tipo', 'Total']) htr.append(n('th', label));
@@ -586,7 +832,10 @@ function autoReportsPanel() {
       form.append(n('span', ' a las '), hourInput, n('span', ':00'));
       const recipients = input('text', { value: item.recipients || '', placeholder: 'Destinatarios (vacío = tu correo de avisos)' });
       form.append(recipients);
-      const save = n('button', 'Guardar', 'soft');
+      /* Cada «Guardar» nombra su informe (2.9.0 · Bloque C):
+         en Ajustes › Correo convivían cinco «Guardar»
+         idénticos de cinco formularios distintos. */
+      const save = n('button', 'Guardar · ' + title, 'soft');
       save.onclick = async () => {
         const next = { ...config, [key]: { enabled: enabled.checked, day: dayInput ? Number(dayInput.value) : 3,
           hour: Number(hourInput.value), recipients: recipients.value } };
@@ -615,7 +864,7 @@ function autoReportsPanel() {
       form.append(n('span', ' a las '), hourInput, n('span', ':00'));
       const recipients = input('text', { value: item.recipients || '', placeholder: 'Destinatarios (vacío = tu correo de avisos)' });
       form.append(recipients);
-      const save = n('button', 'Guardar', 'soft');
+      const save = n('button', 'Guardar · Resumen de viernes', 'soft');
       save.onclick = async () => {
         const next = { ...config, friday: { enabled: enabled.checked, weekday: Number(weekdayInput.value) || 5,
           hour: Number(hourInput.value), recipients: recipients.value } };
@@ -739,6 +988,29 @@ function cierre200gPanel() {
       const pol = n('button', 'Para el contador (pólizas)', 'soft');
       pol.onclick = () => salidaDescargar('salidas200g/polizas', { rfc: rfc(), month: OUT.month }, pol);
       acciones.append(cerrar, zip, desp, pol);
+      /* «Enviar» junto a las descargas del cierre (2.4.0 ·
+         W4a; pólizas con correo desde W2b): «El mes en un ZIP»
+         ES la clase zip-mes del conjunto cerrado
+         (salidas200g/zip-mes sirve el mismo buildMonthlyPackage
+         que la ruta de correo genera), así que su tarjeta trae
+         correo de verdad; las pólizas van con la clase
+         «reporte» (tipo polizas-xlsx): el servidor las
+         regenera con el generador de salidas200g/polizas. */
+      if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode)) {
+        const envZip = enviarBoton240(() => ({
+          nombre: 'ZIP del mes ' + OUT.month + ' de ' + rfc(),
+          asunto: 'PacoSAT · ZIP del mes ' + OUT.month + ' · ' + rfc(),
+          correo: { clase: 'zip-mes', rfc: rfc(), mes: OUT.month },
+          archivo: () => enviarBlobSalida240('salidas200g/zip-mes', { rfc: rfc(), month: OUT.month }) }));
+        envZip.dataset.enviarZipMes240 = '1';
+        const envPol = enviarBoton240(() => ({
+          nombre: 'Pólizas del mes ' + OUT.month + ' de ' + rfc(),
+          asunto: 'PacoSAT · Pólizas ' + OUT.month + ' · ' + rfc(),
+          correo: { clase: 'reporte', tipo: 'polizas-xlsx', rfc: rfc(), mes: OUT.month },
+          archivo: () => enviarBlobSalida240('salidas200g/polizas', { rfc: rfc(), month: OUT.month }) }));
+        envPol.dataset.enviarPolizas240 = '1';
+        acciones.append(envZip, envPol);
+      }
       out.append(acciones);
       const inf = await satApi('informes200g?rfc=' + encodeURIComponent(rfc()) + '&month=' + encodeURIComponent(OUT.month)).catch(() => null);
       if (inf?.informe) {
@@ -749,6 +1021,18 @@ function cierre200gPanel() {
         const regen = n('button', 'Regenerar informes', 'soft');
         regen.onclick = async () => { try { await satApi('informes200g/regenerar', { rfc: rfc(), month: OUT.month }); toast('Informes regenerados con los datos de ahora.', 'ok'); cargar(); } catch (e) { toast(e.message, 'error'); } };
         fila.append(servir, regen);
+        /* «Enviar» junto a «Descargar el cierre guardado»
+           (2.4.0 · W4a; correo desde W2b): la clase «reporte»
+           con tipo cierre-guardado-pdf resuelve EL informe
+           guardado al cerrar el mes por su referencia
+           { rfc, mes } — el mismo artefacto que sirve
+           informes200g/servir, sin regenerar otro distinto. */
+        if (typeof enviarBoton240 === 'function' && (typeof guestMode === 'undefined' || !guestMode))
+          fila.append(enviarBoton240(() => ({
+            nombre: 'Cierre guardado de ' + OUT.month + ' · ' + rfc(),
+            asunto: 'PacoSAT · Cierre de ' + OUT.month + ' · ' + rfc(),
+            correo: { clase: 'reporte', tipo: 'cierre-guardado-pdf', rfc: rfc(), mes: OUT.month },
+            archivo: () => enviarBlobSalida240('informes200g/servir', { rfc: rfc(), month: OUT.month, cual: 'cierre' }) })));
         out.append(fila);
       }
       /* Candado del ejercicio (20#12) */
@@ -757,14 +1041,21 @@ function cierre200gPanel() {
       filaCandado.append(n('span', 'Ejercicio ' + year + ': ' + (est.ejercicioCerrado ? 'CERRADO — sus escrituras están bloqueadas en el servidor.' : 'abierto.')));
       const candadoBtn = n('button', est.ejercicioCerrado ? 'Desbloquear ejercicio ' + year : 'Cerrar ejercicio ' + year, 'soft');
       candadoBtn.onclick = async () => {
+        /* Confirmación con el diálogo propio (2.9.7 · D4). */
         if (est.ejercicioCerrado) {
-          if (!confirm('¿Desbloquear el ejercicio ' + year + ' de ' + rfc() + '? Sus datos se podrán tocar otra vez y el gesto queda en el Registro.')) return;
-          try { await satApi('ejercicios200g/desbloquear', { rfc: rfc(), year, confirmar: true }); toast('Ejercicio desbloqueado (registrado).', 'ok'); cargar(); }
-          catch (e) { toast(e.message, 'error'); }
+          dialog('Desbloquear el ejercicio ' + year,
+            [n('p', '¿Desbloquear el ejercicio ' + year + ' de ' + rfc() + '? Sus datos se podrán tocar otra vez y el gesto queda en el Registro.')],
+            async () => {
+              try { await satApi('ejercicios200g/desbloquear', { rfc: rfc(), year, confirmar: true }); toast('Ejercicio desbloqueado (registrado).', 'ok'); cargar(); }
+              catch (e) { toast(e.message, 'error'); }
+            }, 'Desbloquear');
         } else {
-          if (!confirm('¿Cerrar el ejercicio ' + year + ' de ' + rfc() + '? El servidor bloqueará notas, archivar, marcas de pago, importaciones y estados de ese año.')) return;
-          try { await satApi('ejercicios200g/cerrar', { rfc: rfc(), year }); toast('Ejercicio cerrado: escrituras bloqueadas.', 'ok'); cargar(); }
-          catch (e) { toast(e.message, 'error'); }
+          dialog('Cerrar el ejercicio ' + year,
+            [n('p', '¿Cerrar el ejercicio ' + year + ' de ' + rfc() + '? El servidor bloqueará notas, archivar, marcas de pago, importaciones y estados de ese año.')],
+            async () => {
+              try { await satApi('ejercicios200g/cerrar', { rfc: rfc(), year }); toast('Ejercicio cerrado: escrituras bloqueadas.', 'ok'); cargar(); }
+              catch (e) { toast(e.message, 'error'); }
+            }, 'Cerrar ejercicio');
         }
       };
       filaCandado.append(candadoBtn);
@@ -870,9 +1161,13 @@ function ics200gPanel() {
       copiar.onclick = () => { try { navigator.clipboard.writeText(d.url); toast('Dirección copiada.', 'ok'); } catch { toast('Copia la dirección a mano.', 'error'); } };
       const regen = n('button', 'Regenerar (revoca la anterior)', 'soft');
       regen.onclick = async () => {
-        if (!confirm('¿Regenerar la dirección del calendario de ' + rfcSel.value + '? La anterior deja de funcionar al momento.')) return;
-        try { const r = await satApi('ics200g/regenerar', { rfc: rfcSel.value }); toast('Dirección nueva generada: la anterior quedó revocada.', 'ok'); out.replaceChildren(n('p', r.url)); }
-        catch (e) { toast(e.message, 'error'); }
+        /* Confirmación con el diálogo propio (2.9.7 · D4). */
+        dialog('Regenerar la dirección del calendario',
+          [n('p', '¿Regenerar la dirección del calendario de ' + rfcSel.value + '? La anterior deja de funcionar al momento.')],
+          async () => {
+            try { const r = await satApi('ics200g/regenerar', { rfc: rfcSel.value }); toast('Dirección nueva generada: la anterior quedó revocada.', 'ok'); out.replaceChildren(n('p', r.url)); }
+            catch (e) { toast(e.message, 'error'); }
+          }, 'Regenerar');
       };
       const row = n('div', undefined, 'sat-actions'); row.append(copiar, regen);
       out.append(urlTxt, row);
@@ -898,12 +1193,16 @@ function restaurar200gPanel() {
         if (!r.seguridad) {
           const btn = n('button', 'Restaurar este', 'soft');
           btn.onclick = async () => {
-            if (!confirm('Se va a reemplazar el expediente actual por el respaldo del ' + r.stamp + '. Antes, PacoSAT guardará un respaldo de seguridad del estado actual. ¿Seguir?')) return;
-            btn.disabled = true; btn.textContent = 'Restaurando (con su respaldo de seguridad previo)…';
-            try { const res = await satApi('respaldos200g/restaurar', { stamp: r.stamp, confirmar: true });
-              toast(res.aviso, res.ok ? 'ok' : 'error'); cargar(); render(); }
-            catch (e) { toast(e.message, 'error'); }
-            finally { btn.disabled = false; btn.textContent = 'Restaurar este'; }
+            /* Confirmación con el diálogo propio (2.9.7 · D4). */
+            dialog('Restaurar este respaldo',
+              [n('p', 'Se va a reemplazar el expediente actual por el respaldo del ' + r.stamp + '. Antes, PacoSAT guardará un respaldo de seguridad del estado actual. ¿Seguir?')],
+              async () => {
+                btn.disabled = true; btn.textContent = 'Restaurando (con su respaldo de seguridad previo)…';
+                try { const res = await satApi('respaldos200g/restaurar', { stamp: r.stamp, confirmar: true });
+                  toast(res.aviso, res.ok ? 'ok' : 'error'); cargar(); render(); }
+                catch (e) { toast(e.message, 'error'); }
+                finally { btn.disabled = false; btn.textContent = 'Restaurar este'; }
+              }, 'Restaurar');
           };
           row.append(btn);
         }
@@ -911,9 +1210,13 @@ function restaurar200gPanel() {
       }
       const volver = n('button', 'Volver al respaldo de seguridad', 'soft');
       volver.onclick = async () => {
-        if (!confirm('¿Volver al estado que había justo antes de la última restauración guiada?')) return;
-        try { const res = await satApi('respaldos200g/volver-seguridad', {}); toast(res.ok ? 'De vuelta en el respaldo de seguridad, verificado.' : 'La vuelta se aplicó pero la verificación marca diferencias.', res.ok ? 'ok' : 'error'); render(); }
-        catch (e) { toast(e.message, 'error'); }
+        /* Confirmación con el diálogo propio (2.9.7 · D4). */
+        dialog('Volver al respaldo de seguridad',
+          [n('p', '¿Volver al estado que había justo antes de la última restauración guiada?')],
+          async () => {
+            try { const res = await satApi('respaldos200g/volver-seguridad', {}); toast(res.ok ? 'De vuelta en el respaldo de seguridad, verificado.' : 'La vuelta se aplicó pero la verificación marca diferencias.', res.ok ? 'ok' : 'error'); render(); }
+            catch (e) { toast(e.message, 'error'); }
+          }, 'Volver');
       };
       out.append(volver);
     } catch (e) { out.replaceChildren(n('p', e.message, 'error-text')); }
@@ -976,6 +1279,19 @@ if (typeof window !== 'undefined' && !window.__papel200gDnD) {
   window.addEventListener('dragover', e => { e.preventDefault(); });
   window.addEventListener('drop', e => {
     e.preventDefault();
+    /* Guarda de pantalla (integración 2.3.2): este oyente es el
+       camino de Documentos — su pantalla: docsView carga esta
+       parte al entrar y su comentario lo declara («en
+       Documentos manda la tarjeta de clasificación del papel»).
+       Fuera de Documentos NO enruta. En Bancos, soltar un
+       estado disparaba también este oyente y su diálogo
+       «Archivar este papel» se abría sobre la tarjeta de
+       Bancos — y con un diálogo abierto, la guarda
+       dialog[open] del pegado de Bancos bloqueaba ese gesto.
+       Es la guarda hermana de la que el oyente de paste de
+       aquí abajo ya tenía para Bancos, llevada a la pantalla
+       propia de este oyente: la vista activa manda. */
+    if (typeof page !== 'undefined' && page !== 'docs') return;
     const files = [...(e.dataTransfer?.files || [])];
     if (!files.length) return;
     const xmls = files.filter(f => /\.(xml|zip)$/i.test(f.name));

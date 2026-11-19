@@ -86,22 +86,41 @@ const unlock = async (h, rfc = OWN) => {
 /* ===== 1 · ESTÁTICAS + cabecera honesta (A1) ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.3.0', 'la ronda es la 2.0.1');
+  assert.equal(pkg.version, '2.9.14', 'la ronda es la 2.0.1');
   const ejecutor = read('ejecutor-local.mjs');
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.3.0'"), 'el ejecutor declara 2.0.1');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.9.14'"), 'el ejecutor declara 2.0.1');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella 2.0.1');
-  assert.ok(html.length <= 818500 || Buffer.byteLength(html) <= 822500, 'techo del artefacto (818.500 caracteres / 822.500 B, re-basificado en la 2.3.0: el artefacto mide 817.195 caracteres / 820.999 B (+20.350 B con la contabilidad de ronda1110); en la 2.0.2 medía 796.934 caracteres / 800.649 B — +1.739 B de las entradas propias del menú con sus estados —; contabilidad anterior: fase 2 de cliente de la 2.0.1: el artefacto medía 794.528 caracteres / 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 771.000 / 775.000 de la limpieza de esta misma ronda)');
+  assert.ok(html.includes('"version":"2.9.14"'), 'el artefacto se sella 2.0.1');
+  assert.ok(html.length <= 849900 || Buffer.byteLength(html) <= 853600, 'techo del artefacto (849.900 caracteres / 853.600 B, RE-BASE 2.9.13 de contabilidad: el artefacto mide 849.145 caracteres / 852.811 B (+25.893 B sobre los 826.918 B de la 2.9.12: bloques A–E y las 30 mejoras gráficas, contabilidad en ronda1110); el tope en bytes pasa a 853.600 B (margen 789) y el de caracteres a 849.900 (margen 755); antes, 823.000 caracteres / 827.200 B, RE-BASE 2.9.10 de contabilidad: el artefacto mide 822.870 caracteres / 826.449 B (+1.502 B sobre la 2.9.9, contabilidad tanda a tanda en ronda1110); el tope en bytes pasa a 827.200 B (margen 751) y el de caracteres a 823.000 (margen 130); antes, 821.500 caracteres / 825.700 B, RE-BASE 2.9.9 de contabilidad: el artefacto mide 821.344 caracteres / 824.947 B (+1.169 B sobre la 2.9.8, contabilidad tanda a tanda en ronda1110); el tope en bytes pasa a 825.700 B (margen 753) y el de caracteres NO se mueve: 821.500 (margen 156); antes, 821.500 caracteres / 824.500 B, RE-BASE 2.9.8 de contabilidad: el artefacto mide 823.778 B (+1.619 B sobre los 822.159 B sellados de la 2.9.7, medidos fichero a fichero sobre la base del paquete 2.9.7: +1.072 B netos de los usuarios con nombre propio en la carga inicial —puente de sesión en ui.part +176, línea de montaje en Ajustes +127, talón del panel, diálogo de entrada con usuario y nota de novedades 2.9.8 en final-ui.part +686 neto, manifiesto de la parte diferida en build.mjs +83; el panel entero viaja DIFERIDO en la parte «usuarios», fuera de la carga inicial—, +523 B de la Pieza V —el visor abre en el gesto— en pdf-cloud-ui.part y +24 B de la Pieza R —las reglas .chart sin el trazo heredado— en design.part; el tope pasa a 824.500 B (823.778 + 722 de margen) — en caracteres el artefacto mide 820.199 (tope 821.500, margen 1.301); antes, 818.500 caracteres / 822.500 B, re-basificado en la 2.3.0: el artefacto mide 817.195 caracteres / 820.999 B (+20.350 B con la contabilidad de ronda1110); en la 2.0.2 medía 796.934 caracteres / 800.649 B — +1.739 B de las entradas propias del menú con sus estados —; contabilidad anterior: fase 2 de cliente de la 2.0.1: el artefacto medía 794.528 caracteres / 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 771.000 / 775.000 de la limpieza de esta misma ronda)');
 
   /* Cabecera ↔ despacho: para cada pantalla tocada por la
      auditoría, la etiqueta que primaryLabel promete y el gesto
      que primaryAction ejecuta constan AMBOS en el artefacto. */
   const pares = [
-    ['Descargar CFDI del SAT', 'downloadSheet(scope)'],
+    /* RE-BASE 2.8.0 (diseño 19): el gesto de descargar tiene
+       UN nombre en todo el sistema, «Descargar del SAT» (antes
+       «Descargar CFDI del SAT» en Hoy); el despacho es el mismo
+       downloadSheet(scope) de siempre. */
+    ['Descargar del SAT', 'downloadSheet(scope)'],
     ['Consultar ahora', 'trib-consultar'],
-    ['buzon-mark-all', 'buzon-mark-all'],
-    ['Descargar Excel de saldos', "descargarSalida1310('salidas/xlsx', { kind: 'dinero' }"],
-    ['Armar la lista del mes', 'pagos-armar'],
+    /* RE-BASE 2.9.13 · A7: «Marcar todo leído» perdió su botón
+       duplicado en la franja de Recibidos; la cabecera despacha
+       a la función única buzonMarcarTodoLeido2913. */
+    ['Marcar todo leído', 'buzonMarcarTodoLeido2913'],
+    /* 2.9.5: el gesto vive con el RFC desde el arreglo F6 de
+       la 2.9.3 («Descargar Excel de saldos» llamaba sin el
+       RFC); el pin estático se re-basifica al literal vivo.
+       Nota de batería: esta suite y la 1322 NO se ejecutan
+       en la cadena `node ronda1320 ronda1321 ronda1322`
+       (node corre solo el primer fichero) — en esta ronda se
+       corrieron a mano, por separado, y quedan en verde. */
+    ['Descargar Excel de saldos', "descargarSalida1310('salidas/xlsx', { kind: 'dinero', rfc: scope }"],
+    /* RE-BASE 2.9.13 · A7: el gesto de cabecera de Pagos se
+       llama «Preparar los pagos» (la etiqueta duplicada
+       «Armar la lista del mes» salió de la cabecera: armar la
+       lista vive UNA vez, en el paso 2, con su botón real
+       «Armar la lista desde las facturas del mes»). */
+    ['Preparar los pagos', 'pagos-armar'],
     ['Descargar declaraciones del SAT', 'decl-descargar'],
     ['Elegir el mes del cierre', 'cierreSection'],
     ['Descargar del SAT', 'invoiceScreen'],

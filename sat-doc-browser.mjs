@@ -55,6 +55,10 @@ import { SatDocError, CSF_ENTRY_URL, OPINION_ENTRY_URL, isPdfBuffer, failure } f
            diagnostics() -> { url, screenshot, html, frames } (opcional)
            tramiteFrameUrl() -> url del marco del trámite (opcional, 1.13.0)
            clickFrameGenerate() -> bool (opcional, 1.13.0)
+           evaluateFrames(fn, arg) -> [resultado por marco] (2.9.0:
+             ejecuta fn en el marco principal y en cada marco de
+             page.frames(); es la vía para leer un iframe de OTRO
+             origen, invisible desde la página que lo incrusta)
 
    Arreglo 1.10.1 (primera corrida real, 9 nov 2026): la corrida
    murió con «setInputFiles: Timeout 30000ms — waiting for
@@ -261,28 +265,45 @@ function isNetworkError(error) {
    Compartido con los conectores de declaraciones (punto 7).
    hooks.step(texto, url) es opcional: progreso en lenguaje llano
    que el servidor persiste y enseña en vivo (1.10.1). */
-export async function satBrowserLogin(page, { cer, key, password, rfc, entryUrl, hooks } = {}) {
+export async function satBrowserLogin(page, { cer, key, password, rfc, entryUrl, landingUrl, hooks } = {}) {
   const step = (text) => {
     let url = '';
     try { url = page.url(); } catch { /* página en transición */ }
     try { hooks?.step?.(text, url); } catch { /* el progreso nunca tumba el flujo */ }
   };
   step('Conectando con el SAT…');
-  let lastError = null;
+  /* Puerta veraz (2.9.12 · Pieza 1): sin dirección de acceso el
+     fallo es LOCAL y se nombra como tal — jamás se navega a
+     undefined ni se disfraza de caída del SAT —; y del goto
+     solo los errores de red reales (isNetworkError) salen
+     como portal-caido: cualquier otro error del driver sale
+     con su kind honesto («error-interno») y su mensaje
+     subyacente, para que el veredicto de la puerta y sus
+     consumidores (sat_puerta, la luz, el foco, el flag
+     puertaCaida de descargas) dejen de mentir. Los fallos de
+     red conservan su reintento y su portal-caido: los
+     reintentos de documentos de local-server dependen de ese
+     kind (SATDOC_PORTAL_KINDS) y no cambian. */
+  if (!entryUrl || typeof entryUrl !== 'string') {
+    throw failure('error-interno', 'A esta llamada le falta la dirección de acceso al portal del SAT: ' +
+      'es un fallo de PacoSAT, no del SAT. Nada se pidió al portal en esta corrida.');
+  }
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       await page.goto(entryUrl);
       break;
     } catch (error) {
-      lastError = error;
-      if (!isNetworkError(error) || attempt === 1) {
+      if (!isNetworkError(error)) {
+        throw failure('error-interno', 'El navegador interno no pudo abrir la página de acceso ' +
+          'por un fallo de PacoSAT (' + (error?.message || error) + '): no es una caída del SAT.');
+      }
+      if (attempt === 1) {
         throw failure('portal-caido', 'El portal del SAT no respondió al abrir la página de acceso. ' +
           'Puede ser una caída temporal del portal: inténtalo de nuevo en unos minutos.');
       }
       await sleep(1500);
     }
   }
-  void lastError;
   step('Firmando con tu e.firma…');
   /* Endurecimiento 1.22.0 (piezas 5 y 11, sobre la rutina ÚNICA de
      entrada que comparten constancia, opinión y declaraciones):
@@ -408,6 +429,87 @@ export async function satBrowserLogin(page, { cer, key, password, rfc, entryUrl,
     throw failure('portal-caido', 'El portal del SAT no completó el acceso con e.firma: se quedó ' +
       'en su pantalla de acceso sin dar respuesta. Suele ser inestabilidad del portal: ' +
       'inténtalo de nuevo en unos minutos.');
+  }
+  /* Verificación de ATERRIZAJE (2.3.2, constructor P — evidencia
+     viva del 17 nov 2026, corrida buzon-listar runId
+     1d36cce9-e5f8-4ff5-809a-3cf7cedd7aed, ~14:57 CST, ejecutor
+     íntegro en 2.3.1): el diario dice «Acceso al portal OK» →
+     «Credenciales validadas» → «Sesión reutilizada» → «la sesión
+     reutilizada quedó en la página muerta del portal; se
+     descarta» con URL final /app/seg/null y fallo ruta-muerta
+     (attempts=1, hasDecisionHtml=false); el HTML guardado del
+     fallo son 156 B («Página no encontrada», sin enlaces ni
+     formularios). Es decir: ESTE acceso devolvió éxito con la
+     página ya en la ruta muerta y el motor lo detectó al
+     entrar — tras submitFiel() solo se comprobaban divError,
+     Error.aspx y option=credential, y /app/seg/null no casa
+     con ninguno, así que el acceso se declaraba bueno sobre
+     la 404. Desde esta ronda el aterrizaje se VERIFICA aquí:
+     (1) espera de asentamiento — se sondea la URL cada
+     ~400 ms hasta ~8 s, hasta que sea estable en dos lecturas
+     o venza el plazo —; (2) aterrizaje muerto = la URL casa
+     /\/app\/seg\/null/ o el texto de la página principal dice
+     «Página no encontrada» (criterio gemelo al de
+     buzonPaginaMuerta/paginaMuerta de los motores, definido
+     AQUÍ porque sat-tributario importa de este módulo, no al
+     revés; el texto sale de page.text(), que en el driver
+     real lee solo el body de la principal — jamás el HTML
+     compuesto de diagnostics(), que incluye los marcos —);
+     (3) si está muerto, UNA recuperación con goto al
+     aterrizaje (landingUrl; por defecto, si la entrada es el
+     lanzador, https://wwwmat.sat.gob.mx/buzon — el aterrizaje
+     real tras el acceso según el mapa levantado en vivo el
+     16 nov 2026, citado en sat-tributario.mjs —; si no, la
+     propia entryUrl), otra espera y otra comprobación;
+     (4) si sigue muerto, ruta-muerta honesta con el diag
+     adjunto, como los demás fallos de acceso de esta función;
+     (5) si se recupera, paso en la traza y return con
+     recuperado:true. Si nunca estuvo muerto, el return es
+     EXACTAMENTE el de siempre: { url }, sin goto extra ni
+     pasos nuevos. */
+  const esperaAsentamientoLogin = async () => {
+    const limite = Date.now() + 8_000;
+    let anterior = null;
+    for (;;) {
+      let actual = '';
+      try { actual = String(page.url() || ''); } catch { /* página en transición */ }
+      if (anterior !== null && actual === anterior) return actual;
+      anterior = actual;
+      if (Date.now() >= limite) return actual;
+      await sleep(400);
+    }
+  };
+  const aterrizajeLoginMuerto = async (urlActual) => {
+    if (/\/app\/seg\/null/.test(String(urlActual || ''))) return true;
+    if (page && typeof page.text === 'function') {
+      const t = await page.text().catch(() => '');
+      if (typeof t === 'string' && /Página no encontrada/i.test(t)) return true;
+    }
+    return false;
+  };
+  let urlAterrizaje = await esperaAsentamientoLogin();
+  if (await aterrizajeLoginMuerto(urlAterrizaje)) {
+    const destinoAterrizaje = landingUrl ||
+      (String(entryUrl || '').includes('lanzador') ? 'https://wwwmat.sat.gob.mx/buzon' : entryUrl);
+    if (destinoAterrizaje && typeof page.goto === 'function') {
+      await page.goto(destinoAterrizaje).catch(() => {});
+    }
+    urlAterrizaje = await esperaAsentamientoLogin();
+    if (await aterrizajeLoginMuerto(urlAterrizaje)) {
+      const sigueMuerto = failure('ruta-muerta',
+        'El acceso con e.firma sí entró, pero el portal dejó el navegador en su página muerta (' +
+        (urlAterrizaje || '…/app/seg/null') + ') y ni reintentando el aterrizaje respondió: ' +
+        'inténtalo de nuevo en unos minutos.');
+      if (page && typeof page.diagnostics === 'function') {
+        const diag = await page.diagnostics().catch(() => null);
+        if (diag) sigueMuerto.diag = diag;
+      }
+      throw sigueMuerto;
+    }
+    step('El portal dejó la entrada en su página muerta; aterrizaje recuperado');
+    let urlRecuperada = urlAterrizaje;
+    try { urlRecuperada = String(page.url() || '') || urlAterrizaje; } catch { /* manda la asentada */ }
+    return { url: urlRecuperada, recuperado: true };
   }
   return { url };
 }
@@ -782,25 +884,47 @@ function fielFaltanDesde(estado, { conEspejos = false } = {}) {
    imagen Docker lo instala el Dockerfile: paquete chromium). Sin
    descarga de navegadores en tiempo de ejecución. */
 export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chromium',
-  headless = true, launchTimeoutMs = 30_000 } = {}) {
+  headless = true, launchTimeoutMs = 30_000, proveedorChromium = null,
+  esperasReintentoMs = [750, 1500] } = {}) {
   return async function launchDriver() {
     let chromium;
     try {
-      ({ chromium } = await import('playwright-core'));
+      ({ chromium } = proveedorChromium ? await proveedorChromium()
+        : await import('playwright-core'));
     } catch {
       throw failure('navegador-no-disponible', 'Falta el componente del navegador interno ' +
         '(playwright-core) en la instalación de PacoSAT.');
     }
-    let browser;
-    try {
-      browser = await chromium.launch({ executablePath, headless,
-        timeout: launchTimeoutMs, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
-    } catch (error) {
-      throw failure('navegador-no-disponible', 'El navegador interno no arrancó: ' +
-        (error?.message || error));
+    /* Arranque robusto (2.9.3 · F5): el arranque del Chromium
+       puede morir de forma transitoria («Target page, context
+       or browser has been closed» al abrir el contexto o la
+       página — visto en vivo el 18 nov: un intento murió así y
+       el reintento manual funcionó). La secuencia entera
+       (launch + contexto + página) se reintenta hasta 3 veces
+       con una espera corta, cerrando el navegador a medias
+       entre intentos; solo si los tres fallan viaja el error
+       de siempre, con el mensaje del último intento. La falta
+       del componente (arriba) no se reintenta: es determinista. */
+    let browser = null;
+    let context = null;
+    let page = null;
+    let ultimoErrorArranque = null;
+    const intentos = 1 + esperasReintentoMs.length;
+    for (let intento = 0; intento < intentos && !page; intento++) {
+      if (intento > 0) await new Promise(resolve => setTimeout(resolve, esperasReintentoMs[intento - 1]));
+      try {
+        browser = await chromium.launch({ executablePath, headless,
+          timeout: launchTimeoutMs, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
+        context = await browser.newContext({ acceptDownloads: true });
+        page = await context.newPage();
+      } catch (error) {
+        ultimoErrorArranque = error;
+        if (browser) await browser.close().catch(() => {});
+        browser = null; context = null; page = null;
+      }
     }
-    const context = await browser.newContext({ acceptDownloads: true });
-    const page = await context.newPage();
+    if (!page) throw failure('navegador-no-disponible', 'El navegador interno no arrancó: ' +
+      (ultimoErrorArranque?.message || ultimoErrorArranque));
     const pdfBodies = [];
     const textResponses = [];
     let lastPdfUrl = '';
@@ -1279,10 +1403,35 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
          fila trae su enlace «Generar PDF», que ES el acuse de
          esa fila. Se recorren los marcos como en transacciones()
          y cada fila lleva pdfIndex: la posición de su enlace
-         entre TODOS los «Generar PDF» de la página, en el mismo
-         orden en que clickPortalPdf los cuenta. La lectura es
-         genérica y honesta: sin tabla reconocible, la lista
-         vuelve vacía y el motor lo declara. */
+         entre los «Generar PDF» DE LAS TABLAS de la página, en
+         el mismo orden en que clickPortalPdf los cuenta. La
+         lectura es genérica y honesta: sin tabla reconocible,
+         la lista vuelve vacía y el motor lo declara.
+         LA ESTRUCTURA REAL (2.9.1, Pieza 5 — evidencia de la
+         corrida real 1d8f086b, 18 nov 2026, artefacto guardado
+         en ~/workspace/pacosat-291-evidencia/): el «Generar
+         PDF» del portal NO es un texto — es un enlace con una
+         IMAGEN cuyo alt lo dice: <a id="linkDescargaPDF"
+         href="/Consulta/RecuperarArchivo?…&numeroOperacion=…
+         &ejercicio=…"><img alt="Generar PDF"></a>, con el
+         mismo id repetido en cada fila de #tableResult
+         (cabeceras: No. de Operación · Tipo de Declaración ·
+         Tipo de Complementaria · Línea de Captura · Fecha de
+         Presentación · Periodicidad · Período · FechaCausación
+         · Estado oculto). El lector viejo pedía textContent
+         === 'generar pdf': la imagen no tiene texto, ninguna
+         fila casaba y la rejilla real — las 13 declaraciones
+         de 2026 — se leyó como cero filas (no-concluyente).
+         Además la página trae la MISMA lista en un acordeón
+         (display:none) con otros 13 enlaces idénticos: el
+         conteo de pdfIndex se limita a los enlaces dentro de
+         una tabla — los de la rejilla visible — para que el
+         gemelo oculto no desplace los índices, con la misma
+         regla en portalNuevoResults y en clickPortalPdf. La
+         señal del acuse acepta cualquiera de las marcas
+         reales: el texto, el alt de su imagen, su title o
+         aria-label, su id linkDescargaPDF o su href a
+         RecuperarArchivo con numeroOperacion. */
       async portalNuevoResults() {
         const rows = [];
         let desplazamiento = 0;
@@ -1290,18 +1439,37 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
           const found = await frame.evaluate(() => {
             const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
               .toLowerCase().replace(/\s+/g, ' ').trim();
-            const esPdf = el => norm(el.textContent) === 'generar pdf';
-            const anchors = [...document.querySelectorAll('a, button')].filter(esPdf);
+            const esPdf = el => {
+              if (norm(el.textContent) === 'generar pdf') return true;
+              if (el.id === 'linkDescargaPDF') return true;
+              if (norm(el.getAttribute('title') || '') === 'generar pdf') return true;
+              if (norm(el.getAttribute('aria-label') || '') === 'generar pdf') return true;
+              const img = el.querySelector ? el.querySelector('img') : null;
+              if (img && norm(img.getAttribute('alt') || '') === 'generar pdf') return true;
+              const href = el.getAttribute('href') || '';
+              return /recuperararchivo/i.test(href) && /numeroperacion=/i.test(href);
+            };
+            const anchors = [...document.querySelectorAll('a, button')]
+              .filter(el => esPdf(el) && el.closest('table'));
             const filas = [];
             for (const table of document.querySelectorAll('table')) {
               const trs = [...table.querySelectorAll('tr')];
               if (!trs.length) continue;
               const head = [...trs[0].querySelectorAll('th, td')].map(td => norm(td.textContent));
-              const idx = { fecha: head.findIndex(h => /fecha/.test(h)),
-                tipo: head.findIndex(h => /tipo/.test(h)),
-                periodo: head.findIndex(h => /periodo/.test(h)),
-                operacion: head.findIndex(h => /operacion/.test(h)),
-                ejercicio: head.findIndex(h => /ejercicio/.test(h)) };
+              /* Cabeceras exactas del portal primero; la
+                 genérica de respaldo conserva el comportamiento
+                 anterior si el portal reordena o abrevia. */
+              const busca = (exacto, generico) => {
+                const e = head.findIndex(h => exacto.test(h));
+                return e >= 0 ? e : head.findIndex(h => generico.test(h));
+              };
+              const idx = { fecha: busca(/fecha de presentacion/, /fecha/),
+                tipo: busca(/tipo de declaracion/, /tipo(?! de complementaria)/),
+                periodo: busca(/^periodo$/, /periodo/),
+                operacion: busca(/no\.? de operacion|numero de operacion/, /operacion/),
+                ejercicio: head.findIndex(h => /ejercicio/.test(h)),
+                linea: busca(/linea de captura/, /linea/),
+                complementaria: head.findIndex(h => /tipo de complementaria/.test(h)) };
               if (idx.operacion < 0 && idx.fecha < 0 && idx.periodo < 0) continue;
               for (const tr of trs.slice(1)) {
                 const tds = [...tr.querySelectorAll('td')];
@@ -1310,9 +1478,17 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
                 if (!pdf) continue;
                 const get = i => (i >= 0 && tds[i])
                   ? (tds[i].textContent || '').replace(/\s+/g, ' ').trim() : '';
-                filas.push({ operacion: get(idx.operacion), fecha: get(idx.fecha),
+                /* La operación y el ejercicio también viajan
+                   en el href del acuse de la propia fila: si
+                   una celda viniera vacía, manda el enlace. */
+                const hrefPdf = pdf.getAttribute('href') || '';
+                const opHref = /numeroperacion=(\d+)/i.exec(hrefPdf)?.[1] || '';
+                const ejHref = /ejercicio=(\d{4})/i.exec(hrefPdf)?.[1] || '';
+                filas.push({ operacion: get(idx.operacion) || opHref, fecha: get(idx.fecha),
                   tipo: get(idx.tipo), periodo: get(idx.periodo),
-                  ejercicio: get(idx.ejercicio), pdfIndex: anchors.indexOf(pdf) });
+                  ejercicio: get(idx.ejercicio) || ejHref,
+                  lineaCaptura: get(idx.linea), tipoComplementaria: get(idx.complementaria),
+                  pdfIndex: anchors.indexOf(pdf) });
               }
             }
             return { filas, totalPdf: anchors.length };
@@ -1324,18 +1500,31 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         return rows;
       },
       /* Clic sobre el «Generar PDF» número index de la página
-         (el mismo conteo que portalNuevoResults): el acuse de
-         la fila llega como descarga o como respuesta del
-         navegador y lo recoge waitForPdf, como en las demás
-         descargas del portal. */
+         (el mismo conteo que portalNuevoResults: solo los
+         enlaces dentro de una tabla, con las mismas marcas —
+         en el portal real el enlace es una imagen con
+         alt «Generar PDF», sin texto): el acuse de la fila
+         llega como descarga o como respuesta del navegador y
+         lo recoge waitForPdf, como en las demás descargas
+         del portal. */
       async clickPortalPdf(index) {
         let restante = Math.max(0, Number(index) || 0);
         for (const frame of page.frames()) {
           const hecho = await frame.evaluate((i) => {
             const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
               .toLowerCase().replace(/\s+/g, ' ').trim();
+            const esPdf = el => {
+              if (norm(el.textContent) === 'generar pdf') return true;
+              if (el.id === 'linkDescargaPDF') return true;
+              if (norm(el.getAttribute('title') || '') === 'generar pdf') return true;
+              if (norm(el.getAttribute('aria-label') || '') === 'generar pdf') return true;
+              const img = el.querySelector ? el.querySelector('img') : null;
+              if (img && norm(img.getAttribute('alt') || '') === 'generar pdf') return true;
+              const href = el.getAttribute('href') || '';
+              return /recuperararchivo/i.test(href) && /numeroperacion=/i.test(href);
+            };
             const anchors = [...document.querySelectorAll('a, button')]
-              .filter(el => norm(el.textContent) === 'generar pdf');
+              .filter(el => esPdf(el) && el.closest('table'));
             if (i >= anchors.length) return anchors.length;
             anchors[i].click();
             return -1;
@@ -1543,7 +1732,99 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
         }
         return null;
       },
+      /* Puerta de e.firma del portal de consulta (2.9.7, Pieza A):
+         portalcfdi puede enseñar primero su puerta de contraseña
+         y el acceso con e.firma tras un control propio de esa
+         pantalla, ANTES de que exista el formulario FIEL del
+         NIDP. Esta primitiva OPCIONAL pulsa ese control si está
+         presente y devuelve true solo si lo pulsó; si el
+         formulario de e.firma ya está en el DOM (#fileCertificate)
+         o no hay control reconocible, devuelve false sin tocar
+         nada — satBrowserLogin sigue siendo quien abre el
+         formulario por #buttonFiel cuando haga falta —.
+         CALIBRACIÓN PENDIENTE (frontera nº 1 de la ronda): el
+         selector real de esa puerta NO está contrastado en vivo;
+         los candidatos son #buttonFiel, un id que hable de fiel
+         y cualquier control clicable cuyo texto visible hable de
+         «e.firma»/«fiel». Evaluate acotado, como las ciec*: solo
+         busca y pulsa dentro de la página, no lee valores. */
+      async portalOpenEfirmaDoor() {
+        const clicked = await page.evaluate(() => {
+          if (document.querySelector('#fileCertificate')) return false;
+          const norm = s => String(s || '').toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+          const candidates = [...document.querySelectorAll(
+            'a, button, input[type="button"], input[type="submit"], [role="button"], [role="link"]')];
+          const el = candidates.find(candidate => {
+            if (candidate.id === 'buttonFiel') return true;
+            if (/fiel/i.test(candidate.id || '')) return true;
+            const label = norm(candidate.textContent || candidate.value ||
+              candidate.getAttribute('aria-label') || candidate.getAttribute('title') || '');
+            return label.includes('e.firma') || label.includes('e firma') || label === 'fiel';
+          });
+          if (!el) return false;
+          el.click();
+          return true;
+        }).catch(() => false);
+        if (clicked) await page.waitForTimeout(800);
+        return Boolean(clicked);
+      },
+      /* PDF de una fila del portal de consulta (2.9.7, Pieza A,
+         primitiva OPCIONAL): el mismo canal de descargas del
+         navegador que ciecDownloadXml, pero el cuerpo solo vale
+         si ES un PDF (%PDF- al frente); si el portal entrega otra
+         cosa, devuelve null y el motor sigue solo con el XML.
+         La fila solo la ofrece cuando trae su token de PDF
+         (pdfUrl en ciecRows aún NO lo expone el lector actual:
+         si el portal real lo trae en otro control de la fila,
+         ese lector es la calibración pendiente y esta primitiva
+         queda sin uso hasta entonces, sin romper nada). */
+      async ciecDownloadPdf(url) {
+        const before = pdfBodies.length;
+        const pending = page.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
+        await page.goto(url, { waitUntil: 'commit', timeout: 30_000 }).catch(() => {});
+        const download = await pending;
+        if (!download) return null;
+        const end = Date.now() + 15_000;
+        while (Date.now() < end) {
+          if (pdfBodies.length > before) {
+            const [body] = pdfBodies.splice(before, 1);
+            return isPdfBuffer(body) ? body : null;
+          }
+          await page.waitForTimeout(300);
+        }
+        return null;
+      },
       async evaluate(fn, arg) { return page.evaluate(fn, arg); },
+      /* Evaluación POR MARCOS (2.9.0, Bloque A): ejecuta fn en
+         el marco principal y en CADA marco de page.frames()
+         (frame.evaluate) y devuelve un array con un resultado
+         por marco (null si ese marco falla). Por qué existe: la
+         bandeja del Buzón vive en un iframe de OTRO ORIGEN
+         (agr.siat.sat.gob.mx ≠ wwwmat.sat.gob.mx — evidencia
+         real de la corrida d1ac98a4 del 17 nov 2026) y un
+         documento de otro origen es invisible desde la página
+         que lo incrusta (iframe.contentDocument no se puede
+         leer entre orígenes), así que los lectores de siempre
+         jamás veían su contenido; Playwright SÍ entra en cada
+         marco con su propio evaluate. Tolerante: sin
+         page.frames utilizable, degrada a [evaluate principal].
+         La importa la misma fábrica que usa ejecutor-local.mjs,
+         así que la capacidad llega a las dos sedes (servidor y
+         ejecutor) sin tocar el ejecutor. */
+      async evaluateFrames(fn, arg) {
+        let frames = null;
+        try { frames = typeof page.frames === 'function' ? page.frames() : null; } catch { frames = null; }
+        if (!Array.isArray(frames) || !frames.length) {
+          try { return [await page.evaluate(fn, arg)]; } catch { return [null]; }
+        }
+        const resultados = [];
+        for (const frame of frames) {
+          try { resultados.push(await frame.evaluate(fn, arg)); }
+          catch { resultados.push(null); }
+        }
+        return resultados;
+      },
       async close() { await context.close().catch(() => {}); }
     };
     return {

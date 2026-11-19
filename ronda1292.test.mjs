@@ -343,7 +343,7 @@ server.close();
    valores y la secuencia legada confinada a la prueba ===== */
 {
   const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '2.3.0', 'la versión de la ronda (re-basificado en la 2.0.1: motores reconstruidos contra el mapa real del portal)');
+  assert.equal(pkg.version, '2.9.14', 'la versión de la ronda (re-basificado en la 2.0.1: motores reconstruidos contra el mapa real del portal)');
   const browser = readFileSync(new URL('./sat-doc-browser.mjs', import.meta.url), 'utf8');
   assert.ok(browser.includes('fillFielForm({ cer, key, password, rfc, step })'),
     'satBrowserLogin pasa el RFC y la traza al relleno');
@@ -532,6 +532,12 @@ const filasDe1292 = (el, clase) => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   vm.runInContext(script, context, { filename: 'Faro-Fiscal.html#script' });
   for (let i = 0; i < 12; i++) await new Promise(r => setTimeout(r, 0));
+  /* RE-BASE integración 2.4.0 (W6b): satTramiteEstados y
+     satCardGrid viven en la parte diferida de Descargas; se
+     inyecta su fuente desde lazy.json (lo que el navegador
+     recibe) tras el arranque. Ninguna aserción cambia. */
+  const lazy1292 = JSON.parse(readFileSync(new URL('./lazy.json', import.meta.url), 'utf8'));
+  vm.runInContext(lazy1292.partes.descargas.source, context, { filename: 'parte-descargas' });
   assert.equal(vm.runInContext('typeof satTramiteEstados', context), 'function', 'G: la máquina de estados existe');
   assert.equal(vm.runInContext('typeof satCardGrid', context), 'function', 'G: la parrilla existe');
   const estados = datos => {
@@ -586,6 +592,11 @@ const filasDe1292 = (el, clase) => {
   const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
   vm.runInContext(script, context, { filename: 'Faro-Fiscal.html#script' });
   for (let i = 0; i < 12; i++) await new Promise(r => setTimeout(r, 0));
+  /* RE-BASE integración 2.4.0 (W6b): satCardGrid vive en la
+     parte diferida de Descargas; se inyecta su fuente desde
+     lazy.json tras el arranque, como en el bloque G. */
+  const lazy1292b = JSON.parse(readFileSync(new URL('./lazy.json', import.meta.url), 'utf8'));
+  vm.runInContext(lazy1292b.partes.descargas.source, context, { filename: 'parte-descargas' });
   vm.runInContext(`satData = { profiles: [{ rfc: 'MFI6212158B4', accessMethod: 'efirma' }], jobs: [] };
     people = [{ id: 'MFI6212158B4', name: 'MANO FIL SA' }];
     scope = 'MFI6212158B4';

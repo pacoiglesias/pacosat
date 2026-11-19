@@ -41,7 +41,11 @@ const KEY = 'MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDJv/UPUgh/H1XwYFW
     ['satdoc', { kind: 'paso-interactivo', error: 'El portal pide...' }, 'ambar', 'cambió su página'],
     ['satdoc', { kind: 'navegador-no-disponible' }, 'ambar', 'Falta una pieza'],
     ['satdoc', { kind: 'documento-invalido' }, 'ambar', 'no era un PDF válido'],
-    ['decl', { kind: 'respuesta-inesperada' }, 'ambar', 'no esperaba'],
+    /* RE-BASE 2.9.0: el titular de respuesta-inesperada se reescribió
+       en palabras de Paco por la auditoría viva de botones (fuera el
+       texto interno «no esperaba»): «El portal del SAT enseñó una
+       pantalla distinta». El fragmento fijado es el nuevo titular. */
+    ['decl', { kind: 'respuesta-inesperada' }, 'ambar', 'pantalla distinta'],
     /* CIEC. */
     ['ciec', { kind: 'credenciales' }, 'ambar', 'no aceptó la contraseña CIEC'],
     ['ciec', { kind: 'captcha-sin-respuesta' }, 'gris', 'esperó el captcha'],

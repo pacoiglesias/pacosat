@@ -199,8 +199,17 @@ assert.ok(status.json.backupHealth, 'backupHealth viaja en /api/status');
 assert.equal(status.json.backupHealth.enabled, false);
 assert.equal(status.json.backupHealth.stale, false);
 const verify = await h.call('POST', '/api/backup/verify', {});
-assert.ok(verify.status >= 400 && /no está configurado/.test(verify.json?.error || verify.text),
-  'sin respaldo configurado, la comprobación lo dice — no finge un correcto');
+/* 2.9.5 · R2: la comprobación sigue diciendo la verdad — no
+   finge un correcto — pero ya no como un 400 pelado: devuelve
+   su veredicto completo con 200 («pendiente de Paco»: falta
+   su contraseña de respaldo), la forma del ensayo de
+   restauración, para que la tarjeta pinte el motivo en vez
+   de terminar en «la respuesta se perdió». */
+assert.equal(verify.status, 200, 'sin respaldo configurado, la comprobación contesta con su veredicto');
+assert.equal(verify.json?.ok, false, 'y el veredicto NO es un correcto fingido');
+assert.equal(verify.json?.pendienteDePaco, true, 'el veredicto nombra el gesto pendiente de Paco');
+assert.ok(/contraseña de respaldo/.test(verify.json?.detail || ''),
+  'y dice el motivo: falta la contraseña de respaldo');
 db.close();
 rmSync(dir, { recursive: true, force: true });
 

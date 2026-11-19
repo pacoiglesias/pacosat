@@ -204,21 +204,28 @@ const emparejar = async h => {
     const tarjetaOk = tarjeta(salud, 'coherencia');
     assert.equal(tarjetaOk.estado, 'bien', 'sin desacuerdo: la tarjeta está en bien');
     assert.match(tarjetaOk.porque, /Todo cuadra/, 'y lo dice: «Todo cuadra»');
-    /* El alta desaparece pero el aviso de novedades la sigue
-       contando: el desacuerdo del job 57, reproducido. */
+    /* B-1 (2.3.2): el borrado en duro de un CFDI YA NO EXISTE —
+       data/delete lo rechaza y el alta sigue en el expediente,
+       así que el desacuerdo del job 57 ya no se puede sembrar
+       borrando: el cruce sigue en «Todo cuadra» porque el alta
+       real sigue detrás de su aviso. (La detección de
+       «novedad-sin-alta» con semilla directa en la base la fija
+       ronda232servidor, bloque B-1/c.) */
     const borrado = await h.call('POST', '/api/data/delete', { store: 'invoices', ids: [UUID1] });
-    assert.equal(borrado.status, 200, 'el alta se borra para sembrar el desacuerdo');
+    assert.equal(borrado.status, 400, 'B-1: borrar un CFDI se rechaza');
+    assert.match(borrado.json?.error || borrado.text || '', /no se borra|archívalo/i,
+      'y el rechazo dice el camino bueno: archivar');
+    const siguen = await h.call('GET', '/api/storage?store=invoices');
+    assert.ok((siguen.json || []).some(row => row.id === UUID1),
+      'el CFDI sigue en el expediente tras el intento de borrado');
     cruce = await h.call('POST', '/api/salud/coherencia', {});
-    const hallado = cruce.json.desacuerdos.find(d => d.tipo === 'novedad-sin-alta');
-    assert.ok(hallado, 'el cruce detecta la novedad sin alta real detrás');
-    assert.match(hallado.detalle, /no constan como altas/, 'el detalle lo dice en llano');
+    assert.equal(cruce.json.desacuerdos.length, 0,
+      'sin borrado posible, no nace ningún desacuerdo: el alta sigue detrás de su aviso');
     salud = (await h.call('GET', '/api/salud')).json;
-    const tarjetaMala = tarjeta(salud, 'coherencia');
-    assert.equal(tarjetaMala.estado, 'mal', 'con desacuerdo, la tarjeta cae a mal');
-    assert.ok(tarjetaMala.datos.desacuerdos.some(d => d.tipo === 'novedad-sin-alta'),
-      'y la tarjeta lo enseña con su detalle');
+    const tarjetaSigue = tarjeta(salud, 'coherencia');
+    assert.equal(tarjetaSigue.estado, 'bien', 'la tarjeta sigue en bien');
   } finally { rmSync(dir, { recursive: true, force: true }); h.service.close(); }
-  console.log('OK 2.0·T4 · (c) Coherencia: novedad sin alta detectada y enseñada; sin ella, «Todo cuadra».');
+  console.log('OK 2.0·T4 · (c) Coherencia: sin desacuerdo, «Todo cuadra»; y B-1: el CFDI no se puede borrar para sembrarlo.');
 }
 
 /* ===== (d) Ensayo de restauración con conteos cruzados ===== */

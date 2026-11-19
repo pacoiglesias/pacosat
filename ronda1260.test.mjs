@@ -54,7 +54,7 @@ const moneyUi = read('money-ui.part');
 const buzonUi = read('buzon-ui.part');
 
 /* Sello y techos */
-assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+assert.ok(html.includes('"version":"2.9.14"'), 'el artefacto se sella con la versión vigente (2.0.1)');
 const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
 /* Techo 598.000 desde la 1.29.0 (ejecutor local, papelera,
    peldaños 1 y 2 y Totales navegable): la página crece a
@@ -71,10 +71,21 @@ const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
    1.31.0 (corrección del 13 nov + menú + 45 mejoras +
    reportes): crece a 659.787 B y el techo sube a 663.000,
    contabilidad en el anexo 1.31.0 de ronda1110. */
-assert.ok(htmlBytes <= 822500, 'la página pesa ' + htmlBytes + ' B (tope 822.500, re-basificado en la 2.3.0: el artefacto mide 820.999 B (+20.350 B sobre los 800.649 B de la 2.0.2: +15.278 B de las piezas funcionales de cliente de las 20 mejoras, +2.739 B de la ronda visual, +1.607 B de los gemelos de oscuro por sistema y +726 B de la nota de novedades 2.3.0); en la 2.0.2 medía 800.649 B — +1.739 B de las entradas propias del menú con sus estados —; contabilidad anterior: fase 2 de cliente de la 2.0.1: el artefacto medía 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 775.000 de la limpieza de esta misma ronda)');
+assert.ok(htmlBytes <= 853600, 'la página pesa ' + htmlBytes + ' B (tope 853.600, RE-BASE 2.9.13 de contabilidad: el artefacto mide 852.811 B (+25.893 B sobre los 826.918 B sellados de la 2.9.12: los bloques A–E de la ronda — el arreglo de Descargar y sus pasos/mapa/historial, el Buzón con Leer y su rediseño, Salud D, los encabezados de reportes y las 30 mejoras gráficas, con su piel en polish.part —; medido reconstruyendo con el propio ensamblador); el tope pasa a 853.600 B (852.811 + 789 de margen); antes, tope 827.200, RE-BASE 2.9.10 de contabilidad: el artefacto mide 826.449 B (+1.502 B sobre la 2.9.9, con la contabilidad tanda a tanda de ronda1110); el tope pasa a 827.200 B (margen 751); antes, tope 825.700, RE-BASE 2.9.9 de contabilidad: el artefacto mide 824.947 B (+1.169 B sobre la 2.9.8, con la contabilidad tanda a tanda de ronda1110); el tope pasa a 825.700 B (margen 753); antes, tope 824.500, RE-BASE 2.9.8 de contabilidad: el artefacto mide 823.778 B (+1.619 B sobre los 822.159 B sellados de la 2.9.7, medidos fichero a fichero sobre la base del paquete 2.9.7: +1.072 B netos de los usuarios con nombre propio en la carga inicial —puente de sesión en ui.part +176, línea de montaje en Ajustes +127, talón del panel, diálogo de entrada con usuario y nota de novedades 2.9.8 en final-ui.part +686 neto, manifiesto de la parte diferida en build.mjs +83; el panel entero viaja DIFERIDO en la parte «usuarios», fuera de la carga inicial—, +523 B de la Pieza V —el visor abre en el gesto— en pdf-cloud-ui.part y +24 B de la Pieza R —las reglas .chart sin el trazo heredado— en design.part; el tope pasa a 824.500 B (823.778 + 722 de margen); antes, tope 822.500, re-basificado en la 2.3.0: el artefacto mide 820.999 B (+20.350 B sobre los 800.649 B de la 2.0.2: +15.278 B de las piezas funcionales de cliente de las 20 mejoras, +2.739 B de la ronda visual, +1.607 B de los gemelos de oscuro por sistema y +726 B de la nota de novedades 2.3.0); en la 2.0.2 medía 800.649 B — +1.739 B de las entradas propias del menú con sus estados —; contabilidad anterior: fase 2 de cliente de la 2.0.1: el artefacto medía 798.249 B tras las piezas de cliente de las 30 mejoras (y la nº 31) en la parte principal —contabilidad en la re-base de ronda1110—; venía de 775.000 de la limpieza de esta misma ronda)');
 const cssBytes = ['style.part', 'design.part', 'polish.part']
   .reduce((sum, name) => sum + statSync(join(ROOT, name)).size, 0);
-assert.ok(cssBytes <= 73500, 'el CSS pesa ' + cssBytes + ' B (tope 73.500, re-basificado en la 2.3.0: el CSS mide 72.268 B (+5.352 B sobre los 66.916 B asentados: +3.392 B de la ronda visual y +1.960 B de los gemelos de oscuro por sistema con su comentario); en la 2.0.1 medía 66.916 B tras la parte de cliente completa de esta misma ronda; venía de 66.500 de la 2.0 tanda 7B)');
+  /* RE-BASE 2.8.0 (tope CSS): las fuentes style/design/polish
+     suman 86.217 B medidos hoy — +1.259 B sobre los 84.958 B
+     asentados en la integración 2.4.0. Ese crecimiento YA
+     estaba en el árbol sellado de la 2.4.0 (sus tres fuentes
+     suman 86.217 B en el propio paquete pacosat-240.zip,
+     contra el tope de 85.719 fijado antes de su último
+     retoque): la batería completa de la 2.8.0 lo cazó en su
+     primera pasada. La 2.8.0 no toca ninguna fuente CSS —
+     las tres quedan byte a byte como en el paquete 2.4.0 —
+     y el tope se re-basifica a 86.978 conservando el mismo
+     margen de 761 B que la suite venía usando. */
+assert.ok(cssBytes <= 95700, 'el CSS pesa ' + cssBytes + ' B (tope 95.700, RE-BASE 2.9.13 de contabilidad: el CSS mide 95.609 B en las fuentes (+6.948 B sobre los 88.661 B de la 2.9.12: el bloque «piel y gráficos» de la ronda en polish.part — pasos y mapa de Descargar, tarjetas del Buzón, semáforos de Salud, anillos de Hoy y Cierre, barras de Facturas y Reportes, conciliación dibujada, línea de vencimientos y guía de Ayuda —); el tope pasa a 95.700 B (95.609 + 91 de margen); antes, tope 88.803, RE-BASE 2.9.7: el CSS mide 88.042 B en las fuentes (+763 B sobre los 87.279 B asentados en la RE-BASE 2.8.0: +629 B acumulados en polish.part por la piel del foco del sistema de la 2.9.0, no re-basificados en las rondas 2.9.0–2.9.6, y +134 B de la regla .visor-previa297 de la pieza D2 de esta ronda en design.part); el tope conserva el mismo margen de 761 B de siempre (88.042 + 761); antes, RE-BASE 2.8.0: el CSS medía 87.279 B en las fuentes (+1.062 B de la piel de protagonista y móvil de los ítems 7 y 8 de diseño, medidos); el tope conserva el mismo margen de 761 B de siempre (87.279 + 761); antes, RE-BASE integración 2.4.0 (mal asentada: decía 84.958 B cuando las fuentes selladas sumaban 86.217 B): el CSS mide 84.958 B medidos hoy en las fuentes (+10.219 B sobre los 74.739 B de la 2.3.2: +5.293 B de W5a —estados, iconos y esqueletos— que lo llevaron a 80.211 B, y +4.747 B de W5b/WC —gráficos, tarjetas protagonistas y piezas visuales de la ronda—); el tope conserva el mismo margen de 761 B que la suite venía usando (75.500 − 74.739); el techo del HTML NO se toca: el artefacto mide 797.312 B y cumple el vigente de 822.500 B; re-basificado en la 2.3.2: el CSS mide 74.739 B (+2.471 B sobre los 72.268 B asentados en la 2.3.0, medidos contra el sellado 2.3.1: +1.887 B del bloque de cabecera sin desborde (M-10), espejos y tacto de B4 en polish.part, +339 B del endurecimiento H6-2 de la línea de Actividad en design.part y +245 B de la miga H6-3 en style.part); re-basificado en la 2.3.0: el CSS mide 72.268 B (+5.352 B sobre los 66.916 B asentados: +3.392 B de la ronda visual y +1.960 B de los gemelos de oscuro por sistema con su comentario); en la 2.0.1 medía 66.916 B tras la parte de cliente completa de esta misma ronda; venía de 66.500 de la 2.0 tanda 7B)');
 
 /* Tokens cerrados */
 for (const token of ['--r-s:8px', '--r-m:12px', '--r-l:16px', '--r-pill:100px',
@@ -109,15 +120,27 @@ assert.ok(!polish.includes('var(--line,#bcccdc)'), 'fuera el respaldo #bcccdc de
 /* Iconografía sin gemelos */
 for (const sym of ['i-inbox', 'i-mail', 'i-code', 'i-pdf'])
   assert.ok(layout.includes('<symbol id="' + sym + '"'), 'símbolo presente: ' + sym);
-assert.ok(layout.includes('data-view="buzon"><svg><use href="#i-inbox"'), 'Recibidos navega con su bandeja');
+/* RE-BASE 2.8.0 (diseño 19): «Recibidos» se llama «Novedades»
+   y su botón del menú lleva el title de W4d; sigue navegando
+   con su bandeja #i-inbox. (El literal viejo ya no casaba en
+   la 2.4.0 sellada: casaba por el botón de la barra inferior,
+   cuyo cuarto hueco es hoy el Buzón del SAT — diseño 28.) */
+assert.ok(layout.includes('data-view="buzon" title="Novedades — Lo nuevo que llegó a tu expediente') &&
+  layout.indexOf('#i-inbox') > layout.indexOf('data-view="buzon"'), 'Novedades navega con su bandeja');
 /* Re-basificado en la 1.31.0 (punto B): el Buzón Tributario ya no es
    renglón del menú — vive dentro del Centro SAT; el sobre #i-mail
    sigue existiendo como símbolo para su tarjeta. */
 /* RE-BASIFICADO en la 2.0.2 (orden directa de Paco): el Buzón
    Tributario RECUPERA su renglón propio en el menú, con su icono
    #i-buzontrib y su estado en texto — lo necesario no se esconde. */
-assert.ok(layout.includes('data-view="tributario"><svg><use href="#i-buzontrib"'), 'Buzón Tributario navega desde el menú con su buzón (2.0.2)');
-assert.ok(layout.includes('data-view="docs"><svg><use href="#i-folder"'), 'Documentos conserva la carpeta');
+/* RE-BASE integración 2.4.0 (W4d): los botones del menú llevan
+   title con su descripción; los literales se re-pinan al
+   prefijo EXACTO de hoy — el Buzón sigue navegando con su
+   buzón y Documentos con su carpeta, misma fuerza. */
+/* RE-BASE 2.8.0 (diseño 19): el destino se llama «Buzón del
+   SAT» también en su title; el resto del title no cambia. */
+assert.ok(layout.includes('data-view="tributario" title="Buzón del SAT — Las notificaciones del SAT para este RFC, sin abrir ninguna: PacoSAT las lista por ti"><svg><use href="#i-buzontrib"'), 'Buzón del SAT navega desde el menú con su buzón (2.0.2)');
+assert.ok(layout.includes('data-view="docs" title="Documentos — Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados"><svg><use href="#i-folder"'), 'Documentos conserva la carpeta');
 assert.ok(layout.includes('data-view="avisos"><svg><use href="#i-bell"'), 'Avisos conserva la campana');
 assert.ok(layout.includes('id="inspect"><svg><use href="#i-code"'), '«Abrir XML» es código');
 assert.ok(layout.includes('id="pdf-import"><svg><use href="#i-pdf"'), '«Factura PDF» es el PDF');
@@ -135,7 +158,11 @@ assert.ok(polish.includes('@media (max-width:860px){.toasts{left:12px;right:12px
 assert.ok(layout.includes('id="entry"'), 'la cáscara trae la pantalla de entrada');
 assert.ok(layout.includes('id="entry-form"') && layout.includes('id="entry-pass"'),
   'la entrada trae su formulario y su contraseña');
-assert.ok(layout.includes('Entrar con mi acceso de siempre'), 'la entrada trae su escape de siempre');
+/* RE-BASE 2.8.0 (diseño 18): el escape de la puerta es un
+   enlace discreto que se ofrece como salida («¿Problemas
+   para entrar? Usa tu acceso de siempre»); el botón, su id y
+   su función son los de siempre. */
+assert.ok(layout.includes('¿Problemas para entrar? Usa tu acceso de siempre'), 'la entrada trae su escape de siempre');
 assert.ok(ui.includes('function maybeShowEntry(') && ui.includes('function showEntry('),
   'la lógica de la entrada existe');
 assert.ok((ui.match(/satApi\('admin\/login'/g) || []).length >= 2,

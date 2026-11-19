@@ -131,11 +131,21 @@ assert.ok(CHROME, 'ronda201 necesita un Chromium local para las réplicas con na
 let aperturas = 0;
 let adjuntosCert = 0;
 const rutasPedidas = [];
-const paginaAcceso = `<!DOCTYPE html><html><body>
+/* Ajuste de fixture 2.9.0 (Bloque A): paginaAcceso,
+   formularioLogin, cabeceraBuzon y paginaBuzon se parametrizan
+   SOLO para que la variante VACÍA de (A) tenga su propio
+   aterrizaje, cuyo menú «Mis notificaciones» lleva a la cáscara
+   vacía — en el portal real el menú y la dirección directa son
+   EL MISMO destino, y desde la 2.9.0 el pasillo va primero por
+   el camino humano (clic del menú): con el aterrizaje único de
+   antes, la corrida «vacía» leía la bandeja con filas a la que
+   el menú compartido lleva, y la variante dejaba de probar el
+   vacío. Ninguna aserción cambia. */
+const paginaAcceso = (fiel = '/acceso-fiel') => `<!DOCTYPE html><html><body>
   <h1>Acceso por contraseña</h1>
-  <a id="buttonFiel" href="/acceso-fiel">Acceso con e.firma</a>
+  <a id="buttonFiel" href="${fiel}">Acceso con e.firma</a>
 </body></html>`;
-const formularioLogin = `<!DOCTYPE html><html><body>
+const formularioLogin = (destino = '/buzon') => `<!DOCTYPE html><html><body>
   <h1>SAT Autenticación</h1>
   <form id="certform">
     <input type="text" id="txtCertificate">
@@ -166,7 +176,7 @@ const formularioLogin = `<!DOCTYPE html><html><body>
         d.style.display = 'block';
         return;
       }
-      location.href = '/buzon';
+      location.href = '${destino}';
     });
   </script>
 </body></html>`;
@@ -174,13 +184,13 @@ const formularioLogin = `<!DOCTYPE html><html><body>
    TRIBUTARIO», cuerpo principal EN BLANCO y la navegación en
    la CABECERA: el botón «Mis expedientes» despliega «Mis
    documentos», «Mis notificaciones» y «Mis comunicados». */
-const cabeceraBuzon = `
+const cabeceraBuzon = (hrefNotificaciones = '/iniciar-expediente/mis-notificaciones/') => `
   <header>
     <span>BUZÓN TRIBUTARIO</span>
     <button id="btn-expedientes" type="button">Mis expedientes</button>
     <nav id="menu-expedientes" style="display:none">
       <a href="#" data-nav="documentos">Mis documentos</a>
-      <a href="/iniciar-expediente/mis-notificaciones/">Mis notificaciones</a>
+      <a href="${hrefNotificaciones}">Mis notificaciones</a>
       <a href="/iniciar-expediente/mis-comunicados/">Mis comunicados</a>
     </nav>
     <a href="#" data-nav="servicios">Servicios Disponibles</a>
@@ -192,11 +202,12 @@ const cabeceraBuzon = `
       m.style.display = m.style.display === 'none' ? 'block' : 'none';
     });
   </script>`;
-const paginaBuzon = `<!DOCTYPE html><html><body>${cabeceraBuzon}<main></main></body></html>`;
+const paginaBuzon = (hrefNotificaciones) =>
+  `<!DOCTYPE html><html><body>${cabeceraBuzon(hrefNotificaciones)}<main></main></body></html>`;
 /* La página de Mis notificaciones: cáscara con cabecera y el
    IFRAME central donde vive la bandeja (tarda en cargar: el
    servidor retiene la respuesta del marco). */
-const cáscaraNotificaciones = (marco) => `<!DOCTYPE html><html><body>${cabeceraBuzon}
+const cáscaraNotificaciones = (marco) => `<!DOCTYPE html><html><body>${cabeceraBuzon()}
   <main><iframe id="marco-bandeja" src="${marco}"></iframe></main>
 </body></html>`;
 const marcoNotificaciones = `<!DOCTYPE html><html><body>
@@ -215,7 +226,7 @@ const marcoNotificacionesVacia = `<!DOCTYPE html><html><body>
   <p>Total de notificaciones pendientes: 0</p>
   <p>No se encontraron resultados</p>
 </body></html>`;
-const cáscaraComunicados = `<!DOCTYPE html><html><body>${cabeceraBuzon}
+const cáscaraComunicados = `<!DOCTYPE html><html><body>${cabeceraBuzon()}
   <main><iframe id="marco-comunicados" src="/marco-comunicados"></iframe></main>
 </body></html>`;
 const marcoComunicados = `<!DOCTYPE html><html><body>
@@ -434,9 +445,12 @@ const server = createServer((req, res) => {
     return;
   }
   const rutas = {
-    '/acceso': paginaAcceso,
-    '/acceso-fiel': formularioLogin,
-    '/buzon': paginaBuzon,
+    '/acceso': paginaAcceso(),
+    '/acceso-fiel': formularioLogin(),
+    '/buzon': paginaBuzon(),
+    '/acceso-vacia': paginaAcceso('/acceso-fiel-vacia'),
+    '/acceso-fiel-vacia': formularioLogin('/buzon-vacia'),
+    '/buzon-vacia': paginaBuzon('/iniciar-expediente/mis-notificaciones-vacia/'),
     '/iniciar-expediente/mis-notificaciones/': cáscaraNotificaciones('/marco-notificaciones'),
     '/iniciar-expediente/mis-notificaciones-vacia/': cáscaraNotificaciones('/marco-notificaciones-vacia'),
     '/iniciar-expediente/mis-comunicados/': cáscaraComunicados,
@@ -470,9 +484,9 @@ const resolverSimple = async (profile) => ({ rfc: profile.rfc, cer: CER,
 /* ===== (A) Buzón contra el mapa real: iframe tardío, tabla
    real, comunicados por conteo y cero aperturas ===== */
 {
-  const tribCon = (entryUrl) => createSatTribFetch({ resolveCredentials: resolverReal,
+  const tribCon = (entryUrl, loginUrl = BASE + '/acceso') => createSatTribFetch({ resolveCredentials: resolverReal,
     launchDriver: createPlaywrightDriverFactory({ executablePath: CHROME, headless: true }),
-    entryUrl, loginUrl: BASE + '/acceso',
+    entryUrl, loginUrl,
     comunicadosUrl: BASE + '/iniciar-expediente/mis-comunicados/', esperaBandejaMs: 12_000 });
   const pasos = [];
   const lista = await tribCon(BASE + '/iniciar-expediente/mis-notificaciones/')(
@@ -493,9 +507,13 @@ const resolverSimple = async (profile) => ({ rfc: profile.rfc, cer: CER,
   assert.equal(aperturas, 0, 'cero aperturas: ni notificaciones ni mensajes se abrieron');
   console.log('OK 2.0.1 · A — Buzón (mapa real): iframe esperado, tabla real con folio, comunicados por conteo, cero aperturas.');
 
-  /* La variante VACÍA probada: éxito con 0 filas. */
+  /* La variante VACÍA probada: éxito con 0 filas. (2.9.0: la
+     corrida entra por su propio acceso y aterrizaje, cuyo menú
+     lleva a la cáscara vacía — como en el portal real, donde el
+     menú y la dirección directa son el mismo destino; ver la
+     nota de fixture junto a paginaAcceso.) */
   const pasosVacia = [];
-  const vacia = await tribCon(BASE + '/iniciar-expediente/mis-notificaciones-vacia/')(
+  const vacia = await tribCon(BASE + '/iniciar-expediente/mis-notificaciones-vacia/', BASE + '/acceso-vacia')(
     { rfc: RFC }, {}, { onStep: (paso, detalle) => pasosVacia.push({ paso, detalle }) });
   assert.deepEqual(vacia.notifications, [], '«No se encontraron resultados» con Total 0 = éxito con 0 filas');
   assert.equal(vacia.comunicadosNoLeidos, 2, 'y el conteo de comunicados también se lee en la variante vacía');
@@ -821,10 +839,10 @@ server.close();
 /* ===== Estáticas: versión 2.0.1 y cableado de la ronda ===== */
 {
   const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '2.3.0', 'la versión de la ronda es 2.0.1');
+  assert.equal(pkg.version, '2.9.14', 'la versión de la ronda es 2.0.1');
   assert.ok(pkg.scripts.test.includes('ronda201.test.mjs'), 'la suite de la ronda está en la batería');
   const ejecutor = readFileSync(new URL('./ejecutor-local.mjs', import.meta.url), 'utf8');
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.3.0'"), 'el ejecutor declara 2.0.1');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.9.14'"), 'el ejecutor declara 2.0.1');
   assert.ok(ejecutor.includes('function diagDe(error)'),
     'el ejecutor propaga error.diag con diagDe (verificado, sin tocar su lógica)');
   const browser = readFileSync(new URL('./sat-doc-browser.mjs', import.meta.url), 'utf8');

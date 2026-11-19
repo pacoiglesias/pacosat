@@ -147,15 +147,40 @@ function answerQuestion(raw) {
   const text = raw.toLocaleLowerCase('es-MX');
   const period = questionPeriod(text);
   const sumWhere = predicate => invoices.filter(predicate).reduce((acc, row) => acc + Number(totalCents(row)), 0) / 100;
-  if (/cu[aá]nto debo/.test(text)) {
-    const paidBy = paidByMap();
-    let total = 0n, mayor = null;
-    for (const row of invoices) {
-      if (row.kind !== 'I' || !people.some(person => person.id === row.to.rfc)) continue;
-      if (invoiceStateOf(row) === 'Cancelado') continue; /* criterio único (1.20.0): la cancelada no se debe */
-      const balance = balanceOf(row, paidBy).balance;
-      if (balance > 0n) { total += balance; if (!mayor || balance > mayor.balance) mayor = { row, balance }; }
+  /* Por pagar / por cobrar: LA CIFRA CANÓNICA (2.9.0 · Bloque
+     C) — la misma función que Dinero y Cierre, sobre la foto
+     del servidor cuando está cargada. Antes Preguntas sumaba
+     su propio cálculo local (sin marcas a mano, sin excluir
+     archivadas) y daba una tercera cifra distinta. El mayor
+     se busca sobre la misma foto para que la respuesta y su
+     comprobante cuadren con el total. */
+  const mayorCanonico290 = sentido => {
+    let mayor = null;
+    if (typeof dineroServerInfo !== 'undefined' && dineroServerInfo.size) {
+      for (const e of dineroServerInfo.values()) {
+        if (sentido === 'cobrar' ? !e.receivable : !e.payable) continue;
+        const b = moneyCents(e.balance || '0');
+        if (b > 0n && (!mayor || b > mayor.balance)) {
+          const row = invoices.find(r => r.id === e.id);
+          if (row) mayor = { row, balance: b };
+        }
+      }
+      return mayor;
     }
+    const paidBy = paidByMap();
+    for (const row of invoices) {
+      if (row.kind !== 'I' || row.archived) continue;
+      if (sentido === 'cobrar' ? !people.some(person => person.id === row.from.rfc)
+        : !people.some(person => person.id === row.to.rfc)) continue;
+      if (invoiceStateOf(row) === 'Cancelado') continue;
+      const balance = balanceOf(row, paidBy).balance;
+      if (balance > 0n && (!mayor || balance > mayor.balance)) mayor = { row, balance };
+    }
+    return mayor;
+  };
+  if (/cu[aá]nto debo/.test(text)) {
+    const total = porPagarCanonico290().cents;
+    const mayor = mayorCanonico290('pagar');
     /* La respuesta lleva el documento en la mano (1.25.0,
        mejora nº 7): la cifra y el comprobante mayor, en el
        mismo toque. */
@@ -164,14 +189,8 @@ function answerQuestion(raw) {
       invoice: mayor?.row };
   }
   if (/cu[aá]nto me deben/.test(text)) {
-    const paidBy = paidByMap();
-    let total = 0n, mayor = null;
-    for (const row of invoices) {
-      if (row.kind !== 'I' || !people.some(person => person.id === row.from.rfc)) continue;
-      if (invoiceStateOf(row) === 'Cancelado') continue; /* criterio único (1.20.0): la cancelada no se cobra */
-      const balance = balanceOf(row, paidBy).balance;
-      if (balance > 0n) { total += balance; if (!mayor || balance > mayor.balance) mayor = { row, balance }; }
-    }
+    const total = porCobrarCanonico290().cents;
+    const mayor = mayorCanonico290('cobrar');
     return { text: 'Por COBRAR tienes abiertos $' + centsLabel(total) +
         (mayor ? '. El mayor es de ' + (mayor.row.to.name || mayor.row.to.rfc) + ' por $' + centsLabel(mayor.balance) + ': ábrelo aquí mismo.' : '.'),
       invoice: mayor?.row };
@@ -191,6 +210,26 @@ function answerQuestion(raw) {
     const events = fiscalLocalEvents().filter(event => event.daysLeft <= 7);
     if (!events.length) return 'En los próximos 7 días no vence nada del calendario fiscal que conozco. El calendario completo está en Cumplimiento.';
     return 'Vence pronto: ' + events.map(event => event.title + ' (' + event.date + ', ' + (event.rfc || 'general') + ')').join(' · ') + '.';
+  }
+  /* Ventas = solo EMITIDOS (2.9.3 · F10): «¿cuánto vendí?»,
+     «¿cuánto facturé?», «¿cuánto ingresé?» preguntan por lo
+     que TÚ emitiste. La rama genérica de abajo sumaba también
+     los recibidos y daba una cifra mezclada (en vivo: «vendí
+     en octubre» $551,423.63 = 2 emitidos de $343,539.11 + 21
+     recibidos de $207,884.52). «Me facturaron / me facturó»
+     NO es una venta: queda fuera y lo cuenta la rama genérica
+     como conteo del expediente, no como venta. */
+  if (/(vend|factur|ingres)/.test(text) && !/me factur/.test(text)) {
+    const party = findPartyInQuestion(text);
+    const ventas = invoices.filter(row => row.kind === 'I' && (!period || row.date.startsWith(period)) &&
+      people.some(p => p.id === row.from.rfc) && (!party || row.to.rfc === party));
+    const total = ventas.reduce((acc, row) => acc + Number(totalCents(row)), 0) / 100;
+    const mayor = ventas.slice().sort((a, b) => (totalCents(b) > totalCents(a) ? 1 : -1))[0];
+    return { text: 'Vendiste ' + ventas.length + ' CFDI' + (period ? ' de ' + period : '') + (party ? ' a ' + party : '') +
+        ' por $' + total.toLocaleString('es-MX', { minimumFractionDigits: 2 }) +
+        ' (solo emitidos: lo que tú facturaste; los recibidos no son ventas)' +
+        (mayor ? '. El mayor, $' + centsLabel(totalCents(mayor)) + ', se abre aquí mismo.' : '.'),
+      invoice: mayor };
   }
   if (/(factur|gast|compr|vend)/.test(text)) {
     const party = findPartyInQuestion(text);
@@ -217,19 +256,53 @@ function findPartyInQuestion(text) {
 }
 function preguntasScreen() {
   const wrap = n('div');
+  /* Ayuda unificada (2.8.0 · diseño 26): si se llegó por el
+     «?», la ayuda de la pantalla de origen va PRIMERO y el
+     preguntar debajo; los atajos cierran la pantalla como
+     una sección más. Una sola puerta de ayuda. */
+  if (typeof ayudaContexto280 !== 'undefined' && ayudaContexto280) {
+    const ctx280 = ayudaContexto280;
+    const ayudaPanel = panel('Ayuda · ' + ctx280.nombre,
+      'La ayuda de la pantalla donde estabas, aquí mismo: debajo puedes preguntar con tus datos.');
+    ayudaPanel.dataset.ayuda280 = '1';
+    const bloque280 = (titulo, texto) => {
+      const s = n('section');
+      s.append(n('h3', titulo), n('p', texto));
+      return s;
+    };
+    if (ctx280.t) ayudaPanel.append(bloque280('Qué es', ctx280.t.q), bloque280('Para qué sirve', ctx280.t.p), bloque280('Qué hacer', ctx280.t.h));
+    else ayudaPanel.append(bloque280('Qué es', (typeof screens !== 'undefined' && screens[ctx280.clave]?.[1]) || 'Esta pantalla.'),
+      n('p', 'La ayuda detallada de esta pantalla no llegó: puedes preguntar con tus datos aquí debajo.'));
+    if (typeof satToken !== 'undefined' && satToken)
+      satApi('ayuda-ejemplo200h' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(r => {
+        if (r?.ejemplo && ayudaPanel.isConnected) ayudaPanel.append(bloque280('Ejemplo de tu expediente', r.ejemplo.texto));
+      }).catch(() => {});
+    wrap.append(ayudaPanel);
+  }
   const panelEl = panel('Pregunta en lenguaje normal', 'Respuestas calculadas AQUÍ, con tus datos locales: nada se envía a ningún servicio externo. Sirve también sin conexión sobre los datos ya sincronizados.');
   const form = n('div', undefined, 'sat-form');
   const question = input('text', { placeholder: '¿Cuánto IVA tengo en octubre?' });
   const ask = n('button', 'Preguntar', 'soft');
-  const answer = n('p', '', 'empty');
+  /* Estado vacío de la respuesta, diseñado (2.3.2 · m-26):
+     antes de preguntar, la zona de respuesta dice qué es y qué
+     hacer — no un hueco en blanco. Al responder, la sustituye
+     el texto de la respuesta. */
+  const answer = n('div', undefined, 'empty preg-respuesta232');
+  answer.append(n('h3', 'Tu respuesta aparecerá aquí'),
+    n('p', 'Escribe tu pregunta arriba o toca un ejemplo: la respuesta se calcula en este momento con los comprobantes que ya tienes guardados.'));
   const answerActions = n('div', undefined, 'sat-actions');
-  const run = () => {
+  const run = async () => {
+    /* La foto de saldos del servidor se pide ANTES de responder
+       (2.9.0 · Bloque C): sin ella, «¿cuánto me deben?» caía al
+       cálculo local y daba otra cifra que Dinero. */
+    if (typeof cargarSaldosServidor290 === 'function') await cargarSaldosServidor290();
     try {
       /* Cifra + comprobante en el mismo toque (1.25.0, mejora
          nº 7): algunas respuestas traen la factura a la que se
          refieren y la pantalla ofrece abrirla sin salir. */
       const resultado = answerQuestion(question.value);
-      answer.textContent = typeof resultado === 'string' ? resultado : resultado.text;
+      answer.classList.remove('empty');
+      answer.replaceChildren(n('p', typeof resultado === 'string' ? resultado : resultado.text));
       answerActions.replaceChildren();
       if (typeof resultado !== 'string' && resultado.invoice) {
         const abrir = n('button', 'Abrir el comprobante', 'primary small');
@@ -237,13 +310,34 @@ function preguntasScreen() {
         answerActions.append(abrir);
       }
       announce('Respuesta lista.');
-    } catch (error) { answer.textContent = error.message; answerActions.replaceChildren(); }
+    } catch (error) {
+      answer.classList.remove('empty');
+      answer.replaceChildren(n('p', error.message, 'error-text'));
+      answerActions.replaceChildren();
+    }
   };
   ask.onclick = run;
   question.onkeydown = event => { if (event.key === 'Enter') run(); };
   form.append(fieldWrap('Tu pregunta', question), ask);
-  panelEl.append(form, answer, answerActions);
+  /* Ejemplos tocables (2.3.2 · m-26): rellenan el campo con la
+     pregunta tal cual; «Preguntar» (o Enter) la responde. Son
+     las mismas preguntas que el propio respondedor anuncia. */
+  const ejemplos = n('div', undefined, 'preg-ejemplos232');
+  ejemplos.append(n('span', 'Ejemplos:'));
+  for (const texto of ['¿Cuánto me deben?', '¿Cuánto debo?', '¿Cuánto IVA tengo en octubre?', '¿Qué vence esta semana?']) {
+    const ejemplo = n('button', texto, 'soft small');
+    ejemplo.type = 'button';
+    ejemplo.onclick = () => { question.value = texto; question.focus(); };
+    ejemplos.append(ejemplo);
+  }
+  panelEl.append(form, ejemplos, answer, answerActions);
   wrap.append(panelEl);
+  if (typeof atajosLista240 === 'function') {
+    const atajosPanel = panel('Atajos de teclado', 'Moverte sin ratón, desde cualquier pantalla.');
+    atajosPanel.dataset.atajos280 = '1';
+    atajosPanel.append(atajosLista240());
+    wrap.append(atajosPanel);
+  }
   return [wrap];
 }
 /* ===== «Probar todo» (autodiagnóstico) ===== */
@@ -268,9 +362,29 @@ function selfTestPanel() {
   panelEl.append(btn, out);
   return panelEl;
 }
+/* ===== CSV de la bitácora (2.4.0 · W4d) =====
+   UNA sola composición para los dos botones «Exportar bitácora
+   (CSV)» del sistema: este panel (Ajustes › Sistema) y la tarjeta
+   de Salud de WC4a. La composición es EXACTAMENTE la de la
+   tarjeta de Salud (salud-ui.part): cabecera fecha,nombre,evento,
+   cada valor entre comillas con la comilla doblada, filas unidas
+   con \r\n — el mismo bitacora-pacosat.csv de siempre. El helper
+   vive en el artefacto principal, alcanzable también desde la
+   parte diferida de Salud en tiempo de ejecución; la tarjeta de
+   Salud conserva su copia en línea idéntica porque salud-ui.part
+   queda fuera del territorio de esta tanda (declarado en la
+   nota). Lo que este helper NO es: el csvText de workflows.part,
+   que es el CSV de FACTURAS (espera filas CFDI con from/to) —
+   llamarlo con filas de bitácora lanzaba un TypeError en vivo,
+   el hallazgo de WC4a que esta pieza corrige. */
+function bitacoraCsv240(filas) {
+  const esc = v => '"' + String(v ?? '').replaceAll('"', '""') + '"';
+  return [['fecha', 'nombre', 'evento'], ...(filas || []).map(row => [row.date, row.name, row.event || ''])]
+    .map(row => row.map(esc).join(',')).join('\r\n');
+}
 /* ===== Bitácora reforzada: filtros y resumen de actividad ===== */
 function activityPanel() {
-  const panelEl = panel('Bitácora y resumen de actividad', 'Qué hizo PacoSAT solo y qué se hizo desde la app: filtros por tipo y el resumen por día y por semana, exportable. Cada entrada de la actividad reciente (en Resumen) abre su objeto.');
+  const panelEl = panel('Bitácora y resumen de actividad', 'Qué hizo PacoSAT solo y qué se hizo desde la app: filtros por tipo y el resumen por día y por semana. La exportación vive en Registro. Cada entrada de la actividad reciente (en Resumen) abre su objeto.');
   const controls = n('div', undefined, 'sat-form');
   const kindSel = n('select');
   for (const [value, label] of [['', 'Todos los tipos'], ['sat', 'SAT'], ['import', 'Importaciones'], ['event', 'Eventos'], ['alert', 'Alertas']]) {
@@ -299,13 +413,10 @@ function activityPanel() {
   };
   kindSel.onchange = draw;
   textFilter.oninput = draw;
-  const exportBtn = n('button', 'Exportar bitácora (CSV)', 'soft');
-  exportBtn.onclick = async () => {
-    const rows = [['fecha', 'nombre', 'evento'], ...activity.map(row => [row.date, row.name, row.event || ''])];
-    await download('bitacora-pacosat.csv', new TextEncoder().encode(csvText(rows)), 'text/csv');
-    announce('Bitácora exportada.');
-  };
-  controls.append(fieldWrap('Tipo', kindSel), fieldWrap('Texto', textFilter), exportBtn);
+  /* (2.8.0 · diseño 10) Sin botón de exportar: la exportación
+     de la bitácora vive solo en Registro. Este panel conserva
+     sus filtros y su resumen, que es su trabajo técnico. */
+  controls.append(fieldWrap('Tipo', kindSel), fieldWrap('Texto', textFilter));
   panelEl.append(controls, out);
   draw();
   return panelEl;
@@ -332,7 +443,7 @@ function noraVistaPanel() {
       for (const item of data.items || []) {
         const row = n('div', undefined, 'cp-row');
         row.append(statusPill(item.level === 'ok' ? 'ok' : item.level === 'bad' ? 'bad' : 'warn',
-            item.level === 'ok' ? '✓ Hecho' : 'Falta'),
+            item.level === 'ok' ? 'Hecho' : 'Falta'),
           n('span', item.label), n('span', item.detail || '', 'muted'));
         body.append(row);
       }
@@ -427,6 +538,26 @@ function guestPanel() {
   else body.append(n('p', 'Solo en modo servidor.', 'empty'));
   return panelEl;
 }
+/* Usuarios con nombre propio (2.9.8): talón del panel de
+   Ajustes. El panel de verdad viaja DIFERIDO en la parte
+   'usuarios' (usuarios-ui.part) — el artefacto principal está
+   a un palmo de su techo y esta pantalla se visita rara vez —:
+   el talón enseña su «cargando» honesto, pide la parte y, al
+   llegar, le entrega el panel y su cuerpo a usersPanelReal298.
+   Si la parte no llega, el error se dice en el propio panel,
+   nunca un hueco muerto. Solo lo monta Ajustes para el
+   principal (ni invitados ni administradores con nombre). */
+function usersPanel298() {
+  const panelEl = panel('Usuarios con nombre propio', 'Cada persona entra con su usuario y su contraseña, y ve solo los RFC que tú marques. Quién entra y cuándo queda en la bitácora de accesos.');
+  const body = n('div');
+  body.append(n('p', 'Cargando los usuarios…', 'muted'));
+  panelEl.append(body);
+  const fallo = () => body.replaceChildren(n('p', 'No se pudo cargar: su parte no llegó del servidor. Vuelve a abrir Ajustes para intentarlo.', 'error-text'));
+  if (typeof ensureLazyPart === 'function')
+    ensureLazyPart('usuarios').then(ok => ok && typeof usersPanelReal298 === 'function' ? usersPanelReal298(panelEl, body) : fallo());
+  else fallo();
+  return panelEl;
+}
 /* Arranque de la 1.7.0: service worker, aviso sin conexión, cola y
    login del invitado. */
 if ('serviceWorker' in navigator && typeof satToken !== 'undefined' && satToken) {
@@ -444,73 +575,137 @@ window.addEventListener('online', () => { updateConnectivityBanner(); flushOffli
 window.addEventListener('offline', updateConnectivityBanner);
 document.addEventListener('DOMContentLoaded', updateConnectivityBanner);
 
-/* Login del invitado: sin token de sesión en el almacenamiento, la
-   pantalla pide la credencial separada y recarga ya identificado. */
+/* Entrada a PacoSAT (2.9.8): sin token de sesión en el
+   almacenamiento, la pantalla pide la credencial y recarga ya
+   identificado. Con usuario propio relleno entra por
+   /api/users/login y guarda su { nombre, rol } en
+   'pacosat-user-session' (el puente de ui.part lo lee para que
+   un administrador con nombre no sea guestMode); con el
+   usuario vacío entra con la contraseña de invitado de
+   siempre, por /api/guest/login, y borra cualquier sesión con
+   nombre que quedara de antes. El token viaja en la misma
+   llave de siempre, 'pacosat-guest-token'. */
 function showGuestLogin() {
   const form = n('form', undefined, 'dialog-form');
-  form.append(n('h3', 'Acceso de invitado · solo lectura'),
-    n('p', 'Escribe la contraseña de invitado. Podrás consultar, pero no cambiar nada.', 'muted'));
+  form.append(n('h3', 'Entrar a PacoSAT'),
+    n('p', 'Si tienes usuario propio, escríbelo con tu contraseña. Si entras con la contraseña de invitado de siempre, deja el usuario vacío: entrarás en solo lectura, como hasta ahora.', 'muted'));
+  const usuario = input('text', { autocomplete: 'username' });
   const password = input('password', { autocomplete: 'current-password' });
-  form.append(fieldWrap('Contraseña de invitado', password));
-  const enter = n('button', 'Entrar como invitado', 'primary');
-  enter.type = 'submit';
-  form.append(enter);
+  form.append(fieldWrap('Tu usuario', usuario), fieldWrap('Contraseña', password));
+  form.append(Object.assign(n('button', 'Entrar', 'primary'), { type: 'submit' }));
   form.onsubmit = async event => {
     event.preventDefault();
     try {
-      const response = await fetch('/api/guest/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: password.value }) });
+      const u = usuario.value.trim();
+      const response = await fetch('/api/' + (u ? 'users' : 'guest') + '/login', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...(u ? { usuario: u } : {}), password: password.value }) });
       const data = await response.json().catch(() => ({}));
       check(response.ok, data.error || 'No se pudo entrar.');
       sessionStorage.setItem('pacosat-guest-token', data.token);
+      if (u) sessionStorage.setItem('pacosat-user-session', JSON.stringify({ nombre: data.nombre, rol: data.rol }));
+      else sessionStorage.removeItem('pacosat-user-session');
       location.reload();
     } catch (error) { toast(error.message, 'error'); }
   };
   showDialog(form);
 }
 if (typeof guestMode !== 'undefined' && guestMode && !sessionStorage.getItem('pacosat-guest-token')) showGuestLogin();
-/* ===== Respaldo partido por RFC y año (mejora nº 8) =====
-   Un .faro por cada combinación RFC/año presente en los CFDI, con el
-   mismo formato del respaldo completo: cada parte se restaura sola
-   con el restaurador de siempre. */
+/* ===== Respaldo partido (mejora nº 8, reconstruido en la 2.9.10) =====
+   La versión anterior generaba UN .faro por cada combinación
+   RFC·año contando cada factura DOS veces (bajo el RFC del emisor
+   y bajo el del receptor): con el expediente real de Paco salieron
+   338 archivos en su iPhone (18 nov 2026). Estaba mal diseñada, no
+   era un texto. La reconstrucción es el espejo del backupSets del
+   servidor, con las reglas de la casa:
+   · Reparto por dueño (ownerOf): el RFC de perfil presente como
+     emisor o receptor manda; si ninguno es de perfil, el del
+     emisor. Cada factura queda en UN SOLO grupo RFC·año — se acabó
+     el doble conteo. Los documentos viajan con el grupo de su RFC
+     y del año de su fecha, cada uno en una sola parte también.
+   · Empaquetado voraz bajo el techo del formato (100 MB): los
+     grupos vecinos comparten parte mientras quepan; un grupo que
+     solo ya supera el techo viaja solo (su XML manda, no se puede
+     partir un comprobante).
+   · Cada parte es un respaldo v2 completo de su conjunto (las
+     personas de sus grupos, sus facturas, sus documentos, sus
+     archivos; la actividad entera viaja en la primera parte) y se
+     restaura por separado con el restaurador de siempre.
+   Resultado: un expediente normal = UN archivo; uno gigante =
+   total ÷ 100 MB partes, no cientos. */
+function splitBackupParts(full, ceiling = 100 * MB) {
+  const size = value => new TextEncoder().encode(JSON.stringify(value)).length;
+  const profileRfcs = new Set((full.people || []).map(person => person.id));
+  const ownerOf = invoice => profileRfcs.has(invoice?.from?.rfc) ? invoice.from.rfc
+    : profileRfcs.has(invoice?.to?.rfc) ? invoice.to.rfc : (invoice?.from?.rfc || invoice?.to?.rfc || 'SIN-RFC');
+  const groups = new Map();
+  const groupOf = key => { if (!groups.has(key)) groups.set(key, { invoices: [], documents: [] }); return groups.get(key); };
+  for (const invoice of full.invoices || [])
+    groupOf(ownerOf(invoice) + '|' + String(invoice?.date || '').slice(0, 4)).invoices.push(invoice);
+  for (const doc of full.documents || [])
+    groupOf(doc.rfc + '|' + String(doc.date || '').slice(0, 4)).documents.push(doc);
+  const fileById = new Map((full.files || []).map(file => [file.id, file]));
+  const usedFiles = new Set();
+  const slices = [];
+  for (const [key, group] of [...groups.entries()].sort()) {
+    const files = [];
+    const take = id => { const file = fileById.get(id); if (file && !usedFiles.has(file.id)) { usedFiles.add(file.id); files.push(file); } };
+    for (const invoice of group.invoices) take('xml:' + invoice.id);
+    for (const doc of group.documents) take(doc.id);
+    slices.push({ key, invoices: group.invoices, documents: group.documents, files });
+  }
+  const build = (list, activity) => {
+    const ids = new Set();
+    for (const slice of list) {
+      ids.add(slice.key.split('|')[0]);
+      for (const invoice of slice.invoices) {
+        if (invoice?.from?.rfc) ids.add(invoice.from.rfc);
+        if (invoice?.to?.rfc) ids.add(invoice.to.rfc);
+      }
+      for (const doc of slice.documents) ids.add(doc.rfc);
+    }
+    return { version: 2,
+      people: (full.people || []).filter(person => ids.has(person.id)),
+      invoices: list.flatMap(slice => slice.invoices),
+      documents: list.flatMap(slice => slice.documents),
+      files: list.flatMap(slice => slice.files),
+      activity };
+  };
+  const parts = [];
+  let current = [], currentData = null;
+  for (const slice of slices) {
+    /* La actividad entera viaja en la PRIMERA parte: acompaña a
+       la parte mientras se llena, no solo a su primera rodaja. */
+    const activity = parts.length === 0 ? (full.activity || []) : [];
+    const candidate = build([...current, slice], activity);
+    if (current.length && size(candidate) > ceiling) {
+      parts.push(currentData);
+      current = [slice];
+      currentData = build(current, []);
+    } else { current = [...current, slice]; currentData = candidate; }
+  }
+  if (current.length) parts.push(currentData);
+  return parts;
+}
+function splitBackupFileName(stamp, index, total) {
+  return 'PacoSAT-' + stamp + (total > 1 ? '-p' + (index + 1) + 'de' + total : '') + '.faro';
+}
 async function splitBackupDialog() {
   await requireStorage();
   check(!importing && crypto.subtle, 'El respaldo no está disponible en este navegador o hay una importación activa.');
   const password = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
   const repeat = input('password', { required: true, minLength: 12, autocomplete: 'new-password' });
-  dialog('Respaldo partido por RFC y año', [n('p', 'Se genera un archivo .faro por cada RFC y año con facturas: más cómodo para archivar por ejercicios. Cada parte se restaura por separado con la misma contraseña. Sin la contraseña ningún archivo se puede abrir.', 'news-note'),
+  dialog('Respaldo partido', [n('p', 'Normalmente sale UN solo archivo. Solo si el conjunto pasa de 100 MB se parte en trozos de hasta 100 MB, agrupando las facturas por RFC y año dentro de cada trozo. Cada parte se restaura por separado con la misma contraseña. Sin la contraseña ningún archivo se puede abrir.', 'news-note'),
     field('Contraseña de al menos 12 caracteres', password), field('Confirma la contraseña', repeat)], async () => {
     check(password.value.length >= 12 && password.value === repeat.value, 'Revisa que las contraseñas coincidan.');
-    const full = await snapshot();
-    const combos = new Map();
-    for (const row of full.invoices) {
-      for (const rfc of new Set([row.from?.rfc, row.to?.rfc])) {
-        if (!rfc) continue;
-        const key = rfc + '|' + String(row.date || '').slice(0, 4);
-        if (!combos.has(key)) combos.set(key, []);
-        combos.get(key).push(row);
-      }
-    }
-    check(combos.size, 'No hay facturas para partir el respaldo.');
-    let made = 0;
-    for (const [key, rows] of combos) {
-      const [rfc, year] = key.split('|');
-      const ids = new Set(rows.map(row => row.id));
-      const docs = full.documents.filter(doc => doc.rfc === rfc);
-      const docIds = new Set(docs.map(doc => doc.id));
-      const part = { version: 2,
-        people: full.people.filter(person => person.id === rfc),
-        invoices: rows,
-        documents: docs,
-        files: full.files.filter(file => docIds.has(file.id) ||
-          (file.id.startsWith('xml:') && ids.has(file.id.slice(4))) ||
-          (file.id.startsWith('pdf:') && ids.has(file.id.slice(4)))),
-        activity: [] };
-      download(await encryptBackup(part, password.value), 'PacoSAT-' + rfc + '-' + year + '.faro');
-      made++;
-    }
-    await logEvent('Respaldo partido creado (' + made + ' archivos por RFC y año)');
-    announce(made + ' archivos de respaldo generados, uno por RFC y año.');
+    const full = await snapshot(true);
+    const parts = splitBackupParts(full);
+    check(parts.length, 'No hay facturas para partir el respaldo.');
+    const stamp = new Date().toISOString().slice(0, 10);
+    for (let i = 0; i < parts.length; i++)
+      download(await encryptBackup(parts[i], password.value), splitBackupFileName(stamp, i, parts.length));
+    await logEvent('Respaldo partido creado (' + parts.length + ' archivos)');
+    announce(parts.length === 1 ? 'Respaldo partido generado: un solo archivo.'
+      : 'Respaldo partido generado: ' + parts.length + ' archivos.');
     soundCue('success');
   }, 'Crear respaldo partido');
 }
@@ -634,7 +829,13 @@ function gestosLista1311() {
     boton: 'Dar sus credenciales', ir: () => navigate('sat') });
   const ex = satData.ejecutor;
   const irEjecutor200 = () => { satTab = 'ejecutor'; navigate('sat'); };
-  if (ex && !ex.emparejado) lista.push({
+  /* Paseo en casa (2.8.0): en sede NAS (satData.paseo === 'nas')
+     este gesto NO existe — el Buzón y las Declaraciones entran
+     al portal desde casa, desde tu NAS, sin emparejar nada.
+     Y la causa de la puerta (causaP200) tampoco puede salir
+     «equipo» ni «sin-equipo» en esta sede, así que los gestos
+     de puerta de abajo nunca apuntan a tu PC aquí. */
+  if (ex && !ex.emparejado && satData.paseo !== 'nas') lista.push({
     titulo: 'Empareja tu equipo',
     detalle: 'Sin el ejecutor en tu PC, el Buzón Tributario y las Declaraciones no pueden entrar al portal del SAT.',
     boton: 'Emparejar', ir: irEjecutor200 });
@@ -736,13 +937,14 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '2.3.0',
+  version: '2.9.14',
+  fecha: '18 de noviembre de 2026',
   puntos: [
-    'Hoy te cuenta «Qué cambió desde ayer», línea a línea y sin ruido, y estrena «Tus empresas»: la foto de cada RFC con sus cuatro semáforos — puerta, buzón, declaraciones y listas — de un vistazo.',
-    'Los trabajos cancelados ahora tienen «Seguir»: se reanudan sin repetir lo ya hecho (en declaraciones, solo baja lo que falta). Y antes de pedir una ventana de facturas, la confirmación te avisa si esa ventana ya se había pedido, para no gastar peticiones al SAT.',
-    'Declaraciones enseña la línea de vida de cada declaración — presentada, su acuse y dónde vive su PDF —, su entrada del menú dice cuántas llevas del año y qué mes falta, y cada día 18 PacoSAT baja solo el acuse del mes anterior y te avisa con los datos.',
-    'La Opinión de cumplimiento ahora llega hasta su botón de generar, como ya hacía la Constancia. La conciliación de Bancos sale en PDF y Excel desde Reportes, y el Registro busca por texto en todo el historial, no solo en lo último cargado.',
-    'Salud enseña si tu ejecutor vive residente en tu equipo y con una sola instancia, y probar la conexión de Paperless y el ensayo de restauración se hace desde su propia tarjeta, con el resultado a la vista. Y la app entera se ve más limpia: tipografía ordenada, tarjetas con aire, estados vacíos diseñados y el modo oscuro pulido, también cuando el oscuro viene de tu sistema.'
+    'Descargar decide por cobertura, no por coincidencia exacta: si la ventana que eliges ya quedó cubierta por tus descargas — aunque sean varias seguidas, una tras otra — la tarjeta contesta «ya se pidió» y no envía nada al SAT. Si falta un tramo, lo dice en llano: qué parte ya consta y qué parte se pide, y se pide solo ese tramo.',
+    'Los pasos de la descarga se ven dibujados durante toda la marcha — Pedirlo al SAT, El SAT lo prepara, Guardarlo en tu expediente — cada uno con su número y encendiéndose con la fase real, también mientras escribes el captcha.',
+    'La lista de trabajos en curso se cierra como los demás desplegables: con un clic fuera, con Escape o con su propio botón — ya no se queda puesta tapando la navegación.',
+    'El encabezado de los reportes enseña a las personas físicas en orden natural — primero el nombre, después los apellidos — también cuando su nombre quedó guardado con la coma fiscal («Apellidos, Nombre»).',
+    'Leer un comunicado del Buzón ya no se pierde: mientras se abre — tarda alrededor de un minuto — su tarjeta enseña la marcha con el tiempo corriendo; al llegar, el comunicado queda abierto en su propia tarjeta (sales y vuelves, y sigue ahí), y si su texto es un enlace («da clic aquí»), PacoSAT lo sigue y te trae también el detalle enlazado.'
   ]
 };
 function novedadesCard1311() {
@@ -750,7 +952,12 @@ function novedadesCard1311() {
   let vista = '';
   try { vista = localStorage.getItem('pacosat-novedades-vista') || ''; } catch { /* sin memoria local: se enseña */ }
   if (vista === NOVEDADES_1311.version) return null;
-  const card = panel('Esto es lo nuevo', 'PacoSAT ' + NOVEDADES_1311.version + ', en palabras llanas.');
+  /* (2.9.13 · mejora 30) La nota es una TARJETA DE VERSIÓN:
+     su versión y su fecha en la cabecera, sus puntos dentro. */
+  const card = panel('Esto es lo nuevo', 'PacoSAT ' + NOVEDADES_1311.version +
+    (NOVEDADES_1311.fecha ? ' · ' + NOVEDADES_1311.fecha : '') + ', en palabras llanas.');
+  card.classList.add('novedades-card2913');
+  card.dataset.version2913 = NOVEDADES_1311.version;
   const lista = n('ul', undefined, 'novedades-list');
   for (const punto of NOVEDADES_1311.puntos) lista.append(n('li', punto));
   const acts = n('div', undefined, 'actions');
@@ -803,9 +1010,129 @@ async function docArchivar1311(doc, archivar = true) {
     async () => { await aplicar(true); render(); },
     async () => { await aplicar(false); render(); });
 }
+/* ===== Archivar en lote con UN solo Deshacer (2.4.0 · WC4b2, pieza 25) =====
+   Elección, declarada: la pieza vive en FACTURAS. Es la vista que
+   YA tiene selección múltiple (las casillas y invoiceSelection, las
+   mismas del ZIP y de «Imprimir seleccionados») y cuyo archivado de
+   uno en uno (cfdiArchivar1311, aquí arriba) ya trae su Deshacer.
+   Documentos no tiene selección múltiple hoy — su archivado es de
+   tarjeta en tarjeta —, así que el lote nace donde la selección y
+   el gesto ya existen, sin inventar otra selección paralela.
+   El lote se archiva comprobante a comprobante por la MISMA ruta
+   del gesto individual (cfdi/archivar); si uno falla a mitad, el
+   lote dice cuáles entraron y cuáles no, y el Deshacer restaura
+   EL LOTE ENTERO (solo lo que sí se archivó) con un solo gesto.
+   El asiento en el Registro es UN solo hecho con su conteo. El
+   aviso con «Deshacer» usa floatToast como conDeshacer1310, pero
+   el texto se compone DESPUÉS de archivar — conDeshacer1310 fija
+   su texto antes de saber si el lote entró entero — para no
+   anunciar un éxito que el lote no tuvo (regla de estados). */
+async function cfdiArchivarLote240(rows) {
+  const lista = [...new Map((rows || []).filter(row => row && row.id).map(row => [row.id, row])).values()];
+  if (!lista.length) {
+    toast('Selecciona al menos un comprobante para archivar varios.', 'error');
+    return { archivados: [], fallidos: [] };
+  }
+  const hechas = [], fallidas = [];
+  for (const row of lista) {
+    try { await satApi('cfdi/archivar', { uuid: row.id, archivar: true }); hechas.push(row.id); }
+    catch { fallidas.push(row.id); }
+  }
+  if (typeof invoiceSelection !== 'undefined') for (const id of hechas) invoiceSelection.delete(id);
+  await refresh();
+  await logEvent('Archivados en lote: ' + hechas.length + ' comprobante(s)' +
+    (fallidas.length ? ' · sin archivar ' + fallidas.length + ' (su archivado falló)' : '') +
+    (hechas.length ? ' · ' + hechas.join(', ') : ''));
+  if (!hechas.length) {
+    announce('No se pudo archivar ninguno de los ' + lista.length + ' seleccionados: siguen en Facturas.', true);
+    return { archivados: hechas, fallidos: fallidas };
+  }
+  if (fallidas.length)
+    announce('Lote parcial: se archivaron ' + hechas.length + ' de ' + lista.length + '; ' +
+      fallidas.length + ' no se pudieron archivar y siguen en Facturas.', true);
+  let deshecho = false;
+  const deshacerLote = async () => {
+    const noRestauradas = [];
+    for (const id of hechas) {
+      try { await satApi('cfdi/archivar', { uuid: id, archivar: false }); }
+      catch { noRestauradas.push(id); }
+    }
+    await refresh();
+    await logEvent('Deshecho el lote de archivado: ' + (hechas.length - noRestauradas.length) +
+      ' comprobante(s) restaurados de ' + hechas.length + '.');
+    if (noRestauradas.length)
+      announce('El lote se deshizo salvo ' + noRestauradas.length +
+        ' comprobante(s), que siguen archivados: se restauran desde Archivo.', true);
+    else toast('Lote deshecho: los ' + hechas.length + ' comprobantes vuelven a Facturas.', 'ok');
+  };
+  const limpiar = floatToast('Lote archivado: ' + hechas.length + ' comprobante(s) salen de Facturas ' +
+    'y de los totales; viven en Archivo.', 'ok', async () => {
+    if (deshecho) return;
+    deshecho = true;
+    await deshacerLote();
+  });
+  setTimeout(() => { if (!deshecho) limpiar?.(); }, 10000);
+  return { archivados: hechas, fallidos: fallidas };
+}
+/* La barra del lote en Facturas: nace tras cada pintado de la
+   vista (render envuelto aquí, como fillSat en Descargas: la
+   vista vive en ui.part, fuera del territorio de esta tanda) y
+   solo cuando hay selección viva — sin selección no hay barra,
+   como las demás acciones de seleccionados de la vista. El
+   invitado no la ve: archivar no es gesto suyo. */
+function loteBarra240() {
+  if (typeof page === 'undefined' || page !== 'invoices') return;
+  if (typeof guestMode !== 'undefined' && guestMode) return;
+  if (typeof invoiceSelection === 'undefined' || !invoiceSelection.size) return;
+  const body = $('body');
+  if (!body || !body.children) return;
+  if ([...body.children].some(el => el?.dataset?.lote240)) return;
+  const seleccionados = invoices.filter(row => invoiceSelection.has(row.id));
+  if (!seleccionados.length) return;
+  const barra = panel('Comprobantes seleccionados');
+  barra.dataset.lote240 = '1';
+  barra.append(n('p', number.format(seleccionados.length) + ' comprobante(s) con la casilla marcada. ' +
+    'Puedes archivarlos todos de una vez: salen de Facturas y de los totales, viven en Archivo, ' +
+    'y el lote entero se deshace con un solo gesto.'));
+  const boton = action('Archivar varios', () => cfdiArchivarLote240(seleccionados), 'primary', 'box');
+  boton.dataset.lote240Btn = '1';
+  barra.append(boton);
+  body.prepend(barra);
+}
+const renderCasa240 = render;
+render = function render240() {
+  renderCasa240();
+  try { loteBarra240(); } catch { /* Pieza aditiva: la vista de siempre queda intacta. */ }
+};
 function archivoScreen1311() {
   const blocks = [];
   const delAlcance = invoicesArchivo.filter(row => row.from?.rfc === scope || row.to?.rfc === scope);
+  /* Protagonista del Archivo (2.8.0 · diseño 25): cuántos
+     papeles duermen aquí, por clase y desde cuándo, y el
+     gesto propio de la pantalla — recuperar el más antiguo —
+     como acción principal (antes el primario era «Ir a
+     Facturas», un destino ajeno). */
+  {
+    const docsArc0 = documents.filter(doc => doc.archived && (!scope || doc.rfc === scope));
+    const fechas = [...delAlcance.map(r => r.date), ...docsArc0.map(d => d.date)].filter(Boolean).sort();
+    const prota = panel('Lo que duerme en el archivo');
+    prota.append(n('p', delAlcance.length + ' comprobante(s) y ' + docsArc0.length + ' documento(s) archivados' +
+      (fechas.length ? '; lo más antiguo es del ' + dateLabel(fechas[0]) + '.' : '.')));
+    prota.classList.add('protagonista280');
+    prota.dataset.protagonista280 = 'archivo';
+    if (fechas.length) {
+      const masAntiguo280 = fechas[0];
+      const cfdiViejo = delAlcance.find(r => r.date === masAntiguo280);
+      const docViejo = cfdiViejo ? null : docsArc0.find(d => d.date === masAntiguo280);
+      const botonRec = action('Recuperar el más antiguo', () => {
+        if (cfdiViejo) cfdiArchivar1311(cfdiViejo, false);
+        else if (docViejo) docArchivar1311(docViejo, false);
+      }, 'primary', 'check');
+      botonRec.id = 'archivo-recuperar280';
+      prota.append(botonRec);
+    }
+    blocks.push(prota);
+  }
   const cfdiPanel = panel('Comprobantes archivados',
     'Fuera de Facturas, de Totales y de los reportes. Un CFDI nunca se borra desde la app: archivar es su único gesto, y es reversible.');
   if (delAlcance.length) {
@@ -813,30 +1140,50 @@ function archivoScreen1311() {
       delAlcance.slice(0, 100).map(row => {
         const cp = row.from?.rfc === scope ? row.to : row.from;
         const acts = n('div', undefined, 'actions');
-        acts.append(action('Restaurar', () => cfdiArchivar1311(row, false)));
+        acts.append(action('Recuperar', () => cfdiArchivar1311(row, false)));
         return [cell(folioLabel(row), (cp?.name || cp?.rfc || '') + ' · ' + String(row.id).slice(0, 8) + '…'),
           dateLabel(row.date), amount(row), acts];
       })));
     if (delAlcance.length > 100) cfdiPanel.append(n('p', 'Se enseñan los 100 más recientes.', 'muted'));
   } else cfdiPanel.append(empty('Nada archivado', 'Cuando archives un comprobante desde Facturas, aparecerá aquí.'));
   blocks.push(cfdiPanel);
-  const docsArc = documents.filter(doc => doc.archived && (!scope || doc.rfc === scope));
+  const docsArc = documents.filter(doc => doc.archived && !doc.papelera && (!scope || doc.rfc === scope));
   const docPanel = panel('Documentos archivados',
     'Fuera de Documentos. «Eliminar definitivo» borra el PDF del expediente y pide confirmación.');
   if (docsArc.length) {
     docPanel.append(grid(['Documento', 'RFC', 'Fecha', 'Acción'], docsArc.map(doc => {
       const acts = n('div', undefined, 'actions');
       acts.append(action('Ver', () => viewDocOnline(doc)),
-        action('Restaurar', () => docArchivar1311(doc, false)),
+        action('Recuperar', () => docArchivar1311(doc, false)),
         action('Eliminar definitivo', () => deleteDocument(doc)));
       return [cell(doc.kind, doc.name), doc.rfc, dateLabel(doc.date), acts];
     })));
   } else docPanel.append(empty('Ningún documento archivado', 'El «Archivar» de Documentos guarda aquí lo que ya no quieres ver cada día.'));
   blocks.push(docPanel);
+  /* Papelera de documentos (2.9.0 · Bloque C): lo que salió
+     de Documentos con «Papelera» vive aquí, recuperable; el
+     único borrado de verdad de un documento vive en este
+     panel, con su nombre completo. */
+  const docsPapelera290 = documents.filter(doc => doc.papelera && (!scope || doc.rfc === scope));
+  const papeleraPanel290 = panel('Papelera de documentos',
+    'Lo que moviste a la papelera desde Documentos. Restaurar lo devuelve a su sitio; «Eliminar definitivo» es el único borrado de verdad y pide confirmación.');
+  if (docsPapelera290.length) {
+    papeleraPanel290.append(grid(['Documento', 'RFC', 'Fecha', 'Acción'], docsPapelera290.map(doc => {
+      const acts = n('div', undefined, 'actions');
+      acts.append(action('Restaurar', async () => {
+          await writeBatch({ documents: [{ ...doc, papelera: 0 }] });
+          await logEvent('Documento restaurado de la papelera: ' + doc.name);
+          await refresh(); announce('Documento restaurado.');
+        }),
+        action('Eliminar definitivo', () => deleteDocument(doc)));
+      return [cell(doc.kind, doc.name), doc.rfc, dateLabel(doc.date), acts];
+    })));
+  } else papeleraPanel290.append(empty('Papelera vacía', 'El botón «Papelera» de Documentos manda aquí lo que ya no quieres ver, sin borrarlo.'));
+  blocks.push(papeleraPanel290);
   const otros = panel('También vive archivado',
     'Cada cosa conserva su casa: los avisos en su pestaña de Archivadas y las notificaciones del SAT en la papelera de su Buzón.');
   const links = n('div', undefined, 'actions');
-  const aAvisos = n('button', 'Avisos archivadas', 'soft');
+  const aAvisos = n('button', 'Avisos archivados', 'soft');
   aAvisos.type = 'button';
   aAvisos.onclick = () => {
     avisosVista = 'archivadas';
@@ -849,6 +1196,16 @@ function archivoScreen1311() {
   links.append(aAvisos, aBuzon);
   otros.append(links);
   blocks.push(otros);
+  /* (2.9.9 · D5) Con todo vacío, las tres tarjetas de contenido
+     decían «nada» cada una: queda UNA sola tarjeta con el cero
+     — la protagonista — y las demás viven tras un «Ver más»,
+     con la Papelera y sus acciones intactas dentro. En cuanto
+     hay algo archivado, la pantalla vuelve a su forma entera. */
+  if (!delAlcance.length && !docsArc.length && !docsPapelera290.length) {
+    const mas299 = n('details', undefined, 'seal-details');
+    mas299.append(n('summary', 'Ver más'), ...blocks.slice(1, 4));
+    return [blocks[0], mas299, blocks[4]];
+  }
   return blocks;
 }
 
@@ -875,33 +1232,69 @@ function puertaLinea230(puerta, ahora = Date.now()) {
       : foto.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }));
   return { estado: puerta.ok ? 'ok' : 'mal', texto: (puerta.ok ? 'abre' : 'no abre') + ' · ' + cuando };
 }
+/* ===== La puerta, UNA sola fuente de estado (2.9.9 · D6) =====
+   El texto de la puerta sale SOLO de aquí: del registro de
+   puerta del RFC que sirve el servidor (satData.puerta) y de
+   su ejecutor, con causaP200 y puertaLinea230. Lo consumen
+   IGUAL el lateral (senalesBarra1311: #puerta-txt/#puerta-dot)
+   y la fila de Contribuyentes (contribuyentesPanel200b): el
+   mismo hecho jamás se dice de dos maneras en la misma
+   pantalla (la auditoría cazó «no abre» en el lateral contra
+   «sin probar todavía» en la fila). Estados: sin probar;
+   probada y abre; probada y no abre, con su clase — portal
+   caído, e.firma u otro — nombrada en el propio texto. */
+function puertaTexto299(puerta, ejecutor) {
+  if (!puerta?.probada) return { estado: 'sin-dato', texto: 'sin probar todavía' };
+  const causa = causaP200(puerta, ejecutor), linea = puertaLinea230(puerta);
+  if (causa.tipo.includes('equipo'))
+    return { estado: 'mal', texto: causa.tipo === 'equipo'
+      ? 'sin señal de tu equipo desde el ' + localDateTime(ejecutor.ultimoVisto) : 'falta emparejar tu equipo' };
+  if (causa.vieja) return { estado: puerta.ok ? 'vigilar' : 'mal',
+    texto: linea.texto.replace(/^(no )?abre/, '$1abría') + ' (foto vieja)' };
+  if (puerta.ok) return linea;
+  const clase = causa.tipo === 'efirma' ? 'e.firma no entra'
+    : /portal|ruta|respuesta/i.test(puerta.errorKind || '') ? 'portal caído' : '';
+  /* La clase se inserta en la línea canónica: «no abre ·
+     {clase} · {foto}» — un solo texto para los dos sitios. */
+  return { estado: linea.estado, texto: clase ? linea.texto.replace(' · ', ' · ' + clase + ' · ') : linea.texto };
+}
+/* ===== Refresco de la puerta EN EL SITIO (2.9.13 · A3) =====
+   Tras «Probar la puerta» con éxito (y tras cualquier acceso
+   real que el servidor registra), el encabezado y la ficha del
+   contribuyente seguían enseñando la foto vieja («no abre ·
+   portal caído · foto de hoy», «sin probar») hasta cambiar de
+   panel: la prueba repintaba su pantalla con render(), pero el
+   estado global de la puerta (satData.puerta) no se re-leía.
+   Este ayudante re-lee SOLO el estado, funde la puerta nueva
+   en satData y repinta las señales de la barra en el sitio —
+   sin cambiar de panel ni perder lo que el usuario mira. */
+async function puertaRefrescarEnSitio2913(rfc) {
+  try {
+    const fresco = await satApi('status');
+    if (fresco && typeof satData !== 'undefined' && satData) {
+      if (fresco.puerta) satData.puerta = fresco.puerta;
+      if (fresco.ejecutor) satData.ejecutor = fresco.ejecutor;
+    }
+  } catch { /* sin re-lectura: las señales pintan lo que haya */ }
+  try { senalesBarra1311(); } catch { /* señal decorativa */ }
+  try { pintarBotonScope200b(); } catch { /* selector decorativo */ }
+  return rfc ? satData?.puerta?.[rfc] : null;
+}
 function senalesBarra1311() {
   const dot = document.getElementById('puerta-dot');
   const txt = document.getElementById('puerta-txt');
-  if (dot && txt) {
-    const puerta = (typeof satData !== 'undefined' && scope) ? satData?.puerta?.[scope] : null;
-    if (!puerta || !puerta.probada) {
-      dot.dataset.state = 'sin-dato';
-      txt.textContent = 'Puerta del SAT: sin probar todavía';
-    } else {
-      /* Causa viva también aquí (2.0, M1): con el equipo
-         apagado el punto nombra ESA causa, no un «revísala»
-         que manda a la e.firma; y la foto vieja se dice vieja. */
-      const causaB = causaP200(puerta, satData?.ejecutor);
-      /* Estado + frescura (pieza 12): la foto vieja se sigue
-         diciendo vieja, con su fecha; la fresca dice «foto de
-         hoy» o «foto del {fecha}» tras el abre/no abre. Las
-         causas de equipo no cambian: nombran su causa. */
-      const linea230 = puertaLinea230(puerta);
-      const filaB = causaB.tipo === 'equipo' ? ['mal', 'sin señal de tu equipo desde el ' + localDateTime(satData.ejecutor.ultimoVisto)]
-        : causaB.tipo === 'sin-equipo' ? ['mal', 'falta emparejar tu equipo']
-        : causaB.vieja ? [puerta.ok ? 'vigilar' : 'mal',
-            (puerta.ok ? 'abría' : 'no abría') + ' · foto del ' +
-            (typeof fechaCortaMenu202 === 'function' ? fechaCortaMenu202(puerta.probada) : localDateTime(puerta.probada)) + ' (foto vieja)']
-        : [linea230.estado, linea230.texto];
-      dot.dataset.state = filaB[0];
-      txt.textContent = 'Puerta del SAT: ' + filaB[1];
-    }
+  /* (2.9.9 · D4b) En Hoy, puerta, buzón y declaraciones se
+     pintan UNA vez — en sus tarjetas de Hoy —: el lateral no
+     repite esos tres chips en esa pantalla (la línea de la
+     puerta y las líneas de estado del menú se ocultan, no se
+     borran: fuera de Hoy vuelven tal cual). Las entradas de
+     navegación se quedan siempre. */
+  for (const c of document.querySelectorAll('.puerta-line>span, #buzon-menu-estado202, #decl-menu-estado202'))
+    c.hidden = page === 'home';
+  if (dot && txt && page !== 'home') {
+    const linea299 = puertaTexto299(satData?.puerta?.[scope], satData?.ejecutor);
+    dot.dataset.state = linea299.estado;
+    txt.textContent = 'Puerta del SAT: ' + linea299.texto;
   }
   const badge = document.getElementById('gestos-badge');
   if (badge) {
@@ -911,15 +1304,11 @@ function senalesBarra1311() {
     badge.title = n ? n + (n === 1 ? ' gesto espera tu mano (en Hoy)' : ' gestos esperan tu mano (en Hoy)') : '';
   }
 }
-/* Cableado de la barra: la búsqueda de arriba ES la búsqueda
-   global de siempre (su puerta en la barra, no otro buscador)
-   y el plegado a iconos se recuerda en este equipo. */
+/* Cableado de la barra: el plegado a iconos se recuerda en
+   este equipo. (2.8.0 · diseño 18: el botón de búsqueda de la
+   barra ya no existe — buscar vive en la cabecera y en
+   Ctrl+K — y con él se va su cableado.) */
 (function barraCableado1311() {
-  const buscar = document.getElementById('side-search');
-  if (buscar) buscar.addEventListener('click', () => {
-    const input = document.getElementById('global-search');
-    if (input) { input.scrollIntoView({ block: 'nearest' }); input.focus(); input.select?.(); }
-  });
   const plegar = document.getElementById('side-collapse');
   let plegada = false;
   try { plegada = localStorage.getItem('pacosat-barra-plegada') === '1'; } catch { /* sin memoria: desplegada */ }

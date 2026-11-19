@@ -92,12 +92,12 @@ const unlock = async (h, rfc) => {
 /* ===== 5 · ESTÁTICAS ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '2.3.0', 'la versión de la ola es 2.0.1 (re-basificado: la 2.0.1 —motores contra el mapa real— sustituye a la 2.0.0 como versión a montar)');
+  assert.equal(pkg.version, '2.9.14', 'la versión de la ola es 2.0.1 (re-basificado: la 2.0.1 —motores contra el mapa real— sustituye a la 2.0.0 como versión a montar)');
   const ejecutor = read('ejecutor-local.mjs');
   /* Re-baseline 1.31.2 (bis): el sello del ejecutor sube con
      el paquete por la coherencia de la casa (ronda1310); en la
      1.31.2 es su ÚNICO cambio y su bundle se regenera por él. */
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.3.0'"), 'el ejecutor declara su versión (sello 2.0.1)');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.9.14'"), 'el ejecutor declara su versión (sello 2.0.1)');
   assert.ok(ejecutor.includes('sesionViva'), 'el ejecutor pasa la sesión viva a los motores');
   assert.ok(ejecutor.includes('puerta-probar'), 'el ejecutor sabe probar la puerta');
   assert.ok(ejecutor.includes('portal-rechaza') && ejecutor.includes('REINTENTO_PORTAL_MS'),
@@ -136,7 +136,11 @@ const unlock = async (h, rfc) => {
   const satUi = read('sat-ui.part');
   assert.ok(satUi.includes('Falta su e.firma') && satUi.includes('d.profile?.pending'),
     'la parrilla enseña «falta su e.firma» en un RFC preparado sin credenciales');
-  assert.ok(satUi.includes('Puerta probada el'), 'la tarjeta del Buzón enseña el veredicto de la puerta');
+  /* RE-BASE integración 2.4.0 (W6b): el veredicto «Puerta
+     probada el…» lo compone textoP200, que vive en el puente
+     de ui.part; el ancla se busca en su nuevo hogar (ui.part
+     se lee más abajo en este mismo bloque), mismo literal. */
+  assert.ok(read('ui.part').includes('Puerta probada el'), 'la tarjeta del Buzón enseña el veredicto de la puerta');
   assert.ok(satUi.includes('(satData.pendingProfiles || []).includes(rfc)'),
     'la parrilla cruza el perfil con pendingProfiles: el alta preparada tiene fila y la fila sola no la marca');
   const tribUi = read('tributario-ui.part');

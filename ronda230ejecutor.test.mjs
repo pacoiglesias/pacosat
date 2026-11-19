@@ -8,7 +8,7 @@ import {
   residenciaDesdeEstado, estadoResidencia,
 } from './registro-windows.mjs';
 import {
-  INSTANCIAS_ESTE_PROCESO230, residenciaLatido230,
+  INSTANCIAS_ESTE_PROCESO230, medirInstancias232, residenciaLatido230,
   operacionesConAcuse230, aplicarSeguir230,
 } from './ejecutor-local.mjs';
 
@@ -16,14 +16,18 @@ import {
    Ronda 2.3.0 — EJECUTOR: residencia verificable y «Seguir» real.
 
    Pieza 5: el latido manda `residencia` { registrada, protocolo,
-   rechazada, instancias } LEÍDA del estado real (registro de
-   Windows + marcador de rechazo + instancia única del lanzador),
-   no declarada a ciegas. La interpretación pura se juzga aquí
-   entera en Linux con estados fingidos exactos; la lectura real
-   del registro solo existe en Windows — en cualquier otro
-   sistema la forma va a false/1 y eso también se afirma. La
-   suite no lee la carpeta del bundle ni ninguna pieza que no
-   viva en este árbol: corre entera donde corre.
+   rechazada } LEÍDA del estado real (registro de Windows +
+   marcador de rechazo), no declarada a ciegas, y — desde la
+   2.3.2 (M-4) — `instancias` SOLO cuando medirInstancias232 lo
+   mide de verdad (WMI en Windows, /proc en Linux): si no se
+   mide, el campo no se manda (la constante instancias = 1 de
+   la 2.3.0 quedó condenada por E-04/M-4). La interpretación
+   pura se juzga aquí entera en Linux con estados fingidos
+   exactos; la lectura real del registro solo existe en
+   Windows — en cualquier otro sistema los hechos van a false
+   y eso también se afirma. La suite no lee la carpeta del
+   bundle ni ninguna pieza que no viva en este árbol: corre
+   entera donde corre.
 
    Pieza 6: declaraciones-recuperar honra { soloFaltantes,
    operacionesConAcuse } y su resultado lleva
@@ -89,25 +93,56 @@ try {
 const tmpLatido = mkdtempSync(join(tmpdir(), 'pacosat-latido-'));
 try {
   const latidoSin = await residenciaLatido230({ dir: tmpLatido });
-  assert.deepEqual(Object.keys(latidoSin).sort(), ['instancias', 'protocolo', 'rechazada', 'registrada'],
-    'el latido lleva residencia con exactamente los cuatro campos del contrato');
-  assert.equal(latidoSin.instancias, INSTANCIAS_ESTE_PROCESO230);
+  /* Contrato M-4 (2.3.2, constructor B2a): los tres hechos
+     viajan siempre; `instancias` SOLO viaja si se midió de
+     verdad en este entorno. Si la medición no está disponible
+     aquí, el campo no debe venir; si viene, debe ser el conteo
+     que medirInstancias232 mide en este mismo entorno — un
+     entero ≥ 1 —, nunca la constante 1 de la 2.3.0. */
+  assert.deepEqual(Object.keys(latidoSin).filter(clave => clave !== 'instancias').sort(),
+    ['protocolo', 'rechazada', 'registrada'],
+    'el latido lleva siempre los tres hechos de la residencia');
+  if ('instancias' in latidoSin) {
+    assert.ok(Number.isInteger(latidoSin.instancias) && latidoSin.instancias >= 1,
+      'si instancias viene, es un conteo medido (entero ≥ 1), no una constante');
+    assert.equal(latidoSin.instancias, medirInstancias232(tmpLatido),
+      'y es exactamente el conteo que la medición real da en este entorno');
+  } else {
+    assert.equal(medirInstancias232(tmpLatido), null,
+      'si instancias no viene, es porque la medición no está disponible en este entorno (null)');
+  }
   assert.equal(INSTANCIAS_ESTE_PROCESO230, 1,
-    'instancias = 1: este proceso es la instancia que ocupa el hueco de la instancia única');
+    'la constante de la 2.3.0 queda solo como referencia histórica: ya no se reporta');
+  /* El contrato, juzgado con medición inyectada (determinista
+     en cualquier entorno): sin medición no hay campo; con
+     medición viaja ESE conteo, no la constante; un conteo que
+     no es un entero ≥ 1 tampoco se manda. */
+  const latidoSinMedicion = await residenciaLatido230({ dir: tmpLatido, medirInstancias: () => null });
+  assert.ok(!('instancias' in latidoSinMedicion),
+    'M-4: sin medición disponible, el campo instancias NO se manda');
+  assert.deepEqual(Object.keys(latidoSinMedicion).sort(), ['protocolo', 'rechazada', 'registrada'],
+    'M-4: sin medición, la residencia lleva exactamente los tres hechos');
+  const latidoMedido = await residenciaLatido230({ dir: tmpLatido, medirInstancias: () => 3 });
+  assert.equal(latidoMedido.instancias, 3,
+    'M-4: si se mide, viaja el conteo medido (3), no la constante 1 de la 2.3.0');
+  const latidoMedicionInvalida = await residenciaLatido230({ dir: tmpLatido, medirInstancias: () => 0 });
+  assert.ok(!('instancias' in latidoMedicionInvalida),
+    'M-4: un conteo que no es un entero ≥ 1 no se manda como instancias');
   writeFileSync(join(tmpLatido, MARCADOR_SIN_ARRANQUE), 'sin arranque\n');
   const latidoCon = await residenciaLatido230({ dir: tmpLatido });
   assert.equal(latidoCon.rechazada, true, 'el latido refleja el rechazo leído, no una constante');
   if (process.platform !== 'win32') {
-    assert.deepEqual(latidoSin, { registrada: false, protocolo: false, rechazada: false, instancias: 1 },
-      'en Linux la forma va a false/1, tal cual pide el contrato');
+    assert.equal(latidoSin.registrada, false, 'en Linux el hecho registrada va a false');
+    assert.equal(latidoSin.protocolo, false, 'en Linux el hecho protocolo va a false');
+    assert.equal(latidoSin.rechazada, false, 'en Linux, sin marcador, el hecho rechazada va a false');
   }
 } finally { rmSync(tmpLatido, { recursive: true, force: true }); }
 
 /* El mecanismo de instancia única que el ejecutor ya usa: el
    lanzador despertar.vbs (en el árbol) consulta por WMI los
    node con ejecutor-local.mjs de ESTA carpeta y no arranca
-   otro si ya corre — por eso el dato reportado es el de este
-   proceso y su hueco, no un recuento inventado. */
+   otro si ya corre. (Desde M-4 esa misma consulta WMI es la
+   que mide `instancias` cuando el campo viaja: ver 5c.) */
 const vbs = leer('despertar.vbs');
 assert.ok(vbs.includes("Name = 'node.exe' AND CommandLine LIKE '%ejecutor-local.mjs%'"),
   'la instancia única vive en despertar.vbs: consulta WMI del ejecutor en curso');
@@ -116,8 +151,13 @@ assert.ok(vbs.includes('InStr(1, p.CommandLine, carpeta, vbTextCompare)'),
 
 /* El latido del ciclo manda la residencia leída, no {} */
 const fuenteEjecutor = leer('ejecutor-local.mjs');
-assert.ok(fuenteEjecutor.includes("await api('/api/executor/heartbeat', { residencia })"),
-  'ciclo() manda { residencia } en el heartbeat');
+/* Actualizado en la ronda 2.3.1 (constructor B): el latido
+   manda { residencia, reporte } — la residencia de siempre MÁS
+   el reporte de versión (versión + huella de motores). La
+   afirmación sigue juzgando lo mismo: la residencia viaja en
+   cada latido, leída en el ciclo. */
+assert.ok(fuenteEjecutor.includes("await api('/api/executor/heartbeat', { residencia, reporte: reporteVersion231() })"),
+  'ciclo() manda { residencia, reporte } en el heartbeat (la residencia, como siempre, y el reporte de versión de la 2.3.1)');
 assert.ok(fuenteEjecutor.includes('const residencia = await residenciaLatido230();'),
   'y la residencia se lee en cada ciclo, no se calcula una vez al arrancar');
 assert.ok(fuenteEjecutor.includes("from './registro-windows.mjs'") &&

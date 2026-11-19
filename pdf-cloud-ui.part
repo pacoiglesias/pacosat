@@ -39,24 +39,106 @@ async function cloudWrite(batch, replace) {
   await satApi('storage', { batch: data, replace });
   for (const store of Object.keys(batch)) cloudMarks.delete(store);
 }
+/* El tipo REAL del archivo (2.9.0 · Bloque C): por su nombre
+   y por el tipo del blob — un ZIP no es un PDF y el visor ya
+   no le ofrece «Abrir PDF en otra pestaña» ni le pinta una
+   vista previa en blanco. */
+function visorTipo290(doc, blob) {
+  const nombre = String(doc?.name || '').toLowerCase();
+  const mime = String(blob?.type || '').toLowerCase();
+  if (nombre.endsWith('.zip') || mime.includes('zip')) return 'zip';
+  if (nombre.endsWith('.xml') || mime.includes('xml')) return 'xml';
+  if (nombre.endsWith('.pdf') || mime.includes('pdf') || !mime) return 'pdf';
+  return 'otro';
+}
 function pdfLinks(doc, blob) {
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = URL.createObjectURL(blob);
-  const link = n('a', 'Abrir PDF en otra pestaña ↗');
-  link.href = previewUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
+  const tipo = visorTipo290(doc, blob);
   const buttons = n('div', undefined, 'actions');
-  buttons.append(link, action('Descargar original', () => download(blob, doc.name), undefined, 'down'));
+  if (tipo === 'pdf') {
+    const link = n('a', 'Abrir PDF en otra pestaña ↗');
+    link.href = previewUrl; link.target = '_blank'; link.rel = 'noopener noreferrer';
+    buttons.append(link);
+  }
+  buttons.append(action('Descargar original', () => download(blob, doc.name), undefined, 'down'));
   return buttons;
 }
-/* El diálogo del visor: el PDF embebido delante y, como opción
-   secundaria, abrirlo en otra pestaña o descargar el original. */
+/* El diálogo del visor: según el tipo real — el PDF embebido
+   delante; el ZIP y el XML se nombran como lo que son, con su
+   descarga (sin vista previa falsa). El título separa el
+   nombre del documento de su descripción (clase · RFC). */
+/* ===== Visor instantáneo (2.9.7 · D2) =====
+   El camino de siempre esperaba el BLOB ENTERO del PDF
+   (satApiBlob → response.blob()) antes de abrir el diálogo:
+   la primera pintura pagaba la descarga completa y el visor
+   del navegador parseando el documento — en vivo, 5–18 s en
+   «Ver» de Documentos, Novedades y Declaraciones. Ahora el
+   servidor pre-genera la primera página AL ARCHIVAR (como ya
+   indexa el texto: archiveSatDoc y archiveDeclaracion llaman
+   a thumbEnsure200g) y el visor pide PRIMERO esa vista
+   (/api/miniatura200g, servida desde su caché por huella) y la
+   pinta al instante en el diálogo; el PDF completo carga
+   DETRÁS y, cuando llega, el mismo diálogo se repinta con el
+   visor de siempre (iframe + «Abrir en otra pestaña» +
+   «Descargar original»: paridad completa). Si el documento
+   no tiene vista posible (PDF ilegible, ZIP, XML), no hay
+   paso previo: se cae al camino de siempre, sin fingir. */
+let visorPreviaUrl297;
+function visorPreviaLimpiar297() {
+  if (!visorPreviaUrl297) return;
+  const url = visorPreviaUrl297;
+  visorPreviaUrl297 = undefined;
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+/* La previa — y, desde la 2.9.8 · V, también el estado
+   «cargando» del mismo diálogo: con previaBlob null se pinta
+   SOLO la estructura (título del documento y la nota
+   «Cargando la primera página…», sin imagen), para que el
+   visor abra en el gesto del clic sin esperar a la red; con
+   blob, la primera página dentro del diálogo ya abierto.
+   La nota lleva el id del documento (data-visor-doc297):
+   quien espera detrás solo repinta si el diálogo sigue
+   enseñando el cargando DE ESTE documento. */
+function showPdfPreviaDialog297(doc, previaBlob) {
+  visorPreviaLimpiar297();
+  const nota = n('p', previaBlob ? 'Primera página al instante · cargando el documento completo…' :
+    'Cargando la primera página…', 'muted');
+  nota.dataset.visorCargando = '1';
+  nota.dataset.visorDoc297 = String(doc?.id || '');
+  const controles = [cell(doc.name, doc.kind + ' · ' + doc.rfc), nota];
+  if (previaBlob) {
+    visorPreviaUrl297 = URL.createObjectURL(previaBlob);
+    const img = n('img', undefined, 'visor-previa297');
+    img.src = visorPreviaUrl297;
+    img.alt = 'Primera página de ' + (doc.name || 'documento');
+    img.dataset.visorPrevia = '1';
+    controles.push(img);
+  }
+  dialog('Visor de documentos', controles);
+  $('dialog').classList.add('wide-dialog');
+}
+function visorPreviaAviso297(texto) {
+  const nota = document.querySelector('dialog [data-visor-cargando]');
+  if (nota) nota.textContent = texto;
+}
 function showPdfDialog(doc, blob) {
+  visorPreviaLimpiar297();
+  const tipo = visorTipo290(doc, blob);
   const controls = [cell(doc.name, doc.kind + ' · ' + doc.rfc), pdfLinks(doc, blob)];
-  const view = n('iframe', undefined, 'pdf-preview');
-  view.title = 'Vista previa de ' + doc.name;
-  view.src = previewUrl;
-  controls.push(view);
-  dialog('Visor de documentos', controls);
+  if (tipo === 'pdf') {
+    const view = n('iframe', undefined, 'pdf-preview');
+    view.title = 'Vista previa de ' + doc.name;
+    view.src = previewUrl;
+    controls.push(view);
+  } else if (tipo === 'zip') {
+    controls.push(n('p', 'Es un archivo ZIP: dentro viajan los comprobantes que lo componen. Descárgalo para abrirlo; no tiene vista previa de una página.', 'muted'));
+  } else if (tipo === 'xml') {
+    controls.push(n('p', 'Es el XML del comprobante: su representación legible está en el detalle del CFDI, en Facturas. Aquí puedes descargar el original.', 'muted'));
+  } else {
+    controls.push(n('p', 'Este archivo no tiene vista previa en la app: descárgalo para abrirlo.', 'muted'));
+  }
+  dialog(tipo === 'pdf' ? 'Visor de documentos' : 'Archivo · ' + (doc.name || 'sin nombre'), controls);
   $('dialog').classList.add('wide-dialog');
 }
 async function viewPdf(doc) {
@@ -81,9 +163,63 @@ async function downloadDocOnline(doc) {
 }
 async function viewDocOnline(doc) {
   if (cloudStorage) {
+    /* Vista pre-generada PRIMERO (2.9.7 · D2): solo para lo que
+       puede ser PDF (por su nombre: un ZIP o un XML no tienen
+       primera página que pintar) y solo si el servidor la tiene
+       — su ruta responde 404 honesto cuando el documento no
+       tiene miniatura posible, y entonces no hay paso previo.
+       El criterio puedePrevia297 se conserva tal cual: sin
+       fase de previa posible (ZIP/XML por nombre) no se abre
+       ningún «cargando» de primera página. */
+    const nombreDoc297 = String(doc?.name || '').toLowerCase();
+    const puedePrevia297 = !nombreDoc297.endsWith('.zip') && !nombreDoc297.endsWith('.xml') &&
+      typeof satToken !== 'undefined' && Boolean(satToken);
+    /* ¿Sigue el diálogo enseñando el «cargando» de ESTE
+       documento? Si Paco ya lo cerró o abrió otra cosa, no
+       se le reabre ni se le repinta nada encima. */
+    const sigue297 = () => document.querySelector('dialog [data-visor-cargando]')?.dataset.visorDoc297 === String(doc.id);
+    if (puedePrevia297) {
+      /* El visor abre AL INSTANTE (2.9.8 · V): el diálogo se
+         pinta en el propio gesto del clic, SIN ningún await
+         delante — con su estado «cargando» honesto — y lo que
+         la red traiga después se pinta dentro de él. */
+      showPdfPreviaDialog297(doc, null);
+      let previa297 = null;
+      try {
+        const respuesta = await fetch('/api/miniatura200g?id=' + encodeURIComponent(doc.id),
+          { headers: { 'X-PacoSAT-Token': satToken } });
+        if (respuesta.ok) previa297 = await respuesta.blob();
+      } catch { previa297 = null; }
+      if (previa297) {
+        if (!sigue297()) return;
+        showPdfPreviaDialog297(doc, previa297);
+        try {
+          const blob = await satApiBlob('files/view?id=' + encodeURIComponent(doc.id));
+          /* El PDF completo sustituye a la previa SOLO si el
+             visor sigue abierto con ESTA previa delante: si Paco
+             ya cerró el diálogo o abrió otra cosa, no se le
+             reabre nada encima. */
+          if (document.querySelector('dialog [data-visor-previa]')) showPdfDialog(doc, blob);
+          return;
+        } catch {
+          /* El completo no llegó: la primera página queda a la
+             vista con su aviso honesto, sin cerrar el visor. */
+          visorPreviaAviso297('Esta es la primera página (vista previa): el documento completo no se pudo cargar ahora. Cierra el visor y vuelve a intentarlo.');
+          return;
+        }
+      }
+      /* Sin previa (404 o fallo de red): el diálogo YA abierto
+         lo dice en su nota y sigue al documento completo, por
+         el camino compartido de abajo. */
+      if (!sigue297()) return;
+      visorPreviaAviso297('Este documento no tiene vista previa: cargando el documento completo…');
+    }
     try {
       const blob = await satApiBlob('files/view?id=' + encodeURIComponent(doc.id));
-      showPdfDialog(doc, blob);
+      /* Sin fase de previa (ZIP/XML), el completo abre el
+         visor como siempre; con fase, solo si el diálogo
+         sigue enseñando ESTE visor. */
+      if (!puedePrevia297 || sigue297()) showPdfDialog(doc, blob);
       return;
     } catch { /* la ruta en línea no lo sirvió: se intenta la copia local */ }
   }
@@ -91,6 +227,7 @@ async function viewDocOnline(doc) {
 }
 $('dialog').addEventListener('close', () => {
   $('dialog').classList.remove('wide-dialog', 'invoice-dialog');
+  visorPreviaLimpiar297();
   if (previewUrl) {
     const url = previewUrl;
     previewUrl = undefined;

@@ -1,0 +1,184 @@
+/* ===== Usuarios con nombre propio (2.9.8) =====
+   El panel de verdad de «Usuarios con nombre propio» de
+   Ajustes. Viaja DIFERIDO en la parte 'usuarios': el talón
+   usersPanel298 (final-ui.part) lo pide con ensureLazyPart y,
+   al llegar, llama a usersPanelReal298(panelEl, body) con el
+   panel y su cuerpo ya pintados con el «cargando» honesto.
+   Cada persona entra con su usuario y su contraseña y ve solo
+   los RFC marcados; el servidor manda (GET /api/users solo
+   responde al principal) y cada gesto se REDIBUJA desde la
+   lista recién re-leída: nada de pintar un éxito sin re-leer,
+   y si la respuesta se pierde por el camino, se re-lee igual
+   antes de dar el error (la doctrina de la casa). Los textos
+   van en palabras llanas: papeles explicados, alcance dicho
+   como frase, nada de tecnicismos. */
+function usersPanelReal298(panelEl, body) {
+  panelEl.dataset.usuarios298 = '1';
+  let usuarios298 = [];
+  const cargarUsuarios298 = async () => {
+    body.replaceChildren(n('p', 'Cargando los usuarios…', 'muted'));
+    const data = await satApi('users');
+    usuarios298 = data.usuarios || [];
+    pintarUsuarios298();
+  };
+  /* Un gesto completo: llama a la API y redibuja el panel
+     desde la lista recién leída. Si el gesto falla, re-lee
+     igual (la respuesta pudo perderse con el cambio ya hecho)
+     y deja que el error original mande. */
+  const aplicarUsuarios298 = async (trabajo, textoOk) => {
+    try { await trabajo(); }
+    catch (error) {
+      try { await cargarUsuarios298(); } catch { /* manda el error del gesto */ }
+      throw error;
+    }
+    await cargarUsuarios298();
+    if (textoOk) toast(textoOk, 'ok');
+  };
+  const pintarUsuarios298 = () => {
+    body.replaceChildren();
+    const activos = usuarios298.filter(u => u.activo);
+    const desactivados = usuarios298.filter(u => !u.activo);
+    const strip = n('div', undefined, 'traffic-strip');
+    strip.append(statusPill(activos.length ? 'ok' : 'dim',
+      activos.length + (activos.length === 1 ? ' usuario activo' : ' usuarios activos')));
+    if (desactivados.length)
+      strip.append(statusPill('dim', desactivados.length + (desactivados.length === 1 ? ' desactivado' : ' desactivados')));
+    const conAcceso = usuarios298.filter(u => u.ultimoAcceso);
+    if (conAcceso.length) {
+      const reciente = conAcceso.reduce((a, b) => (+new Date(b.ultimoAcceso) > +new Date(a.ultimoAcceso) ? b : a));
+      strip.append(statusPill('dim', 'Última entrada: ' + reciente.nombre + ' · ' + localDateTime(reciente.ultimoAcceso)));
+    } else strip.append(statusPill('dim', 'Todavía no ha entrado nadie'));
+    body.append(strip);
+    const acts = n('div', undefined, 'actions');
+    const alta = n('button', 'Dar de alta a una persona', 'primary');
+    alta.type = 'button';
+    alta.onclick = () => dialogoUsuario298(null);
+    acts.append(alta);
+    body.append(acts);
+    if (!usuarios298.length) {
+      body.append(n('p', 'Todavía no hay ninguna persona dada de alta. Da de alta a la primera con el botón de arriba: entrará con su usuario y su contraseña, y verá solo los RFC que le marques.', 'empty'));
+      return;
+    }
+    for (const u of usuarios298) body.append(filaUsuario298(u));
+  };
+  const filaUsuario298 = u => {
+    const card = n('article', undefined, 'api-key-card');
+    const head = n('div', undefined, 'tramite-head');
+    head.append(n('strong', u.nombre),
+      statusPill(u.rol === 'administrador' ? 'warn' : 'dim', u.rol === 'administrador' ? 'Administrador' : 'Solo lectura', undefined, undefined, true),
+      statusPill(u.activo ? 'ok' : 'dim', u.activo ? 'Activo' : 'Desactivado', undefined, undefined, true));
+    card.append(head);
+    card.append(n('p', 'Usuario: ' + u.usuario, 'muted'));
+    card.append(n('p', u.rol === 'administrador' ? 'Ve todos los RFC'
+      : (u.rfcs?.length ? 'Solo ve: ' + u.rfcs.join(', ') : 'Sin RFC marcados: no ve ningún dato')));
+    if (u.contadora) card.append(statusPill('dim', 'Vista de contadora', undefined, undefined, true));
+    card.append(n('p', u.ultimoAcceso ? 'Último acceso: ' + localDateTime(u.ultimoAcceso) : 'Sin entrar todavía', 'muted'));
+    const acts = n('div', undefined, 'actions');
+    const boton = (texto, fn) => {
+      const b = n('button', texto, 'soft small');
+      b.type = 'button';
+      b.onclick = () => Promise.resolve().then(fn).catch(error => toast(error.message, 'error'));
+      return b;
+    };
+    acts.append(
+      boton('Editar', () => dialogoUsuario298(u)),
+      boton('Cambiar contraseña', () => dialogoPassword298(u)),
+      boton(u.activo ? 'Desactivar' : 'Activar', () => aplicarUsuarios298(
+        () => satApi('users/editar', { id: u.id, activo: !u.activo }),
+        u.activo ? u.nombre + ' quedó desactivado: ya no puede entrar.' : u.nombre + ' quedó activo otra vez.')),
+      boton('Borrar', () => dialogoBorrar298(u)));
+    card.append(acts);
+    return card;
+  };
+  /* Alta y edición comparten diálogo: en el alta se escriben
+     nombre, usuario y contraseña; en la edición el usuario se
+     enseña fijo (es su llave de entrada, no se reescribe) y la
+     contraseña va por su propio botón. El alcance se marca con
+     las casillas de la gente y su frase viva dice en cada
+     momento qué verá esta persona; con el papel de
+     Administrador las casillas se sustituyen por su explicación
+     y la casilla de la contadora (solo de solo lectura) se va. */
+  const dialogoUsuario298 = u => {
+    const esAlta = !u;
+    const nombreIn = input('text', { value: u?.nombre || '', autocomplete: 'off', maxlength: '80' });
+    const usuarioIn = esAlta ? input('text', { autocomplete: 'username', maxlength: '40' }) : null;
+    const passwordIn = esAlta ? input('password', { autocomplete: 'new-password' }) : null;
+    const rolSel = select([['lectura', 'Solo lectura'], ['administrador', 'Administrador']],
+      u?.rol || 'lectura', 'Papel de esta persona');
+    const checks = new Map();
+    const checksBox = n('div');
+    checksBox.append(n('strong', 'Qué RFC puede ver'));
+    if (!people.length) checksBox.append(n('p', 'Sin contribuyentes todavía: no hay ningún RFC que marcar.', 'muted'));
+    for (const person of people) {
+      const label = n('label', undefined, 'switch-line');
+      const box = input('checkbox', { checked: (u?.rfcs || []).includes(person.id) });
+      checks.set(person.id, box);
+      label.append(box, n('span', person.name + ' · ' + person.id));
+      checksBox.append(label);
+    }
+    const frase = n('p', '', 'muted');
+    const adminTexto = n('p', 'Un administrador ve todos los RFC y puede trabajar como tú; solo la gestión de accesos y las llaves quedan reservadas a ti.');
+    const contadoraLabel = n('label', undefined, 'switch-line');
+    const contadoraCheck = input('checkbox', { checked: Boolean(u?.contadora) });
+    contadoraLabel.append(contadoraCheck, n('span', 'Es la contadora: al entrar verá primero su lista del mes'));
+    const alcanceBox = n('div', undefined, 'sat-form');
+    alcanceBox.append(checksBox, frase, adminTexto, contadoraLabel);
+    const seleccionados = () => [...checks.entries()].filter(([, box]) => box.checked).map(([rfc]) => rfc);
+    const actualizar = () => {
+      const admin = rolSel.value === 'administrador';
+      checksBox.hidden = admin;
+      frase.hidden = admin;
+      adminTexto.hidden = !admin;
+      contadoraLabel.hidden = admin;
+      if (!admin) {
+        const sel = seleccionados();
+        frase.textContent = sel.length
+          ? 'Esta persona verá solo estos RFC: ' + sel.join(', ')
+          : 'No verá ningún RFC: no podrá consultar ningún dato.';
+      }
+    };
+    for (const box of checks.values()) box.onchange = actualizar;
+    rolSel.onchange = actualizar;
+    actualizar();
+    const controls = [fieldWrap('Nombre', nombreIn)];
+    if (esAlta) controls.push(fieldWrap('Usuario', usuarioIn), fieldWrap('Contraseña (al menos 8 caracteres)', passwordIn));
+    else controls.push(fieldWrap('Usuario', n('span', u.usuario)));
+    controls.push(fieldWrap('Papel', rolSel), alcanceBox);
+    dialog(esAlta ? 'Dar de alta a una persona' : 'Editar a ' + u.nombre, controls, async () => {
+      const nombre = nombreIn.value.trim();
+      check(nombre, 'Escribe el nombre de la persona.');
+      const admin = rolSel.value === 'administrador';
+      const datos = { nombre, rol: rolSel.value,
+        rfcs: admin ? [] : seleccionados(), contadora: !admin && contadoraCheck.checked };
+      if (esAlta) {
+        const usuarioTxt = usuarioIn.value.trim();
+        check(usuarioTxt, 'Escribe el usuario con el que entrará.');
+        check(passwordIn.value.length >= 8, 'La contraseña debe tener al menos 8 caracteres.');
+        await aplicarUsuarios298(() => satApi('users', { ...datos, usuario: usuarioTxt, password: passwordIn.value }),
+          'Ya está dada de alta: ' + nombre + ' puede entrar con su usuario y su contraseña.');
+      } else {
+        await aplicarUsuarios298(() => satApi('users/editar', { id: u.id, ...datos }),
+          'Cambios guardados para ' + nombre + '.');
+      }
+    }, esAlta ? 'Dar de alta' : 'Guardar cambios');
+  };
+  const dialogoPassword298 = u => {
+    const passwordIn = input('password', { autocomplete: 'new-password' });
+    dialog('Cambiar la contraseña de ' + u.nombre,
+      [n('p', 'La contraseña nueva vale desde que guardes: la anterior deja de servir.', 'muted'),
+        fieldWrap('Nueva contraseña (al menos 8 caracteres)', passwordIn)], async () => {
+        check(passwordIn.value.length >= 8, 'La contraseña debe tener al menos 8 caracteres.');
+        await aplicarUsuarios298(() => satApi('users/editar', { id: u.id, password: passwordIn.value }),
+          'Contraseña cambiada para ' + u.nombre + '.');
+      }, 'Cambiar contraseña');
+  };
+  const dialogoBorrar298 = u => {
+    dialog('Borrar a ' + u.nombre,
+      [n('p', '¿Borrar a ' + u.nombre + '? Dejará de poder entrar. Su nombre queda en la bitácora.')], async () => {
+        await aplicarUsuarios298(() => satApi('users/borrar', { id: u.id }),
+          u.nombre + ' ya no puede entrar: su acceso quedó borrado.');
+      }, 'Borrar');
+  };
+  cargarUsuarios298().catch(error =>
+    body.replaceChildren(n('p', 'No se pudieron leer los usuarios: ' + error.message, 'error-text')));
+}

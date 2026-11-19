@@ -36,6 +36,13 @@ function contexto(part, desde, hasta, stubs = {}) {
     fechaCortaMenu202: () => '5 nov',
     DECL_MESES: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
   });
+  /* RE-BASE integración 2.4.0 (W6): declMenuTexto230 llama a
+     declFaltaMes230, que vive hoy en el PUENTE de ui.part (la
+     parte diferida lo usa desde fuera); el corte de
+     declaraciones-ui ya no lo contiene. El corte se amplía al
+     puente con la función REAL — misma fuerza, nada stubeado. */
+  vm.runInContext(ui.slice(ui.indexOf('function declFaltaMes230'),
+    ui.indexOf('let declEjercicio')), ctx);
   assert.equal(ctx.declMenuTexto230({ hayDatos: true, conocidas: 9, ejercicio: 2026, faltaMes: '2026-10' }, null),
     '9 de 2026 · falta octubre', 'con datos y mes que falta (periodo → su nombre)');
   assert.equal(ctx.declMenuTexto230({ hayDatos: true, conocidas: 11, ejercicio: 2026, faltaMes: null }, null),
@@ -120,7 +127,11 @@ function contexto(part, desde, hasta, stubs = {}) {
 
 /* ---- Pieza 11 · foto por RFC: cuatro semáforos con su dato ---- */
 {
-  const ctxDecl = contexto(declUi, 'function declFaltaMes230', 'function declMenuTexto230', {
+  /* RE-BASE integración 2.4.0 (W6): declFaltaMes230 ya no vive
+     en declaraciones-ui.part sino en el puente de ui.part; el
+     corte se hace en su nuevo hogar, con los mismos extremos
+     de la función (hasta «let declEjercicio», que la sigue). */
+  const ctxDecl = contexto(ui, 'function declFaltaMes230', 'let declEjercicio', {
     DECL_MESES: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
   });
   const ctx = contexto(ui, 'function fotoSemaforos230', 'function fotoRfcPanel230', {
@@ -230,10 +241,21 @@ function contexto(part, desde, hasta, stubs = {}) {
 
 /* ---- El artefacto construido lleva las piezas de las partes principales ---- */
 {
+  /* RE-BASE integración 2.4.0 (W6/W6b): varias marcas de esta
+     lista viven hoy en partes diferidas — 'trabajos/seguir' en
+     Vigilancia, «Cada día 18…» y declMenuTexto230 en
+     Declaraciones, «Ojo: esta ventana…» en Descargas — y en el
+     artefacto solo quedan, cuando quedan, menciones en
+     comentarios que el build retira. Cada marca se busca en
+     artefacto + TODAS las partes de lazy.json (lo que el
+     navegador recibe en total), con la misma fuerza. */
+  const lazy230 = JSON.parse(leer('lazy.json'));
+  const todo230 = artefacto + Object.values(lazy230.partes).map(p => p.source).join('\n');
+  const donde230 = () => todo230;
   for (const marca of ['Qué cambió desde ayer', 'Tus empresas', 'foto-rfc', 'trabajos/seguir',
     'Residente: sin reportar todavía', 'Cada día 18, PacoSAT baja solo el acuse del mes anterior',
     'Ojo: esta ventana ya se pidió el', 'puertaLinea230', 'declMenuTexto230'])
-    assert.ok(artefacto.includes(marca), 'el artefacto incluye: ' + marca);
+    assert.ok(donde230(marca).includes(marca), 'el artefacto incluye: ' + marca);
   console.log('OK 2.3.0·C artefacto — Faro-Fiscal.html construido con las piezas del cliente.');
 }
 

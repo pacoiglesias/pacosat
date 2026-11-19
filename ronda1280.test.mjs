@@ -434,7 +434,13 @@ const falloNavegacion = marcador => async () => {
   assert.ok(html.includes('declaraciones: declaracionesScreen'), 'P2: y se resuelve en el render');
   assert.ok(!ui.includes('parts.push(declaracionesSection())'), 'P2: Documentos ya no repite la sección');
   assert.ok(satdocsUi.includes("navigate('declaraciones')"), 'P2: la tarjeta de Documentos lleva al destino');
-  assert.ok(!html.includes('data-view="registro"'), 'P1: Registro ya no es botón del menú (2.0.1)');
+  /* RE-BASE integración 2.4.0 (W4d): la barra de 22 destinos
+     devolvió Registro al menú como botón propio — la regla de
+     Paco de que lo necesario no se esconde manda sobre el pin
+     de la 2.0.1. El pin se invierte con la misma fuerza: el
+     botón CONSTA; el resto de P1 (mapa de render, parte
+     diferida, huella CSP) no cambia. */
+  assert.ok(html.includes('data-view="registro"'), 'P1: Registro es botón propio del menú (barra de 22 destinos, W4d)');
   assert.ok(html.includes('registro: typeof registroScreen'), 'P1: Registro se resuelve en el mapa de render');
   assert.ok(lazy.partes.registro, 'P1: el Registro consta como parte diferida');
   assert.ok(lazy.partes.registro.source.includes('function registroScreen'), 'P1: su parte trae la pantalla');
@@ -464,8 +470,14 @@ const falloNavegacion = marcador => async () => {
      Avisos conserva su conteo, porque significa «esto te
      necesita». Los contadores por RFC siguen vivos donde se
      usan: en las líneas de Hoy. */
-  assert.ok(!html.includes('id="buzon-badge"') && !html.includes('id="tributario-badge"') &&
-    !html.includes('id="dinero-badge"'), 'P9: el menú ya no lleva distintivos de inventario');
+  /* RE-BASE 2.9.13 · mejora 5 (orden directa de Paco en las
+     30 mejoras gráficas, posterior a la 1.31.0): los contadores
+     de PENDIENTES vuelven al menú por sección — el de
+     Novedades («buzon-badge») enseña los sin leer del RFC
+     elegido sin entrar —; los distintivos de inventario
+     (dinero, tributario) siguen fuera, como mandó la 1.31.0. */
+  assert.ok(html.includes('id="buzon-badge"') && !html.includes('id="tributario-badge"') &&
+    !html.includes('id="dinero-badge"'), 'P9: el menú lleva el contador de pendientes de Novedades (mejora 5), no los de inventario');
   assert.ok(ui.includes('buzonUnreadFor(scope)') && ui.includes('tribSinAbrirFor(scope)'),
     'P9: los conteos por RFC elegido viven en Hoy');
   assert.ok(avisosUi.includes('avisosBadgeCount'), 'P9: el de Avisos sale del conteo por RFC del payload');
@@ -539,7 +551,7 @@ const falloNavegacion = marcador => async () => {
   assert.ok(caps.includes('MENÚ DE 13 DESTINOS'), 'P8/D3: el menú dice sus 13 destinos reales');
   assert.ok(caps.includes('SEMANAL'), 'P8/D4: el buzón automático consta con su cadencia semanal real');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+  assert.ok(html.includes('"version":"2.9.14"'), 'el artefacto se sella con la versión vigente (2.0.1)');
   console.log('OK 1.28.0 · P8 — CAPACIDADES veraz: e.firma viva, versión al pie, 13 destinos y cadencia semanal; copias idénticas.');
 }
 

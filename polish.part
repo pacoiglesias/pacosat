@@ -1,8 +1,8 @@
-/* Pantallas */.period-chip{display:inline-block;padding:5px 8px;border-radius:7px;background:var(--info-bg);color:var(--info-ink);font-size:12px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.cfdi-dialog{width:min(940px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:var(--surface-2);border:var(--bd);padding:16px;border-radius:var(--r-l)}.invoice-summary h3{font-size:26px}.invoice-summary small,.invoice-parties span{color:var(--muted)}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div,.facts>div{display:grid;gap:3px;padding:10px;background:var(--surface);border-radius:9px;min-width:0}.invoice-parties small,.facts small{font-size:11px;color:var(--muted);font-weight:700}.invoice-concepts,.seal-details{padding:11px 13px;border-radius:9px}.invoice-concepts ul{margin:6px 0 0}.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px;margin:10px 0}.facts>div{gap:2px;background:var(--surface-2)}.facts strong{font-size:13px}.seal-details{margin:8px 0}.seal-details summary{cursor:pointer;font-weight:650}.seal-details pre{white-space:pre-wrap;font-size:11px;max-height:130px;overflow:auto}.print-seals{font-size:10px}.print-seals p{margin:3px 0}.cap-row{display:flex;gap:9px;align-items:flex-start;padding:5px 0}.cap-row .tag{flex:none}.monitor-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;padding:16px}.monitor-action{display:grid;gap:10px;align-content:start;background:var(--surface-2);border-radius:var(--r-l);padding:16px;min-width:0}.monitor-action p,.monitor-truth{font-size:13px}button.monitor-big{width:100%;padding:13px 15px;min-height:44px;justify-content:center}.monitor-truth{display:grid;gap:3px;padding:0 16px 16px;color:var(--muted)}.chart-legend .sw-hm0{background:var(--surface-2);border:var(--bd)}.chart-legend .sw-hm1{background:var(--chart-2);opacity:.5}.hm-scroll{overflow-x:auto;padding:2px 16px 6px}.hm{display:block;height:auto}.hm rect.hm-l0{fill:var(--surface-2);stroke:var(--line);stroke-width:.6}.hm rect.hm-l1{fill:var(--chart-2);opacity:.5}.hm rect.hm-l2{fill:var(--chart-2)}.hm text{fill:var(--muted);font-size:11px;font-weight:600}.hm-detail{padding:0 16px 13px;color:var(--muted)}.timeline-item{display:grid;padding:7px 0 7px 13px;border-left:2px solid var(--line)}.timeline-item small,.timeline-empty{color:var(--muted)}.timeline-empty{margin:4px 0}.traffic-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.today-line{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:0 16px 6px}.next-step{margin:6px 16px 16px;padding:13px 16px;border-radius:var(--r-l);background:var(--info-bg);display:grid;gap:6px;justify-items:start}.rest-switch{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.rest-label{display:grid;gap:1px}.rest-label small{color:var(--muted);font-size:12px}.rest-toggle[aria-pressed="true"]{background:var(--warn-bg);color:var(--warn-ink);border-color:transparent}.filter-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.filter-chips:not(:empty){padding:10px 16px;border-top:var(--bd)}.filter-chip{border-radius:100px;padding:5px 11px;font-size:13px;background:var(--surface-2)}.pw-eye{padding:5px 8px;margin-top:4px;justify-self:start}.news-note{margin:10px 16px 0;padding:7px 10px;border:1px solid var(--warn-ink);border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);font-size:13px;font-weight:700}.rfc-note{font-size:13px;font-weight:600;color:var(--muted)}.rfc-note[data-state=ok]{color:var(--ok-ink)}.rfc-note[data-state=warn]{color:var(--warn-ink);background:var(--warn-bg);border:1px solid var(--warn-ink);border-radius:8px;padding:7px 10px}.rfc-note[data-state=error]{color:var(--danger);background:var(--danger-bg);border:1px solid var(--danger);border-radius:8px;padding:7px 10px}.cp-row{display:flex;align-items:flex-start;gap:12px;padding:10px 4px;border-bottom:var(--bd)}.cp-row:last-child{border-bottom:0}.cp-main{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}.cp-hit{font-size:13px;font-weight:600}.cp-hit.sev-warn{color:var(--warn)}.satdoc-form{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.satdoc-form input[type="text"]{flex:1}.switch-line{display:inline-flex;gap:8px;align-items:center}.rescue-folios{font-size:13px;word-break:break-all}.reconcile-candidate{border-radius:var(--r-l);padding:10px 12px;margin:8px 0;background:var(--surface-2)}.decl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(150px,100%),1fr));gap:8px;margin:12px 0;min-width:0}.decl-cell{border-radius:var(--r-m);padding:10px 12px;display:grid;gap:2px}.today-clarity{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.today-col{border-radius:var(--r-l);padding:10px 12px}.today-col h3{margin:0 0 6px}.visor-table td:nth-child(3),.visor-table td:nth-child(4){white-space:nowrap}.pagos-table{margin:8px 0 4px;font-size:14px}.pagos-table th{padding:6px 8px;border-bottom:2px solid var(--line)}.pagos-table td{padding:6px 8px;border-bottom:var(--bd);vertical-align:middle}.pagos-cell{cursor:pointer}.pagos-over td{background:color-mix(in srgb,var(--danger) 8%,transparent)}.pagos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 14px;margin:8px 0}.pagos-field{display:flex;flex-direction:column;gap:4px;font-size:13px}.pagos-field span{color:var(--muted)}.pagos-form{margin-top:16px;border-top:var(--bd);padding-top:10px}.pagos-form h3{margin-bottom:8px}.pagos-warn{border:1px solid color-mix(in srgb,var(--warn-ink) 55%,transparent);background:color-mix(in srgb,var(--warn-ink) 9%,transparent);border-radius:var(--r-s);padding:8px 12px;margin:10px 0}.pagos-seed{border:1px dashed color-mix(in srgb,var(--chart-2) 55%,transparent);border-radius:var(--r-s);padding:10px 12px;margin:8px 0 12px}.pagos-actions{display:flex;gap:8px;flex-wrap:wrap}.pagos-lines th:nth-child(2),.pagos-lines td:nth-child(2){min-width:210px}.pagos-lines th:nth-child(3),.pagos-lines td:nth-child(3){white-space:nowrap}.pagos-lines th:nth-child(6),.pagos-lines td:nth-child(6){min-width:108px}.sat-meta{display:flex;gap:4px 14px;flex-wrap:wrap}.sat-progress{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}.sat-progress-head{margin:0 0 6px}.sat-progress-note{font-size:13px;margin:6px 0 0}.sat-steps{list-style:none;margin:0;padding:0;font-size:13px}.sat-steps li{display:flex;gap:8px;padding:2px 0;align-items:baseline}.sat-step-time{opacity:.6;white-space:nowrap}.sat-run{border-radius:8px;padding:6px 10px;margin:6px 0}.sat-run summary{cursor:pointer;font-size:13px;font-weight:600}.swatches{display:flex;gap:8px;flex-wrap:wrap}.swatch{padding:7px 10px}.swatch[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--accent-ink)}.swatch-dot{width:15px;height:15px;border-radius:50%;display:inline-block}.logo-preview{width:52px;height:52px;object-fit:contain;border:var(--bd);border-radius:10px}/* Acentos (formato de verify.cjs). */:root[data-accent="azul"]{--green:#175c9e;--green-hover:#114a80;--on-accent:#ffffff;--tint:#e3edf8;--accent-ink:#175c9e;--nav-active-bg:#123c63;--nav-active-ink:#cfe2f5}:root[data-theme="dark"][data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--accent-ink:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}:root[data-accent="teal"]{--green:#0f766e;--green-hover:#0b5a54;--on-accent:#ffffff;--tint:#dcf2ef;--accent-ink:#0f766e;--nav-active-bg:#0a3f3a;--nav-active-ink:#c4efe9}:root[data-theme="dark"][data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--accent-ink:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}:root[data-accent="violeta"]{--green:#6d28d9;--green-hover:#571db0;--on-accent:#ffffff;--tint:#ece4fa;--accent-ink:#6d28d9;--nav-active-bg:#3d1478;--nav-active-ink:#ddd0fb}:root[data-theme="dark"][data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--accent-ink:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}:root[data-accent="burdeos"]{--green:#9f2436;--green-hover:#7f1b2b;--on-accent:#ffffff;--tint:#f9e3e6;--accent-ink:#9f2436;--nav-active-bg:#57101d;--nav-active-ink:#f6ccd2}:root[data-theme="dark"][data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--accent-ink:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}:root[data-accent="ambar"]{--green:#9a5b00;--green-hover:#7c4900;--on-accent:#ffffff;--tint:#f7ecd4;--accent-ink:#9a5b00;--nav-active-bg:#54350a;--nav-active-ink:#f3dfae}:root[data-theme="dark"][data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--accent-ink:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}:root[data-accent="rosa"]{--green:#b01854;--green-hover:#8f1244;--on-accent:#ffffff;--tint:#f9e0ea;--accent-ink:#b01854;--nav-active-bg:#5c0d2f;--nav-active-ink:#f6c9da}:root[data-theme="dark"][data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--accent-ink:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}:root[data-accent="grafito"]{--green:#3f5468;--green-hover:#31424f;--on-accent:#ffffff;--tint:#e5ebf0;--accent-ink:#3f5468;--nav-active-bg:#22303f;--nav-active-ink:#d3dee8}:root[data-theme="dark"][data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--accent-ink:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}:root[data-accent="verde"]{--green:#0e6b4f;--green-hover:#0a5741;--on-accent:#ffffff;--tint:#e1f1e9;--accent-ink:#125d44;--nav-active-bg:#14402f;--nav-active-ink:#a9ecc9}:root[data-theme="dark"][data-accent="verde"]{--green:#2fae83;--green-hover:#3cc398;--on-accent:#06231a;--tint:#14352b;--accent-ink:#9fe3c0;--nav-active-bg:#14352b;--nav-active-ink:#a9ecc9}/* Gemelos de oscuro por sistema (2.3.0): sin tema guardado, applyTheme no pone data-theme y los bloques [data-theme="dark"] no casaban; con el sistema en oscuro los acentos heredaban sus valores claros (--tint pálido sobre la UI oscura). Estos gemelos aplican los MISMOS valores oscuros cuando el sistema está en oscuro y no hay tema claro fijado. */@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--accent-ink:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}:root:not([data-theme="light"])[data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--accent-ink:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}:root:not([data-theme="light"])[data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--accent-ink:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}:root:not([data-theme="light"])[data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--accent-ink:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}:root:not([data-theme="light"])[data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--accent-ink:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}:root:not([data-theme="light"])[data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--accent-ink:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}:root:not([data-theme="light"])[data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--accent-ink:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}:root:not([data-theme="light"])[data-accent="verde"]{--green:#2fae83;--green-hover:#3cc398;--on-accent:#06231a;--tint:#14352b;--accent-ink:#9fe3c0;--nav-active-bg:#14352b;--nav-active-ink:#a9ecc9}}@media(max-width:1080px){.dashboard-grid{grid-template-columns:1fr}}@media(max-width:900px){.top-search input{min-width:120px;width:38vw}}@media(max-width:860px){.sidebar{display:none}.frame{grid-template-columns:1fr}.bottombar{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:var(--bd);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}.bottombar button{flex-direction:column;gap:2px;font-size:11px;padding:6px 2px;border-color:transparent;background:transparent}.bottombar button[aria-current]{background:var(--tint);color:var(--accent-ink)}.page{padding-bottom:84px}.total-hero strong{font-size:28px}.frame.sheet-open .sidebar{display:flex;position:fixed;inset:0 auto 0 0;width:min(300px,86vw);z-index:50;overflow-y:auto}.frame.sheet-open .sidebar nav{display:grid}.card-table .table-scroll,.card-table.table-scroll{overflow:visible}.card-table .grid-table{display:block}.card-table .grid-table thead{display:none}.card-table .grid-table tbody,.card-table .grid-table tr{display:block}.card-table .grid-table tr{border:var(--bd);border-radius:var(--r-l);padding:8px 12px;margin-bottom:12px}.card-table .grid-table td{display:flex;justify-content:space-between;gap:12px;border-top:0;padding:6px 0}.card-table .grid-table td::before{content:attr(data-label);color:var(--muted);font-weight:600}}@media(max-width:780px){.frame{grid-template-columns:1fr}.sidebar{padding:14px;gap:12px}.switcher{grid-template-columns:minmax(0,1fr) auto}.switcher label{grid-column:1/-1}.sidebar nav{display:flex;flex-wrap:wrap}.local{display:none}.top,.page{padding:14px}.nav-caption{width:100%;padding:3px 5px}.metric{min-height:0}.dashboard-hero{padding:18px}.heading .actions{width:100%}.header-counters{display:none}}@media(max-width:460px){.invoice-parties{grid-template-columns:1fr}.heading .primary{width:100%}.filters input,.filters select{flex:1 1 140px}.monitor-actions{padding:10px}}@media print{.frame{display:none!important}#print-report{display:block!important;color:#000;background:#fff}#print-report table{width:100%;border-collapse:collapse}#print-report th,#print-report td{border:1px solid #bbb;padding:6px 8px;font-size:12px}}@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}.timeline{display:grid}
+/* Pantallas */.period-chip{display:inline-block;padding:5px 8px;border-radius:7px;background:var(--info-bg);color:var(--info-ink);font-size:12px}.invoice-dialog{width:min(690px,calc(100% - 24px));max-height:94vh}.cfdi-dialog{width:min(940px,calc(100% - 24px));max-height:94vh}.invoice-summary{display:grid;gap:13px;background:var(--surface-2);border:var(--bd);padding:16px;border-radius:var(--r-l)}.invoice-summary h3{font-size:26px}.invoice-summary small,.invoice-parties span{color:var(--muted)}.invoice-parties{display:grid;grid-template-columns:1fr 1fr;gap:8px}.invoice-parties>div,.facts>div{display:grid;gap:3px;padding:10px;background:var(--surface);border-radius:9px;min-width:0}.invoice-parties small,.facts small{font-size:11px;color:var(--muted);font-weight:700}.invoice-concepts,.seal-details{padding:11px 13px;border-radius:9px}.invoice-concepts ul{margin:6px 0 0}.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:9px;margin:10px 0}.facts>div{gap:2px;background:var(--surface-2)}.facts strong{font-size:13px}.seal-details{margin:8px 0}.seal-details summary{cursor:pointer;font-weight:650}.seal-details pre{white-space:pre-wrap;font-size:11px;max-height:130px;overflow:auto}.print-seals{font-size:10px}.print-seals p{margin:3px 0}.cap-row{display:flex;gap:9px;align-items:flex-start;padding:5px 0}.cap-row .tag{flex:none}.monitor-truth{font-size:13px}.monitor-truth{display:grid;gap:3px;padding:0 16px 16px;color:var(--muted)}.chart-legend .sw-hm0{background:var(--surface-2);border:var(--bd)}.chart-legend .sw-hm1{background:var(--chart-2);opacity:.5}.hm-scroll{overflow-x:auto;padding:2px 16px 6px}.hm{display:block;height:auto}.hm rect.hm-l0{fill:var(--surface-2);stroke:var(--line);stroke-width:.6}.hm rect.hm-l1{fill:var(--chart-2);opacity:.5}.hm rect.hm-l2{fill:var(--chart-2)}.hm text{fill:var(--muted);font-size:11px;font-weight:600}.hm-detail{padding:0 16px 13px;color:var(--muted)}.timeline-item{display:grid;padding:7px 0 7px 13px;border-left:2px solid var(--line)}.timeline-item small,.timeline-empty{color:var(--muted)}.timeline-empty{margin:4px 0}.traffic-strip{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}.today-line{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;padding:0 16px 6px}.next-step{margin:6px 16px 16px;padding:13px 16px;border-radius:var(--r-l);background:var(--info-bg);display:grid;gap:6px;justify-items:start}.rest-switch{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.rest-label{display:grid;gap:1px}.rest-label small{color:var(--muted);font-size:12px}.rest-toggle[aria-pressed="true"]{background:var(--warn-bg);color:var(--warn-ink);border-color:transparent}.filter-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center}.filter-chips:not(:empty){padding:10px 16px;border-top:var(--bd)}.filter-chip{border-radius:100px;padding:5px 11px;font-size:13px;background:var(--surface-2)}.pw-eye{padding:5px 8px;margin-top:4px;justify-self:start}.news-note{margin:10px 16px 0;padding:7px 10px;border:1px solid var(--warn-ink);border-radius:8px;background:var(--warn-bg);color:var(--warn-ink);font-size:13px;font-weight:700}.rfc-note{font-size:13px;font-weight:600;color:var(--muted)}.rfc-note[data-state=ok]{color:var(--ok-ink)}.rfc-note[data-state=warn]{color:var(--warn-ink);background:var(--warn-bg);border:1px solid var(--warn-ink);border-radius:8px;padding:7px 10px}.rfc-note[data-state=error]{color:var(--danger);background:var(--danger-bg);border:1px solid var(--danger);border-radius:8px;padding:7px 10px}.cp-row{display:flex;align-items:flex-start;gap:12px;padding:10px 4px;border-bottom:var(--bd)}.cp-row:last-child{border-bottom:0}.cp-main{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}.cp-hit{font-size:13px;font-weight:600}.cp-hit.sev-warn{color:var(--warn)}.satdoc-form{display:flex;flex-wrap:wrap;gap:10px;align-items:center}.satdoc-form input[type="text"]{flex:1}.switch-line{display:inline-flex;gap:8px;align-items:center}.rescue-folios{font-size:13px;word-break:break-all}.reconcile-candidate{border-radius:var(--r-l);padding:10px 12px;margin:8px 0;background:var(--surface-2)}.decl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(150px,100%),1fr));gap:8px;margin:12px 0;min-width:0}.decl-cell{border-radius:var(--r-m);padding:10px 12px;display:grid;gap:2px}.today-clarity{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.today-col{border-radius:var(--r-l);padding:10px 12px}.today-col h3{margin:0 0 6px}.visor-table td:nth-child(3),.visor-table td:nth-child(4){white-space:nowrap}.pagos-table{margin:8px 0 4px;font-size:14px}.pagos-table th{padding:6px 8px;border-bottom:2px solid var(--line)}.pagos-table td{padding:6px 8px;border-bottom:var(--bd);vertical-align:middle}.pagos-cell{cursor:pointer}.pagos-over td{background:color-mix(in srgb,var(--danger) 8%,transparent)}.pagos-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px 14px;margin:8px 0}.pagos-field{display:flex;flex-direction:column;gap:4px;font-size:13px}.pagos-field span{color:var(--muted)}.pagos-form{margin-top:16px;border-top:var(--bd);padding-top:10px}.pagos-form h3{margin-bottom:8px}.pagos-warn{border:1px solid color-mix(in srgb,var(--warn-ink) 55%,transparent);background:color-mix(in srgb,var(--warn-ink) 9%,transparent);border-radius:var(--r-s);padding:8px 12px;margin:10px 0}.pagos-seed{border:1px dashed color-mix(in srgb,var(--chart-2) 55%,transparent);border-radius:var(--r-s);padding:10px 12px;margin:8px 0 12px}.pagos-actions{display:flex;gap:8px;flex-wrap:wrap}.pagos-lines th:nth-child(2),.pagos-lines td:nth-child(2){min-width:210px}.pagos-lines th:nth-child(3),.pagos-lines td:nth-child(3){white-space:nowrap}.pagos-lines th:nth-child(6),.pagos-lines td:nth-child(6){min-width:108px}.sat-meta{display:flex;gap:4px 14px;flex-wrap:wrap}.sat-progress{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}.sat-progress-head{margin:0 0 6px}.sat-progress-note{font-size:13px;margin:6px 0 0}.sat-steps{list-style:none;margin:0;padding:0;font-size:13px}.sat-steps li{display:flex;gap:8px;padding:2px 0;align-items:baseline}.sat-step-time{opacity:.6;white-space:nowrap}.sat-run{border-radius:8px;padding:6px 10px;margin:6px 0}.sat-run summary{cursor:pointer;font-size:13px;font-weight:600}.swatches{display:flex;gap:8px;flex-wrap:wrap}.swatch{padding:7px 10px}.swatch[aria-pressed="true"]{border-color:var(--green);background:var(--tint);color:var(--accent-ink)}.swatch-dot{width:15px;height:15px;border-radius:50%;display:inline-block}.logo-preview{width:52px;height:52px;object-fit:contain;border:var(--bd);border-radius:10px}/* Acentos (formato de verify.cjs). */:root[data-accent="azul"]{--green:#175c9e;--green-hover:#114a80;--on-accent:#ffffff;--tint:#e3edf8;--accent-ink:#175c9e;--nav-active-bg:#123c63;--nav-active-ink:#cfe2f5}:root[data-theme="dark"][data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--accent-ink:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}:root[data-accent="teal"]{--green:#0f766e;--green-hover:#0b5a54;--on-accent:#ffffff;--tint:#dcf2ef;--accent-ink:#0f766e;--nav-active-bg:#0a3f3a;--nav-active-ink:#c4efe9}:root[data-theme="dark"][data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--accent-ink:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}:root[data-accent="violeta"]{--green:#6d28d9;--green-hover:#571db0;--on-accent:#ffffff;--tint:#ece4fa;--accent-ink:#6d28d9;--nav-active-bg:#3d1478;--nav-active-ink:#ddd0fb}:root[data-theme="dark"][data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--accent-ink:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}:root[data-accent="burdeos"]{--green:#9f2436;--green-hover:#7f1b2b;--on-accent:#ffffff;--tint:#f9e3e6;--accent-ink:#9f2436;--nav-active-bg:#57101d;--nav-active-ink:#f6ccd2}:root[data-theme="dark"][data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--accent-ink:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}:root[data-accent="ambar"]{--green:#9a5b00;--green-hover:#7c4900;--on-accent:#ffffff;--tint:#f7ecd4;--accent-ink:#9a5b00;--nav-active-bg:#54350a;--nav-active-ink:#f3dfae}:root[data-theme="dark"][data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--accent-ink:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}:root[data-accent="rosa"]{--green:#b01854;--green-hover:#8f1244;--on-accent:#ffffff;--tint:#f9e0ea;--accent-ink:#b01854;--nav-active-bg:#5c0d2f;--nav-active-ink:#f6c9da}:root[data-theme="dark"][data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--accent-ink:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}:root[data-accent="grafito"]{--green:#3f5468;--green-hover:#31424f;--on-accent:#ffffff;--tint:#e5ebf0;--accent-ink:#3f5468;--nav-active-bg:#22303f;--nav-active-ink:#d3dee8}:root[data-theme="dark"][data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--accent-ink:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}:root[data-accent="verde"]{--green:#0e6b4f;--green-hover:#0a5741;--on-accent:#ffffff;--tint:#e1f1e9;--accent-ink:#125d44;--nav-active-bg:#14402f;--nav-active-ink:#a9ecc9}:root[data-theme="dark"][data-accent="verde"]{--green:#2fae83;--green-hover:#3cc398;--on-accent:#06231a;--tint:#14352b;--accent-ink:#9fe3c0;--nav-active-bg:#14352b;--nav-active-ink:#a9ecc9}/* Gemelos de oscuro por sistema (2.3.0): sin tema guardado, applyTheme no pone data-theme y los bloques [data-theme="dark"] no casaban; con el sistema en oscuro los acentos heredaban sus valores claros (--tint pálido sobre la UI oscura). Estos gemelos aplican los MISMOS valores oscuros cuando el sistema está en oscuro y no hay tema claro fijado. */@media (prefers-color-scheme:dark){:root:not([data-theme="light"])[data-accent="azul"]{--green:#6ea8dc;--green-hover:#8dbde8;--on-accent:#0a1c30;--tint:#17334f;--accent-ink:#6ea8dc;--nav-active-bg:#17334f;--nav-active-ink:#6ea8dc}:root:not([data-theme="light"])[data-accent="teal"]{--green:#2dd4bf;--green-hover:#5eead4;--on-accent:#052e2a;--tint:#0f3532;--accent-ink:#2dd4bf;--nav-active-bg:#0f3532;--nav-active-ink:#2dd4bf}:root:not([data-theme="light"])[data-accent="violeta"]{--green:#a78bfa;--green-hover:#bfa8fc;--on-accent:#1d0b38;--tint:#2a1b4d;--accent-ink:#a78bfa;--nav-active-bg:#2a1b4d;--nav-active-ink:#a78bfa}:root:not([data-theme="light"])[data-accent="burdeos"]{--green:#f08a94;--green-hover:#f5a7ae;--on-accent:#330a10;--tint:#472028;--accent-ink:#f08a94;--nav-active-bg:#472028;--nav-active-ink:#f08a94}:root:not([data-theme="light"])[data-accent="ambar"]{--green:#f5b04c;--green-hover:#ffc46b;--on-accent:#2e1c02;--tint:#453310;--accent-ink:#f5b04c;--nav-active-bg:#453310;--nav-active-ink:#f5b04c}:root:not([data-theme="light"])[data-accent="rosa"]{--green:#f78fb8;--green-hover:#faa9ca;--on-accent:#360a1c;--tint:#472031;--accent-ink:#f78fb8;--nav-active-bg:#472031;--nav-active-ink:#f78fb8}:root:not([data-theme="light"])[data-accent="grafito"]{--green:#9db1c8;--green-hover:#b3c4d8;--on-accent:#101b26;--tint:#22303f;--accent-ink:#9db1c8;--nav-active-bg:#22303f;--nav-active-ink:#9db1c8}:root:not([data-theme="light"])[data-accent="verde"]{--green:#2fae83;--green-hover:#3cc398;--on-accent:#06231a;--tint:#14352b;--accent-ink:#9fe3c0;--nav-active-bg:#14352b;--nav-active-ink:#a9ecc9}}@media(max-width:1080px){}@media(max-width:900px){.top-search input{min-width:120px;width:38vw}}@media(max-width:860px){.sidebar{display:none}.frame{grid-template-columns:1fr}.bottombar{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;position:fixed;left:0;right:0;bottom:0;z-index:40;background:var(--surface);border-top:var(--bd);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}.bottombar button{flex-direction:column;gap:2px;font-size:11px;padding:6px 2px;border-color:transparent;background:transparent}.bottombar button[aria-current]{background:var(--tint);color:var(--accent-ink)}.page{padding-bottom:84px}.total-hero strong{font-size:28px}.frame.sheet-open .sidebar{display:flex;position:fixed;inset:0 auto 0 0;width:min(300px,86vw);z-index:50;overflow-y:auto}.frame.sheet-open .sidebar nav{display:grid}.card-table .grid-table{display:block}.card-table .grid-table thead{display:none}.card-table .grid-table tbody,.card-table .grid-table tr{display:block}.card-table .grid-table tr{border:var(--bd);border-radius:var(--r-l);padding:8px 12px;margin-bottom:12px}.card-table .grid-table td{display:flex;justify-content:space-between;gap:12px;border-top:0;padding:6px 0}.card-table .grid-table td::before{content:attr(data-label);color:var(--muted);font-weight:600}}@media(max-width:780px){.frame{grid-template-columns:1fr}.sidebar{padding:14px;gap:12px}.switcher{grid-template-columns:minmax(0,1fr) auto}.switcher label{grid-column:1/-1}.sidebar nav{display:flex;flex-wrap:wrap}.local{display:none}.top,.page{padding:14px}.nav-caption{width:100%;padding:3px 5px}.metric{min-height:0}.dashboard-hero{padding:18px}.heading .actions{width:100%}.header-counters{display:none}}@media(max-width:460px){.invoice-parties{grid-template-columns:1fr}.heading .primary{width:100%}.filters input,.filters select{flex:1 1 140px}}@media print{.frame{display:none!important}#print-report{display:block!important;color:#000;background:#fff}#print-report table{width:100%;border-collapse:collapse}#print-report th,#print-report td{border:1px solid #bbb;padding:6px 8px;font-size:12px}}@media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}.timeline{display:grid}
 .ciec-captcha{border:var(--bd);border-radius:12px;padding:12px;margin-top:10px;background:var(--surface-2)}.ciec-captcha-img{display:block;max-width:100%;height:auto;border:var(--bd);border-radius:8px;background:#fff;margin:8px 0}
 /* Problemas claros, corridas visuales, Centro de mando y salud (1.13.0) */.problem-card{border:var(--bd);border-left:5px solid var(--info-ink);border-radius:var(--r-m);padding:14px 16px;margin:10px 0;background:var(--surface-2);display:grid;gap:6px}.problem-card[data-level="rojo"]{border-left-color:var(--danger);background:var(--danger-bg)}.problem-card[data-level="ambar"]{border-left-color:var(--warn-ink);background:var(--warn-bg)}.problem-head{display:flex;gap:9px;align-items:center;flex-wrap:wrap}.problem-head strong{font-size:15px}.problem-means{color:var(--ink)}.problem-now{color:var(--ink)}.problem-detail summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600}.problem-detail p{font-size:13px;margin-top:5px;overflow-wrap:anywhere}.problem-rows{display:grid;gap:7px;padding:2px 16px 16px}.problem-row{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;font-size:14px}.problem-dot{width:11px;height:11px;border-radius:50%;background:var(--info-ink);flex:none;align-self:center}.problem-row[data-level="rojo"] .problem-dot{background:var(--danger)}.problem-row[data-level="ambar"] .problem-dot{background:var(--warn-ink)}.problem-row-now{color:var(--muted)}.run-phases{list-style:none;margin:8px 0;padding:0;display:grid;gap:4px}.run-phase{display:flex;gap:9px;align-items:center;font-size:14px;color:var(--muted)}.run-phase-mark{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-weight:700;font-size:13px;background:var(--surface);border:var(--bd);flex:none}.run-phase[data-state="done"]{color:var(--ink)}.run-phase[data-state="done"] .run-phase-mark{background:var(--ok-bg);color:var(--ok-ink);border-color:transparent}.run-phase[data-state="current"]{color:var(--ink);font-weight:650}.run-phase[data-state="current"] .run-phase-mark{background:var(--warn-bg);color:var(--warn-ink);border-color:transparent}.run-phase[data-state="failed"]{color:var(--danger);font-weight:650}.run-phase[data-state="failed"] .run-phase-mark{background:var(--danger-bg);color:var(--danger);border-color:transparent}.cmd-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(255px,1fr));gap:10px;padding:10px 12px 12px}.cmd-grid>div{display:grid}.cmd-grid>div:empty{display:none}.cmd-card{border:var(--bd);border-radius:var(--r-l);background:var(--surface-2);padding:14px 16px;display:grid;gap:7px;align-content:start;min-width:0}.cmd-main{display:flex;gap:11px;align-items:flex-start;background:none;border:none;padding:0;text-align:left;cursor:pointer;width:100%;font:inherit;color:inherit}.cmd-main:hover{background:none}.cmd-dot{width:15px;height:15px;border-radius:50%;background:var(--green);flex:none;margin-top:4px}.cmd-card[data-level="rojo"] .cmd-dot{background:var(--danger)}.cmd-card[data-level="ambar"] .cmd-dot{background:var(--warn-ink)}.cmd-card[data-level="gris"] .cmd-dot{background:var(--info-ink)}.cmd-texts{display:grid;gap:2px;min-width:0}.cmd-title{font-size:15px}.cmd-big{font-size:14px;font-weight:650;color:var(--ink);overflow-wrap:anywhere}.cmd-last{color:var(--muted);font-size:13px;overflow-wrap:anywhere}.cmd-actions{display:flex;gap:8px;flex-wrap:wrap}.health-ok-row{display:flex;gap:8px;flex-wrap:wrap;padding:0 16px 14px}.health-chip{display:grid;gap:1px;background:var(--surface-2);border-radius:10px;padding:7px 10px;font-size:13px}.health-chip small{color:var(--muted)}.health-ok-line{padding:2px 16px;color:var(--muted);font-size:14px}
 
-/* Acciones directas de SAT y significado en Listas (1.13.1) */.sat-quick-bar{display:flex;gap:10px;align-items:center;padding:12px 16px 2px;flex-wrap:wrap}.sat-quick-label{font-weight:700;font-size:13px;color:var(--muted)}.sat-quick-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:12px;padding:12px 16px 16px}.sat-quick-btn{flex-direction:column;align-items:flex-start;justify-content:flex-start;gap:7px;padding:15px 16px;min-height:102px;border-radius:var(--r-l);background:var(--surface-2);text-align:left}.sat-quick-btn strong{font-size:19px}.sat-quick-head{display:flex;gap:9px;align-items:center}.sat-quick-line{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
+/* Acciones directas de SAT y significado en Listas (1.13.1) */.sat-quick-bar{display:flex;gap:10px;align-items:center;padding:12px 16px 2px;flex-wrap:wrap}.sat-quick-label{font-weight:700;font-size:13px;color:var(--muted)}
 /* Parrilla de trámites del Centro SAT y capa de atención (1.29.2) */
 .tramite-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(262px,1fr));gap:12px;padding:12px 16px 16px}
 .tramite-card{display:flex;flex-direction:column;gap:7px;padding:16px;border-radius:var(--r-l);background:var(--surface-2)}
@@ -12,7 +12,7 @@
 .tramite-detalle{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .tramite-porque{color:var(--muted);font-size:13px;overflow-wrap:anywhere}
 .tramite-acts{display:flex;gap:8px;margin-top:auto;padding-top:8px;flex-wrap:wrap}
-.aviso-gesto{font-size:12px;font-weight:700;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 9px;white-space:nowrap}
+
 @media (max-width:640px){.tramite-grid{grid-template-columns:1fr}}
 .cp-significado{margin-top:4px}.cp-significado>summary{cursor:pointer;font-weight:650;font-size:14px;color:var(--green)}
 
@@ -101,7 +101,7 @@ tbody tr:hover{background:var(--surface-2)}
 .entry-form input{padding:12px;font-size:15px}
 .entry-form .primary{justify-content:center;padding:12px}
 .entry-skip{justify-self:center}
-.entry-note{margin:0;color:var(--muted);font-size:13px}
+
 .age-chart{display:grid;gap:5px;padding:2px 16px 14px}
 .age-label{font-weight:700;font-size:13px;margin-top:6px}
 .age-line{display:grid;grid-template-columns:74px 1fr auto;gap:10px;align-items:center;font-size:13px}
@@ -132,7 +132,7 @@ tbody tr:hover{background:var(--surface-2)}
 .trib-plazo-fill{height:100%;background:var(--chart-2);border-radius:var(--r-pill)}
 .trib-plazo-hot{background:var(--danger)}
 .trib-papelera-row{opacity:.85}
-.reg-dia{margin:16px 0 6px;font-size:13px;color:var(--muted);text-transform:capitalize}
+.reg-dia{margin:16px 0 6px;font-size:13px;color:var(--muted)}
 .reg-fallo{border-left:3px solid var(--danger);padding-left:10px}
 .reg-detalle{flex-basis:100%;margin-top:6px}
 .reg-detalle summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--accent-ink)}
@@ -170,7 +170,7 @@ tbody tr:hover{background:var(--surface-2)}
    Cancelar nunca sale del carril del menú (en la primera captura
    de la ronda se le cortaba la última letra contra el borde). */
 .nav-jobs-main{flex:1 1 110px;min-width:0;display:flex;align-items:center;gap:8px;background:none;border:0;color:inherit;font:inherit;text-align:left;padding:0;cursor:pointer}
-#nav-jobs-cancel button{background:transparent;border:1px solid currentColor;color:var(--nav-text);border-radius:var(--r-s);padding:4px 10px;font:inherit;font-weight:600;cursor:pointer}
+
 /* V3 · Foco en la parrilla de trámites (1.31.1, corrección de
    diseño de Paco): NADA se atenúa — todas las tarjetas se leen a
    contraste pleno siempre. El foco se realza SOLO en su tarjeta:
@@ -193,7 +193,7 @@ tbody tr:hover{background:var(--surface-2)}
 /* V8 · Dueño del aviso: pastilla pequeña con su punto de color
    (el icono es el ::before: cada dueño, su señal). */
 .aviso-dueno{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700;border:1px solid var(--line);white-space:nowrap}
-.aviso-dueno::before{content:"●";font-size:9px}
+.aviso-dueno::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor;flex:none}
 .aviso-dueno[data-dueno="tu"]{background:var(--warn-bg);color:var(--warn-ink)}
 .aviso-dueno[data-dueno="sat"]{background:var(--danger-bg);color:var(--danger)}
 .aviso-dueno[data-dueno="sistema"]{background:var(--info-bg);color:var(--info-ink)}
@@ -280,16 +280,14 @@ button.primary{background:linear-gradient(180deg,color-mix(in srgb,var(--green) 
    y parpadeos; nada corre sin contar un estado. Con
    prefers-reduced-motion se apaga todo lo decorativo. */
 .tramite-card,.cmd-card,.kpi,.metric{transition:box-shadow .22s ease,border-color .22s ease,background-color .22s ease}
-.cmd-card:hover,.tramite-card:hover{box-shadow:0 2px 3px rgba(16,34,25,.06),0 20px 40px -16px rgba(16,34,25,.26),inset 0 1px 0 rgba(255,255,255,.35)}
+.cmd-card:hover,.tramite-card:hover{box-shadow:0 2px 3px light-dark(rgba(16,34,25,.06),rgba(0,0,0,.25)),0 20px 40px -16px light-dark(rgba(16,34,25,.26),rgba(0,0,0,.5)),inset 0 1px 0 light-dark(rgba(255,255,255,.35),rgba(255,255,255,.08))}
 .status-pill{transition:background-color .25s ease,color .25s ease,box-shadow .25s ease}
 button{transition:background-color .18s ease,border-color .18s ease,box-shadow .18s ease,color .18s ease}
 button:active{transform:translateY(1px)}
 @keyframes paco-pulso{0%,100%{opacity:1}50%{opacity:.55}}
 .nav-jobs:not(.nav-jobs-vacio) .nav-jobs-main svg{animation:paco-pulso 1.8s ease-in-out infinite}
 .status-pill[data-state="work"]{animation:paco-pulso 2.2s ease-in-out infinite}
-/* La fila de trabajos conserva su renglón: invisible e inerte
-   sin trabajos, para que el menú nunca salte. */
-.nav-jobs-vacio{visibility:hidden}
+
 /* Barra con presencia: azul noche con profundidad y luz de
    borde; el contribuyente como cabecera; la fila activa con su
    acento verde y su filo dorado medido. */
@@ -297,9 +295,9 @@ button:active{transform:translateY(1px)}
 .switcher{background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px}
 .sidebar nav button{border-radius:10px;position:relative}
 .sidebar nav button[aria-current]{box-shadow:inset 3px 0 0 var(--gold),0 8px 16px -10px rgba(0,0,0,.6)}
-.side-search{display:flex;align-items:center;gap:8px;width:100%;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);color:#d7e4f2;border-radius:10px;padding:8px 11px;font-size:13px;font-weight:600;text-align:left}
-.side-search:hover{background:rgba(255,255,255,.13)}
-.side-search svg{width:16px;height:16px;flex:none}
+
+
+
 .puerta-line{display:flex;align-items:center;gap:7px;margin-top:9px;font-size:var(--fs-s);color:#bfcfe0}
 .puerta-dot{width:9px;height:9px;border-radius:50%;background:#8fa3ba;flex:none}
 .puerta-dot[data-state="ok"]{background:#3ecf7a;box-shadow:0 0 0 3px rgba(62,207,122,.20)}
@@ -322,9 +320,10 @@ button:active{transform:translateY(1px)}
   body.barra-plegada .side-collapse span,body.barra-plegada .side-search span{display:none}
   body.barra-plegada .switcher{background:none;border:none;padding:4px}
   body.barra-plegada .puerta-line{margin-top:2px;justify-content:center}
-  body.barra-plegada .news-badge{position:absolute;top:2px;right:2px;font-size:10px}
+  body.barra-plegada .sidebar nav button{position:relative}
+  body.barra-plegada .news-badge{position:absolute;top:2px;right:2px;font-size:10px;min-width:16px;text-align:center;z-index:1}
   body.barra-plegada .side-collapse svg{transform:none}
-  body.barra-plegada #nav-jobs-cancel{display:none}
+
 }
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation:none!important;transition:none!important}
@@ -425,17 +424,19 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
   text-align: left; font-variant-numeric: tabular-nums; }
 .metric-value-link:hover { text-decoration: underline; text-underline-offset: 4px; }
 
-/* Centro SAT: la barra de pestañas como franja secundaria (1.32.1, S3) */
-.tabbar-secundaria{padding:5px 12px;background:var(--surface-2)}
-.tabbar-secundaria button{font-size:13px;min-height:36px;padding:5px 10px}
+
+
+
+
+
 
 /* ===== Tanda 2 · 2.0: identidad por RFC, selector, panel
    general, pintado progresivo y cabecera móvil compacta ===== */
 .rfc-medallon200b{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;background:var(--surface-2);color:var(--muted);border:var(--bd);font-weight:750;font-size:14px;flex:none}
 .salud-punto200b{width:11px;height:11px;border-radius:50%;background:var(--muted);flex:none;display:inline-block}
-.salud-punto200b[data-nivel="ok"]{background:#1d9e6c}
-.salud-punto200b[data-nivel="warn"]{background:#d99a16}
-.salud-punto200b[data-nivel="bad"]{background:#cf3a2e}
+.salud-punto200b[data-nivel="ok"]{background:light-dark(#1d9e6c,#3ecf7a)}
+.salud-punto200b[data-nivel="warn"]{background:light-dark(#d99a16,#e8b93e)}
+.salud-punto200b[data-nivel="bad"]{background:light-dark(#cf3a2e,#f0766a)}
 .scope-menu-btn200b{gap:8px;max-width:46vw;overflow:hidden;white-space:nowrap;justify-content:flex-start;min-width:0}
 .scope-nombre200b{overflow:hidden;text-overflow:ellipsis;min-width:0}
 .scope-menu200b{position:fixed;top:64px;right:14px;z-index:70;width:min(360px,92vw);background:var(--surface);border:var(--bd);border-radius:var(--r-l);box-shadow:var(--shadow-1);padding:10px;display:grid;gap:6px;max-height:70vh;overflow:auto}
@@ -465,8 +466,8 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
 /* Salud y ayuda (2.0 · tanda 4) */
 .salud-grid200d{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));padding:2px}
 .salud-grid200d .panel{margin-bottom:0}
-.ayuda-cajon200d{margin:0 0 0 auto;height:100%;max-height:100vh;width:min(430px,95vw);border-radius:0}
-.ayuda-cajon200d h3{margin:14px 0 4px}
+
+
 
 /* Tanda 7B (19 · V3): la tarjeta que pide el gesto de Paco gana
    presencia por REALCE propio (borde y sombra del acento de la
@@ -488,8 +489,27 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
    columna estrecha: ocupa su propio renglón, sangrado bajo la
    etiqueta, en una línea con elipsis; en la barra plegada a
    iconos se oculta con el resto de textos. */
-.sidebar nav button{flex-wrap:wrap}
-.nav-estado201{flex:1 0 100%;margin-left:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
+/* Contención de la barra (corrección visual 2.4.0): la causa
+   del sangrado del activo era triple — (1) .sidebar nav es
+   una rejilla SIN columnas declaradas, así que su columna se
+   ensanchaba al contenido máximo del botón más ancho; (2)
+   desde W4d TODOS los destinos llevan su estado en nowrap,
+   y ese texto largo fijaba un ancho de ~311 px para TODOS
+   los botones, fuera de la barra de 232 px; (3) el estado
+   con flex:1 0 100% + margin-left:26px medía el 100% del
+   botón MÁS el margen y chocaba con su borde derecho. La
+   corrección contiene sin tocar destinos ni estados: la
+   columna de la rejilla es minmax(0,1fr), el botón no pasa
+   del 100% de su carril ni desborda, el estado puede ceder
+   (flex con min-width:0 y tope 100% − su sangrado) con su
+   elipsis limpia, y las insignias de conteo no ceden ni se
+   montan sobre el texto (flex:none). */
+.sidebar{min-width:0}
+.sidebar nav{grid-template-columns:minmax(0,1fr);min-width:0}
+.sidebar nav button{flex-wrap:wrap;min-width:0;max-width:100%;width:100%;overflow:hidden}
+.sidebar nav button>svg{flex:none}
+.sidebar nav button .news-badge{flex:none}
+.nav-estado201{flex:1 1 auto;min-width:0;max-width:calc(100% - 26px);margin-left:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.4}
 @media(min-width:861px){body.barra-plegada .nav-estado201{display:none}}
 /* Tarjetas de Listas y Documentos (.sat-card/.sat-grid) y su
    cabecera (.sat-card-head, también en Declaraciones): el
@@ -523,4 +543,320 @@ body.drag-active::after{bottom:max(22px,env(safe-area-inset-bottom))}
 .seguir230{display:inline-flex;gap:8px;align-items:center;flex-wrap:wrap}
 .paperless-prueba230{overflow-wrap:anywhere}
 /* Tacto en móvil: pestañas y chips a objetivo digno. */
-@media(max-width:860px){.tabs button,.tabbar button{min-height:44px}.filter-chip{min-height:40px}}
+@media(max-width:860px){.tabs button,.tabbar button{min-height:44px}.filter-chip{min-height:44px}}
+
+/* ===== 2.3.2 · B4: cabecera, tacto, espejos y Preguntas =====
+   M-10/H6-1 · La cabecera no desborda con razón social larga:
+   el lado derecho (.top-side) es flexible y PUEDE encoger
+   (min-width:0 en él y en cada tramo flexible); el selector
+   cede con elipsis — su nombre completo vive en el title —,
+   el buscador cede tras él, y las herramientas y el distintivo
+   «Servidor privado» no ceden ni salen de la pantalla. */
+.top{min-width:0}
+.top-side{flex:1 1 auto;min-width:0;justify-content:flex-end}
+.scope-menu-btn200b{flex:0 1 auto;min-width:0}
+.scope-nombre200b{flex:1 1 auto;min-width:0}
+.scope-sep200b{flex:none}
+.scope-rfc200b{flex:none;white-space:nowrap}
+.top-search{flex:0 1 230px;min-width:0}
+.top-search input{min-width:0;width:100%}
+.top-tools{flex:none}
+.top-side .badge{flex:none}
+/* m-12 · En escritorio manda el selector y el buscador de la
+   cabecera: los espejos laterales (el <select> del contribuyente
+   y el botón que solo enfocaba el buscador superior) se ocultan
+   en este ancho; en móvil se conserva lo que hoy funciona. */
+@media(min-width:861px){
+#side-search{display:none}
+.switcher label[for="scope"],#scope{display:none}
+}
+/* M-12 · Tacto: todo botón «small», «soft» y píldora-botón
+   («status-pill» solo como <button>; su variante <span> no es
+   objetivo táctil) es objetivo de 44 px en móvil, como ya lo
+   eran las pestañas; el escritorio no cambia. */
+@media(max-width:860px){
+button.small{min-height:44px}
+button.soft{min-height:44px}
+button.status-pill{min-height:44px}
+/* M-10 en móvil: el selector enseña solo medallón + RFC; el
+   nombre completo queda en su title y en el menú al abrirlo. */
+.scope-menu-btn200b .scope-nombre200b,.scope-menu-btn200b .scope-sep200b{display:none}
+}
+/* m-26 · Preguntas: ejemplos tocables que rellenan el campo y
+   la respuesta con su estado vacío diseñado. */
+.preg-ejemplos232{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:2px 16px 10px}
+.preg-ejemplos232>span{font-size:13px;color:var(--muted);font-weight:600}
+.preg-respuesta232{margin:0 16px 16px}
+
+/* ===== 2.4.0 · W5a · Cimientos gráficos (piezas 2, 9, 3 y 4) =====
+   Contrato completo: ~/workspace/pacosat-240-nota-w5a.md.
+   (2) data-estado (aldia|encurso|esperando|atencion|error|sindatos)
+   antepone el icono de la familia y la palabra queda visible;
+   puente heredado: el data-state de statusPill (ok|work|warn|bad|
+   dim) y de .fiscal-badge (Vigente|Cancelado|Error) reciben el
+   mismo icono sin tocar su HTML y su .pill-dot se retira.
+   (9) Familia: sprite #i-* de layout.part, viewBox 24, trazo único
+   1.65 redondo de style.part; estas máscaras usan ese trazo y esos
+   caminos. Integrados en el sprite: i-calendar, i-share,
+   i-send, i-list. (La pareja de chevrones i-chevd/i-chevu se
+   retiró en el cierre de integración de la 2.4.0: ninguna
+   pantalla los usaba y el sprite no guarda símbolos muertos.) */
+[data-estado]::before,.status-pill[data-state]::before,.fiscal-badge[data-state]::before{content:"";display:inline-block;width:15px;height:15px;flex:none;background:currentColor;-webkit-mask:var(--i240) center/contain no-repeat;mask:var(--i240) center/contain no-repeat}
+.fiscal-badge[data-estado]::before{margin-right:5px}
+.status-pill .pill-dot{display:none}
+[data-estado="aldia"],.status-pill[data-state="ok"],.fiscal-badge[data-state="Vigente"]{--i240:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4.5 12.6l5 5L19.5 6.4'/%3E%3C/svg%3E")}
+[data-estado="encurso"],.status-pill[data-state="work"]{--i240:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 7v5h-5M4 17v-5h5m-4-3a8 8 0 0 1 13-3l2 3M4 15l2 3a8 8 0 0 0 13-3'/%3E%3C/svg%3E")}
+[data-estado="esperando"]{--i240:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M12 7.5V12l3 2'/%3E%3C/svg%3E")}
+[data-estado="atencion"],.status-pill[data-state="warn"]{--i240:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 3.5 2.8 19.5h18.4z'/%3E%3Cpath d='M12 9.8v4.2m0 2.8v.4'/%3E%3C/svg%3E")}
+[data-estado="error"],.status-pill[data-state="bad"],.fiscal-badge[data-state="Cancelado"],.fiscal-badge[data-state="Error"]{--i240:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='m9.2 9.2 5.6 5.6m0-5.6-5.6 5.6'/%3E%3C/svg%3E")}
+[data-estado="sindatos"],.status-pill[data-state="dim"]{--i240:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='8.5'/%3E%3Cpath d='M8.5 12h7'/%3E%3C/svg%3E")}
+.estado240{display:inline-flex;align-items:center;gap:6px;border-radius:100px;padding:6px 12px;font-size:13px;font-weight:650}
+.status-pill[data-estado="aldia"],.fiscal-badge[data-estado="aldia"],.estado240[data-estado="aldia"]{background:var(--ok-bg);color:var(--ok-ink)}
+.status-pill[data-estado="atencion"],.fiscal-badge[data-estado="atencion"],.estado240[data-estado="atencion"]{background:var(--warn-bg);color:var(--warn-ink)}
+.status-pill[data-estado="error"],.fiscal-badge[data-estado="error"],.estado240[data-estado="error"]{background:var(--danger-bg);color:var(--danger)}
+.status-pill[data-estado="encurso"],.estado240[data-estado="encurso"]{background:var(--tint);color:var(--accent-ink)}
+.status-pill[data-estado="esperando"],.fiscal-badge[data-estado="esperando"],.estado240[data-estado="esperando"],
+.status-pill[data-estado="sindatos"],.fiscal-badge[data-estado="sindatos"],.estado240[data-estado="sindatos"]{background:var(--info-bg);color:var(--info-ink)}
+/* (3) Vista: la transición de la casa es .view-in (design.part).
+   Destello de cifra: .cifra-nueva solo corre sin reduced-motion;
+   la pantalla la añade al repintar un valor distinto (nota W5a). */
+.cifra-nueva{border-radius:6px}
+@media (prefers-reduced-motion:no-preference){.cifra-nueva{animation:cifra240 .9s ease-out}}
+@keyframes cifra240{from{background:var(--tint)}to{background:transparent}}
+/* (4) Esqueletos: .esqueleto + formas (pulso skel-pulse de
+   design.part): línea, .sk-hero, .sk-fila, .sk-card en .sk-grid,
+   .sk-graf y .sk-corta. */
+.esqueleto{display:grid;gap:12px}
+.esqueleto>*{min-height:var(--skh,14px);border-radius:var(--r-m);background:linear-gradient(100deg,var(--surface-2) 40%,var(--surface) 50%,var(--surface-2) 60%);background-size:200% 100%;animation:skel-pulse 1.2s ease-in-out infinite}
+.esqueleto .sk-hero{--skh:118px;border-radius:var(--r-l)}
+.esqueleto .sk-fila{--skh:54px}
+.esqueleto .sk-card{--skh:108px;border-radius:var(--r-l)}
+.esqueleto .sk-graf{--skh:176px;border-radius:var(--r-l)}
+.esqueleto .sk-corta{width:55%}
+.esqueleto.sk-grid{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+
+/* ===== 2.4.0 · W5b1 · Gráficas aplicadas I (piezas 5, 8, 7 y 21) =====
+   Contrato completo: ~/workspace/pacosat-240-nota-w5b1.md.
+   (7) FRESCURA — contrato para TODAS las superficies con datos
+   del SAT (lo pinta outputs-ui donde alcanza; Buzón, Declaraciones
+   y Listas lo consumen en la tanda de pantallas):
+   · markup: <span class="frescura240" data-edad="fresco|viejo|
+     caduco"><span class="frescura240-track"><i class=
+     "frescura240-fill"></i></span><span class="frescura240-texto">
+     hace X</span></span> — el texto «hace X» va SIEMPRE al lado de
+     la barra: nunca se comunica la edad solo con el color.
+   · «hace X» sale de haceText(ts) (problemas-ui.part): el ts es
+     el timestamp epoch ms que cada vista ya trae (p. ej.
+     salidas/last, meta.lastSeen, salud.at); sin ts no se pinta.
+   · umbrales sobre la edad = Date.now() - ts: fresco < 24 h
+     (verde, --ok-ink); viejo de 24 h a 7 días (ámbar, --warn-ink);
+     caduco > 7 días (rojo, --danger). La anchura de la barra es
+     100/55/25 % según el tramo: orienta, no mide — la cifra manda
+     en el texto.
+   (5) ANILLO DE COBERTURA — coverage-ui pinta el año de cada
+   grupo (RFC · sentido) como anillo SVG de 12 segmentos
+   (.cov-ring): cada segmento es un <path> con data-cov=
+   aldia|encurso|hueco, su <title> con mes y estado, y su clic
+   abre el MISMO detalle que la fila de la tabla de debajo
+   (paridad: la tabla «Qué meses tienes» se queda intacta).
+   Estados SOLO de los datos servidos (coverage.records): aldia =
+   el mes tiene celda con CFDI; encurso = el mes en curso
+   (YYYY-MM de hoy) sin celda todavía; hueco = sin celda dentro
+   del rango first..last del grupo. Nada más se inventa.
+   (8) IMPRESIÓN — .report-totales es el bloque visual de totales
+   de las impresiones de pantalla (outputs-ui): no una fila más
+   de la tabla, una banda con la marca a la izquierda y cada total
+   en su celda; en papel hereda el @media print de la casa.
+   (21) OSCURO — dentro de este bloque no hay ningún color fijo
+   claro: todo cuelga de variables light-dark() de la casa. */
+.frescura240{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);white-space:nowrap}
+.frescura240-track{width:44px;height:5px;border-radius:99px;background:var(--surface-2);border:1px solid var(--line);overflow:hidden;flex:none}
+.frescura240-fill{display:block;height:100%;border-radius:99px}
+.frescura240[data-edad="fresco"] .frescura240-fill{width:100%;background:var(--ok-ink)}
+.frescura240[data-edad="viejo"] .frescura240-fill{width:55%;background:var(--warn-ink)}
+.frescura240[data-edad="caduco"] .frescura240-fill{width:25%;background:var(--danger)}
+.frescura240[data-edad="caduco"] .frescura240-texto{color:var(--danger);font-weight:650}
+.frescura240[data-edad="viejo"] .frescura240-texto{color:var(--warn-ink)}
+.cov-ring-wrap{display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding:6px 16px 14px}
+.cov-ring{width:132px;height:132px;flex:none}
+.cov-ring .cov-seg{cursor:pointer;stroke:var(--surface);stroke-width:1.6}
+.cov-ring .cov-seg[data-cov="aldia"]{fill:var(--green)}
+.cov-ring .cov-seg[data-cov="encurso"]{fill:var(--chart-2);opacity:.55}
+.cov-ring .cov-seg[data-cov="hueco"]{fill:var(--surface-2);stroke:var(--line)}
+.cov-ring .cov-seg[data-cov="fuera"]{fill:var(--surface-2);stroke:var(--line);opacity:.45}
+.cov-ring .cov-seg:hover{opacity:.82}
+.cov-ring .cov-seg:focus-visible{outline:3px solid var(--green);outline-offset:1px}
+.cov-centro-num{font-size:21px;font-weight:700;fill:var(--ink)}
+.cov-centro-lab{font-size:9.5px;font-weight:650;fill:var(--muted)}
+.cov-lado{display:grid;gap:8px;min-width:min(300px,100%);flex:1}
+.cov-detalle{margin:0;color:var(--muted);font-size:13px}
+.chart-legend .sw-cov-aldia{background:var(--green)}
+.chart-legend .sw-cov-encurso{background:var(--chart-2);opacity:.55}
+.chart-legend .sw-cov-hueco{background:var(--surface-2);border:var(--bd)}
+.report-totales{display:flex;gap:10px 26px;flex-wrap:wrap;align-items:stretch;margin:14px 0;padding:13px 16px;border:var(--bd);border-left:5px solid var(--green);border-radius:var(--r-l);background:var(--surface-2)}
+.report-totales .rt-item{display:grid;gap:1px;min-width:130px}
+.report-totales .rt-item small{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.05em}
+.report-totales .rt-item strong{font-size:19px;font-variant-numeric:tabular-nums}
+
+@media(max-width:640px){.cov-ring-wrap{justify-content:center}.cov-ring{width:118px;height:118px}}
+
+/* ===== 2.8.0 · diseño 7 y 8: piel de protagonista y móvil =====
+   (diseño 7) Toda tarjeta protagonista comparte el mismo
+   tratamiento reservado — fondo de acento suave, borde de
+   acento y título mayor — y el resto de la pantalla queda
+   plano debajo: un solo héroe por pantalla. Las que ya
+   nacían héroe (Hoy, Listas) usan .dashboard-hero, la misma
+   familia. (diseño 8) El detalle de actividad envuelve sin
+   partir palabras y el chip del contribuyente cede con
+   elipsis en móvil en vez de cortar el RFC a media letra. */
+.protagonista280{background:var(--tint);border-color:var(--green)}
+.protagonista280 .panel-head h2{font-size:var(--fs-4xl)}
+.protagonista280>p{color:var(--ink)}
+.activity-detail{word-break:normal;overflow-wrap:anywhere}
+.ajustes-grupo280{color:var(--muted);font-size:11px;font-weight:750;letter-spacing:.08em;text-transform:uppercase;padding:12px 4px 0;margin:0}
+.lists-validar280{padding:2px 16px 12px}
+@media(max-width:860px){.scope-rfc200b{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis}}
+
+/* ===== 2.9.0 · Bloque B: el foco del sistema, la palabra junto
+   a cada luz y el reloj de los paseos =====
+   El foco NO es un punto: su luz mide 18 px, su palabra va al
+   lado en negrita y el botón entero es objetivo de 44 px. En
+   móvil la palabra se queda (cede el nombre del contribuyente,
+   como ya cedía). */
+.foco-btn290{gap:9px;min-height:44px;padding:8px 13px;flex:none;border-radius:var(--r-pill)}
+.foco-luz290{width:18px;height:18px;border-radius:50%;background:var(--muted);flex:none;display:inline-block}
+.foco-luz290[data-nivel="ok"]{background:light-dark(#1d9e6c,#3ecf7a)}
+.foco-luz290[data-nivel="warn"]{background:light-dark(#d99a16,#e8b93e)}
+.foco-luz290[data-nivel="bad"]{background:light-dark(#cf3a2e,#f0766a)}
+.foco-palabra290{font-weight:750;font-size:14px;color:var(--ink);white-space:nowrap}
+.foco-btn290[data-nivel="bad"] .foco-palabra290{color:var(--danger)}
+.foco-btn290[data-nivel="warn"] .foco-palabra290{color:var(--warn-ink)}
+.foco-menu290{width:min(480px,94vw)}
+.foco-menu-nota290{padding:2px 2px 4px}
+.foco-row290{display:flex;align-items:flex-start;gap:10px;padding:8px 2px;border-top:var(--bd)}
+.foco-txt290{display:grid;gap:2px;flex:1;min-width:0}
+.foco-motivo290{color:var(--muted)}
+.foco-punto290{margin-top:4px}
+.salud-palabra290{font-size:12px;font-weight:750;white-space:nowrap;flex:none}
+.salud-palabra290[data-nivel="warn"]{color:var(--warn-ink)}
+.salud-palabra290[data-nivel="bad"]{color:var(--danger)}
+.salud-palabra290[data-nivel="dim"]{color:var(--muted)}
+.scope-menu-txt290{display:grid;gap:2px;flex:1;min-width:0;text-align:left}
+.scope-menu-porque290{color:var(--muted);white-space:normal}
+.foco-reloj290{font-weight:700;color:var(--ink);white-space:nowrap}
+@media(max-width:860px){.foco-palabra290{font-size:12px}.foco-btn290{padding:8px 10px}}
+/* Bloque C (2.9.0): Vigilancia en angosto — las tarjetas del resumen y la línea de verdad envuelven sin solaparse; los textos explicativos nunca se cortan a mitad de palabra (la elipsis queda solo para nombres). */
+@media(max-width:560px){.kpis{grid-template-columns:repeat(auto-fit,minmax(min(160px,100%),1fr))}.monitor-truth p{overflow-wrap:anywhere}}
+/* Formularios de ajustes en angosto (2.9.0 · Bloque C): el
+   interruptor «Activar el puente» y el campo «Dirección de tu
+   Paperless» se solapaban; cada pieza en su línea, sin invadir
+   la siguiente. */
+.sat-form{display:grid;gap:10px;justify-items:stretch;min-width:0}
+.sat-form>*{min-width:0}
+.sat-form .switch-line{flex-wrap:wrap}
+.sat-form input,.sat-form select{max-width:100%;box-sizing:border-box}
+/* Vigilancia en angosto (2.9.0 · Bloque C): las columnas de
+   su tabla se solapaban; las celdas envuelven y ninguna
+   impone su ancho al resto. */
+@media(max-width:560px){.grid-table td{min-width:0;overflow-wrap:break-word}.grid-table td button{white-space:normal}}
+.panel>p,.guide p,.empty p,.today-line,.cmd-last{overflow-wrap:break-word;text-wrap:pretty}
+/* Descargar simple (2.9.12). */
+.dl2912-body{padding:4px 16px;display:grid;gap:10px}
+.dl2912-counts strong{font-size:22px}
+/* ===== Ronda 2.9.13 · piel y gráficos =====
+   (24) Cifras grandes tabulares y aire uniforme; (25)
+   estados vacíos diseñados; (26) esqueletos de carga;
+   (27) contraste en móvil; (28) movimientos cortos con
+   sentido (solo transform/opacity, y nada si el sistema
+   pide reducir el movimiento). */
+.cell-note{display:block}
+.hoy-cifra-num2913,.reporte-cifra-num2913,.banco-saldo2913,.dl2913-cifra{font-variant-numeric:tabular-nums lining-nums}
+.hoy-cifras-fila2913{display:flex;flex-wrap:wrap;gap:14px;padding:4px 16px 14px}
+.hoy-cifra2913{display:grid;gap:6px;align-content:start;min-width:150px}
+.hoy-cifra2913 small{color:var(--muted);font-weight:600}
+.hoy-cifra-num2913{font-size:30px;line-height:1}
+.hoy-anillo-svg2913{width:84px;height:84px}
+.anillo-fondo2913{stroke:var(--line)}
+.anillo-avance2913{stroke:var(--accent)}
+.anillo-pct2913{fill:var(--ink);font-size:17px;font-weight:700}
+.cierre-cabecera2913{display:flex;gap:16px;align-items:center;padding:4px 16px}
+.graf-barras2913{display:flex;gap:10px;align-items:flex-end;min-height:52px;padding:2px 0}
+.graf-barras2913.mini{min-height:40px}
+.graf-col2913{display:grid;justify-items:center;gap:3px}
+.graf-par2913{display:flex;gap:3px;align-items:flex-end}
+.graf-barra2913{width:13px;border-radius:3px 3px 0 0;min-height:3px}
+.graf-barra2913.emitidos{background:var(--accent)}
+.graf-barra2913.recibidos{background:var(--ok)}
+.graf-mes2913{font-size:11px;color:var(--muted)}
+.facturas-graficos2913{display:grid;gap:8px;padding:4px 16px 12px}
+.facturas-totales2913{display:flex;flex-wrap:wrap;gap:18px}
+.facturas-totales2913 .graf-cifra2913{display:grid;gap:2px}
+.facturas-totales2913 .graf-cifra2913 strong{font-size:19px;font-variant-numeric:tabular-nums lining-nums}
+.dl2913-pasos{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0}
+.dl2913-paso{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-weight:600}
+.dl2913-paso .dl2913-paso-num{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--line);color:var(--ink);font-size:12px}
+.dl2913-paso.activo{color:var(--ink);border-color:var(--accent)}
+.dl2913-paso.activo .dl2913-paso-num{background:var(--accent);color:#fff}
+.dl2913-paso.hecho{color:var(--ink)}
+.dl2913-paso.hecho .dl2913-paso-num{background:var(--ok);color:#fff}
+.dl2913-anio{display:grid;gap:8px;padding:2px 0}
+.dl2913-anio-mes{display:grid;grid-template-columns:86px 1fr;gap:10px;align-items:center}
+.dl2913-anio-mes>span{color:var(--muted);font-weight:600}
+.dl2913-anio-celdas{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.dl2913-celda{border:1px solid var(--line);border-radius:8px;padding:5px 9px;display:flex;justify-content:space-between;gap:8px}
+.dl2913-celda[data-estado="completo"]{border-color:var(--ok)}
+.dl2913-celda[data-estado="parcial"]{border-color:var(--warn)}
+.dl2913-hist{display:grid;gap:4px}
+.dl2913-hist-fila{display:flex;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:6px}
+.hoy-venc-tira2913{display:grid;gap:10px}
+.hoy-venc-linea2913{position:relative;height:64px;border-top:2px solid var(--line);margin:0 8px}
+.hoy-venc-nodo2913{position:absolute;top:-7px;transform:translateX(-50%);display:grid;justify-items:center;gap:3px;width:120px}
+.hoy-venc-punto2913{width:12px;height:12px;border-radius:50%;background:var(--muted)}
+.hoy-venc-punto2913[data-state="warn"]{background:var(--warn)}
+.hoy-venc-punto2913[data-state="bad"]{background:var(--bad)}
+.hoy-venc-punto2913[data-state="dim"]{background:var(--accent)}
+.hoy-venc-etiqueta2913{font-size:11px;color:var(--muted);text-align:center;max-width:120px}
+.crumb-rfc2913{display:inline-flex;align-items:center;gap:8px;margin-left:10px}
+.crumb-medallon2913{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:50%;color:#fff;font-weight:800;font-size:15px}
+.crumb-rfc-txt2913{font-weight:700;font-variant-numeric:tabular-nums}
+.trib-sec-head2913{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.trib-com-card2913{border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:12px;padding:12px 14px;display:grid;gap:6px;margin:8px 0;background:var(--surface)}
+.trib-com-doc2913{display:grid;gap:10px}
+.trib-com-doc-cab2913{display:grid;gap:2px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.trib-reintentar2913{margin-top:8px}
+.salud-card2913 .salud-estado2913{font-size:15px;padding:6px 14px}
+.salud-retenida2913{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px dashed var(--line);padding-top:8px;margin-top:4px}
+.doc-hero-barra2913{height:9px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:10px}
+.doc-hero-barra-fill2913{height:100%;background:var(--accent);border-radius:99px}
+.factura-desglose2913{display:grid;gap:4px;border-top:1px solid var(--line);padding-top:10px;margin-top:6px}
+.factura-renglon2913{display:flex;justify-content:space-between;gap:12px}
+.factura-renglon2913.total{font-size:17px;border-top:1px solid var(--line);padding-top:6px}
+.concil-par2913{display:grid;grid-template-columns:1fr auto 1fr auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:8px 0;background:var(--surface)}
+.concil-lado2913{display:grid;gap:2px}
+.concil-conector2913{display:grid;justify-items:center;gap:4px}
+.respaldo-copias2913{display:grid;gap:6px}
+.respaldo-ind2913{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.reportes-portada2913{display:grid;gap:10px;padding:6px 16px 14px}
+.reportes-cifras2913{display:flex;gap:26px;flex-wrap:wrap}
+.reporte-cifra2913{display:grid;gap:2px}
+.reporte-cifra2913 small{color:var(--muted);font-weight:600}
+.reporte-cifra-num2913{font-size:26px;line-height:1.1}
+.reg-icono2913{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:50%;background:var(--line);flex:none}
+.reg-icono2913[data-clase="fallo"]{background:var(--bad);color:#fff}
+.reg-icono2913[data-clase="conexion"]{background:var(--ok);color:#fff}
+.reg-icono2913 svg{width:15px;height:15px}
+.ayuda-capturas2913{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;padding:4px 16px 14px}
+.ayuda-captura2913{margin:0;display:grid;gap:6px}
+.ayuda-captura-hueco2913{border:1.5px dashed var(--line);border-radius:12px;min-height:110px;display:grid;place-items:center;color:var(--muted);font-weight:600;padding:12px;text-align:center}
+.ayuda-captura2913 figcaption{color:var(--muted)}
+.novedades-card2913{border-top:4px solid var(--accent)}
+@media (prefers-reduced-motion:no-preference){
+.dl2913-paso,.concil-par2913,.trib-com-card2913{transition:border-color .18s ease,background-color .18s ease}
+}
+@media(max-width:560px){
+.hoy-venc-etiqueta2913{max-width:74px}
+.concil-par2913{grid-template-columns:1fr;gap:6px}
+.hoy-cifra-num2913{font-size:26px}
+.reporte-cifra-num2913{font-size:22px}
+.crumb-rfc-txt2913{display:none}
+}

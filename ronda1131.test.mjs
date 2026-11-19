@@ -239,6 +239,15 @@ function harness(service, proxyKey = '') {
 /* ===== C + D · superficie (fuentes del artefacto construido) ===== */
 {
   const html = readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8');
+  /* RE-BASE integración 2.4.0 (W6/W6b): la parrilla del Centro
+     SAT, la hoja de descarga y el botón de revisión de uno en
+     uno viven hoy en las partes diferidas de Descargas y
+     Vigilancia. Las marcas que se mudaron se buscan en
+     artefacto + partes (lo que el navegador recibe en total),
+     con el mismo literal y la misma fuerza; las que siguen en
+     el artefacto y la ausencia de satPortada no se tocan. */
+  const lazy1131 = JSON.parse(readFileSync(new URL('./lazy.json', import.meta.url), 'utf8'));
+  const todo1131 = html + Object.values(lazy1131.partes).map(p => p.source).join('\n');
   /* Los cuatro verbos exactos y su cableado. 1.29.2: viven como
      TARJETAS de la parrilla del Centro SAT (satCardGrid), con el
      mismo cableado de siempre debajo. */
@@ -250,16 +259,21 @@ function harness(service, proxyKey = '') {
      llama «Descargar CFDI» — «Recibir» era nombre del sistema,
      no del usuario. */
   for (const [clave, glyph, verbo] of [['cfdi', 'down', 'Descargar CFDI'], ['constancia', 'constancia', 'Constancia'], ['opinion', 'opinion', 'Opinión'], ['declaraciones', 'decl', 'Declaraciones']])
-    assert.ok(html.includes("['" + clave + "', '" + glyph + "', '" + verbo + "']"), 'tarjeta directa «' + verbo + '»');
-  assert.ok(html.includes("acciones.pedir('constancia'"), 'Constancia dispara su kind');
-  assert.ok(html.includes("acciones.pedir('opinion'"), 'Opinión dispara su kind');
+    assert.ok(todo1131.includes("['" + clave + "', '" + glyph + "', '" + verbo + "']"), 'tarjeta directa «' + verbo + '»');
+  assert.ok(todo1131.includes("acciones.pedir('constancia'"), 'Constancia dispara su kind');
+  assert.ok(todo1131.includes("acciones.pedir('opinion'"), 'Opinión dispara su kind');
   assert.ok(html.includes('satQuickRunDoc(kind, rfc'), 'la tarjeta pide el documento por la rutina de siempre');
   assert.ok(html.includes("satApi('satdocs/run', { rfc, kind })"), 'la corrida va al endpoint de siempre con su clase');
-  assert.ok(html.includes('downloadSheet(rfc)'), 'Descargar CFDI abre la hoja de descarga (C2) con el RFC elegido');
-  assert.ok(html.includes('Este mes hasta hoy') && html.includes('Mes pasado completo') &&
-    html.includes('Últimos 7 días') && html.includes('Últimos 30 días'), 'C2: la hoja trae los cuatro atajos de un toque');
-  assert.ok(html.includes('Pedir y descargar'), 'C2: la hoja cierra con su botón de lanzamiento');
-  assert.ok(html.includes('ya estaban: '), 'C2: el resultado cuenta los «ya estaban» sin duplicar');
+  /* RE-BASE integración 2.9.0 (Bloque D): el gesto «Descargar
+     del SAT» que invoca downloadSheet(rfc) vive en la pantalla
+     del Buzón, hoy en la parte diferida 'buzon'; la marca se
+     busca en artefacto + partes, con el mismo literal y la
+     misma fuerza, como manda el patrón de este bloque. */
+  assert.ok(todo1131.includes('downloadSheet(rfc)'), 'Descargar CFDI abre la hoja de descarga (C2) con el RFC elegido');
+  assert.ok(todo1131.includes('Este mes hasta hoy') && todo1131.includes('Mes pasado completo') &&
+    todo1131.includes('Últimos 7 días') && todo1131.includes('Últimos 30 días'), 'C2: la hoja trae los cuatro atajos de un toque');
+  assert.ok(todo1131.includes('Pedir y descargar'), 'C2: la hoja cierra con su botón de lanzamiento');
+  assert.ok(todo1131.includes('ya estaban: '), 'C2: el resultado cuenta los «ya estaban» sin duplicar');
   assert.ok(html.includes('Qué meses tienes'), 'C3: la cobertura principal se llama «Qué meses tienes»');
   assert.ok(html.includes('Descargar este mes'), 'C3: cada hueco trae su botón de descarga del mes');
   assert.ok(html.includes('Descargas pedidas al SAT'), 'C3: el libro de solicitudes queda como detalle secundario');
@@ -283,8 +297,8 @@ function harness(service, proxyKey = '') {
   /* A · el botón por factura y su repintado en sitio. */
   assert.ok(html.includes("'Revisar ahora'") || html.includes('"Revisar ahora"') || html.includes('Revisar ahora'),
     'el botón «Revisar ahora» existe en la tarjeta');
-  assert.ok(html.includes("satApi('monitor/check-one', { uuid: row.id })"), 'el botón llama al endpoint de uno');
-  assert.ok(html.includes('data-monitor-state'), 'la celda de estado lleva su marca para repintarse en sitio');
+  assert.ok(todo1131.includes("satApi('monitor/check-one', { uuid: row.id })"), 'el botón llama al endpoint de uno');
+  assert.ok(todo1131.includes('data-monitor-state'), 'la celda de estado lleva su marca para repintarse en sitio');
   /* B · la tarjeta de Listas: cifras, significado y evidencia. */
   assert.ok(html.includes('Qué significa para ti'), 'el desplegable de significado existe');
   assert.ok(html.includes('Ver sus CFDI'), 'el botón a la evidencia existe');
@@ -559,14 +573,21 @@ function harness(service, proxyKey = '') {
     assert.equal(res.status, 400, 'H: repetir la marca no duplica el pago');
     /* Superficie: el ayudante existe y lo usan Avisos y Dinero. */
     const html = readFileSync(new URL('./Faro-Fiscal.html', import.meta.url), 'utf8');
+    /* RE-BASE integración 2.4.0 (W6/W6b): el uso de Dinero del
+       ayudante vive en la parte diferida de Dinero y las marcas
+       de progreso/resultado de la revisión en la de Vigilancia.
+       Esas marcas se buscan en artefacto + partes (lo que el
+       navegador recibe en total), mismo literal, misma fuerza. */
+    const lazyH = JSON.parse(readFileSync(new URL('./lazy.json', import.meta.url), 'utf8'));
+    const todoH = html + Object.values(lazyH.partes).map(p => p.source).join('\n');
     assert.ok(html.includes('async function satApiGuardar'), 'H: el ayudante de mutación con recomprobación existe');
     assert.ok(html.includes("satApiGuardar('notices/answer'"), 'H: «Ya se pagó» de Avisos pasa por la recomprobación');
-    assert.ok(html.includes("satApiGuardar('money/mark-paid'"), 'H: marcar pagado en Dinero pasa por la recomprobación');
+    assert.ok(todoH.includes("satApiGuardar('money/mark-paid'"), 'H: marcar pagado en Dinero pasa por la recomprobación');
     assert.ok(html.includes('Quedó marcado como pagado'), 'H: el éxito real tras recomprobar tiene su texto');
-    assert.ok(html.includes('data-run-status') || html.includes('runStatus'), 'E: la tarjeta de progreso vive junto a la acción');
-    assert.ok(html.includes('Consultando el estado en el SAT…'), 'E: la fase se cuenta en lenguaje claro junto al botón');
+    assert.ok(todoH.includes('data-run-status') || todoH.includes('runStatus'), 'E: la tarjeta de progreso vive junto a la acción');
+    assert.ok(todoH.includes('Consultando el estado en el SAT…'), 'E: la fase se cuenta en lenguaje claro junto al botón');
     assert.ok(html.includes('Cancelado por ti a las '), 'E/F: el resultado cancelado persiste junto a la acción, con su hora');
-    assert.ok(html.includes('Última revisión: '), 'E: el resultado queda persistido en la pantalla de Estado');
+    assert.ok(todoH.includes('Última revisión: '), 'E: el resultado queda persistido en la pantalla de Estado');
   } finally { await service2.close(); }
   console.log('OK 1.13.1 H: timeouts sobre el proxy, listados como trabajo que no bloquea (<1 s) y recomprobación que encuentra el cambio aplicado.');
 }

@@ -1,1 +1,6 @@
-{"version":"2.3.0","sha256":"4ed60efeeb75ef5e88ea8c62371f7833141f70ccb810faab201e4cfefd7ea498"}
+{
+  "version": "2.4.0",
+  "sha256": "00aa7198b12d7263ce8c95878354f057afe53c8d1d3833e519a1f6f831d5c264",
+  "huellaMotores": "e0a613eb4b07039c62074baf3466821ea4ddadd6c554fecbfcfe436cc7555975",
+  "huellaPaquete": "6f6e78b1241b8f3740758819fa8ea007735830c0cd4bfe961a9f0fc083c53cd8"
+}
