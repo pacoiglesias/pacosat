@@ -514,7 +514,7 @@ class FixtureParser {
   /* Anexo 1.26.0: el sello sube con la Ronda Visual, como en
      cada ronda (el pin de la 1.17.0 en ronda1170 y este se
      mueven con la versión vigente). */
-  assert.ok(html.includes('"version":"2.9.14"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+  assert.ok(html.includes('"version":"2.9.15"'), 'el artefacto se sella con la versión vigente (2.0.1)');
   assert.ok(html.includes('--accent:var(--green)'), '--accent es token de raíz');
   assert.ok(!html.includes('#2563eb'), 'el azul de emergencia desapareció');
   assert.ok(!html.includes('#d9534f'), 'la insignia ya no lleva el rojo crudo');

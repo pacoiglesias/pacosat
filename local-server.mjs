@@ -34,7 +34,7 @@ import { createSatCiecFetch, createCiecCredentialResolver } from './sat-ciec.mjs
 import { createSatPortalCfdiFetch } from './sat-portal-cfdi.mjs';
 import { composeNewsMail, NEWS_MAIL_LIMIT } from './news-mail.mjs';
 import { mailLayout, mailCard, mailPill, mailButton, deepLink, composeMailPair } from './mail-layout.mjs';
-import { encryptIndexSecrets, decryptIndexSecrets, isEncryptedSecret } from './secret-box.mjs';
+import { encryptIndexSecrets, decryptIndexSecrets, isEncryptedSecret, decryptSecret } from './secret-box.mjs';
 import { normalizarBeneficiario, construirPreparacion, preparacionTxt, MANOFIL_SEED, MANOFIL_SEED_RFC } from './pagos.mjs';
 import { generateVapidKeys, sendWebPush } from './push.mjs';
 
@@ -298,6 +298,7 @@ export function paseoSedeDesdeEntorno(env = process.env) {
 export function createPacoSATService({ dbFile, html, origin, proxyKey = '', makeConnector = productionConnector, makeMailer,
   analyzePdf = analyzeInvoicePdf, now = Date.now, monitorOptions = {}, watchDir = '', inboxParser = null, watchSettleMs = 2000, buildModified = null, efirmaDir = '', listFetch = null, officialLists = false, satDocFetch = null, satDeclFetch = null, satCiecFetch = null, satTribFetch = null, extractText = extractPdfTextLines, capacidades = null, lazyParts = null,
   satDocRetryWaitMs = 120000, portalProbeFetch = null, backupCeilingBytes = 100 * 1024 * 1024,
+  capturasDir = '',
   makePushSender = null, makePaperlessUploader = null, executorMode = '', appVersion = '', webhookFetch200g = null, satPuertaFetch = null, satPortalFetch = null }) {
   /* Ejecutor local del SAT (1.29.0): con executorMode='remote', las
      corridas de Buzón Tributario y Declaraciones NO navegan desde
@@ -325,6 +326,25 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      sin la variable, para Paco no cambia NADA: ni rutas ni
      comportamiento, solo el campo comercial: false en el estado. */
   const comercialActivo = process.env.PACOSAT_COMERCIAL === '1';
+  /* Capturas de la guía de Ayuda (2.9.15 · Bloque C): las cinco
+     imágenes REALES de la app que la guía enseña viven FUERA del
+     artefacto, en un directorio de datos, para poder colocarlas
+     tras el montaje sin reconstruir nada. Resolución del
+     directorio, en este orden: (1) la variable de entorno
+     PACOSAT_CAPTURAS_DIR; (2) la opción capturasDir del servicio;
+     (3) el subdirectorio «ayuda-capturas» junto a la base de
+     datos de la app (dirname(dbFile) — en el arranque real es el
+     PACOSAT_DATA_DIR, el mismo territorio que pacosat.sqlite).
+     Con la base en memoria (suites) y sin otra señal, cae a
+     «ayuda-capturas» bajo el directorio de trabajo. La lista de
+     nombres es CERRADA: la ruta solo sirve estos cinco, con el
+     nombre exacto — nada de rutas libres ni traversal. */
+  const CAPTURAS_AYUDA2915 = ['captura-hoy.png', 'captura-descargar.png', 'captura-buzon.png',
+    'captura-salud.png', 'captura-facturas.png'];
+  const capturasDir2915 = process.env.PACOSAT_CAPTURAS_DIR ? String(process.env.PACOSAT_CAPTURAS_DIR)
+    : capturasDir ? String(capturasDir)
+    : dbFile && dbFile !== ':memory:' ? join(dirname(dbFile), 'ayuda-capturas')
+    : join(process.cwd(), 'ayuda-capturas');
   const cspHeader = cspForHtml(html, lazyParts?.partes ?
     Object.values(lazyParts.partes).map(part => part.hash) : []);
   const db = new DatabaseSync(dbFile);
@@ -2245,8 +2265,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       'el envío). Por seguridad cuentan como enviadas para el blindaje 5002: el mismo criterio no se reenviará ' +
       'sin desplazar la ventana un segundo.', now());
     if (config.backup?.password) {
-      if (String(config.backup.password).length >= 12) {
-        backupJob = { password: String(config.backup.password),
+      /* (2.9.15 · A3) La contraseña del respaldo también puede
+         venir cifrada del archivo de arranque (enc:v1:…, caja
+         de secretos del equipo): se descifra SOLO en memoria,
+         y la regla de los 12 caracteres mide el valor real,
+         no el cifrado. Un valor legado en claro se devuelve
+         tal cual y sigue funcionando. */
+      const backupPass2915 = decryptSecret(efirmaBase, String(config.backup.password));
+      if (backupPass2915.length >= 12) {
+        backupJob = { password: backupPass2915,
           frequency: config.backup.frequency === 'weekly' ? 'weekly' : 'daily',
           /* Carpeta del respaldo (1.23.0, frente C): manda primero
              la variable PACOSAT_BACKUP_DIR, después la del archivo
@@ -2279,7 +2306,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
        «faltan credenciales» también tras un reinicio. */
     for (const rfc of pendingProfileRfcs()) ensurePendingProfileRow(rfc);
     if (config.mail) {
-      try { await configureMail(config.mail); }
+      /* (2.9.15 · A3) La contraseña SMTP puede venir cifrada
+         del archivo de arranque (enc:v1:…, caja de secretos
+         del equipo): se descifra SOLO en memoria al crear el
+         transporte; el objeto de arranque no se toca y en
+         reposo puede quedar el valor cifrado. Un valor legado
+         en claro se devuelve tal cual y sigue funcionando. */
+      try {
+        await configureMail({ ...config.mail,
+          password: config.mail.password ? decryptSecret(efirmaBase, String(config.mail.password)) : config.mail.password });
+      }
       catch { console.error('PacoSAT: no se pudo activar el correo del archivo de arranque.'); }
     }
   }
@@ -12750,7 +12786,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
   const GUEST_GET = ['/api/status', '/api/storage', '/api/storage/rev', '/api/lists', '/api/money', '/api/notices',
     '/api/fiscal/calendar', '/api/fiscal/issues',
-    '/api/files/view', '/api/capacidades', '/api/buzon', '/api/declaraciones/runs', '/api/declaraciones/resumen',
+    '/api/files/view', '/api/capacidades', '/api/ayuda-captura', '/api/buzon', '/api/declaraciones/runs', '/api/declaraciones/resumen',
     /* El Lector de CFDI (2.9.7 · Pieza B): lectura de UN
        comprobante; la ruta comprueba el alcance por RFC dentro
        (403 fuera de alcance). */
@@ -19475,6 +19511,38 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
          misma fuente docs/CAPACIDADES.md. */
       if (req.method === 'GET' && url.pathname === '/api/capacidades') {
         return json(res, capacidades || { updated: '', sections: [] });
+      }
+      /* Captura de la guía de Ayuda (2.9.15 · Bloque C): sirve UNA
+         de las cinco capturas reales desde el directorio de datos
+         (capturasDir2915, fuera del artefacto: colocar el PNG tras
+         el montaje no exige reconstruir). Va DESPUÉS de la puerta
+         general de autenticación, como /api/capacidades: exige la
+         sesión de siempre (token principal, sesión de administrador,
+         usuario con nombre o invitado — está en GUEST_GET porque es
+         material de ayuda, sin datos de ningún RFC). El nombre se
+         pide por ?archivo= y SOLO vale si es uno de los cinco de la
+         lista cerrada, carácter a carácter: cualquier otro nombre
+         — incluido un intento de traversal — es un 404, y un nombre
+         válido sin archivo colocado es también un 404 honesto (el
+         cliente conserva entonces su hueco diseñado). El cliente
+         la pide con fetch y la cabecera de sesión y la enseña como
+         blob: — la CSP de la casa (img-src data: blob:) no admite
+         un <img> directo al mismo origen y SÍ admite blob:, el
+         mismo patrón que las miniaturas de Documentos. */
+      if (req.method === 'GET' && url.pathname === '/api/ayuda-captura') {
+        const nombre2915 = String(url.searchParams.get('archivo') || '');
+        if (!CAPTURAS_AYUDA2915.includes(nombre2915)) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Captura no encontrada.' }));
+        }
+        let datos2915 = null;
+        try { datos2915 = readFileSync(join(capturasDir2915, nombre2915)); } catch { datos2915 = null; }
+        if (!datos2915) {
+          res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
+          return res.end(JSON.stringify({ error: 'Captura aún no colocada.' }));
+        }
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': datos2915.length });
+        return res.end(datos2915);
       }
       /* Base comercial (2.3.0, pieza 20): esta ruta SOLO existe
          con PACOSAT_COMERCIAL=1 — sin la variable cae en el 404

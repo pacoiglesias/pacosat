@@ -50,11 +50,16 @@ const read = name => readFileSync(join(ROOT, name), 'utf8');
   /* RE-BASE 2.8.0 (diseño 3): «Descargados del SAT» (coverage)
      se funde en «Descargar del SAT» — la casa única de
      descargas — y su destino sale del menú: 21 destinos. */
-  assert.deepEqual(views, ['home', 'avisos', 'buzon', 'contribuyentes', 'invoices', 'docs',
-    'declaraciones', 'tributario', 'archivo', 'dinero', 'pagos', 'reportes', 'salidas',
-    'descargar', 'monitor', 'lists', 'ejecutor', 'registro', 'salud',
+  /* RE-BASE 2.9.15 (Bloque B6): el menú se reagrupa por tarea
+     (Expediente, SAT, Bancos, Documentos, Ajustes) y el orden
+     cambia con los grupos; Buzón y Declaraciones siguen como
+     entradas propias, que es lo que esta aserción nació para
+     fijar. La lista exacta se re-pina con la misma fuerza. */
+  assert.deepEqual(views, ['home', 'avisos', 'buzon', 'contribuyentes', 'invoices', 'archivo',
+    'registro', 'descargar', 'tributario', 'monitor', 'lists', 'ejecutor', 'dinero',
+    'pagos', 'reportes', 'salidas', 'docs', 'declaraciones', 'salud',
     'preguntas', 'settings'],
-    'el menú trae Buzón y Declaraciones como entradas propias (2.0.2; barra de 21 destinos tras la fusión de descargas de la 2.8.0)');
+    'el menú trae Buzón y Declaraciones como entradas propias (2.0.2; barra de 21 destinos reagrupados por tarea en la 2.9.15)');
   /* RE-BASE 2.8.0 (diseño 19): «Buzón» pasa a llamarse «Buzón
      del SAT» — «Recibidos» (hoy «Novedades») y «Buzón» se
      pisaban — y su title dice la misma verdad con las palabras
@@ -215,9 +220,9 @@ const makeService = (options = {}) => {
 
 /* ---------- Sellos de la versión ---------- */
 {
-  assert.equal(JSON.parse(read('package.json')).version, '2.9.14', 'la versión del paquete es 2.0.2');
-  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.9.14'"), 'el ejecutor declara 2.0.2 (solo el sello)');
-  assert.ok(read('Faro-Fiscal.html').includes('"version":"2.9.14"'), 'el artefacto se sella 2.0.2');
-  assert.ok(read('final-ui.part').includes("version: '2.9.14'"), 'la nota de novedades es la de esta versión');
+  assert.equal(JSON.parse(read('package.json')).version, '2.9.15', 'la versión del paquete es 2.0.2');
+  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.9.15'"), 'el ejecutor declara 2.0.2 (solo el sello)');
+  assert.ok(read('Faro-Fiscal.html').includes('"version":"2.9.15"'), 'el artefacto se sella 2.0.2');
+  assert.ok(read('final-ui.part').includes("version: '2.9.15'"), 'la nota de novedades es la de esta versión');
   console.log('OK 2.0.2 · sellos — paquete, ejecutor, artefacto y novedades en 2.0.2.');
 }

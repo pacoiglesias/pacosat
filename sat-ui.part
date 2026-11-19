@@ -1222,11 +1222,25 @@ function satDownloadScreen() {
      historial con su gráfico, entre la tarjeta y la cobertura
      completa: la rejilla dice qué meses tienes por sentido y
      el historial, cuántos XML entraron por día. */
+  /* (2.9.15 · B2) Lo avanzado de la casa, plegado: el año de
+     un vistazo, el historial y la cobertura completa quedan
+     a un toque en secciones plegables, y lo frecuente — la
+     tarjeta de descarga, dar de alta, solicitar un periodo,
+     la cola de trabajos y la cuota — queda siempre a la
+     vista. Nada se retira: los tres bloques se pliegan,
+     nombrados en el informe de la ronda. */
   const anio2913 = descargaAnioGrid2913();
-  if (anio2913) casa280.push(anio2913);
+  if (anio2913) casa280.push(plegable290('El año de un vistazo', anio2913, 'desc-anio2915'));
   const hist2913 = descargaHistorial2913();
-  if (hist2913) casa280.push(hist2913);
-  if (typeof coberturaPaneles280 === 'function') casa280.push(...coberturaPaneles280(true));
+  if (hist2913) casa280.push(plegable290('Historial de descargas', hist2913, 'desc-hist2915'));
+  if (typeof coberturaPaneles280 === 'function') {
+    const cobertura2915 = coberturaPaneles280(true);
+    if (cobertura2915.length) {
+      const cajaCobertura2915 = n('div');
+      cajaCobertura2915.append(...cobertura2915);
+      casa280.push(plegable290('Cobertura completa: meses, huecos y automática', cajaCobertura2915, 'desc-cobertura2915'));
+    }
+  }
   return casa280;
 }
 /* (2.9.13 · mejora 10) El mapa del año en rejilla: 12 meses ×

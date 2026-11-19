@@ -937,14 +937,17 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '2.9.14',
-  fecha: '18 de noviembre de 2026',
+  version: '2.9.15',
+  fecha: '19 de noviembre de 2026',
   puntos: [
-    'Descargar decide por cobertura, no por coincidencia exacta: si la ventana que eliges ya quedó cubierta por tus descargas — aunque sean varias seguidas, una tras otra — la tarjeta contesta «ya se pidió» y no envía nada al SAT. Si falta un tramo, lo dice en llano: qué parte ya consta y qué parte se pide, y se pide solo ese tramo.',
-    'Los pasos de la descarga se ven dibujados durante toda la marcha — Pedirlo al SAT, El SAT lo prepara, Guardarlo en tu expediente — cada uno con su número y encendiéndose con la fase real, también mientras escribes el captcha.',
-    'La lista de trabajos en curso se cierra como los demás desplegables: con un clic fuera, con Escape o con su propio botón — ya no se queda puesta tapando la navegación.',
-    'El encabezado de los reportes enseña a las personas físicas en orden natural — primero el nombre, después los apellidos — también cuando su nombre quedó guardado con la coma fiscal («Apellidos, Nombre»).',
-    'Leer un comunicado del Buzón ya no se pierde: mientras se abre — tarda alrededor de un minuto — su tarjeta enseña la marcha con el tiempo corriendo; al llegar, el comunicado queda abierto en su propia tarjeta (sales y vuelves, y sigue ahí), y si su texto es un enlace («da clic aquí»), PacoSAT lo sigue y te trae también el detalle enlazado.'
+    'Hoy abre con una franja nueva, «Requiere tu atención»: lo que Salud sabe que está mal o en vigía — trabajos atorados, una e.firma por vencer, avisos sin ningún aparato suscrito — sale primero, cada cosa una sola vez y con su botón a la pantalla que lo arregla. Los indicadores de siempre van debajo, como estaban.',
+    'El menú se ordena por tarea — Expediente, SAT, Bancos, Documentos, Ajustes — y el grupo en el que estás queda señalado. Todos los destinos de siempre siguen ahí, en su grupo.',
+    'En Descargar del SAT, lo avanzado queda plegado a un toque: el año de un vistazo, el historial y la cobertura completa. Lo de todos los días — pedir, la cola de trabajos y la cuota — queda a la vista.',
+    'En Facturas, las columnas clave van primero — fecha, quién, folio, importe y estado — y los filtros se ven desde que entras, también en el móvil, sin tener que abrir nada. En el visor de cada comprobante ahora copias con un toque también el RFC del emisor, el del receptor y el importe, como ya copiabas el UUID.',
+    'Los estados se dicen siempre con palabra e icono, nunca solo con color: Pendiente, En proceso, Requiere atención, Completado. Y las tarjetas dicen de cuándo es su foto: «actualizado hace…». En el móvil, los botones principales se tocan mejor y el foco del teclado se ve bien.',
+    'La contraseña del correo de avisos ya no tiene que vivir en claro en el archivo de arranque del servidor: puede guardarse cifrada, como la de la e.firma, y se descifra solo en memoria al arrancar. Lo mismo vale para la contraseña del respaldo programado.',
+    'Las guías del servidor describen por fin lo que corre de verdad — usuarios con nombre y alcance por RFC, secretos cifrados en reposo y respaldos que nunca llevan secretos — y la versión dice lo mismo en todas partes: programa, candado de dependencias y guía enseñan 2.9.15, con una prueba guardiana que vigila que no vuelvan a desajustarse.',
+    'La guía de Ayuda ya puede enseñar capturas de verdad: en cuanto las fotos reales de cada pantalla se coloquen en su carpeta del servidor, las figuras las enseñan sin tocar el programa; mientras tanto sigue el hueco dibujado de siempre.'
   ]
 };
 function novedadesCard1311() {

@@ -1805,6 +1805,17 @@ function navigate(view) {
     if (button.dataset.view === page) button.setAttribute('aria-current', 'page');
     else button.removeAttribute('aria-current');
   }
+  /* (2.9.15 · B6) La sección actual también se señala en el
+     título de su grupo del menú: el grupo que la contiene
+     se tiñe con el color de activo. */
+  for (const cap of document.querySelectorAll('.sidebar .nav-caption'))
+    cap.classList.remove('nav-caption-on2915');
+  const navBtn2915 = document.querySelector('.sidebar nav [data-view="' + page + '"]');
+  if (navBtn2915) {
+    let sib2915 = navBtn2915.previousElementSibling;
+    while (sib2915 && !sib2915.classList.contains('nav-caption')) sib2915 = sib2915.previousElementSibling;
+    if (sib2915) sib2915.classList.add('nav-caption-on2915');
+  }
   render();
 }
 /* Atajo para otras pantallas: ir a la pantalla de descarga del SAT. */
@@ -3298,7 +3309,15 @@ function focoRefrescar290() {
       if (listas) focoListas290 = listas;
       focoFoto290 = Date.now();
     }).catch(() => { /* sin foto nueva: manda la anterior */ })
-    .finally(() => { focoLeyendo290 = false; try { pintarFoco290(); } catch { /* foco decorativo */ } });
+    .finally(() => { focoLeyendo290 = false; try { pintarFoco290(); } catch { /* foco decorativo */ }
+      /* (2.9.15 · B1) La franja de atención de Hoy nace de
+         esta misma foto de Salud: al llegar, si estamos en
+         Hoy, la pantalla se repinta para enseñarla sin
+         esperar a otro gesto. La foto queda sellada
+         (focoFoto290), así que el repintado no vuelve a
+         disparar esta petición. */
+      if (typeof page !== 'undefined' && page === 'home' && typeof render === 'function') render();
+    });
 }
 function pintarFoco290() {
   const btn = $('foco-btn290');
@@ -3363,6 +3382,53 @@ async function focoGesto290(gesto) {
   if (gesto.seccion) ajustesSection = gesto.seccion;
   if (gesto.destino) irDestino200b(gesto.vista, gesto.destino);
   else if (gesto.vista) navigate(gesto.vista);
+}
+/* ── «Requiere tu atención» (2.9.15 · B1) ─────────────────────
+   La franja que abre Hoy: solo lo que Salud ya sabe que está
+   mal o en vigía y que Hoy aún no enseña en otro sitio — la
+   puerta y el ejecutor viven en el mando, el correo en el
+   proactivo, y cada dato sale una sola vez en la pantalla —.
+   El respaldo solo entra cuando su contraseña ya existe (hay
+   respaldo que verificar); sin contraseña, el gesto de
+   definirla ya es del mando. Cada fila enlaza a su pantalla
+   dueña con el gesto del foco, y la franja dice de cuándo es
+   la foto. Sin foto de Salud o sin nada que atender, no hay
+   franja: ni hueco vacío ni un «todo bien» inventado. */
+const ATENCION_HOY2915 = {
+  atascados: () => ({ texto: 'Ir a Salud', vista: 'salud', destino: 'atascados' }),
+  efirma: () => ({ texto: 'Revisar la e.firma', vista: 'settings', seccion: 'contribuyentes' }),
+  respaldo: () => ({ texto: 'Ir a Respaldos', vista: 'settings', seccion: 'respaldos' }),
+  'solicitudes-vivas': () => ({ texto: 'Ir a Descargar del SAT', vista: 'descargar' }),
+  'sat-hoy': () => ({ texto: 'Ir a Salud', vista: 'salud', destino: 'sat-hoy' }),
+  push: () => ({ texto: 'Ir a Salud', vista: 'salud', destino: 'push' }) };
+function atencionHoyFilas2915(salud) {
+  const tarjetas = salud && Array.isArray(salud.tarjetas) ? salud.tarjetas : [];
+  return tarjetas.filter(t => {
+    if (!t || !ATENCION_HOY2915[t.id]) return false;
+    if (t.estado !== 'mal' && t.estado !== 'vigilar') return false;
+    if (t.id === 'respaldo' && !(t.datos && t.datos.contrasenaPuesta)) return false;
+    return true;
+  });
+}
+function hoyAtencion2915() {
+  const filas = atencionHoyFilas2915(typeof focoSalud290 !== 'undefined' ? focoSalud290 : null);
+  if (!filas.length) return null;
+  const cuerpo = n('div');
+  const fresca = Math.max(...filas.map(t => Number(t.frescura) || 0));
+  if (fresca) cuerpo.append(n('p', 'Según Salud · ' + hace2915(fresca) + '.', 'atencion-frescura2915'));
+  for (const t of filas) {
+    const fila = n('div', undefined, 'atencion-fila2915');
+    const gesto = ATENCION_HOY2915[t.id]();
+    fila.append(estadoChip2915(t.estado === 'mal' ? 'atencion' : 'pendiente',
+        t.estado === 'mal' ? 'Requiere atención' : 'Pendiente', t.estado === 'mal'),
+      cell(t.titulo, t.porque || ''),
+      action(gesto.texto, () => focoGesto290(gesto), undefined, 'chev'));
+    cuerpo.append(fila);
+  }
+  const p = panel('Requiere tu atención');
+  p.append(cuerpo);
+  p.classList.add('atencion2915');
+  return p;
 }
 (function cablearFoco290() {
   const btn = typeof document !== 'undefined' ? document.getElementById('foco-btn290') : null;
@@ -4608,6 +4674,44 @@ function etiqueta290(state, label, hint) {
   if (hint) tag.title = hint;
   return tag;
 }
+/* ── Sistema único de estados (2.9.15 · B4) ───────────────────
+   Cuatro estados canónicos para todo el sistema, siempre con
+   etiqueta + icono + color — nunca el color a solas —:
+   Pendiente, En proceso, Requiere atención y Completado.
+   estadoChip2915 es el render compartido de las superficies
+   nuevas, y las píldoras de siempre (statusPill /
+   etiqueta290) ya pintaban el icono de su estado junto a la
+   etiqueta: un solo idioma en todo el sistema. hace2915 es el
+   sello de frescura único de los datos vivos:
+   «actualizado hace…». */
+const ESTADOS2915 = {
+  pendiente: { etiqueta: 'Pendiente', icono: 'clock' },
+  'en-proceso': { etiqueta: 'En proceso', icono: 'sync' },
+  atencion: { etiqueta: 'Requiere atención', icono: 'alert' },
+  completado: { etiqueta: 'Completado', icono: 'check' } };
+/* Las píldoras de siempre ya hablan este idioma desde la
+   2.4.0: su ::before pinta el icono del estado (alert, check,
+   sync, círculo) junto a la etiqueta y el color — nunca el
+   color a solas —; la 2.9.15 lo deja escrito como sistema y
+   lo extiende con estadoChip2915 a las superficies nuevas. */
+function estadoChip2915(clave, etiqueta, grave = false) {
+  const def = ESTADOS2915[clave] || ESTADOS2915.pendiente;
+  const chip = n('span', undefined, 'estado2915 estado-' + clave + (grave ? ' estado-grave2915' : ''));
+  chip.append(icon(def.icono), n('span', etiqueta || def.etiqueta));
+  return chip;
+}
+function hace2915(ms, ahora = Date.now()) {
+  if (!ms) return '';
+  const s = Math.max(0, Math.round((ahora - Number(ms)) / 1000));
+  if (s < 45) return 'actualizado ahora mismo';
+  if (s < 90) return 'actualizado hace 1 min';
+  const m = Math.round(s / 60);
+  if (m < 60) return 'actualizado hace ' + m + ' min';
+  const h = Math.round(m / 60);
+  if (h < 24) return 'actualizado hace ' + h + (h === 1 ? ' hora' : ' horas');
+  const d = Math.round(h / 24);
+  return 'actualizado hace ' + d + (d === 1 ? ' día' : ' días');
+}
 /* ===== Gráficas aplicadas II (2.4.0 · W5b2) =====
    Piezas 1 (sparklines), 10 (estado de la portada de acceso),
    4b (esqueletos aplicados) y el helper de destello de W5a.
@@ -5843,7 +5947,14 @@ function home() {
      en el Registro). La pantalla pintada no cambia. */
   /* Hoy manda (2.3.2 · M-8): el mando lleva dentro los
      gestos, por encima de sus 4 tarjetas de acción. */
-  const blocks = [hoyMando201(gestosPanel1311())];
+  /* (2.9.15 · B1) Hoy abre con la franja «Requiere tu
+     atención» cuando Salud sabe de algo mal o en vigía que
+     esta pantalla aún no enseña; los indicadores generales
+     (el mando y el día en cifras) van debajo, como siempre. */
+  const blocks = [];
+  const atencion2915 = hoyAtencion2915();
+  if (atencion2915) blocks.push(atencion2915);
+  blocks.push(hoyMando201(gestosPanel1311()));
   /* (2.9.13 · mejoras 1 y 2) «Tu día en cifras», con el
      anillo de cobertura del año: tras el mando, antes de lo
      demás — Hoy abre con la foto dibujada. */
@@ -6619,7 +6730,10 @@ function invoiceScreen() {
       prev.disabled = invoicePage === 0; next.disabled = (invoicePage + 1) * 35 >= rows.length;
       options.append(prev, n('span', String(invoicePage + 1)), next); foot.append(options);
     }
-    const content = sliced.length ? grid(['', 'Emisor → receptor', 'Fecha', 'Folio', 'Tipo', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => {
+    /* (2.9.15 · B3) Columnas clave primero: fecha, contraparte,
+       folio, importe y estado; el tipo pasa a detalle
+       secundario, tras el estado. */
+    const content = sliced.length ? grid(['', 'Fecha', 'Emisor → receptor', 'Folio', 'Total', 'Estado SAT', 'Tipo', 'Acción'], sliced.map(row => {
       const pick = input('checkbox');
       pick.checked = invoiceSelection.has(row.id);
       pick.setAttribute('aria-label', 'Seleccionar el CFDI ' + row.id);
@@ -6655,8 +6769,8 @@ function invoiceScreen() {
             'Complemento de pago (REP) que consta entre tus CFDI'));
         }
       }
-      return [pick, cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
-        dateLabel(row.date),
+      return [pick, dateLabel(row.date),
+        cell(row.from.name || row.from.rfc, '→ ' + (row.to.name || row.to.rfc)),
         /* Columna Folio (1.18.0): la factura se nombra por su folio,
            no por el fragmento de UUID. */
         (() => { const folioTxt = row.fiscal ? ((row.fiscal.serie ? row.fiscal.serie + '-' : '') + (row.fiscal.folio || '')) : '';
@@ -6667,10 +6781,10 @@ function invoiceScreen() {
           const folioBtn = n('button', folioTxt, 'cell-link');
           folioBtn.type = 'button'; folioBtn.title = 'Abrir el detalle de este comprobante';
           folioBtn.onclick = () => invoiceDetail(row); return folioBtn; })(),
-        cell(KINDS[row.kind], rowRole(row)),
         (() => { const totalBtn = n('button', amount(row), 'cell-link cell-link-total');
           totalBtn.type = 'button'; totalBtn.title = 'Abrir el detalle de este comprobante';
-          totalBtn.onclick = () => invoiceDetail(row); return totalBtn; })(), estadoStack, invoiceActions(row)];
+          totalBtn.onclick = () => invoiceDetail(row); return totalBtn; })(), estadoStack,
+        cell(KINDS[row.kind], rowRole(row)), invoiceActions(row)];
     })) : empty('Sin coincidencias', !invoices.some(row => !scope || row.from.rfc === scope || row.to.rfc === scope)
         ? 'Todavía no hay facturas de este contribuyente en PacoSAT. Descárgalas del SAT o importa un lote.'
         : 'Importa un lote o cambia los filtros.',
@@ -6782,7 +6896,11 @@ function invoiceScreen() {
   /* Filtros en móvil (1.18.0): panel plegable con «Aplicar» en vez
      de la fila que se salía por la derecha. En escritorio el botón
      no se ve y los filtros van como siempre. */
-  controls.classList.add('invoice-filters');
+  /* (2.9.15 · B3) Los filtros nacen abiertos también en
+     móvil: buscar y filtrar es lo primero que se hace en
+     esta pantalla, no algo escondido tras «Filtrar». El
+     botón sigue pudiendo plegarlos, como hasta hoy. */
+  controls.classList.add('invoice-filters', 'open');
   const applyFilters = action('Aplicar', () => controls.classList.remove('open'), 'filters-apply');
   controls.append(applyFilters);
   const filtersToggle = action('Filtrar', () => controls.classList.toggle('open'), 'filters-toggle');

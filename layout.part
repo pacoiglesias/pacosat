@@ -85,24 +85,17 @@
          su pantalla, una sola vez. (2.8.0 · diseño 19)
          «Recibidos» pasa a llamarse «Novedades» y «Buzón» pasa
          a «Buzón del SAT»: los dos nombres ya no se pisan. -->
-    <span class="nav-caption">LA MAÑANA</span>
+    <span class="nav-caption">EXPEDIENTE</span>
     <button data-view="home" aria-current="page" title="Hoy — Cómo amanece todo: qué hizo el sistema, qué falta y qué vence"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span><span id="gestos-badge" class="news-badge gestos-badge" hidden></span></button>
     <button data-view="avisos" title="Avisos — Lo que está mal, lo que falta y lo que el sistema necesita de ti"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
     <button data-view="buzon" title="Novedades — Lo nuevo que llegó a tu expediente: CFDI y documentos recientes, leídos y sin leer"><svg><use href="#i-inbox"/></svg> Novedades <span id="buzon-badge" class="news-badge" hidden></span></button>
     <button data-view="contribuyentes" title="Contribuyentes — Todos tus RFC ordenados por urgencia: puerta, última descarga, avisos y vencimientos"><svg><use href="#i-eye"/></svg> Contribuyentes </button>
-    <span class="nav-caption">EXPEDIENTE</span>
     <button data-view="invoices" title="Facturas — Todos tus CFDI: emitidos y recibidos, su estado en el SAT y su PDF"><svg><use href="#i-file"/></svg> Facturas </button>
-    <button data-view="docs" title="Documentos — Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados"><svg><use href="#i-folder"/></svg> Documentos </button>
-    <button data-view="declaraciones" title="Declaraciones — El mapa de tus declaraciones por año y mes: qué consta, qué falta y cómo se descarga"><svg><use href="#i-decl"/></svg> Declaraciones <span id="decl-menu-estado202" class="nav-estado201"></span></button>
-    <button data-view="tributario" title="Buzón del SAT — Las notificaciones del SAT para este RFC, sin abrir ninguna: PacoSAT las lista por ti"><svg><use href="#i-buzontrib"/></svg> Buzón del SAT <span id="buzon-menu-estado202" class="nav-estado201"></span></button>
     <button data-view="archivo" title="Archivo — Lo que guardaste fuera de las vistas de trabajo: CFDI y documentos archivados, recuperables con un toque"><svg><use href="#i-box"/></svg> Archivo </button>
-    <span class="nav-caption">DINERO Y CIERRE</span>
-    <button data-view="dinero" title="Dinero — Cuánto debes, cuánto te deben y qué ya se movió"><svg><use href="#i-chart"/></svg> Dinero </button>
-    <button data-view="pagos" title="Pagos al banco — Prepara los pagos del mes y llévate las tablas para el banco"><svg><use href="#i-bank"/></svg> Pagos al banco </button>
-    <button data-view="reportes" title="Reportes — Totales, contrapartes, declaraciones y bancos, en PDF, Excel o impresos"><svg><use href="#i-print"/></svg> Reportes </button>
-    <button data-view="salidas" title="Cierre y reportes — Cierra el mes paso a paso, mira qué vence y prepara lo de tu contadora"><svg><use href="#i-calendar"/></svg> Cierre y reportes </button>
+    <button data-view="registro" title="Registro — Todo lo que el sistema hizo, intentó y no pudo, en lenguaje llano"><svg><use href="#i-list"/></svg> Registro </button>
     <span class="nav-caption">SAT</span>
     <button data-view="descargar" title="Descargar del SAT — Baja tus comprobantes del SAT por periodo: el sistema pide, espera y archiva solo"><svg><use href="#i-down"/></svg> Descargar del SAT </button>
+    <button data-view="tributario" title="Buzón del SAT — Las notificaciones del SAT para este RFC, sin abrir ninguna: PacoSAT las lista por ti"><svg><use href="#i-buzontrib"/></svg> Buzón del SAT <span id="buzon-menu-estado202" class="nav-estado201"></span></button>
     <button data-view="monitor" title="Vigilancia de CFDI — El estado de tus comprobantes en el SAT: vigentes, cancelados y por revisar"><svg><use href="#i-sync"/></svg> Vigilancia </button>
     <!-- (2.8.0 · diseño 3) «Descargados del SAT» se funde en
          «Descargar del SAT»: la casa única de descargas trae
@@ -111,8 +104,15 @@
          ya no existe como pantalla: vive entera en la casa. -->
     <button data-view="lists" title="Listas negras — Las listas negras del SAT (69-B y demás): quién de tus contrapartes aparece y cuándo se comprobó"><svg><use href="#i-shield"/></svg> Listas negras <span id="lists-menu-estado201" class="nav-estado201"></span></button>
     <button data-view="ejecutor" title="Tu ejecutor — El programa que corre en tu equipo y entra al SAT por ti: emparejamiento, estado y diagnóstico"><svg><use href="#i-key"/></svg> Tu ejecutor <span id="ejecutor-menu-estado250" class="nav-estado201">El programa que entra al SAT desde tu equipo</span></button>
-    <span class="nav-caption">SISTEMA</span>
-    <button data-view="registro" title="Registro — Todo lo que el sistema hizo, intentó y no pudo, en lenguaje llano"><svg><use href="#i-list"/></svg> Registro </button>
+    <span class="nav-caption">BANCOS</span>
+    <button data-view="dinero" title="Dinero — Cuánto debes, cuánto te deben y qué ya se movió"><svg><use href="#i-chart"/></svg> Dinero </button>
+    <button data-view="pagos" title="Pagos al banco — Prepara los pagos del mes y llévate las tablas para el banco"><svg><use href="#i-bank"/></svg> Pagos al banco </button>
+    <button data-view="reportes" title="Reportes — Totales, contrapartes, declaraciones y bancos, en PDF, Excel o impresos"><svg><use href="#i-print"/></svg> Reportes </button>
+    <button data-view="salidas" title="Cierre y reportes — Cierra el mes paso a paso, mira qué vence y prepara lo de tu contadora"><svg><use href="#i-calendar"/></svg> Cierre y reportes </button>
+    <span class="nav-caption">DOCUMENTOS</span>
+    <button data-view="docs" title="Documentos — Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados"><svg><use href="#i-folder"/></svg> Documentos </button>
+    <button data-view="declaraciones" title="Declaraciones — El mapa de tus declaraciones por año y mes: qué consta, qué falta y cómo se descarga"><svg><use href="#i-decl"/></svg> Declaraciones <span id="decl-menu-estado202" class="nav-estado201"></span></button>
+    <span class="nav-caption">AJUSTES</span>
     <button data-view="salud" title="Salud — El Centro de salud: cada pieza del sistema con su semáforo, su porqué y su arreglo en un toque"><svg><use href="#i-shield"/></svg> Salud </button>
     <button data-view="preguntas" title="Preguntas — Pregunta en lenguaje normal y la respuesta sale de tus datos locales"><svg><use href="#i-help"/></svg> Preguntas </button>
     <button data-view="settings" title="Ajustes — Contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema y acerca de"><svg><use href="#i-gear"/></svg> Ajustes </button>
