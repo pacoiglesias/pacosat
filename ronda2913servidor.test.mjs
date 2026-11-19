@@ -35,10 +35,10 @@ import { createPacoSATService, pacosatCriteriaKey } from './local-server.mjs';
        (la persona física en orden natural) y «PacoSAT 2.9.13»
        una sola vez en la primera página.
 
-   (2.9.14 · RE-BASE NOMBRADA de la marca: la línea de
+   (2.9.15 · RE-BASE NOMBRADA de la marca: la línea de
    «generado» del PDF lleva la versión CORRIENTE de la app;
    las tres aserciones de la marca de esta suite se re-basan
-   de «PacoSAT 2.9.13» a «PacoSAT 2.9.14» porque la versión
+   de «PacoSAT 2.9.14» a «PacoSAT 2.9.15» porque la versión
    subió — el hecho que guardan — la marca sale UNA sola vez
    en la primera página — no cambia. Las demás aserciones de
    esta suite no se tocan.)
@@ -237,7 +237,7 @@ try {
           '(E) ' + nombre + ': la línea vieja «RFC: ' + OWN + '» no repite el RFC en ningún sitio');
         assert.ok(texto.includes('MANO FIL SA · ' + OWN),
           '(E) ' + nombre + ': el contribuyente sale una vez, con su nombre y su RFC juntos');
-        assert.equal(contar(texto, 'PacoSAT 2.9.14'), 1,
+        assert.equal(contar(texto, 'PacoSAT 2.9.15'), 1,
           '(E) ' + nombre + ': la marca con la versión sale una sola vez (la línea de generado)');
       }
       /* La conciliación viaja por su propia ruta (descarga
@@ -250,7 +250,7 @@ try {
           '(E) conciliación: sin la línea vieja «RFC: …»');
         assert.ok(texto.includes('MANO FIL SA · ' + OWN),
           '(E) conciliación: el contribuyente una vez, nombre y RFC juntos');
-        assert.equal(contar(texto, 'PacoSAT 2.9.14'), 1,
+        assert.equal(contar(texto, 'PacoSAT 2.9.15'), 1,
           '(E) conciliación: la marca con la versión, una sola vez');
       }
       const cp = await pedirPdf({ kind: 'contraparte', rfc: OWN, contraparte: FISICA });
@@ -261,7 +261,7 @@ try {
         '(E) contraparte: las dos partes, una vez cada una, la física en orden natural');
       assert.ok(!cp.includes('RFC: ' + OWN) && !cp.includes('RFC: ' + FISICA),
         '(E) contraparte: ningún «RFC: …» suelto repite lo que la línea de partes ya dice');
-      assert.equal(contar(cp, 'PacoSAT 2.9.14'), 1, '(E) contraparte: la marca, una vez');
+      assert.equal(contar(cp, 'PacoSAT 2.9.15'), 1, '(E) contraparte: la marca, una vez');
       console.log('OK 2.9.13-servidor · (E) — los 7 PDF comparten el encabezado: partes una vez, sin «RFC:» repetido.');
     }
   } finally { h.service.close(); }

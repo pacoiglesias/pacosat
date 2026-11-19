@@ -370,7 +370,13 @@ const unlock = async (h, rfc) => {
      quedó CORTO Y LLANO — una sola cabecera, «LA MAÑANA», y
      nueve destinos a la vista (nota de la ronda: «El menú
      quedó corto y llano: nueve entradas») —. */
-  assert.ok(layout.includes('LA MAÑANA'), 'menú llano 2.0.1: la cabecera única');
+  /* RE-BASE 2.9.15 (Bloque B6): el menú se reagrupa por tarea
+     (Expediente, SAT, Bancos, Documentos, Ajustes) y la
+     cabecera «LA MAÑANA» se retira: el grupo de la mañana es
+     ahora EXPEDIENTE. La paridad de destinos la vigila
+     ronda2915diseno. */
+  assert.ok(!layout.includes('LA MAÑANA') && layout.includes('>EXPEDIENTE<'),
+    'menú por tarea 2.9.15: EXPEDIENTE abre el menú y «LA MAÑANA» quedó retirada');
   for (const v of ['home', 'invoices', 'dinero', 'docs', 'avisos', 'reportes', 'lists', 'salud', 'settings'])
     assert.ok(layout.includes('data-view="' + v + '"'), 'menú llano 2.0.1: destino a la vista: ' + v);
   assert.ok(!layout.includes('EL SAT Y LOS PAPELES') && !layout.includes('LA CASA'),
@@ -397,7 +403,7 @@ const unlock = async (h, rfc) => {
     'Totales por años, meses que se entran y suma del detalle que iguala el total');
   assert.ok(ui.includes('fmtFechaHora'), 'un formato humano único de fecha');
   // 1.29.1: el pineo de «versión actual» se re-apunta en cada ronda.
-  assert.equal(JSON.parse(read('package.json')).version, '2.9.14', 'la versión es 2.0.1 (re-basificado en la 2.0.1: motores del Buzón y de Declaraciones reconstruidos contra el mapa real del portal)');
+  assert.equal(JSON.parse(read('package.json')).version, '2.9.15', 'la versión es 2.0.1 (re-basificado en la 2.0.1: motores del Buzón y de Declaraciones reconstruidos contra el mapa real del portal)');
   assert.ok(read('docs/CAPACIDADES.md').includes('1.29.0'), 'CAPACIDADES describe la 1.29.0');
   console.log('OK 1.29.0 · diseño — menú, barra móvil, papelera honesta, pagos y totales navegables.');
 }

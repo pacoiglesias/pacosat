@@ -35,7 +35,20 @@ function capacidadesScreen() {
      (data-captura) para que la captura real — tomada de la
      app ya montada — se coloque en su sitio tras el montaje.
      Mientras tanto el hueco se presenta diseñado, con el
-     nombre de lo que enseñará: ninguna imagen inventada. */
+     nombre de lo que enseñará: ninguna imagen inventada.
+     (2.9.15 · Bloque C) La captura real ya tiene casa: el
+     servidor la sirve desde su directorio de datos
+     (GET /api/ayuda-captura?archivo=…, fuera del artefacto),
+     así que colocarla tras el montaje NO exige reconstruir.
+     Cada figura la pide UNA vez al pintarse, con la sesión de
+     siempre y por fetch — la CSP de la casa no admite un
+     <img> directo al mismo origen (img-src data: blob:) y sí
+     el blob: resultante, el patrón de las miniaturas —: si
+     llega un PNG, la imagen ocupa el sitio del hueco con su
+     figcaption de siempre; si el servidor contesta 404 (aún
+     no colocada) o cualquier otra cosa, el hueco diseñado se
+     queda intacto, sin errores ni huecos rotos. Sin sesión
+     (modo local puro) no se pide nada: el hueco manda. */
   {
     const guia2913 = panel('Guía rápida con capturas', 'Las pantallas que más usas, con su captura de la app real. Cada captura se coloca tras el montaje de esta versión.');
     const rejilla2913 = n('div', undefined, 'ayuda-capturas2913');
@@ -48,8 +61,27 @@ function capacidadesScreen() {
     ]) {
       const figura2913 = n('figure', undefined, 'ayuda-captura2913');
       figura2913.dataset.captura = archivo;
-      figura2913.append(n('div', 'Captura: ' + titulo, 'ayuda-captura-hueco2913'),
-        n('figcaption', titulo + ' — ' + texto));
+      const hueco2913 = n('div', 'Captura: ' + titulo, 'ayuda-captura-hueco2913');
+      const pie2913 = n('figcaption', titulo + ' — ' + texto);
+      figura2913.append(hueco2913, pie2913);
+      if (typeof satToken !== 'undefined' && satToken) {
+        fetch('/api/ayuda-captura?archivo=' + encodeURIComponent(archivo),
+          { headers: { 'X-PacoSAT-Token': satToken } })
+          .then(respuesta => (respuesta.ok ? respuesta.blob() : null))
+          .then(blob => {
+            if (!blob || blob.type !== 'image/png' || !figura2913.isConnected) return;
+            const img2915 = n('img');
+            img2915.alt = 'Captura real de ' + titulo;
+            img2915.dataset.capturaReal2915 = archivo;
+            img2915.style.width = '100%';
+            img2915.style.height = 'auto';
+            img2915.style.borderRadius = '12px';
+            img2915.style.border = '1px solid var(--line)';
+            img2915.src = URL.createObjectURL(blob);
+            figura2913.replaceChildren(img2915, pie2913);
+          })
+          .catch(() => { /* sin captura: el hueco diseñado se queda */ });
+      }
       rejilla2913.append(figura2913);
     }
     guia2913.append(rejilla2913);

@@ -832,6 +832,13 @@ function invoiceDetail(row) {
       check(file, 'Archivo no encontrado.');
       download(file.blob, row.id + '.xml');
     }, undefined, 'down'));
+  /* (2.9.15 · B5) Copiar con un toque también el RFC de cada
+     parte y el importe, como ya se copiaba el UUID. */
+  if (row.from && row.from.rfc)
+    actionsRow.append(action('Copiar RFC emisor', () => copyText(row.from.rfc, 'RFC del emisor'), undefined, 'file'));
+  if (row.to && row.to.rfc)
+    actionsRow.append(action('Copiar RFC receptor', () => copyText(row.to.rfc, 'RFC del receptor'), undefined, 'file'));
+  actionsRow.append(action('Copiar importe', () => copyText(amount(row), 'Importe'), undefined, 'file'));
   /* Descarga a la carta (Ronda Salidas, 1.14.0): el PDF diseñado
      del comprobante lo construye el servidor desde el XML guardado
      (folio, conceptos, totales y total en letra). Sin servidor solo

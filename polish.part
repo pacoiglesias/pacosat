@@ -860,3 +860,32 @@ button.status-pill{min-height:44px}
 .reporte-cifra-num2913{font-size:22px}
 .crumb-rfc-txt2913{display:none}
 }
+
+/* ── (2.9.15 · B4) Sistema único de estados: etiqueta + icono
+   + color, nunca el color a solas. Los pares tinta/fondo son
+   los de la paleta de estados de la casa (ok / info / warn /
+   danger), con su contraste ya comprobado en claro y oscuro. */
+.estado2915{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:var(--r-pill);font-size:12px;font-weight:700;white-space:nowrap}
+.estado2915 svg{width:14px;height:14px}
+.estado-completado{background:var(--ok-bg);color:var(--ok-ink)}
+.estado-pendiente{background:var(--info-bg);color:var(--info-ink)}
+.estado-en-proceso{background:var(--tint);color:var(--accent-ink)}
+.estado-atencion{background:var(--warn-bg);color:var(--warn-ink)}
+.estado-atencion.estado-grave2915{background:var(--danger-bg);color:var(--danger)}
+/* ── (2.9.15 · B1) Franja «Requiere tu atención» de Hoy. */
+.atencion-frescura2915{font-size:12px;margin-bottom:2px}
+.atencion-fila2915{display:flex;gap:12px;align-items:center;padding:10px 0;border-top:var(--bd);flex-wrap:wrap}
+.atencion-fila2915:first-of-type{border-top:0}
+.atencion-fila2915 .cell{flex:1;min-width:200px}
+/* ── (2.9.15 · B6) El grupo del menú que contiene la sección
+   actual se tiñe con el color de activo. */
+.sidebar .nav-caption-on2915{color:var(--nav-active-ink)}
+/* ── (2.9.15 · B5) Aire y cifras tabulares para los
+   identificadores: UUID, RFC, fechas e importes se leen en
+   columna y no bailan. */
+.rescue-folios{letter-spacing:.02em;font-variant-numeric:tabular-nums}
+.cell-link-total{font-variant-numeric:tabular-nums}
+/* ── (2.9.15 · B7) Áreas de toque de las acciones primarias
+   en móvil y en puntero táctil: mínimo 44px de alto. */
+@media (max-width:860px){.atencion-fila2915 button{min-height:44px}.bottombar button{min-height:48px}}
+@media (pointer:coarse){.actions button{min-height:44px}}
