@@ -23,7 +23,16 @@ const parte = nombre => {
   return found[1].contenido || found[1].content || JSON.stringify(found[1]);
 };
 const salud = parte('salud'), bancos = parte('bancos'), registro = parte('registro'), salidas = parte('salidas');
-const enHtml = (texto, pieza) => assert.ok(html.includes(texto), pieza + ': falta «' + texto + '» en el artefacto');
+/* RE-BASE integración 2.4.0 (W6/W6b): varias piezas que esta
+   suite fija viven hoy en partes diferidas (la hoja de
+   descarga en Descargas, entre otras). enHtml busca en
+   artefacto + TODAS las partes de lazy.json (lo que el
+   navegador recibe en total), con los mismos textos y la
+   misma fuerza; la ausencia de «Tu ejecutor está despierto»
+   se juzga sobre el mismo total (más fuerte: ni en las
+   partes puede quedar la frase duplicada). */
+const todo201 = html + Object.values(lazy.partes).map(p => p.source).join('\n');
+const enHtml = (texto, pieza) => assert.ok(todo201.includes(texto), pieza + ': falta «' + texto + '» en el artefacto (+ sus partes)');
 
 /* (nº 28) La plantilla «Año en curso»: del 1 de enero a hoy,
    y las de siempre intactas. */
@@ -108,7 +117,7 @@ enHtml('Ordenar por ', 'nº 26 cabeceras tocables');
    Contribuyentes usan imprimirVista201. */
 enHtml("imprimirVista201('Avisos'", 'nº 2 imprimir Avisos');
 enHtml("imprimirVista201('Contribuyentes'", 'nº 2 imprimir Contribuyentes');
-enHtml('Listas del SAT · padrón de contrapartes', 'nº 2 imprimir Listas');
+enHtml('Listas negras · padrón de contrapartes', 'nº 2 imprimir Listas');
 assert.ok(registro.includes('imprimirVista201'), 'nº 2: imprimir en Registro (parte diferida)');
 
 /* (nº 29 + nº 1) La ficha de contraparte descarga su PDF con
@@ -152,16 +161,29 @@ assert.ok(bancos.includes('facturasSinPagoVisto'), 'nº 30 contrato facturasSinP
 enHtml('satDocVersiones', 'nº 19 versiones de constancia/opinión');
 
 /* (nº 31) Ejecutor integrado: el botón «Ejecutar aquí» es un
-   enlace LOCAL pacosat://ejecutar; el estado manda («está
-   despierto» / «está dormido») y arrancar.bat solo se nombra
-   como reserva junto al botón. Vive en Hoy (línea de espera
-   y tarjetas), en la guía compartida de Buzón/Declaraciones,
-   en la línea del Buzón y en el panel del ejecutor. */
+   enlace LOCAL pacosat://ejecutar; el estado manda y
+   arrancar.bat solo se nombra como reserva junto al botón.
+   Vive en Hoy (línea de espera y tarjetas), en la guía
+   compartida de Buzón/Declaraciones, en la línea del Buzón
+   y en el panel del ejecutor.
+   Re-baseline 2.3.2 (M-9): la frase «Tu ejecutor está
+   despierto» era la repetición que las tarjetas de Hoy
+   hacían de la línea de estado, y M-9 la retiró a propósito:
+   el ejecutor se menciona UNA vez en Hoy — su línea de
+   estado, linea('Tu ejecutor', …) — y «Ejecutar aquí» sigue
+   en «Trabajos esperando». El contrato nuevo es ese: la
+   frase duplicada NO está y la mención única SÍ. (El conteo
+   ejercido sobre Hoy pintado vive en ronda232cliente:
+   «Tu ejecutor» ×1.) */
 enHtml('function ejecutarAqui201', 'nº 31 ayudante del botón');
 enHtml('pacosat://ejecutar', 'nº 31 enlace local del protocolo');
 enHtml('Ejecutar aquí', 'nº 31 etiqueta del gesto');
 enHtml('Tu ejecutor está dormido', 'nº 31 el estado manda: dormido');
-enHtml('Tu ejecutor está despierto', 'nº 31 el estado manda: despierto');
+assert.ok(!todo201.includes('Tu ejecutor está despierto'),
+  'nº 31 / M-9: la frase duplicada «Tu ejecutor está despierto» NO está en el artefacto ni en sus partes');
+enHtml("linea('Tu ejecutor'", 'nº 31 / M-9: la mención única del ejecutor en Hoy (su línea de estado) sí está');
+enHtml(': pulsa «Ejecutar aquí» para despertarlo.',
+  'nº 31 / M-9: «Ejecutar aquí» sigue en «Trabajos esperando»');
 enHtml('Si el botón no responde, ábrelo con arrancar.bat en tu equipo.',
   'nº 31 arrancar.bat solo como reserva junto al botón');
 

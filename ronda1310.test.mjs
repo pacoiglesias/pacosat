@@ -103,12 +103,25 @@ const unlock = async (h, rfc) => {
   assert.ok(ejecutor.includes('cancelados'), 'el ejecutor atiende las cancelaciones del latido');
   const html = read('Faro-Fiscal.html');
   assert.ok(html.includes('"version":"' + pkg.version + '"'), 'el artefacto se sella con la versión del paquete');
-  assert.ok(html.includes('Recibidos'), 'el menú llama «Recibidos» al buzón de comprobantes');
-  assert.ok(html.includes('Trabajos en curso'), 'la fila de trabajos en curso existe en el menú');
-  assert.ok(!html.includes('id="buzon-badge"') && !html.includes('id="dinero-badge"') &&
-    !html.includes('id="tributario-badge"'), 'los distintivos de inventario salieron del menú');
+  /* RE-BASE 2.8.0 (diseño 19 y 11): el buzón de comprobantes
+     se llama «Novedades» (ya no se pisa con el Buzón del SAT)
+     y la fila «Trabajos en curso» sale del menú — la actividad
+     se anuncia en la tarjeta y en el punto del menú. */
+  assert.ok(html.includes('> Novedades <'), 'el menú llama «Novedades» al buzón de comprobantes');
+  assert.ok(!html.includes('id="nav-jobs"'), 'la fila de trabajos en curso ya NO existe en el menú (diseño 11)');
+  /* RE-BASE 2.9.13 · mejora 5 (orden directa de Paco en las
+     30 mejoras, posterior a la 1.31.0): el contador de
+     pendientes de Novedades («buzon-badge», los sin leer del
+     RFC elegido) vuelve al menú; los de inventario (dinero,
+     tributario) siguen fuera. */
+  assert.ok(html.includes('id="buzon-badge"') && !html.includes('id="dinero-badge"') &&
+    !html.includes('id="tributario-badge"'), 'el menú lleva el contador de pendientes de Novedades (mejora 5), no los de inventario');
   assert.ok(html.includes('descargarSalida1310'), 'el cliente trae el descargador de reportes');
-  assert.ok(html.includes('cancelarTramite1310'), 'el cliente trae el Cancelar de las tarjetas');
+  /* RE-BASE integración 2.4.0 (W6b): cancelarTramite1310 vive
+     en la parte diferida de Descargas; se busca en artefacto +
+     parte, con el mismo literal. */
+  const lazy1310 = JSON.parse(read('lazy.json'));
+  assert.ok((html + lazy1310.partes.descargas.source).includes('cancelarTramite1310'), 'el cliente trae el Cancelar de las tarjetas');
   const servidor = read('local-server.mjs');
   for (const ruta of ['/api/executor/cancel', '/api/cfdi/nota', '/api/cfdi/notas'])
     assert.ok(servidor.includes(ruta), 'el servidor sirve ' + ruta);

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e2a47'/%3E%3Cg transform='translate(8 8) scale(2)' fill='none' stroke='%23f4b942' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2.6v1.5M11 4.1h2l.9 4.3M10.1 8.4 11 4.1M6.9 6.2 3.8 4.6M17.1 6.2l3.1-1.6M8.6 20.6 10.1 8.4h3.8l1.5 12.2M10.4 14.6h3.2M6.4 20.6h11.2'/%3E%3C/g%3E%3C/svg%3E"><meta name="theme-color" id="theme-color-meta" content="#0e2a47">
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="PacoSAT"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e2a47'/%3E%3Cg transform='translate(8 8) scale(2)' fill='none' stroke='%23f4b942' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2.6v1.5M11 4.1h2l.9 4.3M10.1 8.4 11 4.1M6.9 6.2 3.8 4.6M17.1 6.2l3.1-1.6M8.6 20.6 10.1 8.4h3.8l1.5 12.2M10.4 14.6h3.2M6.4 20.6h11.2'/%3E%3C/g%3E%3C/svg%3E"><meta name="theme-color" id="theme-color-meta" content="#0e2a47">
 <style>/*STYLES*/</style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -47,63 +47,112 @@
 <symbol id="i-opinion" viewBox="0 0 24 24"><path d="M12 3l7 2.8V11c0 4.8-2.9 7.9-7 9.5C7.9 18.9 5 15.8 5 11V5.8z"/><path d="m8.3 11.7 2.5 2.5 4.9-5.4"/></symbol>
 <symbol id="i-buzontrib" viewBox="0 0 24 24"><path d="M3 20.5h18M4.5 20.5v-5.2a7 7 0 0 1 14 0v5.2M4.5 15.3h14M8 15.3h.01"/><path d="M15.8 8.3V3.6h4.4l-1.5 1.9 1.5 1.9h-4.4"/></symbol>
 <symbol id="i-decl" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4"/><path d="M9 12h6M9 15h6M12 12v6M9 18h6"/></symbol>
+<symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="16" rx="2"/><path d="M3.5 9.5h17M8 3v4m8-4v4"/></symbol>
+<symbol id="i-share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="17.5" cy="5.5" r="2.6"/><circle cx="17.5" cy="18.5" r="2.6"/><path d="m8.3 10.8 6.9-4m-6.9 6.4 6.9 4"/></symbol>
+<symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5 10 14M20.5 3.5 14 20.5l-4-6.5-6.5-4z"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
 </svg>
 <div class="frame">
 <aside class="sidebar">
   <div class="brand"><span class="logo"><svg id="brand-mark"><use href="#i-logo"/></svg><img id="brand-logo" alt="" hidden src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"></span><span><span id="brand-name">PacoSAT</span><small>ESPACIO DE TRABAJO</small></span></div>
-  <button id="side-search" class="side-search" type="button" title="Buscador global (Ctrl+K)"><svg><use href="#i-search"/></svg> <span>Buscar en todo PacoSAT</span></button>
-  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC</button><div class="puerta-line"><span id="puerta-dot" class="puerta-dot" data-state="sin-dato" aria-hidden="true"></span><span id="puerta-txt">Puerta del SAT: sin probar todavía</span></div></div>
-  <!-- Menú corto y llano (2.0.1, orden directa de Paco; 2.0.2:
-       Buzón y Declaraciones recuperan su entrada propia, porque
-       lo necesario no se esconde — Paco los buscó en su iPhone y
-       no estaban): Hoy, Facturas, Dinero, Documentos, Buzón,
-       Declaraciones, Avisos, Reportes, Listas del SAT, Salud,
-       Ajustes. Listas del SAT, el Buzón y Declaraciones enseñan
-       su estado en la propia entrada (spans lists-menu-estado201,
-       buzon-menu-estado202 y decl-menu-estado202, clase
-       nav-estado201; los pintan lists-ui.part, tributario-ui.part
-       y declaraciones-ui.part con el mismo resumen de su
-       pantalla, al cargar y al refrescar, con el RFC en curso). -->
+  <!-- (2.8.0 · diseño 18) Fuera el botón «Buscar en todo
+       PacoSAT» de la barra: buscar vive en la cabecera (y en
+       Ctrl+K), una sola puerta. La barra gana aire. -->
+  <div class="switcher"><label for="scope">CONTRIBUYENTE</label><select id="scope"></select><button id="add" class="quiet"><svg><use href="#i-plus"/></svg> Agregar RFC </button><div class="puerta-line"><span id="puerta-dot" class="puerta-dot" data-state="sin-dato" aria-hidden="true"></span><span id="puerta-txt">Puerta del SAT: sin probar todavía</span></div></div>
+  <!-- Menú COMPLETO y llano (2.4.0 · W4d, orden directa de Paco
+       del 17 nov 15:25: «mejora los menus laterales, no escondas
+       nada, debe ser facil de encontrar todo dentro del sistema»):
+       TODOS los destinos del inventario de vistas (screens, en
+       ui.part) tienen su entrada a la vista. La única vista de
+       screens sin entrada es «sat», que no es una pantalla:
+       navigate() la traduce a Descargar/Vigilancia/Listas/
+       Descargados/Ejecutor, y las cinco tienen su propia entrada
+       aquí. Cada botón lleva title con su nombre y su para qué
+       (nombre accesible con la barra plegada). Los puntos
+       grises decorativos junto a cada destino salieron en la
+       2.9.0 (Bloque C): no afirmaban ningún estado y eran
+       ruido; el estado vive en la línea de estado y en las
+       insignias, que la barra plegada SÍ conserva. La segunda
+       línea (nav-estado201) queda SOLO donde trae estado vivo
+       (2.8.0 · diseño 6, ver el comentario dentro de la nav). -->
   <nav aria-label="Navegación principal">
+    <!-- (2.8.0 · diseño 6) La segunda línea de cada destino
+         SOLO existe cuando trae estado vivo (Listas, Buzón del
+         SAT, Declaraciones y Tu ejecutor, con sus spans
+         pintados por su pantalla): la descripción estática
+         truncada desaparece y el destino va solo con su nombre
+         — la descripción vive en el title y en el subtítulo de
+         su pantalla, una sola vez. (2.8.0 · diseño 19)
+         «Recibidos» pasa a llamarse «Novedades» y «Buzón» pasa
+         a «Buzón del SAT»: los dos nombres ya no se pisan. -->
     <span class="nav-caption">LA MAÑANA</span>
-    <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span><span id="gestos-badge" class="news-badge gestos-badge" hidden></span></button>
-    <button data-view="invoices"><svg><use href="#i-file"/></svg> Facturas</button>
-    <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
-    <button data-view="docs"><svg><use href="#i-folder"/></svg> Documentos</button>
-    <button data-view="tributario"><svg><use href="#i-buzontrib"/></svg> Buzón <span id="buzon-menu-estado202" class="nav-estado201"></span></button>
-    <button data-view="declaraciones"><svg><use href="#i-decl"/></svg> Declaraciones <span id="decl-menu-estado202" class="nav-estado201"></span></button>
-    <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
-    <button data-view="reportes"><svg><use href="#i-print"/></svg> Reportes</button>
-    <button data-view="lists"><svg><use href="#i-shield"/></svg> Listas del SAT <span id="lists-menu-estado201" class="nav-estado201"></span></button>
-    <button data-view="salud"><svg><use href="#i-shield"/></svg> Salud</button>
-    <button data-view="settings"><svg><use href="#i-gear"/></svg> Ajustes</button>
-    <!-- Trabajos en curso (1.31.0): renglón SOLO visible cuando
-         hay un trabajo vivo (lo pinta paintActivity en
-         monitor-ui.part); su Cancelar aparece cuando hay
-         exactamente uno cancelable. Fuera los distintivos-
-         inventario (contaban existencias, no pendientes): se
-         quedan Hoy y Avisos, que cuentan lo que te necesita. -->
-    <div id="nav-jobs" class="nav-jobs nav-jobs-vacio" aria-hidden="true"><button data-view="home" class="nav-jobs-main" tabindex="-1"><svg><use href="#i-sync"/></svg> Trabajos en curso <span id="nav-jobs-count" class="news-badge"></span></button><span id="nav-jobs-cancel"></span></div>
-    <!-- Menú (2.0.2): 11 destinos y nada más. El resto de vistas
-         sigue enrutado y cuelga de su pantalla natural o de
-         Salud: Recibidos de las tarjetas de Hoy; Pagos de Dinero;
-         Cierre de Reportes; Registro y Archivo de Salud. -->
+    <button data-view="home" aria-current="page" title="Hoy — Cómo amanece todo: qué hizo el sistema, qué falta y qué vence"><svg><use href="#i-home"/></svg> Hoy <span id="news-badge" class="news-badge" hidden></span><span id="gestos-badge" class="news-badge gestos-badge" hidden></span></button>
+    <button data-view="avisos" title="Avisos — Lo que está mal, lo que falta y lo que el sistema necesita de ti"><svg><use href="#i-bell"/></svg> Avisos <span id="avisos-badge" class="news-badge" hidden></span></button>
+    <button data-view="buzon" title="Novedades — Lo nuevo que llegó a tu expediente: CFDI y documentos recientes, leídos y sin leer"><svg><use href="#i-inbox"/></svg> Novedades <span id="buzon-badge" class="news-badge" hidden></span></button>
+    <button data-view="contribuyentes" title="Contribuyentes — Todos tus RFC ordenados por urgencia: puerta, última descarga, avisos y vencimientos"><svg><use href="#i-eye"/></svg> Contribuyentes </button>
+    <span class="nav-caption">EXPEDIENTE</span>
+    <button data-view="invoices" title="Facturas — Todos tus CFDI: emitidos y recibidos, su estado en el SAT y su PDF"><svg><use href="#i-file"/></svg> Facturas </button>
+    <button data-view="docs" title="Documentos — Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados"><svg><use href="#i-folder"/></svg> Documentos </button>
+    <button data-view="declaraciones" title="Declaraciones — El mapa de tus declaraciones por año y mes: qué consta, qué falta y cómo se descarga"><svg><use href="#i-decl"/></svg> Declaraciones <span id="decl-menu-estado202" class="nav-estado201"></span></button>
+    <button data-view="tributario" title="Buzón del SAT — Las notificaciones del SAT para este RFC, sin abrir ninguna: PacoSAT las lista por ti"><svg><use href="#i-buzontrib"/></svg> Buzón del SAT <span id="buzon-menu-estado202" class="nav-estado201"></span></button>
+    <button data-view="archivo" title="Archivo — Lo que guardaste fuera de las vistas de trabajo: CFDI y documentos archivados, recuperables con un toque"><svg><use href="#i-box"/></svg> Archivo </button>
+    <span class="nav-caption">DINERO Y CIERRE</span>
+    <button data-view="dinero" title="Dinero — Cuánto debes, cuánto te deben y qué ya se movió"><svg><use href="#i-chart"/></svg> Dinero </button>
+    <button data-view="pagos" title="Pagos al banco — Prepara los pagos del mes y llévate las tablas para el banco"><svg><use href="#i-bank"/></svg> Pagos al banco </button>
+    <button data-view="reportes" title="Reportes — Totales, contrapartes, declaraciones y bancos, en PDF, Excel o impresos"><svg><use href="#i-print"/></svg> Reportes </button>
+    <button data-view="salidas" title="Cierre y reportes — Cierra el mes paso a paso, mira qué vence y prepara lo de tu contadora"><svg><use href="#i-calendar"/></svg> Cierre y reportes </button>
+    <span class="nav-caption">SAT</span>
+    <button data-view="descargar" title="Descargar del SAT — Baja tus comprobantes del SAT por periodo: el sistema pide, espera y archiva solo"><svg><use href="#i-down"/></svg> Descargar del SAT </button>
+    <button data-view="monitor" title="Vigilancia de CFDI — El estado de tus comprobantes en el SAT: vigentes, cancelados y por revisar"><svg><use href="#i-sync"/></svg> Vigilancia </button>
+    <!-- (2.8.0 · diseño 3) «Descargados del SAT» se funde en
+         «Descargar del SAT»: la casa única de descargas trae
+         pedir, lo pedido, la cobertura, la cuota y «Baja lo
+         mismo». Su destino sale del menú porque su pantalla
+         ya no existe como pantalla: vive entera en la casa. -->
+    <button data-view="lists" title="Listas negras — Las listas negras del SAT (69-B y demás): quién de tus contrapartes aparece y cuándo se comprobó"><svg><use href="#i-shield"/></svg> Listas negras <span id="lists-menu-estado201" class="nav-estado201"></span></button>
+    <button data-view="ejecutor" title="Tu ejecutor — El programa que corre en tu equipo y entra al SAT por ti: emparejamiento, estado y diagnóstico"><svg><use href="#i-key"/></svg> Tu ejecutor <span id="ejecutor-menu-estado250" class="nav-estado201">El programa que entra al SAT desde tu equipo</span></button>
+    <span class="nav-caption">SISTEMA</span>
+    <button data-view="registro" title="Registro — Todo lo que el sistema hizo, intentó y no pudo, en lenguaje llano"><svg><use href="#i-list"/></svg> Registro </button>
+    <button data-view="salud" title="Salud — El Centro de salud: cada pieza del sistema con su semáforo, su porqué y su arreglo en un toque"><svg><use href="#i-shield"/></svg> Salud </button>
+    <button data-view="preguntas" title="Preguntas — Pregunta en lenguaje normal y la respuesta sale de tus datos locales"><svg><use href="#i-help"/></svg> Preguntas </button>
+    <button data-view="settings" title="Ajustes — Contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema y acerca de"><svg><use href="#i-gear"/></svg> Ajustes </button>
+    <!-- (2.8.0 · diseño 11) Fuera el renglón «Trabajos en
+         curso» del menú: la actividad en curso se anuncia en
+         DOS sitios — la tarjeta de actividad de la pantalla
+         (con su Detener) y el punto/contador del menú —, no en
+         cuatro. Su función (avisar y llevar al control) la
+         cumplen la tarjeta y Vigilancia. -->
+    <!-- (2.4.0 · W4d) Ya no hay «resto de vistas» escondido:
+         el inventario entero de screens está arriba, a la vista. -->
   </nav>
   <button id="side-collapse" class="side-collapse" type="button" aria-label="Plegar la barra lateral"><svg><use href="#i-arrow"/></svg> <span>Plegar barra</span></button>
-  <!-- Actividad del sistema en el propio menú (1.18.0): el punto y
-       la línea los pinta el pulso de actividad; sin trabajos dice
-       cuándo es la próxima revisión automática. -->
-  <div class="local" id="side-activity" style="margin-top:0" hidden><span class="dot" id="side-activity-dot" aria-hidden="true"></span><span id="side-activity-text">Sin trabajos en curso</span></div>
+  <!-- Atajos de teclado (2.4.0 · WC4b1, castigo 22): la
+       entrada visible del menú a la tarjeta de atajos; su
+       clic lo cablea ui.part (atajosAbrir240) y la tecla
+       «?» abre la misma tarjeta desde cualquier pantalla. -->
+  <button id="atajos-btn240" class="side-collapse" type="button" title="Atajos de teclado (tecla ?): moverte sin ratón"><svg><use href="#i-help"/></svg> <span>Atajos de teclado (?)</span></button>
+  <!-- (2.8.0 · diseño 11) Fuera también la línea de actividad
+       al pie del menú: mismo hecho, cuarto anuncio. Quedan la
+       tarjeta en la pantalla y el punto/contador del menú. -->
   <div class="local"><svg><use href="#i-lock"/></svg><span id="storage-mode">Guardado en este equipo</span></div>
   <div class="side-version" id="side-version"></div>
 </aside>
 <div id="offline-banner" class="offline-banner" hidden></div>
 <main>
-  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span class="top-side"><!-- Selector global (2.0 · tanda 2, pieza 8): desplegable propio con medallón de color, buscador (desde 5 RFC) y punto de salud por contribuyente; el <select> espejo queda oculto y sigue siendo el valor que el resto del código sincroniza. --><button id="scope-menu-btn200b" class="scope-menu-btn200b" type="button" aria-haspopup="true" aria-expanded="false" title="Cambiar de contribuyente">Contribuyente</button><select id="scope-top" class="scope-top" aria-label="Contribuyente" title="Contribuyente" hidden></select><div id="scope-menu200b" class="scope-menu200b" hidden></div><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, folio fiscal o RFC…" aria-label="Buscador global de CFDI" title="Buscador global (Ctrl+K)"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="search-toggle200b" class="icon-button search-toggle200b" type="button" aria-label="Buscar" title="Buscar"><svg><use href="#i-search"/></svg></button><button id="ask-button" class="icon-button" type="button" aria-label="Ayuda de esta pantalla" title="Ayuda"><svg><use href="#i-help"/></svg></button><button id="sound-toggle" class="icon-button" type="button" aria-pressed="true" aria-label="Sonidos de la interfaz" title="Sonidos de la interfaz"><svg><use href="#i-volume"/></svg></button><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
+  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span id="crumb-rfc2913" class="crumb-rfc2913" aria-label="Contribuyente en pantalla"></span><span class="top-side"><!-- Selector global (2.0 · tanda 2, pieza 8): desplegable propio con medallón de color, buscador (desde 5 RFC) y punto de salud por contribuyente; el <select> espejo queda oculto y sigue siendo el valor que el resto del código sincroniza. --><button id="scope-menu-btn200b" class="scope-menu-btn200b" type="button" aria-haspopup="true" aria-expanded="false" title="Cambiar de contribuyente">Contribuyente </button><select id="scope-top" class="scope-top" aria-label="Contribuyente" title="Contribuyente" hidden></select><div id="scope-menu200b" class="scope-menu200b" hidden></div><!-- El foco del sistema (2.9.0): semáforo grande y siempre visible junto al selector, con su palabra al lado; su panel lista lo vigilado con su arreglo. --><button id="foco-btn290" class="foco-btn290" type="button" aria-haspopup="true" aria-expanded="false" title="El foco del sistema"><span class="foco-luz290" data-nivel="dim"></span><span class="foco-palabra290">Sin comprobar todavía</span></button><div id="foco-menu290" class="scope-menu200b foco-menu290" hidden></div><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, RFC o una función…" aria-label="Buscador global: CFDI, documentos y funciones" title="Buscador global (Ctrl+K): también encuentra funciones por su nombre"></span><span id="counters" class="header-counters"></span><span class="top-tools"><button id="search-toggle200b" class="icon-button search-toggle200b" type="button" aria-label="Buscar" title="Buscar"><svg><use href="#i-search"/></svg></button><button id="ask-button" class="icon-button" type="button" aria-label="Ayuda de esta pantalla" title="Ayuda"><svg><use href="#i-help"/></svg></button><!-- (2.8.0 · diseño 27) El interruptor de sonidos sale de la cabecera: es un ajuste de una vez al año y vive en Ajustes › General. La cabecera se queda con buscar, ayuda y tema. --><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
+  <!-- Sugerencia de FUNCIÓN del buscador global (2.4.0 · W4d):
+       cuando lo tecleado casa con una función del catálogo del
+       cliente (ui.part), esta franja la nombra como FUNCIÓN —
+       distinta de cualquier resultado de documento — y su botón
+       lleva a su pantalla y a su tarjeta o botón exactos. -->
+  <section id="funcion-sugerida240" class="activity-result" hidden>
+    <div class="activity-result-head"><strong id="funcion-sugerida240-titulo">Función</strong><button type="button" id="funcion-sugerida240-ir" class="primary small">Ir a la función </button></div>
+    <div id="funcion-sugerida240-texto"></div>
+  </section>
   <div class="page">
     <header class="heading">
-      <div><div class="eyebrow" id="eyebrow">ESPACIO FISCAL</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
-      <div class="actions"><button id="inspect"><svg><use href="#i-code"/></svg> Abrir XML</button><button id="pdf-import"><svg><use href="#i-pdf"/></svg> Factura PDF</button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
+      <div><div class="eyebrow" id="eyebrow">La mañana</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
+      <div class="actions"><button id="inspect"><svg><use href="#i-code"/></svg> Abrir XML </button><button id="pdf-import"><svg><use href="#i-pdf"/></svg> Factura PDF </button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
     </header>
     <p id="status" role="status" hidden></p>
     <section id="activity-dock" class="activity-dock" hidden aria-live="polite">
@@ -112,19 +161,23 @@
       <p id="activity-detail" class="activity-detail"></p>
     </section>
     <section id="activity-result" class="activity-result" hidden>
-      <div class="activity-result-head"><strong id="activity-result-title">✓ Procesado</strong><button type="button" id="activity-result-close" class="icon-button" aria-label="Cerrar el resumen"><svg><use href="#i-close"/></svg></button></div>
+      <div class="activity-result-head"><strong id="activity-result-title">Procesado</strong><button type="button" id="activity-result-close" class="icon-button" aria-label="Cerrar el resumen"><svg><use href="#i-close"/></svg></button></div>
       <div id="activity-result-text"></div>
     </section>
     <section id="body" aria-label="Contenido"></section>
     <div class="app-footer-row"><svg aria-hidden="true"><use href="#i-logo"/></svg><footer class="app-footer" id="app-footer"></footer></div>
   </div>
 </main>
+<!-- (2.8.0 · diseño 30) La barra inferior del móvil lleva las
+     ACCIONES diarias: Hoy, Avisos, Descargar, Buzón (del SAT) y
+     Más. Dinero —una consulta— queda dentro de Más, a dos
+     toques como todo lo demás. -->
 <nav class="bottombar" aria-label="Navegación rápida">
-  <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy</button>
-  <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos</button>
-  <button data-view="buzon"><svg><use href="#i-inbox"/></svg> Recibidos</button>
-  <button data-view="dinero"><svg><use href="#i-chart"/></svg> Dinero</button>
-  <button id="more-button" type="button"><svg><use href="#i-dots"/></svg> Más</button>
+  <button data-view="home" aria-current="page"><svg><use href="#i-home"/></svg> Hoy </button>
+  <button data-view="avisos"><svg><use href="#i-bell"/></svg> Avisos </button>
+  <button data-view="descargar"><svg><use href="#i-down"/></svg> Descargar </button>
+  <button data-view="tributario"><svg><use href="#i-buzontrib"/></svg> Buzón </button>
+  <button id="more-button" type="button" title="Más: abre el menú completo, con todos los destinos y sus estados"><svg><use href="#i-dots"/></svg> Más </button>
 </nav>
 </div>
 <section id="print-report" aria-hidden="true"></section>
@@ -138,16 +191,28 @@
     <span class="logo entry-logo"><svg><use href="#i-logo"/></svg></span>
     <h1 class="entry-title">PacoSAT</h1>
     <p class="entry-sub">Tu espacio fiscal, guardado en tu propio servidor.</p>
+    <!-- Estado del sistema ANTES de entrar (2.4.0 · W5b2,
+         pieza 10): lo pinta showEntry (ui.part) desde la
+         lectura sin sesión de /healthz (W2). Nace en
+         «Comprobando…»: si la lectura no es posible, la
+         palabra honesta la sustituye — nunca un «en línea»
+         fingido. El nombre de la instalación, si el servidor
+         ya lo expuso en el estado de arranque, lo refleja
+         showEntry en el título sin tocar el flujo. -->
+    <p class="entry-estado240"><span id="entry-estado240" class="estado240" data-estado="esperando">Comprobando el estado del sistema…</span></p>
     <form id="entry-form" class="entry-form">
       <label for="entry-pass">Tu contraseña de administrador</label>
       <div class="entry-pass-row">
         <input id="entry-pass" type="password" autocomplete="current-password" placeholder="Contraseña">
-        <button id="entry-show" type="button" class="quiet" aria-label="Mostrar u ocultar la contraseña">Ver</button>
+        <button id="entry-show" type="button" class="quiet" aria-label="Mostrar u ocultar la contraseña">Ver </button>
       </div>
       <p id="entry-error" class="error-text" role="alert" hidden></p>
-      <button id="entry-go" class="primary" type="submit">Entrar</button>
+      <button id="entry-go" class="primary" type="submit">Entrar </button>
     </form>
-    <button id="entry-skip" type="button" class="quiet entry-skip">Entrar con mi acceso de siempre</button>
+    <!-- (2.8.0 · diseño 28) Una sola puerta visible: la
+         contraseña de la app. La otra queda como enlace
+         discreto al pie, con la palabra de cuándo usarla. -->
+    <button id="entry-skip" type="button" class="quiet entry-skip">¿Problemas para entrar? Usa tu acceso de siempre </button>
   </div>
 </section>
 <!-- Avisos flotantes (1.26.0): las confirmaciones se ven donde
@@ -161,7 +226,7 @@
 <dialog id="dialog" aria-labelledby="dialogTitle">
   <form id="form"><div class="modal-head"><h2 id="dialogTitle"></h2><button type="button" class="icon-button" id="close" aria-label="Cerrar"><svg><use href="#i-close"/></svg></button></div>
   <div id="fields"></div><p id="formError" role="alert" hidden></p>
-  <div class="modal-actions"><button type="button" id="cancel">Cerrar</button><button class="primary" id="save" type="submit">Guardar</button></div></form>
+  <div class="modal-actions"><button type="button" id="cancel">Cerrar </button><button class="primary" id="save" type="submit">Guardar </button></div></form>
 </dialog>
 <script>/*SCRIPT*/</script>
 </body></html>

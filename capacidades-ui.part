@@ -30,6 +30,31 @@ function capacidadesScreen() {
      (novedadesCard1311): sale tras un montaje hasta cerrarla. */
   const novedades200b = typeof novedadesCard1311 === 'function' ? novedadesCard1311() : null;
   if (novedades200b) wrap.append(novedades200b);
+  /* (2.9.13 · mejora 29) La guía con CAPTURAS de la propia
+     app: cada hueco lleva el nombre exacto de su captura
+     (data-captura) para que la captura real — tomada de la
+     app ya montada — se coloque en su sitio tras el montaje.
+     Mientras tanto el hueco se presenta diseñado, con el
+     nombre de lo que enseñará: ninguna imagen inventada. */
+  {
+    const guia2913 = panel('Guía rápida con capturas', 'Las pantallas que más usas, con su captura de la app real. Cada captura se coloca tras el montaje de esta versión.');
+    const rejilla2913 = n('div', undefined, 'ayuda-capturas2913');
+    for (const [archivo, titulo, texto] of [
+      ['captura-hoy.png', 'Hoy', 'Tu día en cifras, el mando y lo que pide tu gesto.'],
+      ['captura-descargar.png', 'Descargar CFDI', 'La tarjeta de descarga: fechas, avance y «ya se pidió» cuando la ventana ya está.'],
+      ['captura-buzon.png', 'Buzón Tributario', 'Los comunicados sin leer como tarjetas, con su Leer.'],
+      ['captura-salud.png', 'Salud', 'Los semáforos grandes con su «desde cuándo» y su arreglo a un toque.'],
+      ['captura-facturas.png', 'Facturas', 'Los gráficos del mes y el visor que dibuja la factura como documento.']
+    ]) {
+      const figura2913 = n('figure', undefined, 'ayuda-captura2913');
+      figura2913.dataset.captura = archivo;
+      figura2913.append(n('div', 'Captura: ' + titulo, 'ayuda-captura-hueco2913'),
+        n('figcaption', titulo + ' — ' + texto));
+      rejilla2913.append(figura2913);
+    }
+    guia2913.append(rejilla2913);
+    wrap.append(guia2913);
+  }
   const loading = panel('Todo lo que tendrá PacoSAT');
   loading.append(n('p', 'Cargando el documento de capacidades…'));
   wrap.append(loading);

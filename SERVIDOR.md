@@ -27,6 +27,10 @@ Ambos se configuran en el mismo archivo protegido `pacosat-secrets/config.json` 
 
 La plantilla se validó en un servidor real (NAS del propietario, 8-nov-2026) con la variante de túnel descrita abajo. El SAT y el SMTP reales aún requieren una prueba con credenciales reales, introducidas directamente en el entorno autorizado.
 
+## Rutas del ejecutor: sin guarda de origen, por diseño
+
+Las rutas del ejecutor local (`/api/executor/exchange`, `version`, `bundle`, `heartbeat`, `claim` y `result`) no llevan la guarda de origen que sí protege las sesiones del navegador, y es deliberado: no son sesiones de navegador y no hay ninguna cookie que un sitio ajeno pueda abusar. Quien manda en esas rutas es la credencial propia del ejecutor — su token, del que el servidor solo guarda la huella, o el código corto de emparejamiento, de un solo uso y con freno de intentos —, no el origen de la petición. Añadirles la guarda de origen no cerraría ningún hueco y rompería al ejecutor, que no es un navegador y no manda las cabeceras que esa guarda espera. Que nadie lo «corrija»: la exención es el diseño, no un olvido.
+
 ## Variante: detrás de un Cloudflare Tunnel
 
 En lugar de publicar 80/443 con certificados propios, Caddy puede servir HTTP en un puerto de la red local (por ejemplo 8080) y publicar solo ese puerto hacia el túnel; Cloudflare aporta el HTTPS público. La autenticación básica de Caddy se mantiene y la aplicación sigue exigiendo su Host de origen público, así que por la IP local responde 403. Es la variante desplegada y verificada en el NAS: el `compose.yml` y el `Caddyfile` de esta variante viven con el despliegue, no en el repositorio.

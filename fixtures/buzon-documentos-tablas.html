@@ -1,0 +1,174 @@
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="es"><head id="Head1"><meta charset="utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description"><meta name="author"><title>
+	Datos Formulario Genérico
+</title><link href="https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,700;1,400;1,700&amp;display=swap" rel="stylesheet"><link rel="stylesheet" type="text/css" href="css/dataTables.bootstrap.min.css"><link href="css/buzoncss.css" rel="stylesheet">
+
+    <script type="text/javascript" src="js/jquery.min.js"></script>
+
+    <script type="text/javascript" src="js/bootstrap.min.js"></script>
+
+    <script type="text/javascript" src="js/jquery.dataTables.min.js"></script>
+
+    <script type="text/javascript" src="js/dataTables.bootstrap.min.js"></script>
+
+    <script type="text/javascript" src="js/misScripts.js"></script>
+
+    <script type="text/javascript">
+        //script paginación tabla
+        //cambiar nombre id de la tabla example
+        $(document).ready(function () {
+            $('#tablaRespons').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $('#tablaRespons2015').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $('#tablaResponsIMSS').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $.extend($.fn.dataTable.defaults, {
+                ordering: false
+            });
+            $('#tablaResponsEF').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+        $(document).ready(function () {
+            $.extend($.fn.dataTable.defaults, {
+                ordering: false
+            });
+            $('#tablaResponsLC').DataTable({
+                "pagingType": "full_numbers"
+            });
+        });
+    </script>
+
+</head>
+<body class="pull-left">
+    <form name="form1" method="post" action="TablaDatosFormularioGenerico.aspx?e3zvXEgGFv43RorWFpMB=HBgsmGlVgNJ1qBVzbKqXLLm%2bYrVratUbaOUtsQPs5DBKqNh5uG%2bzk8xZOd59p22POVcYSrNrtkHT7osOxEhIzXUPPLAZjdqlm7LZLnzVDZIPVlnPBHM9KQ%3d%3d" id="form1">
+<div>
+<input type="hidden" name="__EVENTTARGET" id="__EVENTTARGET" value="" style="">
+<input type="hidden" name="__EVENTARGUMENT" id="__EVENTARGUMENT" value="" style="">
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="mD+OS9uuAuJ8QYd+TYOXqQUMpGYi1KvxBg+uC7KgZGjyUnoGNc4al7NaIyFTWO+LsEm3w0/nCgBkd2kide67bSSRLZZozV2MFh+8rXnXwVqdNU3SJPlUHNp8B1q/BntHWS/5wN5GX81WvhACYflMjoahf/zdoglcANf5xI0cSujqdqaXLrP8RQYD+Dqy7sb+8dVHOUmfJ2YZxQ6fyiHKjQaYNphvSofNJn+C0Q7/9s0UPPONiQRc/4RgzDVrQIjKUfGn7c7IavXgOpjzyuKc0Ao8LcBz3PolBu53CIR8tqsQDz1c3+l1K7GhrJ6lE+2Gpw+SKYl36o9tu/aPqRdDHghKtcYi1kE3x1SbpeNORrpVnSaeLM50SutPDj9nwCb9mFaL3ntXjbfyJbKQ/qCXsZvpcm2SzBC6BmSS24a68+n5eQ7hC/qJECjBldCfe1+4ECWTH3Y/6aNPwsISoylA8WH8uzoEjYITSPugcxOTJW+q0HvzZzHjLgbpnWvLDsonzAaPPG4L+WysDcKUvQwC/Honrg3D3AEkJqT7KzZKgjPTNFbs1Dupll5YVUeSz57ApLPvCaam2E9MAYB7cHsnyoTkrVMxxRd7wgiB+vd+ANv9xP1j6r+Y7M6IKt0qZXE04EDDvFdp3crHuUGL+8OcVRjDaYZyuro6C9kw9Ed4hJkkRzC60hFlCnUYH0+fuXtpbnHNm3hExuyBeUEdFKnr9xSMTVc4IEdFMD+WCWyy/9Pdk6Z+eMQ8qc7kCSJmg1kvhwAmDA3aOv7eRshaaeGtf2h3M29Dl1wXfiG2gi43YUuXyIqjLCxSFivaI+xhcNERyju5yyCPNcO1wwmitjwNemrTMVU1+nPpUd4ARxnOpbYc2ygy6601kSpQGwKn2KzMQAXFo0eg2R/s6RtEmq3M0gl/rWjndfX4MjdxKU/wK8Tpv+8Ul/m78k2QfW088HWTssq/HzO66hj8aKs56XG+HRMJ6+t0GJkq2yMLwiKGzxXD8WGj8DYyUfI8yB+5yhG/Kq+N5ux31tgTL0SjtKFAsGUiFLklWCJLE3a/Flzxo/G/9NLjvoTNA7TcHNVBVvLboit2S2llnc4fPM36WBv2r19sHkru0CXv1yli1jByM6PcpB6/moN9CL00Z9td14nG++ubMvkdrG81v9uoUCacgspvXYyR3+OqtVmibR2bI7wjHHtAhpH+R1hQrVTFsK9ps/dOGiOJbzB6hH3X00fTIfUtEhc=" style="">
+</div>
+
+<script type="text/javascript">
+//<![CDATA[
+var theForm = document.forms['form1'];
+if (!theForm) {
+    theForm = document.form1;
+}
+function __doPostBack(eventTarget, eventArgument) {
+    if (!theForm.onsubmit || (theForm.onsubmit() != false)) {
+        theForm.__EVENTTARGET.value = eventTarget;
+        theForm.__EVENTARGUMENT.value = eventArgument;
+        theForm.submit();
+    }
+}
+//]]>
+</script>
+
+
+<div>
+
+	<input type="hidden" name="__VIEWSTATEENCRYPTED" id="__VIEWSTATEENCRYPTED" value="" style="">
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="r2nzgza+uPEfC9U9Y9AIM8nQUXnroQMvwHHvratm9ZNMIHeD/jjpYIao46yEEAYahkmZftzDQsrmOFFtNxA5/oFO87ueSJA8sfnrD5DgWyFwnM6d" style="">
+</div>
+    <input type="hidden" name="hfIdCatalogo" id="hfIdCatalogo" style="">
+    <table class="table" style="font-family: Noto Sans,sans-serif;" cellspacing="0" width="100%">
+        <tbody><tr>
+            <td style="width: 180px">
+                <div id="accordion" role="tablist" aria-multiselectable="true">
+                    <div>
+                        <div class="encabezadoDecreto text-center" style="font-family: Noto Sans,sans-serif;">
+                            Información
+                        </div>
+                    </div>
+                    <br>
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingOne">
+                            <a href="#collapseOne" id="aClasificadorUno" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseOne">
+                            </a>
+                        </div>
+                        <div id="collapseOne" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingOne">
+                            
+                        </div>
+                    </div>
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingTwo">
+                            <a href="#collapseTwo" id="aClasificadorDos" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseTwo">
+                            </a>
+                        </div>
+                        <div id="collapseTwo" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingTwo">
+                            
+                        </div>
+                    </div>
+                    
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingThree">                           
+                            
+                        </div>                        
+                    </div>
+                    
+                    <div class="panel panel-default hide">
+                        <div class="panel panel-title text-center" role="tab" id="headingFour">   
+                            <a href="#collapseFour" id="aClasificadorCuatro" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseFour">
+                            </a>
+                        </div>  
+                        <div id="collapseFour" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingFour">
+                            
+                        </div>                        
+                    </div>
+                    
+                    
+                      <div class="panel panel-default ">
+                        <div class="panel panel-title text-center" role="tab" id="headingFive">   
+                            <a href="#collapseFive" id="aClasificadorCinco" data-toggle="collapse" data-parent="#accordion" aria-expanded="true" class="small" aria-controls="collapseFive">Cobranza</a>
+                        </div>  
+                        <div id="collapseFive" class="panel-collapse collapse" role="tabpanel" aria-labelledby="headingFive">
+                            
+                                    <table id="lvClasificadorCinco_table1" width="100%" class="table table-condensed table-bordered" style="font-family: Noto Sans,sans-serif;">
+
+		
+                                    <tbody><tr id="lvClasificadorCinco_ctrl0_Tr2">
+			<td id="lvClasificadorCinco_ctrl0_Td4" class="small smallest">
+                                            <a id="lvClasificadorCinco_ctrl0_lknBtnVerDetalleFive" href="javascript:__doPostBack('lvClasificadorCinco$ctrl0$lknBtnVerDetalleFive','')" style="color: Black; text-align:center;">Líneas de captura</a>
+                                        </td>
+		</tr>
+		
+                                </tbody></table>
+
+                                
+                        </div>                        
+                    </div>
+                    
+                </div>
+            </td>
+            <td style="width: 730px">
+<table id="tablaRespons" class="table table-striped table-bordered dataTable" style="font-family: Noto Sans,sans-serif;" cellspacing="0" width="100%"><thead><tr><th>Fecha</th><th>Descripción</th><th>Referencia</th><th>Estado</th></tr></thead><tbody><tr><td>15/01/2026</td><td>Documento de prueba 294-A</td><td>REF-294-001</td><td>Vigente</td></tr><tr><td>20/03/2026</td><td>Documento de prueba 294-B</td><td>REF-294-002</td><td>Concluido</td></tr></tbody></table>
+<table id="tablaRespons2015" class="table table-striped table-bordered dataTable" style="font-family: Noto Sans,sans-serif;" cellspacing="0" width="100%"><thead><tr><th>Fecha</th><th>Descripción</th><th>Referencia</th><th>Estado</th></tr></thead><tbody><tr><td colspan="4" class="dataTables_empty">Sin registros</td></tr></tbody></table>
+<table id="tablaResponsIMSS" class="table table-striped table-bordered dataTable" style="font-family: Noto Sans,sans-serif;" cellspacing="0" width="100%"><thead><tr><th>Fecha</th><th>Descripción</th><th>Referencia</th><th>Estado</th></tr></thead><tbody><tr><td colspan="4" class="dataTables_empty">Sin registros</td></tr></tbody></table>
+<table id="tablaResponsEF" class="table table-striped table-bordered dataTable" style="font-family: Noto Sans,sans-serif;" cellspacing="0" width="100%"><thead><tr><th>Fecha</th><th>Descripción</th><th>Referencia</th><th>Estado</th></tr></thead><tbody><tr><td colspan="4" class="dataTables_empty">Sin registros</td></tr></tbody></table>
+<table id="tablaResponsLC" class="table table-striped table-bordered dataTable" style="font-family: Noto Sans,sans-serif;" cellspacing="0" width="100%"><thead><tr><th>Fecha</th><th>Concepto</th><th>Línea de captura</th><th>Estado</th></tr></thead><tbody><tr><td>02/04/2026</td><td>Línea de prueba 294</td><td>LC2940001</td><td>Pendiente</td></tr></tbody></table>
+
+                
+                
+                
+                
+                
+                 
+                
+                 
+            </td>
+        </tr>
+    </tbody></table>
+    </form>
+
+
+</body></html>

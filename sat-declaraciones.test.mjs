@@ -41,6 +41,10 @@ class DeclFakePage {
   /* El contrato del portal nuevo (2.0.1): las filas de «De la
      declaración» y el clic sobre su «Generar PDF» (el acuse). */
   async portalNuevoResults() { return this.rows; }
+  /* El texto visible de la página (2.3.2): la lectura de la
+     consulta lo sondea buscando la confirmación de vacío del
+     propio portal; la doble lo sirve desde textoPagina. */
+  async text() { return this.textoPagina || ''; }
   async clickPortalPdf(index) {
     const key = 'acuse:' + index;
     this.armedPdf = this.pdfsByKey[key] || null;
@@ -97,9 +101,18 @@ const resolver = async () => CREDS;
 }
 
 /* 3 · Sin declaraciones presentadas: respuesta honesta con aviso,
-     no un error disfrazado. */
+     no un error disfrazado.
+     Re-basado en la 2.3.2 (evidencia viva del 17 nov 2026:
+     corridas 47496edb/e0af7105 cerraron ok con «0 filas» sin
+     constancia, habiendo 13 declaraciones en 2026): la lectura
+     nueva distingue vacío CONFIRMADO por el portal (su texto
+     «sin resultados») de plazo vencido sin constancia, que es
+     «no-concluyente» y jamás un ok con 0. La doble de este caso
+     modela el portal que SÍ confirma el año vacío; el desenlace
+     no concluyente lo cubre ronda232paseos P9. */
 {
-  const page = new DeclFakePage({ rows: [] });
+  const page = new DeclFakePage({ rows: [],
+    textoPagina: 'Consulta De la declaración — sin resultados para este ejercicio.' });
   const fetchDecl = createSatDeclFetch({ resolveCredentials: resolver, launchDriver: driverOf(page) });
   const result = await fetchDecl({ rfc: RFC }, { tipo: 'mensual', ejercicio: 2024 });
   assert.equal(result.found, 0);

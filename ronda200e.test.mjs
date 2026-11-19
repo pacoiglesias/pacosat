@@ -401,13 +401,27 @@ const PDF_POS_CAD = Buffer.from('%PDF-1.4 Opinión de cumplimiento POSITIVA vige
       { rfc: OWN, start: '2026-11-10', end: '2026-11-13', direction: 'received' });
     assert.equal(creada.status, 200);
     h.time += 6 * 60000; await h.service.tick();
+    /* RE-BASE 2.9.9 (cura de rechazos, B2): el primer rechazo
+       ya NO se nombra como fallo en el acto — la ventana no
+       está cubierta, así que el sistema lo re-ruta una vez y
+       se está curando: el trabajo original queda 'rerouted',
+       su re-ruta vive pendiente y el veredicto de descargas
+       dice «el SAT no responde: reintentando». El fallo se
+       nombra cuando la re-ruta TAMBIÉN cae (abajo). */
+    const st1 = (await h.call('GET', '/api/status')).json;
+    assert.ok(st1.jobs.some(j => j.status === 'rerouted'), 'B2: el rechazo sin cobertura se re-ruta una vez');
+    assert.ok(st1.jobs.some(j => j.status === 'pending'), 'B2: la re-ruta vive pendiente');
+    assert.notEqual(st1.satHoy.estado, 'fallos', 'B2: mientras la cura corre, el estado no cuelga un fallo');
+    assert.equal(st1.descargas299?.estado, 'sat-no-responde', 'B2: el veredicto dice que el SAT no responde y se reintenta');
+    h.time += 6 * 60000; await h.service.tick();
     const st = (await h.call('GET', '/api/status')).json;
     assert.equal(st.satHoy.estado, 'fallos', 'con un rechazo del SAT hoy, el estado lo nombra');
     assert.ok(st.satHoy.fallos.sat >= 1, 'el fallo se clasifica como del SAT');
     assert.match(st.satHoy.texto, /con fallos \(1 rechazo/, 'el texto en llano dice cuántos');
+    assert.ok((st.descargas299?.pendientesNombrados || []).length >= 1, 'B2: la re-ruta caída queda como pendiente nombrado servido');
     const salud = (await h.call('GET', '/api/salud')).json;
     assert.equal(tarjeta(salud, 'sat-hoy').estado, 'mal', 'la tarjeta de Salud refleja el mismo estado');
-    console.log('OK 2.0·T5 · (g1) salud del SAT — «con fallos» desde lo registrado hoy.');
+    console.log('OK 2.0·T5 · (g1) salud del SAT — la cura B2 re-ruta primero y «con fallos» se nombra cuando la re-ruta también cae.');
   } finally { h.service.close(); }
 }
 {
@@ -475,7 +489,7 @@ const PDF_POS_CAD = Buffer.from('%PDF-1.4 Opinión de cumplimiento POSITIVA vige
 {
   const html = readFileSync(join(process.cwd(), 'Faro-Fiscal.html'), 'utf8');
   assert.ok(html.includes('Ponte al día'), 'el artefacto trae el botón «Ponte al día» de Hoy');
-  assert.ok(html.includes('"version":"2.3.0"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
+  assert.ok(html.includes('"version":"2.9.14"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
   const saludPart = readFileSync(join(process.cwd(), 'salud-ui.part'), 'utf8');
   for (const texto of ['revisionPanel200e', 'Pedir ese tramo otra vez', 'ponteAlDia200e',
     'Revisión programada de facturas nuevas'])

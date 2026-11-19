@@ -36,8 +36,26 @@ export const LIST_CATALOG = [
     url: REPO + 'SAT_3_Sentencias.csv' },
   { id: '69-entes-omisos', label: 'Art. 69 · Entes públicos omisos', kind: 'supuesto', supuesto: 'Entes públicos omisos',
     url: 'https://repodatos.atdt.gob.mx/api_update/sat/contribuyentes_incumplidos/SAT_2_EntespublicosydeGobiernoomisos.csv' },
-  { id: '69-csd', label: 'Art. 69 · CSD sin efectos', kind: 'supuesto', supuesto: 'CSD sin efectos', url: null },
-  { id: '69-reduccion', label: 'Art. 69 · Reducción art. 74', kind: 'supuesto', supuesto: 'Reducción art. 74', url: null }
+  /* m-8 (2.3.2): estas dos fuentes son manuales POR DISEÑO (sin
+     CSV oficial verificado) y declaran su estado honesto en
+     estadoManual, que /api/lists enseña en el campo declared
+     cuando el archivo cargado no declara fecha propia — sin
+     inventar fechas ni conteos.
+     2.4.0 (W3a): la manualidad se reverificó contra el SAT el
+     17 nov 2026 (nota pacosat-232-nota-listas-verificacion.md):
+     datos.gob.mx publica exactamente 6 recursos — los ya
+     automáticos — y Datos Abiertos del SAT solo publica 69-B y
+     69-B Bis; no existe archivo oficial descargable para ninguna
+     de las dos. Cada una lleva en enlaceSat la página oficial de
+     contribuyentes publicados del SAT (verificada y abierta ese
+     día), que la tarjeta de la fuente pinta como «Buscar en el
+     SAT ↗» junto a su carga manual. */
+  { id: '69-csd', label: 'Art. 69 · CSD sin efectos', kind: 'supuesto', supuesto: 'CSD sin efectos', url: null,
+    estadoManual: 'sin fuente automática: se revisa a mano',
+    enlaceSat: 'https://www.sat.gob.mx/minisitio/DatosAbiertos/contribuyentes_publicados.html' },
+  { id: '69-reduccion', label: 'Art. 69 · Reducción art. 74', kind: 'supuesto', supuesto: 'Reducción art. 74', url: null,
+    estadoManual: 'sin fuente automática: se revisa a mano',
+    enlaceSat: 'https://www.sat.gob.mx/minisitio/DatosAbiertos/contribuyentes_publicados.html' }
 ];
 const RFC = /^[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}$/u;
 const text = value => typeof value === 'string' ? value : '';

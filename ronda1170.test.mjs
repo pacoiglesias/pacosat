@@ -197,9 +197,15 @@ const vista = async ejercicio => {
   const html = readFileSync(join(import.meta.dirname, 'Faro-Fiscal.html'), 'utf8');
   /* Anexo 1.26.0: el sello sube con la Ronda Visual. */
   // 1.30.0: pineo de versión re-apuntado a la vigente, como en cada ronda.
-  assert.ok(html.includes('"version":"2.3.0"'), 'el artefacto se sella con la versión vigente (2.0.1)');
-  assert.ok(html.includes('Mapa de tu año fiscal') || html.includes('de 12 meses presentados'),
-    'el mapa viaja dentro del artefacto construido');
+  assert.ok(html.includes('"version":"2.9.14"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+  /* RE-BASE integración 2.4.0 (W6): el mapa de Declaraciones
+     viaja en la parte diferida de Declaraciones; su línea
+     «X de 12 meses presentados» se busca en artefacto + parte
+     (lo que el navegador recibe en total), mismo literal. */
+  const lazy1170 = JSON.parse(readFileSync(join(import.meta.dirname, 'lazy.json'), 'utf8'));
+  const todo1170 = html + lazy1170.partes.declaraciones.source;
+  assert.ok(todo1170.includes('Mapa de tu año fiscal') || todo1170.includes('de 12 meses presentados'),
+    'el mapa viaja dentro del artefacto construido (+ su parte de Declaraciones)');
   console.log('OK 1.17.0: la pantalla — resumen, alerta, semáforo, detalle y su gesto por periodo.');
 }
 

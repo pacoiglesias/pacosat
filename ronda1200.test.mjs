@@ -168,9 +168,17 @@ try {
   /* La pantalla: la línea nueva existe y la alerta vieja murió
      (sobre el artefacto construido, que es lo que se sirve). */
   const htmlArtefacto = readFileSync(join(import.meta.dirname, 'Faro-Fiscal.html'), 'utf8');
-  assert.ok(htmlArtefacto.includes('Canceladas en el periodo'), 'el HTML construido trae la línea «Canceladas en el periodo»');
-  assert.ok(!htmlArtefacto.includes('canceladas con pago'), 'el HTML ya no trae la alerta de «canceladas con pago»');
-  assert.ok(!htmlArtefacto.includes('ALERTA ROJA: hay CFDI cancelados'), 'la caja de alerta roja de Dinero desapareció');
+  /* RE-BASE integración 2.4.0 (W6b): la línea «Canceladas en el
+     periodo» vive en la parte diferida de Dinero. Las tres
+     marcas se juzgan sobre artefacto + partes (lo que el
+     navegador recibe en total): la presencia con el mismo
+     literal y las dos ausencias con MÁS fuerza que antes (ni
+     siquiera en las partes puede quedar la alerta vieja). */
+  const lazy1200 = JSON.parse(readFileSync(join(import.meta.dirname, 'lazy.json'), 'utf8'));
+  const todo1200 = htmlArtefacto + Object.values(lazy1200.partes).map(p => p.source).join('\n');
+  assert.ok(todo1200.includes('Canceladas en el periodo'), 'el HTML construido (+ su parte de Dinero) trae la línea «Canceladas en el periodo»');
+  assert.ok(!todo1200.includes('canceladas con pago'), 'el HTML ya no trae la alerta de «canceladas con pago»');
+  assert.ok(!todo1200.includes('ALERTA ROJA: hay CFDI cancelados'), 'la caja de alerta roja de Dinero desapareció');
   assert.ok(page.length >= 0);
   await service.close();
   console.log('ronda1200: ok — la cancelada con marca de pago aporta 0 a por pagar, no genera alerta de pago, ' +

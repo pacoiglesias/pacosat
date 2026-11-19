@@ -24,7 +24,10 @@ function fiscalLocalIssues() {
   const own = new Set(people.map(person => person.id));
   const byFolio = new Map();
   for (const row of invoices) {
-    if (row.fiscal?.serie || row.fiscal?.folio) {
+    /* Tipo Pago fuera del folio-duplicado (2.9.0 · Bloque C),
+       como en el servidor: los complementos repiten folio por
+       naturaleza y cazaban decenas de falsos positivos. */
+    if (row.kind !== 'P' && (row.fiscal?.serie || row.fiscal?.folio)) {
       const key = row.from.rfc + '|' + (row.fiscal.serie || '') + '|' + (row.fiscal.folio || '');
       /* Mismo criterio que el servidor (ronda de correcciones, 9 nov
          2026): folio repetido solo es sospechoso si además coincide
@@ -53,23 +56,33 @@ function fiscalLocalIssues() {
   return issues.slice(0, 200);
 }
 function anomalyRows() {
-  /* Importe inusual por emisor (mediana) y duplicado aproximado:
-     mismo emisor e importe con fechas a ≤3 días y UUID distinto. */
+  /* Importe inusual por emisor Y POR TIPO (mediana propia de
+     cada tipo) y duplicado aproximado: mismo emisor e importe
+     con fechas a ≤3 días y UUID distinto. (2.9.0 · Bloque C:
+     la mediana mezclaba tipos — los complementos de pago, con
+     mediana de centavos, hacían «inusual» a cualquier pago
+     normal: 90 falsos positivos en la auditoría. Cada tipo se
+     juzga contra su propia mediana, y el tipo Pago no entra
+     en duplicado-aproximado: pagar dos veces lo mismo en 3
+     días es su naturaleza, no una anomalía.) */
   const anomalies = [];
   const byEmitter = new Map();
   for (const row of invoices) {
-    if (row.kind !== 'I') continue;
-    if (!byEmitter.has(row.from.rfc)) byEmitter.set(row.from.rfc, []);
-    byEmitter.get(row.from.rfc).push(row);
+    const clave = row.from.rfc + '|' + row.kind;
+    if (!byEmitter.has(clave)) byEmitter.set(clave, []);
+    byEmitter.get(clave).push(row);
   }
-  for (const [rfc, rows] of byEmitter) {
+  for (const [clave, rows] of byEmitter) {
+    const rfc = clave.split('|')[0];
+    const tipo = clave.split('|')[1];
     if (rows.length >= 4) {
       const totals = rows.map(row => Number(totalCents(row))).sort((a, b) => a - b);
       const median = totals[Math.floor(totals.length / 2)];
       for (const row of rows)
         if (median > 0 && Number(totalCents(row)) > median * 3 && Number(totalCents(row)) - median > 100000)
-          anomalies.push({ id: row.id, kind: 'importe-inusual', detail: (row.from.name || rfc) + ': $' + centsLabel(totalCents(row)) + ' frente a su mediana de $' + centsLabel(BigInt(Math.round(median))) + '.' });
+          anomalies.push({ id: row.id, kind: 'importe-inusual', detail: (row.from.name || rfc) + ': $' + centsLabel(totalCents(row)) + ' frente a la mediana de sus comprobantes del mismo tipo ($' + centsLabel(BigInt(Math.round(median))) + ').' });
     }
+    if (tipo === 'P') continue;
     const sorted = [...rows].sort((a, b) => a.date.localeCompare(b.date));
     for (let i = 1; i < sorted.length; i++) {
       const prev = sorted[i - 1], current = sorted[i];
@@ -86,9 +99,91 @@ function cumplimientoScreen() {
   const calendar = panel('Calendario fiscal', 'Lo que vence, con semáforo: rojo vencido o hoy, ámbar en 7 días, verde con margen. El sistema avisa por correo 3 días antes.');
   const calBody = n('div');
   calendar.append(calBody);
+  /* Calendario del mes pintado (2.4.0 · WC4b2, pieza 26): la
+     rejilla del mes en curso con cada vencimiento SERVIDO en su
+     día exacto (su fecha real de la lista, nunca una fecha
+     escrita en el cliente), su marca con el nombre y, al tocar
+     un día, el detalle de sus vencimientos debajo de la rejilla.
+     La lista de siempre se queda debajo, intacta (paridad).
+     Navegación de meses: la lista no navega meses, así que el
+     calendario tampoco — enseña solo el mes en curso y lo dice
+     en su propio texto. En móvil la rejilla son 7 columnas
+     flexibles (estilos en línea: las hojas de estilo no son
+     territorio de esta tanda) y los días no se rompen. */
+  const calGrid240 = n('div'); calGrid240.dataset.cal240 = '1';
+  const calDetalle240 = n('div');
+  const calLista240 = n('div');
+  calBody.append(calGrid240, calDetalle240, calLista240);
+  const pintarCalendario240 = events => {
+    calGrid240.replaceChildren();
+    calDetalle240.replaceChildren();
+    const hoy = new Date();
+    const mesClave = hoy.getFullYear() + '-' + String(hoy.getMonth() + 1).padStart(2, '0');
+    const porDia = new Map();
+    for (const event of events) {
+      if (!event.date || String(event.date).slice(0, 7) !== mesClave) continue;
+      const diaClave = String(event.date).slice(0, 10);
+      if (!porDia.has(diaClave)) porDia.set(diaClave, []);
+      porDia.get(diaClave).push(event);
+    }
+    const titulo = n('h3', 'Calendario de ' +
+      new Intl.DateTimeFormat('es-MX', { month: 'long', year: 'numeric' }).format(hoy));
+    titulo.dataset.calMes240 = mesClave;
+    calGrid240.append(titulo,
+      n('p', 'Los vencimientos de este mes, cada uno en su día. Toca un día para ver los suyos; ' +
+        'la lista completa sigue debajo. Este calendario enseña el mes en curso.', 'muted'));
+    const rejilla = n('div', undefined, 'cal240-rejilla');
+    rejilla.style.display = 'grid';
+    rejilla.style.gridTemplateColumns = 'repeat(7, minmax(0, 1fr))';
+    rejilla.style.gap = '4px';
+    for (const nombreDia of ['L', 'M', 'X', 'J', 'V', 'S', 'D'])
+      rejilla.append(n('span', nombreDia, 'cal240-dow'));
+    const huecos = (new Date(hoy.getFullYear(), hoy.getMonth(), 1).getDay() + 6) % 7;
+    for (let i = 0; i < huecos; i++) rejilla.append(n('span', '', 'cal240-vacio'));
+    const diasMes = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0).getDate();
+    const hoyClave = mesClave + '-' + String(hoy.getDate()).padStart(2, '0');
+    for (let dia = 1; dia <= diasMes; dia++) {
+      const clave = mesClave + '-' + String(dia).padStart(2, '0');
+      const delDia = porDia.get(clave) || [];
+      const celda = n('button', undefined, 'cal240-dia');
+      celda.type = 'button';
+      celda.dataset.fecha = clave;
+      celda.style.minWidth = '0';
+      celda.append(n('strong', String(dia)));
+      if (clave === hoyClave) { celda.dataset.hoy = '1'; celda.append(n('small', 'hoy')); }
+      for (const event of delDia) {
+        const marca = n('span', event.title, 'cal240-marca');
+        /* El punto como FORMA dibujada (2.4.0 · W5b3): fuera el
+           glifo de punto de texto, como W5b2 con .semana-punto. */
+        const punto240 = n('span', '', 'cal240-punto');
+        punto240.style.cssText = 'display:inline-block;width:7px;height:7px;border-radius:50%;background:currentColor;margin-right:5px;vertical-align:1px';
+        marca.prepend(punto240);
+        marca.dataset.level = event.daysLeft < 0 || event.daysLeft === 0 ? 'bad' : event.daysLeft <= 7 ? 'warn' : 'ok';
+        celda.append(marca);
+      }
+      celda.onclick = () => {
+        calDetalle240.replaceChildren();
+        if (!delDia.length) {
+          calDetalle240.append(n('p', 'El ' + dateLabel(clave) + ' no vence nada.'));
+          return;
+        }
+        for (const event of delDia) {
+          const fila = n('div', undefined, 'cp-row');
+          fila.append(statusPill(event.daysLeft < 0 ? 'bad' : event.daysLeft <= 7 ? 'warn' : 'ok',
+              event.daysLeft < 0 ? 'Venció hace ' + (-event.daysLeft) + ' días' :
+              event.daysLeft === 0 ? 'Vence HOY' : 'En ' + event.daysLeft + ' días'),
+            n('span', event.date + ' · ' + (event.rfc ? event.rfc + ' · ' : '') + event.title));
+          calDetalle240.append(fila);
+        }
+      };
+      rejilla.append(celda);
+    }
+    calGrid240.append(rejilla);
+  };
   const drawEvents = events => {
-    calBody.replaceChildren();
-    if (!events.length) calBody.append(n('p', 'Sin vencimientos registrados.', 'empty'));
+    pintarCalendario240(events);
+    calLista240.replaceChildren();
+    if (!events.length) calLista240.append(n('p', 'Sin vencimientos registrados.', 'empty'));
     for (const event of events.slice(0, 30)) {
       const row = n('div', undefined, 'cp-row');
       row.append(statusPill(event.daysLeft < 0 ? 'bad' : event.daysLeft <= 7 ? 'warn' : 'ok',
@@ -115,7 +210,7 @@ function cumplimientoScreen() {
         '&details=' + encodeURIComponent('Obligación del calendario fiscal de PacoSAT.');
       gcal.target = '_blank'; gcal.rel = 'noopener';
       row.append(gcal);
-      calBody.append(row);
+      calLista240.append(row);
     }
   };
   if (satToken) satApi('fiscal/calendar').then(data => drawEvents(data.events)).catch(() => drawEvents(fiscalLocalEvents()));

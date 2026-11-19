@@ -1,4 +1,5 @@
-/* ===== Buzón (1.23.0, frente B) =====
+/* ===== Buzón (1.23.0, frente B) — parte diferida 'buzon'
+   (2.9.0 · Bloque D) =====
    Bandeja de entrada del contribuyente elegido: los CFDI recibidos
    y los documentos nuevos, lo nuevo primero, con leído/no leído.
    El servidor lleva la cuenta en GET /api/buzon?rfc= y en
@@ -6,26 +7,13 @@
    Abrir un CFDI salta a su ficha (invoiceDetail, el abridor de
    siempre) y un documento abre el mismo visor de Documentos
    (viewDocOnline). El Buzón Tributario del SAT no se promete
-   automático: esto es lo que ya entró en tu expediente. */
-let buzonCache = null;
-function buzonUnreadFor(rfc) {
-  const map = typeof satData !== 'undefined' && satData ? satData.buzonUnread : null;
-  if (map) return Number(map[rfc] || 0);
-  return buzonCache && buzonCache.rfc === rfc ? Number(buzonCache.unread || 0) : 0;
-}
-/* El distintivo de esta pantalla ya no vive en el menú
-   (1.31.0, punto B: fuera los inventarios; los números del menú
-   solo cuentan lo que necesita a Paco). La función queda como
-   talón vacío deliberado porque Hoy, el pulso y los flujos la
-   siguen llamando: ya no hay elemento que pintar y no se finge
-   lo contrario. El conteo de sin abrir sigue viviendo en su
-   pantalla (Recibidos) y en el Centro SAT. */
-function paintBuzonBadge() { /* sin distintivo desde la 1.31.0 */ }
-function buzonCuando(at) {
-  if (!at) return '';
-  const ms = typeof at === 'number' ? at : Date.parse(at);
-  return Number.isFinite(ms) ? localDateTime(ms) : String(at);
-}
+   automático: esto es lo que ya entró en tu expediente.
+   Este fichero viaja DIFERIDO junto a tributario-ui.part en la
+   parte 'buzon': su estado compartido (buzonCache), sus ayudas
+   del primer pintado (buzonUnreadFor, buzonCuando) y su talón
+   de distintivo (paintBuzonBadge) viven en el PUENTE de ui.part
+   (sección «Puente de la parte diferida Buzón»), en una sola
+   copia — aquí no se redeclaran. */
 /* ===== Reenvío por correo (1.24.0, punto 11) =====
    Cada comprobante viaja en su propio correo, con el XML y el
    PDF adjuntos y los datos que lo prueban. El destino se
@@ -107,6 +95,74 @@ async function forwardDialog(rfc, ids, onSent) {
   };
   showDialog(form);
 }
+/* ===== Trabajo en curso FIJADO ARRIBA en Buzón (2.4.0 · W1, P3) =====
+   «Que sepa lo que ocurre cada momento»: si para ESTE RFC hay un
+   trabajo vivo en el registro único de actividad (una solicitud
+   de descarga esperando al SAT, una consulta del Buzón
+   Tributario, un trabajo del ejecutor o una descarga de
+   documento/CIEC), esta vista lo abre FIJADO ARRIBA en su propia
+   tarjeta — paso/detalle en vivo según el registro, su barra con
+   el tiempo desde su inicio real y su Detener/Cancelar EN la
+   tarjeta, con el mismo activityControlButton de la franja
+   global (un solo gesto, el del registro). Si el trabajo espera
+   el gesto de Paco (captcha, ejecutor dormido), la tarjeta enseña
+   su nota, que nombra ese único gesto. Sin trabajo vivo para el
+   RFC, no se pinta nada: no se finge actividad.
+   Nota de territorio: la pantalla del Buzón Tributario vive en
+   tributario-ui.part (fuera de esta tanda); allí su corrida YA
+   abre la pantalla — pastilla «Consultando el buzón…», línea de
+   paso y botón Cancelar en la primera franja — y queda
+   declarada en la nota de la ronda, sin tocar ese archivo. */
+function buzonTrabajoFijado240(rfc) {
+  if (typeof activityView === 'undefined' || !activityView || !rfc) return null;
+  const vivos = [...(activityView.running || []).map(e => ({ ...e, enPausa: false })),
+    ...(activityView.paused || []).map(e => ({ ...e, enPausa: true }))];
+  const propios = vivos.filter(entry => ['tributario', 'masiva', 'ejecutor', 'documentos', 'ciec'].includes(entry.kind) &&
+    (entry.rfc === rfc || String(entry.key || '').endsWith(':' + rfc) || String(entry.label || '').includes(rfc)));
+  if (!propios.length) return null;
+  const card = n('section', undefined, 'activity-dock buzon-trabajo-fijado240');
+  card.dataset.trabajoFijado240 = 'buzon';
+  const head240 = n('div', undefined, 'activity-dock-head');
+  head240.append(n('strong', 'Trabajo en curso'),
+    n('span', propios.length === 1 ? '1 trabajo' : propios.length + ' trabajos', 'activity-count'));
+  card.append(head240);
+  /* Misma composición que la franja y Hoy (corrección visual
+     2.4.0, arreglo unificado): la guía de detener una
+     solicitud, una vez por tarjeta, y cada entrada con su
+     línea única sin fase duplicada. */
+  const guiaBuzon240 = typeof actividadGuia240 === 'function'
+    ? propios.map(actividadGuia240).find(Boolean) : '';
+  if (guiaBuzon240) card.append(n('p', guiaBuzon240, 'muted small actividad-guia240'));
+  for (const entry of propios.slice(0, 3)) {
+    const row = n('div');
+    row.style.display = 'flex'; row.style.justifyContent = 'space-between';
+    row.style.gap = '10px'; row.style.alignItems = 'center'; row.style.padding = '6px 0';
+    const body240 = n('div');
+    const detalle240 = typeof actividadLinea240 === 'function' ? actividadLinea240(entry)
+      : typeof activityDetailText === 'function' ? activityDetailText(entry) : (entry.detail || '');
+    body240.append(n('strong', String(entry.label || '')), n('small', detalle240 ? ' · ' + detalle240 : '', 'activity-detail'));
+    row.append(body240);
+    if (typeof activityControlButton === 'function') {
+      const acts = n('div', undefined, 'actions');
+      if (entry.canPause) acts.append(activityControlButton(entry, entry.enPausa ? 'Reanudar' : 'Pausar', entry.enPausa ? 'reanudar' : 'pausar'));
+      if (entry.canResume && entry.enPausa) acts.append(activityControlButton(entry, 'Reanudar', 'reanudar'));
+      if (entry.canStop) acts.append(activityControlButton(entry, entry.stopLabel || 'Cancelar', 'detener'));
+      if (acts.childNodes.length) row.append(acts);
+    }
+    card.append(row);
+    const progresoBuzon240 = typeof actividadProgreso240 === 'function'
+      ? actividadProgreso240(entry, detalle240) : null;
+    if (progresoBuzon240) card.append(progresoBuzon240);
+  }
+  /* Vigilancia diferida (2.4.0 · W6): sin su parte, la tarjeta
+     se pinta sin el gesto de parada; se pide la parte y, al
+     llegar, la pantalla se repinta con el botón real. */
+  if (typeof activityControlButton !== 'function' && typeof ensureLazyPart === 'function')
+    ensureLazyPart('monitor').then(ok => {
+      if (ok && typeof page !== 'undefined' && page === 'buzon') render();
+    });
+  return card;
+}
 function buzonScreen() {
   const wrap = n('div');
   if (typeof satToken === 'undefined' || !satToken) {
@@ -117,6 +173,9 @@ function buzonScreen() {
     'Lo nuevo que llegó a este RFC: CFDI recibidos y documentos del SAT, lo más reciente primero y lo sin leer destacado. Abrir un CFDI lleva a su ficha; un documento se abre en el visor.');
   const body = n('div');
   head.append(body);
+  /* El trabajo vivo de este RFC, fijado ARRIBA del todo (2.4.0 · W1). */
+  const fijado240 = scope ? buzonTrabajoFijado240(scope) : null;
+  if (fijado240) wrap.append(fijado240);
   wrap.append(head);
   if (!scope) {
     body.append(empty('Elige un contribuyente', 'Recibidos va por RFC: elige arriba el contribuyente del que quieres ver lo que llegó.'));
@@ -131,29 +190,11 @@ function buzonScreen() {
     const bar = n('div', undefined, 'traffic-strip');
     bar.append(statusPill(data.unread ? 'warn' : 'ok',
       data.unread ? number.format(data.unread) + ' sin leer' : 'Todo leído'));
-    const all = n('button', 'Marcar todo leído', 'soft buzon-mark-all');
-    all.type = 'button';
-    all.disabled = !data.unread;
-    all.onclick = async () => {
-      all.disabled = true;
-      try {
-        const result = await satApi('buzon/read', { rfc, all: true });
-        for (const item of data.items || []) item.read = true;
-        data.unread = result.unread;
-        paint(data);
-        toast('Recibidos al día: todo marcado como leído.', 'ok');
-      } catch (error) {
-        /* Respuesta perdida: se re-lee el buzón antes de declarar
-           el error (regla de verdad de las acciones). */
-        try {
-          const fresh = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
-          if (!fresh.unread) { paint(fresh); toast('Quedó registrado: todo consta leído.', 'ok'); return; }
-        } catch { /* sin re-lectura: manda el error original */ }
-        toast(error.message, 'error');
-        all.disabled = false;
-      }
-    };
-    bar.append(all);
+    /* (2.9.13 · A7) «Marcar todo leído» vive UNA vez: en la
+       acción de la cabecera de la pantalla (su dispatch llama
+       a buzonMarcarTodoLeido2913). El botón duplicado que
+       vivía en esta franja salió; la franja conserva el
+       veredicto. */
     body.append(bar);
     /* Regla automática de reenvío (punto 11): si está activa se
        dice en la cara del Buzón, con su gesto para quitarla. */
@@ -188,7 +229,30 @@ function buzonScreen() {
       selBar.append(sendSel, clearSel);
       body.append(selBar);
     }
-    const items = data.items || [];
+    /* (2.9.13 · A9) El mismo DOCUMENTO llegado varias veces
+       (misma clase, mismo título y la misma fecha y hora —
+       la constancia del 9 nov 14:32 salía repetida) se
+       enseña UNA vez con su cuenta; marcarlo leído marca
+       todas sus claves. Los CFDI no se agrupan: cada uno es
+       su comprobante, con su UUID. */
+    const itemsCrudos2913 = data.items || [];
+    const items = [];
+    {
+      const gruposDoc2913 = new Map();
+      for (const item of itemsCrudos2913) {
+        if (item.kind === 'cfdi') { items.push(item); continue; }
+        const clave = [item.kind, item.titulo || '', item.at || ''].join('|');
+        const previo = gruposDoc2913.get(clave);
+        if (previo) {
+          previo._veces2913 = (previo._veces2913 || 1) + 1;
+          (previo._keys2913 = previo._keys2913 || [previo.key]).push(item.key);
+          if (item.read === false) previo.read = false;
+          continue;
+        }
+        gruposDoc2913.set(clave, item);
+        items.push(item);
+      }
+    }
     if (!items.length) {
       /* El vacío enseña el gesto (1.32.1, A4): lo que llena
          esta bandeja se descarga del SAT. */
@@ -220,7 +284,8 @@ function buzonScreen() {
          Paco: el mismo dato dos veces en una pantalla es un
          error de diseño). */
       const main = n('div', undefined, 'cp-main');
-      const titleText = item.titulo || (item.kind === 'cfdi' ? 'CFDI recibido' : 'Documento');
+      const titleText = (item.titulo || (item.kind === 'cfdi' ? 'CFDI recibido' : 'Documento')) +
+        (item._veces2913 > 1 ? ' ×' + item._veces2913 : '');
       if (!item.read) main.append(n('strong', titleText));
       else main.append(n('span', titleText));
       const detalleSegs = (item.detalle || '').split(' · ')
@@ -230,6 +295,29 @@ function buzonScreen() {
         item.at ? buzonCuando(item.at) : ''].filter(Boolean).join(' · ');
       if (meta) main.append(n('span', meta, 'muted bz-meta'));
       row.append(main);
+      /* Sin archivo que resuelva, no hay botón que prometa un
+         papel que no se abre (2.9.0 · Bloque C): el servidor
+         ya resolvió la referencia (sinArchivo) y la fila lo
+         dice con una etiqueta. */
+      if (item.kind !== 'cfdi' && item.sinArchivo) {
+        row.append(etiqueta290('dim', 'Sin archivo guardado', 'El documento consta en el buzón, pero su archivo no está guardado en el expediente.'));
+        const filaMenuSinArchivo = [];
+        if (!item.read) filaMenuSinArchivo.push(['Marcar leído', async () => {
+          try {
+            const result = await satApi('buzon/read', { rfc, keys: item._keys2913 || [item.key] });
+            item.read = true;
+            data.unread = result.unread;
+            paint(data);
+          } catch (error) { toast(error.message, 'error'); }
+        }]);
+        if (filaMenuSinArchivo.length) {
+          const menuSin = cardMenu1312('Más opciones de esta novedad');
+          menuSin._setItems1312(filaMenuSinArchivo.map(([label, fn]) => ({ label, fn })));
+          row.append(menuSin);
+        }
+        body.append(row);
+        continue;
+      }
       const open = n('button', item.kind === 'cfdi' ? 'Abrir ficha' : 'Ver documento', 'soft');
       open.type = 'button';
       open.onclick = () => {
@@ -255,7 +343,7 @@ function buzonScreen() {
         filaMenu.push(['Reenviar', () => forwardDialog(rfc, [item.uuid])]);
       if (!item.read) filaMenu.push(['Marcar leído', async () => {
         try {
-          const result = await satApi('buzon/read', { rfc, keys: [item.key] });
+          const result = await satApi('buzon/read', { rfc, keys: item._keys2913 || [item.key] });
           item.read = true;
           data.unread = result.unread;
           paint(data);
@@ -278,18 +366,54 @@ function buzonScreen() {
   if (buzonSeleccionRfc !== rfc) { buzonSeleccion.clear(); buzonSeleccionRfc = rfc; }
   /* Esqueleto de carga (1.25.0): bloques con la forma de la
      bandeja mientras llega, no un párrafo suelto. */
-  const buzonSkel = n('div', undefined, 'skel');
-  buzonSkel.setAttribute('aria-busy', 'true');
-  buzonSkel.setAttribute('aria-label', 'Cargando los recibidos');
-  for (let i = 0; i < 3; i++) buzonSkel.append(n('div', undefined, 'skel-block'));
-  body.append(buzonSkel);
+  /* Primero lo guardado y las dos lecturas EN PARALELO
+     (2.9.0 · Bloque C): la bandeja guardada de la sesión se
+     pinta al instante y la fresca la sustituye; antes las
+     llamadas iban en serie tras un esqueleto. */
+  if (buzonCache && buzonCache.rfc === rfc) paint(buzonCache);
+  else {
+    const buzonSkel = n('div', undefined, 'skel');
+    buzonSkel.setAttribute('aria-busy', 'true');
+    buzonSkel.setAttribute('aria-label', 'Cargando los recibidos');
+    for (let i = 0; i < 3; i++) buzonSkel.append(n('div', undefined, 'skel-block'));
+    body.append(buzonSkel);
+  }
   (async () => {
     try {
-      const data = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
-      try { buzonForwardCfg = await satApi('buzon/forward-config?rfc=' + encodeURIComponent(rfc)); }
-      catch { buzonForwardCfg = { dests: [], autoTo: '', sugerencia: '' }; }
+      const [data, cfg] = await Promise.all([
+        satApi('buzon?rfc=' + encodeURIComponent(rfc)),
+        satApi('buzon/forward-config?rfc=' + encodeURIComponent(rfc))
+          .catch(() => ({ dests: [], autoTo: '', sugerencia: '' }))]);
+      buzonForwardCfg = cfg;
       if (body.isConnected) paint(data);
-    } catch (error) { if (body.isConnected) body.replaceChildren(n('p', error.message, 'error-text')); }
+    } catch (error) { if (body.isConnected && !buzonCache) body.replaceChildren(n('p', error.message, 'error-text')); }
   })();
   return [wrap];
+}
+/* (2.9.13 · A7) «Marcar todo leído» de Recibidos, en su único
+   sitio: la acción de la cabecera de la pantalla. Vive aquí
+   como función global porque la cabecera se despacha desde
+   workflows sin conocer el cuerpo de la pantalla; trabaja
+   sobre la bandeja cacheada y repinta con render(). Con la
+   respuesta perdida se re-lee antes de declarar el error
+   (la regla de verdad de las acciones, como el botón que
+   sustituye). */
+async function buzonMarcarTodoLeido2913() {
+  const rfc = (buzonCache && buzonCache.rfc) || scope;
+  if (!rfc) return;
+  try {
+    const result = await satApi('buzon/read', { rfc, all: true });
+    if (buzonCache && buzonCache.rfc === rfc) {
+      for (const item of buzonCache.items || []) item.read = true;
+      buzonCache.unread = result.unread;
+    }
+    toast('Recibidos al día: todo marcado como leído.', 'ok');
+    render();
+  } catch (error) {
+    try {
+      const fresh = await satApi('buzon?rfc=' + encodeURIComponent(rfc));
+      if (!fresh.unread) { buzonCache = fresh; toast('Quedó registrado: todo consta leído.', 'ok'); render(); return; }
+    } catch { /* sin re-lectura: manda el error original */ }
+    toast(error.message, 'error');
+  }
 }

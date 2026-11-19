@@ -186,15 +186,57 @@ const css = stripCssComments(['style.part','design.part','polish.part'].map(read
    y lazy.json lleva al servidor las fuentes y sus huellas. Lo que
    NO se difiere, y por qué: el visor de documentos (pdf-cloud) lo
    usan todas las pantallas, también las del primer pintado;
-   monitor, cobertura y problemas llevan el Centro de mando de Hoy
-   y textos fijados en el artefacto por las suites; listas comparte
-   su diálogo de contraparte con Dinero; cumplimiento alimenta
-   chequeos del núcleo; ciec vive en el panel del Centro SAT; y
-   final-ui trae el arranque, el modo sin conexión y el invitado. */
-const MAIN_PARTS = ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','sat-ui.part','satdocs-ui.part','ciec-ui.part','declaraciones-ui.part','monitor-ui.part','coverage-ui.part','problemas-ui.part','settings-ui.part','lists-ui.part','money-ui.part','compliance-ui.part','final-ui.part','avisos-ui.part','buzon-ui.part','tributario-ui.part','capacidades-ui.part'];
-const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part', registro: 'registro-ui.part', salud: 'salud-ui.part' };
+   cobertura y problemas llevan el Centro de mando de Hoy;
+   listas comparte su diálogo de contraparte con Dinero;
+   cumplimiento alimenta chequeos del núcleo; ciec vive en el
+   panel del Centro SAT; y final-ui trae el arranque, el modo
+   sin conexión y el invitado. (Monitor y Declaraciones SÍ se
+   difieren desde la 2.4.0 · W6, con el puente de ui.part que se
+   documenta junto a LAZY_PARTS.) */
+const MAIN_PARTS = ['data.part','ui.part','pdf-cloud-ui.part','operations.part','workflows.part','satdocs-ui.part','ciec-ui.part','coverage-ui.part','problemas-ui.part','settings-ui.part','lists-ui.part','compliance-ui.part','final-ui.part','avisos-ui.part','capacidades-ui.part'];
+/* Declaraciones y Vigilancia (monitor) se difieren en la 2.4.0
+   (W6): lo que el resto de la app usa de ellas en el primer
+   pintado —estado compartido (fiscalResults, monitorFilter),
+   ayudas puras (monitorStateInfo, statusCell, fechas y textos
+   de declaraciones) y lanzadores que se auto-cargan— vive en el
+   PUENTE de ui.part (sección «Puentes de las partes diferidas
+   Declaraciones y Vigilancia»); el resto viaja en su parte y el
+   cargador (lazyPartForView) las trae al entrar en su pantalla,
+   con la precarga en reposo de siempre. El pulso de 30 s y la
+   envoltura de fillSat viven en la parte de Vigilancia: arrancan
+   cuando la parte carga (la precarga la trae en reposo, segundos
+   tras el arranque). */
+/* Descargas y Dinero se difieren en la 2.4.0 (W6b): su núcleo
+   —estado y API del SAT, ayudas de puerta/vigilancia, estado y
+   cálculo de saldos de Dinero— vive en el PUENTE de ui.part
+   (sección «Puentes de las partes diferidas Descargas y
+   Dinero»); el resto viaja en su parte. 'descargas' va ANTES
+   que 'monitor' en este mapa y el cargador refuerza ese orden
+   (ensureLazyPart('monitor') carga primero 'descargas'): la
+   envoltura de fillSat de Vigilancia captura así el fillSat
+   real de Descargas. */
+/* El Buzón se difiere en la 2.9.0 (Bloque D, con la misma
+   disciplina W6): la pantalla del Buzón del SAT y la de
+   Recibidos NO son del primer pintado (Hoy sí lo es), así que
+   buzon-ui.part y tributario-ui.part viajan juntas en la parte
+   'buzon' — una parte puede componerse de varios ficheros,
+   concatenados en su orden de siempre — y la carga inicial
+   vuelve a quedar por debajo del artefacto 2.3.1 (818.135 B).
+   Lo que el resto de la app usa en el primer pintado —estado
+   compartido (buzonCache, tribCache), ayudas puras (buzon-
+   Cuando, tribSinAbrirFor/tribConsultadoFor/tribTenidaFor,
+   fechaCortaMenu202), el estado único del Buzón
+   (buzonEstado290 y su línea de menú, pintarBuzonMenu202), la
+   línea del ejecutor en el menú (pintarEjecutorMenu250),
+   paseoNasCliente250 y los talones de distintivo— vive en el
+   PUENTE de ui.part (sección «Puente de la parte diferida
+   Buzón»); las pantallas (buzonScreen, tributarioScreen) y el
+   diálogo de reenvío (forwardDialog) tienen allí su lanzador
+   que se auto-carga, como Declaraciones y Descargas. */
+const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part', registro: 'registro-ui.part', salud: 'salud-ui.part', declaraciones: 'declaraciones-ui.part', descargas: 'sat-ui.part', monitor: 'monitor-ui.part', dinero: 'money-ui.part', buzon: ['buzon-ui.part', 'tributario-ui.part'], usuarios: 'usuarios-ui.part' };
 const lazyScripts = {};
-for (const [name, file] of Object.entries(LAZY_PARTS)) lazyScripts[name] = stripJsComments(read(file));
+for (const [name, file] of Object.entries(LAZY_PARTS))
+  lazyScripts[name] = stripJsComments((Array.isArray(file) ? file : [file]).map(read).join('\n'));
 const lazyManifest = 'const PACOSAT_LAZY = ' + JSON.stringify(Object.fromEntries(Object.keys(LAZY_PARTS).map(name => [name, '/parte/' + name]))) + ';\n';
 const script = stripJsComments(meta + lazyManifest + MAIN_PARTS.map(read).join('\n'));
 /* CSP estricta sin unsafe-inline (1.6.9): la app es un único bloque
@@ -222,4 +264,4 @@ write('capacidades.json', JSON.stringify(capacidades));
    sirva en /parte/<nombre> y las sume a su cabecera CSP. */
 write('lazy.json', JSON.stringify({ partes: Object.fromEntries(Object.entries(lazyScripts)
   .map(([name, source]) => [name, { hash: sha256(source), source }])) }));
-write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc, problemSpec, runPhaseStates, downloadShortcutRange, downloadSummaryText };\n');
+write('xml-core.mjs', read('data.part') + '\nexport { crc32, parseXml, parseCfdiFull, fiscalSummary, withFiscal, moneyCents, zipXml, zipText, rfcCheckDigit, validateRfc, problemSpec, runPhaseStates, downloadShortcutRange, downloadSummaryText, clasificaDocumentoXml, parseRetenciones, retencionesDocRow, retencionesEsDuplicada, cruceRetenciones, sha256Hex, integridadCfdi, extraerCamposPdf, compararCfdiPdf };\n');

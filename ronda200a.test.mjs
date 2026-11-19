@@ -180,6 +180,11 @@ async function bootCliente() {
   for (let i = 0; i < 12; i++) await new Promise(resolve => setTimeout(resolve, 0));
   return context;
 }
+/* RE-BASE integración 2.4.0 (W6b): satTramiteEstados vive en la
+   parte diferida de Descargas. El bloque (a) la inyecta desde
+   lazy.json (lo que el navegador recibe) tras el arranque.
+   Ninguna aserción cambia. */
+const lazy200a = JSON.parse(read('lazy.json'));
 const ponerSatData = (context, data) => {
   context.__sd = data;
   vm.runInContext('satData = __sd; scope = "MFI6212158B4"; people = [{ id: "MFI6212158B4", name: "Mano Fil, S.A." }];', context);
@@ -204,6 +209,7 @@ const ponerSatData = (context, data) => {
   assert.ok(!/Carga la e\.firma|revisar la e\.firma/i.test(textoPuerta), 'M1: ese texto NO manda a la e.firma');
 
   /* La tarjeta del Buzón (satTramiteEstados) compone lo mismo. */
+  vm.runInContext(lazy200a.partes.descargas.source, context, { filename: 'parte-descargas' });
   context.__d = { rfc: OWN, profile: { unlocked: true }, lastJob: null,
     docsProfile: { progress: null }, trib: { ultimaConsulta: T_SENAL, sinAbrir: 2, runs: [] },
     puerta: PUERTA_EFIRMA, declProgreso: null, ejecutor: EJECUTOR_APAGADO, cola: [],
@@ -261,7 +267,10 @@ const ponerSatData = (context, data) => {
     ejecutor: EJECUTOR_VIVO, pendingProfiles: [], profiles: [{ rfc: OWN, lastSatSuccess: AHORA - 3600000 }] });
   const vigOk = vm.runInContext('vigil200(' + AHORA + ')', context);
   assert.equal(vigOk.nivel, 'ok', 'M2: con todo sano, verde');
-  assert.equal(vigOk.titulo, '🟢 Vigilando', 'M2: y el rótulo de siempre');
+  /* 2.4.0 (migración de glifos W5b3 + cierre del coordinador): el
+     rótulo ya no lleva el emoji «🟢» en el texto — el icono lo pone
+     el puente data-estado de la familia (aldia) al pintarse. */
+  assert.equal(vigOk.titulo, 'Vigilando', 'M2: y el rótulo de siempre');
 
   /* Formato único: localDateTime ES fmtFechaHora, en 24 h. */
   const muestra = vm.runInContext('localDateTime(' + T_SENAL + ')', context);
@@ -312,8 +321,9 @@ const ponerSatData = (context, data) => {
     ejecutor: EJECUTOR_VIVO, pendingProfiles: [], profiles: [] });
   assert.equal(vm.runInContext('page = "invoices", primaryLabel()', context), 'Descargar del SAT',
     '1.3: en Facturas el primario es «Descargar del SAT»');
-  assert.equal(vm.runInContext('page = "home", primaryLabel()', context), 'Descargar CFDI del SAT',
-    '1.3: en Hoy, sin gesto protagonista, el primario es descargar CFDI');
+  /* RE-BASE 2.8.0 (diseño 19): un solo nombre, «Descargar del SAT». */
+  assert.equal(vm.runInContext('page = "home", primaryLabel()', context), 'Descargar del SAT',
+    '1.3: en Hoy, sin gesto protagonista, el primario es descargar del SAT');
   ponerSatData(context, { rest: { active: false }, puerta: { [OWN]: PUERTA_EFIRMA },
     ejecutor: EJECUTOR_APAGADO, pendingProfiles: [], profiles: [] });
   assert.equal(vm.runInContext('page = "home", primaryLabel()', context), 'Ver tu ejecutor',
@@ -353,6 +363,10 @@ const ponerSatData = (context, data) => {
     return null;
   };
   vm.runInContext('satApiLectura = async ruta => __lecturas(ruta); todayCache = { at: 0, data: null };', context);
+  /* RE-BASE integración 2.4.0: todayPanel pinta el interruptor
+     de descanso (restSwitch, en el principal), cuyo gesto abre
+     restDialog — hoy en la parte de Descargas: se inyecta. */
+  vm.runInContext(lazy200a.partes.descargas.source, context, { filename: 'parte-descargas' });
   const panel = vm.runInContext('todayPanel()', context);
   const columnas = buscarPorClase(panel, 'today-col');
   assert.equal(columnas.length, 3, 'Hoy pinta sus tres columnas');

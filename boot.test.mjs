@@ -88,6 +88,16 @@ class FakeElement {
   getBoundingClientRect() { return { width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0 }; }
 }
 
+/* RE-BASE integración 2.4.0 (W6): el sondeo de /api/status vive
+   en el pulso de Vigilancia, que viaja en la parte diferida de
+   monitor. El navegador la trae sola al arrancar
+   (prefetchLazyParts en cuanto el navegador queda libre). El
+   arnés reproduce ese camino SIN tocar lo que la suite afirma
+   del arranque: el fetch sirve las partes desde lazy.json, el
+   head EJECUTA los scripts inyectados y requestIdleCallback
+   existe, como en el navegador. */
+const lazy = JSON.parse(fs.readFileSync('lazy.json', 'utf8'));
+
 const storageStub = () => {
   const map = new Map();
   return {
@@ -109,6 +119,15 @@ function makeBootContext(server, { withModified = true } = {}) {
   const metas = server
     ? { 'meta[name="pacosat-token"]': { content: 'token-de-prueba' }, 'meta[name="pacosat-cloud"]': { content: '1' } }
     : {};
+  const headEl = new FakeElement('head');
+  const holder = {};
+  /* El head ejecuta los scripts inyectados (las partes
+     diferidas), como el navegador al aterrizar una parte. */
+  headEl.appendChild = kid => {
+    if (kid && typeof kid.textContent === 'string' && kid.textContent && holder.context)
+      vm.runInContext(kid.textContent, holder.context, { filename: 'parte-diferida' });
+    return kid;
+  };
   const documentStub = {
     getElementById: id => {
       if (!byId.has(id)) byId.set(id, new FakeElement('div'));
@@ -123,7 +142,7 @@ function makeBootContext(server, { withModified = true } = {}) {
     removeEventListener: () => {},
     documentElement: new FakeElement('html'),
     body: new FakeElement('body'),
-    head: new FakeElement('head'),
+    head: headEl,
     activeElement: null,
     title: ''
   };
@@ -131,6 +150,10 @@ function makeBootContext(server, { withModified = true } = {}) {
   const fetchStub = async url => {
     const target = String(url);
     fetchCalls.push(target);
+    const parteM = /\/parte\/(\w+)/.exec(target);
+    if (parteM) { const src = lazy.partes[parteM[1]]?.source || '';
+      return { ok: true, status: 200, headers: { get: () => 'text/javascript' },
+        json: async () => ({}), text: async () => src, blob: async () => new Blob([]) }; }
     let body = {};
     if (target.includes('storage/rev')) body = { rev: 1 };
     else if (target.includes('storage?')) body = [];
@@ -178,10 +201,14 @@ function makeBootContext(server, { withModified = true } = {}) {
     alert: () => {},
     addEventListener: () => {},
     removeEventListener: () => {},
-    requestAnimationFrame: fn => timer(fn, 0)
+    requestAnimationFrame: fn => timer(fn, 0),
+    /* El navegador ofrece requestIdleCallback y el arranque lo
+       usa para prefetchear las partes en cuanto queda libre. */
+    requestIdleCallback: fn => timer(() => fn({ didTimeout: false, timeRemaining: () => 50 }), 0)
   });
   context.window = context;
   context.self = context;
+  holder.context = context;
   return { context, byId, fetchCalls };
 }
 

@@ -10,6 +10,7 @@ services:
     restart: unless-stopped
     environment:
       PACOSAT_ORIGIN: https://${PACOSAT_DOMAIN:?Configura PACOSAT_DOMAIN}
+      PACOSAT_PASEO: ${PACOSAT_PASEO:-remoto}
       PACOSAT_PROXY_KEY: ${PACOSAT_PROXY_KEY:?Configura PACOSAT_PROXY_KEY}
       PACOSAT_DATA_DIR: /var/lib/pacosat
       PACOSAT_STARTUP_CONFIG: /run/pacosat-secrets/config.json
