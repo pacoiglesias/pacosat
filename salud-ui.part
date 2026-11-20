@@ -90,6 +90,13 @@ function saludTarjeta200d(tarjeta, accionesNode) {
     card.append(ayuda299);
   }
   if (accionesNode) card.append(accionesNode);
+  /* (2.9.16 · P3) Sin botón, el siguiente paso también se
+     dice: cada tarjeta enseña estado (la píldora), última
+     revisión («Comprobada: …») y siguiente paso — el botón
+     cuando lo hay; esta línea cuando no lo hay. */
+  else card.append(n('p', tarjeta.estado === 'bien'
+    ? 'Siguiente paso: ninguno — se vigila solo.'
+    : 'Siguiente paso: sin arreglo en un toque; se vuelve a comprobar al revisar la salud.', 'muted salud-paso2916'));
   return card;
 }
 function saludBoton200d(label, work, cls = 'soft') {
@@ -108,6 +115,16 @@ function saludVeredicto240(data) {
   const tarjetas = data.tarjetas || [];
   const malas = tarjetas.filter(t => t.estado === 'mal');
   const aVigilar = tarjetas.filter(t => t.estado === 'vigilar');
+  /* (Corrección 2.9.16 tras la verificación en vivo) Tercer
+     cubo: las piezas «sin dato» — ni mal, ni a vigilar, ni
+     bien —. Los pisos de la ronda las cuentan dentro de
+     «A vigilar» (todo lo que no es mal ni bien cae ahí) y
+     este veredicto no las contaba en ningún sitio: decía
+     «3 piezas a vigilar» donde el piso contaba 5, y podía
+     decir «Todo bien» habiendo piezas sin dato. Ahora el
+     veredicto reparte con la MISMA regla que los pisos y
+     nombra cada parte: veredicto y pisos cuentan lo mismo. */
+  const sinDato = tarjetas.filter(t => t.estado !== 'mal' && t.estado !== 'vigilar' && t.estado !== 'bien');
   const card = panel('Veredicto de salud');
   card.dataset.veredicto240 = '1';
   card.classList.add('protagonista280'); /* (2.8.0 · diseño 7) */
@@ -129,12 +146,18 @@ function saludVeredicto240(data) {
     for (const t of malas) card.append(filaPieza(t, 'Ver su arreglo', 'primary small'));
     if (aVigilar.length)
       card.append(n('p', 'Y a vigilar: ' + aVigilar.map(t => t.titulo).join('; ') + '.', 'muted'));
-  } else if (aVigilar.length) {
+    if (sinDato.length)
+      card.append(n('p', 'Y sin dato: ' + sinDato.map(t => t.titulo).join('; ') + '.', 'muted'));
+  } else if (aVigilar.length || sinDato.length) {
+    const partes2916 = [];
+    if (aVigilar.length) partes2916.push(aVigilar.length +
+      (aVigilar.length === 1 ? ' pieza a vigilar' : ' piezas a vigilar'));
+    if (sinDato.length) partes2916.push(sinDato.length + ' sin dato');
     hero.append(statusPill('warn', 'A vigilar', undefined, undefined, true),
-      n('strong', 'Todo funciona, con ' + aVigilar.length +
-        (aVigilar.length === 1 ? ' pieza a vigilar' : ' piezas a vigilar')));
+      n('strong', 'Todo funciona, con ' + partes2916.join(' y ')));
     card.append(hero);
     for (const t of aVigilar) card.append(filaPieza(t, 'Ver la pieza', 'soft small'));
+    for (const t of sinDato) card.append(filaPieza(t, 'Ver la pieza', 'soft small'));
   } else {
     hero.append(statusPill('ok', 'Bien', undefined, undefined, true), n('strong', 'Todo bien'));
     card.append(hero);
@@ -175,9 +198,9 @@ function saludTarjetasPintar200d(body, data) {
      paridad completa, nada desaparece. */
   body.append(saludVeredicto240(data));
   body.append(saludBitacora240());
-  const grid = n('div', undefined, 'salud-grid200d');
+  const tarjetasPintadas2916 = [];
   const ex = data.ejecutor || {};
-  for (const tarjeta of (data.tarjetas || []).slice(0, saludLimite299)) {
+  for (const tarjeta of (data.tarjetas || [])) {
     const acts = n('div', undefined, 'actions');
     let conAcciones = false;
     const add = node => { acts.append(node); conAcciones = true; };
@@ -434,9 +457,48 @@ function saludTarjetasPintar200d(body, data) {
     }
     const card = saludTarjeta200d(tarjeta, conAcciones ? acts : null);
     if (tarjeta._extra200d) card.append(tarjeta._extra200d);
-    grid.append(card);
+    tarjetasPintadas2916.push({ tarjeta, card });
   }
-  body.append(grid);
+  /* (2.9.16 · P3) Tres pisos, en este orden: lo que requiere
+     tu acción (mal), lo que conviene vigilar (vigilar y sin
+     dato, cada uno con su píldora) y lo que está bien. El
+     «Ver más» de siempre corta sobre el orden ya agrupado:
+     lo malo nunca queda escondido tras lo bueno. */
+  const pisos2916 = [
+    { clave: 'mal', titulo: 'Requiere tu acción', piezas: [] },
+    { clave: 'vigilar', titulo: 'A vigilar', piezas: [] },
+    { clave: 'bien', titulo: 'Todo bien', piezas: [] }];
+  for (const p of tarjetasPintadas2916) {
+    const piso = p.tarjeta.estado === 'mal' ? pisos2916[0]
+      : p.tarjeta.estado === 'bien' ? pisos2916[2] : pisos2916[1];
+    piso.piezas.push(p.card);
+  }
+  let pintadas2916 = 0;
+  for (const piso of pisos2916) {
+    const visibles = piso.piezas.slice(0, Math.max(0, saludLimite299 - pintadas2916));
+    /* (Corrección 2.9.16 tras la verificación en vivo) El piso
+       de acción vacío se DICE, no desaparece: sin piezas en
+       mal no se pintaba ni su cabecera y la pantalla se leía
+       como de dos pisos. La jerarquía de tres pisos se escanea
+       siempre igual y la calma queda escrita — el mismo patrón
+       que «Sin tareas pendientes» de Hoy en esta ronda —. Los
+       otros dos pisos conservan su ausencia cuando están
+       vacíos: ninguna cifra suya queda contradicha. */
+    if (!visibles.length && piso.clave !== 'mal') continue;
+    pintadas2916 += visibles.length;
+    const seccion = n('section', undefined, 'salud-piso2916');
+    seccion.dataset.piso2916 = piso.clave;
+    const cab = n('div', undefined, 'salud-piso-cab2916');
+    cab.append(n('h3', piso.titulo),
+      n('span', piso.piezas.length + (piso.piezas.length === 1 ? ' pieza' : ' piezas'), 'muted'));
+    seccion.append(cab);
+    if (visibles.length) {
+      const rejilla = n('div', undefined, 'salud-grid200d');
+      for (const card of visibles) rejilla.append(card);
+      seccion.append(rejilla);
+    } else seccion.append(n('p', 'Nada requiere tu acción ahora.', 'muted salud-piso-calma2916'));
+    body.append(seccion);
+  }
   /* (2.9.9 · D3) «Ver más» tarjetas, sin perder la pantalla. */
   if ((data.tarjetas || []).length > saludLimite299) {
     const foot299 = n('div', undefined, 'table-foot');
@@ -445,16 +507,19 @@ function saludTarjetasPintar200d(body, data) {
       action('Ver más', () => { saludLimite299 += 10; body.replaceChildren(); saludTarjetasPintar200d(body, data); }, 'soft'));
     body.append(foot299);
   }
-  /* Autorreparación semanal (2.0.1 · nº 7): la foto que el
-     servidor deja en ESTA misma lectura (auto201). */
-  body.append(saludAutoPanel201(data.auto201));
-  /* Centro de Deshacer (nº 8) y duplicados sospechosos
-     (nº 14): se leen al entrar, cada uno de su contrato. */
-  body.append(saludDeshacerPanel201());
-  body.append(saludDuplicadosPanel201());
   /* Listas con su foto y su fecha, como las demás piezas (2.0.1). */
   body.append(saludListasLinea201());
-  body.append(revisionPanel200e());
+  /* (2.9.16 · P4) Lo avanzado de Salud va plegado en un solo
+     grupo: autorreparación, deshacer, duplicados sospechosos
+     y la revisión programada quedan a un toque, sin ocupar
+     la vista inicial. Plegado, no retirado: los cuatro
+     paneles se construyen igual que siempre. */
+  const avanzado2916 = n('div');
+  avanzado2916.append(saludAutoPanel201(data.auto201));
+  avanzado2916.append(saludDeshacerPanel201());
+  avanzado2916.append(saludDuplicadosPanel201());
+  avanzado2916.append(revisionPanel200e());
+  body.append(plegable290('Mantenimiento y piezas avanzadas', avanzado2916, 'salud-avanzado2916'));
   body.append(saludEnlaces201());
   if (data.humo) {
     const humo = panel('Arranque de esta versión');

@@ -889,3 +889,69 @@ button.status-pill{min-height:44px}
    en móvil y en puntero táctil: mínimo 44px de alto. */
 @media (max-width:860px){.atencion-fila2915 button{min-height:44px}.bottombar button{min-height:48px}}
 @media (pointer:coarse){.actions button{min-height:44px}}
+
+/* ── (2.9.16 · P1) El grupo «Más» del menú: su cabecera es un
+   botón con la misma voz que las demás cabeceras (11px, peso
+   750, color de cabecera) y sus destinos se pliegan con la
+   clase del <nav>. En la barra plegada a iconos los destinos
+   de «Más» se enseñan como los demás: el plegado del grupo
+   solo ordena la barra desplegada, no esconde nada. */
+.sidebar nav button.nav-mas-btn2916{padding:3px 10px 4px;min-height:0;font-size:11px;font-weight:750;letter-spacing:.04em;color:var(--nav-muted);text-transform:uppercase;justify-content:flex-start}
+.sidebar nav button.nav-mas-btn2916:hover{color:var(--nav-text);background:transparent}
+.sidebar nav button.nav-caption-on2915{color:var(--nav-active-ink)}
+.nav-mas-flecha2916{margin-left:auto;font-size:10px}
+.sidebar nav.nav-mas-cerrado2916 .nav-mas-item2916{display:none}
+body.barra-plegada .sidebar nav.nav-mas-cerrado2916 .nav-mas-item2916{display:flex}
+
+/* ── (2.9.16 · P6) Los cuatro estados canónicos se distinguen
+   también SIN color: además del icono distinto y la palabra
+   distinta de siempre, cada chip lleva su propio borde —
+   pendiente: punteado; en proceso: continuo con el icono de
+   sincronía girando; requiere atención: continuo grueso, y
+   doble cuando es grave; completado: continuo. En escala de
+   grises quedan cuatro siluetas distintas. */
+.estado-pendiente{border:1.5px dashed currentColor}
+.estado-en-proceso{border:1.5px solid currentColor}
+.estado-en-proceso svg{animation:pacosat-spin 1.8s linear infinite}
+.estado-atencion{border:2px solid currentColor}
+.estado-atencion.estado-grave2915{border:3px double currentColor}
+.estado-completado{border:1.5px solid currentColor}
+@media (prefers-reduced-motion:reduce){.estado-en-proceso svg{animation:none}}
+
+/* ── (2.9.16 · P3) Salud en tres pisos: la cabecera de cada
+   piso (título + cuenta de piezas) en la voz de los títulos
+   de panel, y la línea de «siguiente paso» de las tarjetas
+   sin botón. */
+.salud-piso2916{margin-top:18px}
+.salud-piso-cab2916{display:flex;align-items:baseline;gap:10px;margin-bottom:10px}
+.salud-piso-cab2916 h3{margin:0;font-size:17px}
+.salud-paso2916{margin-top:8px}
+
+/* ── (2.9.16 · P5) La ficha lateral del CFDI y las franjas
+   fijas de exploración. El detalle deja el centro: el
+   diálogo se ancla a la derecha, a todo el alto, con la
+   tabla visible al lado (en móvil, casi todo el ancho).
+   Las franjas de Facturas y del Registro — buscar, filtros,
+   orden y filtros activos — se quedan fijas arriba al hacer
+   scroll: explorar sin volver arriba. */
+dialog.invoice-dialog.cfdi-dialog{position:fixed;inset:0 0 0 auto;margin:0;width:min(680px,96vw);max-width:96vw;height:100dvh;max-height:100dvh;border-radius:0;animation:ficha-entra2916 .18s ease-out}
+dialog.invoice-dialog.cfdi-dialog::backdrop{background:rgba(4,12,22,.28)}
+@keyframes ficha-entra2916{from{transform:translateX(26px);opacity:.35}to{transform:none;opacity:1}}
+.franja2916{position:sticky;top:0;z-index:6;background:var(--surface);padding-top:6px;padding-bottom:6px}
+/* (Segunda corrección 2.9.16 tras la verificación en vivo)
+   La franja vive dentro de un .panel, y .panel lleva
+   overflow:hidden: ese ancestro se convierte en el
+   contenedor de scroll de la franja y, como el panel nunca
+   se desplaza — crece con su contenido y quien baja es la
+   página —, el sticky quedaba inerte: computaba sticky
+   pero la franja se iba con la página (medido en Chromium
+   real en Facturas y en Registro). El panel que hospeda
+   una franja no recorta, como ya hacía el que hospeda una
+   gráfica (.panel:has(.chart-wrap) en design.part). */
+.panel:has(.franja2916){overflow:visible}
+
+/* ── (2.9.16 · P7) La línea de sesión de la barra: quién
+   entra y con qué alcance, en la voz baja de la barra. En
+   la barra plegada a iconos no cabe y se retira. */
+.sesion-line2916{font-size:12px;color:var(--nav-muted);padding:0 4px}
+body.barra-plegada .sesion-line2916{display:none}

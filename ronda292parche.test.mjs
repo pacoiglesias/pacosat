@@ -533,10 +533,10 @@ serverMarcos.close();
    ================================================================ */
 {
   const pkg = JSON.parse(readFileSync(join(AQUI, 'package.json'), 'utf8'));
-  assert.equal(pkg.version, '2.9.15', 'la ronda es la 2.9.2');
+  assert.equal(pkg.version, '2.9.16', 'la ronda es la 2.9.2');
   assert.ok(pkg.scripts.test.includes('ronda292parche.test.mjs'),
     'la suite está registrada en la batería');
-  assert.equal(EJECUTOR_VERSION, '2.9.15', 'el sello del ejecutor acompaña a la versión');
+  assert.equal(EJECUTOR_VERSION, '2.9.16', 'el sello del ejecutor acompaña a la versión');
   console.log('OK 2.9.2 · Estáticas — versión 2.9.2, suite en la batería y sello del ejecutor.');
 }
 

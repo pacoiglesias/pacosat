@@ -879,34 +879,19 @@ function gestosLista1311() {
     boton: 'Ir a Respaldos', ir: () => { ajustesSection = 'respaldos'; navigate('settings'); } });
   return lista;
 }
-function gestosPanel1311() {
-  const lista = gestosLista1311();
-  /* En Hoy el panel se llama como lo que es (2.0.1): «Lo que te
-     necesita» — solo gestos reales, cada uno con su botón. */
-  const wrap = panel('Lo que te necesita', lista.length
-    ? 'Todo lo que solo tú puedes hacer: junto, con su botón. El sistema no puede hacerlo por ti.'
-    : '');
-  wrap.dataset.gestos1311 = '1';
-  if (!lista.length) {
-    wrap.append(n('p', 'Nada espera tu mano: el sistema no necesita ningún gesto tuyo ahora.', 'today-line'));
-    return wrap;
-  }
-  for (const g of lista) {
-    const row = n('div', undefined, 'gestos-row');
-    const txt = n('div', undefined, 'gestos-txt');
-    txt.append(n('strong', g.titulo), n('p', g.detalle));
-    const btn = n('button', g.boton, 'primary small');
-    btn.type = 'button';
-    btn.onclick = g.ir;
-    row.append(txt, btn);
-    wrap.append(row);
-  }
-  return wrap;
-}
+/* «Lo que te necesita» ya no es panel propio: sus filas
+   viven dentro de «Tus tareas» (hoyTareas2916, 2.9.16 · P2),
+   en el piso de los gestos. gestosLista1311 sigue siendo la
+   única fuente de los gestos (también alimenta la insignia
+   del menú). */
 /* El gesto CIEC llega con los datos del mes (Hoy los carga
    detrás): si la descarga automática quedó esperando a Paco,
    su fila se suma a la lista sin repintar Hoy entero. */
 function gestosPintarCiec1311(monthly) {
+  /* (2.9.16 · P2/P7) La fila CIEC entra en «Tus tareas» con el
+     formato de sus filas; en una sesión de solo lectura no
+     entra: no es un gesto suyo. */
+  if (typeof guestMode !== 'undefined' && guestMode) return;
   const wrap = document.querySelector('[data-gestos1311]');
   if (!wrap || wrap.dataset.ciec1311) return;
   const run = (monthly?.runs || []).find(r =>
@@ -915,16 +900,15 @@ function gestosPintarCiec1311(monthly) {
   wrap.dataset.ciec1311 = '1';
   gestosCiecExtra1311 = 1;
   if (typeof senalesBarra1311 === 'function') senalesBarra1311();
-  for (const p of wrap.querySelectorAll('p.today-line'))
-    if (p.textContent.startsWith('Nada espera tu mano')) p.remove();
-  const row = n('div', undefined, 'gestos-row');
-  const txt = n('div', undefined, 'gestos-txt');
-  txt.append(n('strong', 'Termina la descarga con CIEC'),
-    n('p', 'La descarga automática quedó esperando tu gesto: la CIEC y el captcha se teclean en su tarjeta, en tu equipo.'));
+  for (const p of wrap.querySelectorAll('.tareas-vacio2916')) p.remove();
+  const row = n('div', undefined, 'atencion-fila2915 tarea-fila2916');
   const btn = n('button', 'Ir a la descarga', 'primary small');
   btn.type = 'button';
   btn.onclick = () => { satTab = 'descargar'; navigate('sat'); };
-  row.append(txt, btn);
+  row.append(estadoChip2915('pendiente', 'Pendiente'),
+    cell('Termina la descarga con CIEC',
+      'La descarga automática quedó esperando tu gesto: la CIEC y el captcha se teclean en su tarjeta, en tu equipo.'),
+    btn);
   wrap.append(row);
 }
 
@@ -937,17 +921,16 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '2.9.15',
-  fecha: '19 de noviembre de 2026',
+  version: '2.9.16',
+  fecha: '20 de noviembre de 2026',
   puntos: [
-    'Hoy abre con una franja nueva, «Requiere tu atención»: lo que Salud sabe que está mal o en vigía — trabajos atorados, una e.firma por vencer, avisos sin ningún aparato suscrito — sale primero, cada cosa una sola vez y con su botón a la pantalla que lo arregla. Los indicadores de siempre van debajo, como estaban.',
-    'El menú se ordena por tarea — Expediente, SAT, Bancos, Documentos, Ajustes — y el grupo en el que estás queda señalado. Todos los destinos de siempre siguen ahí, en su grupo.',
-    'En Descargar del SAT, lo avanzado queda plegado a un toque: el año de un vistazo, el historial y la cobertura completa. Lo de todos los días — pedir, la cola de trabajos y la cuota — queda a la vista.',
-    'En Facturas, las columnas clave van primero — fecha, quién, folio, importe y estado — y los filtros se ven desde que entras, también en el móvil, sin tener que abrir nada. En el visor de cada comprobante ahora copias con un toque también el RFC del emisor, el del receptor y el importe, como ya copiabas el UUID.',
-    'Los estados se dicen siempre con palabra e icono, nunca solo con color: Pendiente, En proceso, Requiere atención, Completado. Y las tarjetas dicen de cuándo es su foto: «actualizado hace…». En el móvil, los botones principales se tocan mejor y el foco del teclado se ve bien.',
-    'La contraseña del correo de avisos ya no tiene que vivir en claro en el archivo de arranque del servidor: puede guardarse cifrada, como la de la e.firma, y se descifra solo en memoria al arrancar. Lo mismo vale para la contraseña del respaldo programado.',
-    'Las guías del servidor describen por fin lo que corre de verdad — usuarios con nombre y alcance por RFC, secretos cifrados en reposo y respaldos que nunca llevan secretos — y la versión dice lo mismo en todas partes: programa, candado de dependencias y guía enseñan 2.9.15, con una prueba guardiana que vigila que no vuelvan a desajustarse.',
-    'La guía de Ayuda ya puede enseñar capturas de verdad: en cuanto las fotos reales de cada pantalla se coloquen en su carpeta del servidor, las figuras las enseñan sin tocar el programa; mientras tanto sigue el hueco dibujado de siempre.'
+    'El menú se ordena en cuatro bloques — Trabajo diario, SAT, Expediente y Administración — y los destinos de menos uso quedan dentro de «Más», a un toque y con su estado recordado. Hoy, Avisos y Facturas abren el primer bloque, y los 21 destinos de siempre siguen todos.',
+    'Hoy abre con «Tus tareas»: tus pendientes juntos y por orden de urgencia — primero lo que requiere tu atención, luego tus gestos, lo que conviene vigilar y lo que quedó a medias —, cada uno con su botón. El mando y las cifras van debajo, como contexto.',
+    'Salud se ordena en tres pisos: primero lo que requiere tu acción, luego lo que conviene vigilar y al final lo que está bien. Cada tarjeta dice su estado, cuándo se comprobó y el siguiente paso.',
+    'Lo avanzado respira: en Salud, Declaraciones, Bancos y Listas negras, las piezas de mantenimiento, históricos y reglas quedan plegadas a un toque. Nada se retira: se pliega.',
+    'En Facturas, la tabla enseña solo las columnas del día — fecha, quién, folio, importe y estado — y el detalle de cada comprobante se abre en una ficha lateral a todo el alto, sin tapar la tabla. El tipo de comprobante vive en su ficha. Buscar, filtrar y ordenar queda en una franja fija arriba, y en el Registro por fin se ven los filtros de contribuyente y de clase que ya funcionaban por dentro, con su orden y sus filtros activos.',
+    'Los estados se distinguen también sin color: cada uno lleva su icono, su palabra y ahora también su propio borde — punteado en Pendiente, el icono girando en En proceso, doble y grueso cuando algo requiere atención de verdad —.',
+    'Si entras con una sesión de solo lectura, la pantalla se ajusta a tu alcance: no se enseñan los botones de escritura que no te corresponden, tus gestos de administración no aparecen en Hoy, y la barra dice quién eres y con qué alcance entras.'
   ]
 };
 function novedadesCard1311() {
@@ -1301,7 +1284,9 @@ function senalesBarra1311() {
   }
   const badge = document.getElementById('gestos-badge');
   if (badge) {
-    const n = gestosLista1311().length + gestosCiecExtra1311;
+    /* (2.9.16 · P7) En solo lectura los gestos de
+       administración no cuentan: no son de esta sesión. */
+    const n = ((typeof guestMode !== 'undefined' && guestMode) ? 0 : gestosLista1311().length) + gestosCiecExtra1311;
     badge.hidden = !n;
     badge.textContent = n ? number.format(n) : '';
     badge.title = n ? n + (n === 1 ? ' gesto espera tu mano (en Hoy)' : ' gestos esperan tu mano (en Hoy)') : '';
@@ -1321,4 +1306,33 @@ function senalesBarra1311() {
     try { localStorage.setItem('pacosat-barra-plegada', ahora ? '1' : '0'); } catch { /* sin memoria: vale por la sesión */ }
     plegar.setAttribute('aria-label', ahora ? 'Expandir la barra lateral' : 'Plegar la barra lateral');
   });
+})();
+
+/* (2.9.16 · P1) El grupo «Más» del menú: se pliega al
+   arrancar (los destinos menos frecuentes no ocupan el
+   primer vistazo), el estado se recuerda en este equipo y
+   navegar a un destino suyo lo abre solo — nadie aterriza
+   en un destino invisible. En la barra plegada a iconos
+   todos los destinos se enseñan (la CSS lo resuelve):
+   plegar el grupo no esconde nada ahí. La etiqueta <nav>
+   conserva su forma histórica, sin clase: el pliegue lo
+   pone este cableado, que corre antes de pintar la vista. */
+function navMasFijar2916(abierto, guardar = true) {
+  const nav = document.querySelector('.sidebar nav');
+  const btn = document.getElementById('nav-mas-btn2916');
+  if (!nav || !btn) return;
+  nav.classList.toggle('nav-mas-cerrado2916', !abierto);
+  btn.setAttribute('aria-expanded', String(abierto));
+  const flecha = btn.querySelector('.nav-mas-flecha2916');
+  if (flecha) flecha.textContent = abierto ? '▾' : '▸';
+  if (guardar) { try { localStorage.setItem('pacosat-nav-mas2916', abierto ? 'abierto' : 'cerrado'); } catch { /* sin memoria: vale por la sesión */ } }
+}
+function navMasAbrir2916() { navMasFijar2916(true, false); }
+(function navMasCableado2916() {
+  const btn = document.getElementById('nav-mas-btn2916');
+  if (!btn) return;
+  let abierto = false;
+  try { abierto = localStorage.getItem('pacosat-nav-mas2916') === 'abierto'; } catch { /* sin memoria: plegado */ }
+  navMasFijar2916(abierto, false);
+  btn.addEventListener('click', () => navMasFijar2916(btn.getAttribute('aria-expanded') !== 'true'));
 })();

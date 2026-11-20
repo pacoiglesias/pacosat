@@ -58,8 +58,13 @@ enHtml('Solo lo urgente', 'nº 4 etiqueta del interruptor');
 enHtml('hoyFiscalTira201', 'nº 15 tira fiscal');
 enHtml("satApi('fiscal/calendar')", 'nº 15 fuente fiscal/calendar');
 
-/* (nº 16) A medias, con su «seguir» por pieza. */
-enHtml('aMedias201Panel', 'nº 16 panel a medias');
+/* (nº 16) A medias, con su «seguir» por pieza.
+   RE-BASE 2.9.16 (Punto 2): el panel propio se funde en
+   «Tus tareas» de Hoy — las piezas a medias son el piso
+   «en proceso» de la lista de tareas — y su lectura vive
+   en aMediasRefrescar2916; el contrato con el servidor
+   (a-medias201) y el «seguir» por pieza no cambian. */
+enHtml('aMediasRefrescar2916', 'nº 16 a medias, dentro de «Tus tareas»');
 enHtml("satApi('a-medias201')", 'nº 16 contrato a-medias201');
 enHtml('item.seguir?.vista', 'nº 16 seguir por pieza');
 

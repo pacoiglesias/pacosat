@@ -106,7 +106,10 @@ await page.goto(ORIGIN + '/', { waitUntil: 'load' });
 await page.waitForFunction(() => typeof navigate === 'function' && typeof satToken !== 'undefined' && Boolean(satToken), null, { timeout: 15000 });
 await page.evaluate(rfc => { scope = rfc; }, OWN);
 
-/* ── (B1) La franja abre Hoy y su botón lleva a Salud ─────── */
+/* ── (B1) La franja abre Hoy y su botón lleva a Salud ───────
+   RE-BASE 2.9.16 (Punto 2): la franja vive dentro de «Tus
+   tareas», el panel que abre Hoy (conserva la clase
+   atencion2915); la fila de Salud sigue llevando a Salud. */
 await page.evaluate(() => navigate('home'));
 await page.waitForSelector('.atencion2915', { timeout: 15000 });
 const franja = await page.evaluate(() => {
@@ -118,7 +121,7 @@ const franja = await page.evaluate(() => {
     chipClase: chip?.className || '', chipTexto: chip?.textContent.trim() || '',
     chipTieneSvg: Boolean(chip?.querySelector('svg')) };
 });
-assert.ok(franja.esPrimera, 'la franja «Requiere tu atención» es el primer panel de Hoy');
+assert.ok(franja.esPrimera, '«Tus tareas» (con la franja dentro) es el primer panel de Hoy');
 assert.ok(franja.texto.includes('Avisos en tus aparatos'), 'la franja trae la tarjeta en vigía de Salud (push)');
 assert.ok(franja.chipClase.includes('estado-pendiente'), 'la fila lleva el chip canónico de pendiente');
 assert.equal(franja.chipTexto, 'Pendiente', 'el chip dice su estado en palabras');
@@ -137,33 +140,40 @@ const contraste = await page.evaluate(() => {
 });
 assert.ok(contraste >= 4.5, 'contraste del chip de estado ≥ 4.5:1 (medido: ' + contraste.toFixed(2) + ':1)');
 
-await page.click('.atencion2915 .atencion-fila2915 button');
+/* El botón de la fila de Salud (la de los avisos push), no el
+   primero del panel: en la 2.9.16 el panel abre con los gestos. */
+await page.evaluate(() => {
+  const fila = [...document.querySelectorAll('.atencion2915 .atencion-fila2915')]
+    .find(f => f.textContent.includes('Avisos en tus aparatos'));
+  fila?.querySelector('button')?.click();
+});
 await page.waitForFunction(() => typeof page !== 'undefined' && page === 'salud', null, { timeout: 10000 })
   .catch(() => page.waitForFunction(() => document.querySelector('main').textContent.includes('Centro de salud') || document.querySelector('main').textContent.includes('Salud'), null, { timeout: 5000 }));
 assert.equal(await page.evaluate(() => page), 'salud', 'el botón de la franja lleva a Salud, su pantalla dueña');
 
 /* ── (B6) Grupos del menú y grupo activo ──────────────────── */
 const menu = await page.evaluate(() => {
-  const captions = [...document.querySelectorAll('.sidebar .nav-caption')].map(c => c.textContent.trim());
+  const captions = [...document.querySelectorAll('.sidebar .nav-caption')]
+    .map(c => c.textContent.trim().replace(/\s*[▸▾]\s*$/, ''));
   const destinos = document.querySelectorAll('.sidebar nav [data-view]').length;
   return { captions, destinos };
 });
-assert.deepEqual(menu.captions, ['EXPEDIENTE', 'SAT', 'BANCOS', 'DOCUMENTOS', 'AJUSTES'],
-  'el menú enseña los cinco grupos por tarea');
+assert.deepEqual(menu.captions, ['TRABAJO DIARIO', 'SAT', 'EXPEDIENTE', 'ADMINISTRACIÓN', 'MÁS'],
+  'el menú enseña los cuatro grupos de la 2.9.16 y el grupo «Más»');
 assert.equal(menu.destinos, 21, 'los 21 destinos de siempre siguen en el menú');
 await page.evaluate(() => navigate('invoices'));
 await espera(600);
 const grupoActivo = await page.evaluate(() =>
-  [...document.querySelectorAll('.sidebar .nav-caption')].map(c => [c.textContent.trim(), c.classList.contains('nav-caption-on2915')]));
-assert.deepEqual(grupoActivo.filter(([, on]) => on).map(([nombre]) => nombre), ['EXPEDIENTE'],
-  'en Facturas, el grupo señalado es EXPEDIENTE');
+  [...document.querySelectorAll('.sidebar .nav-caption')].map(c => [c.textContent.trim().replace(/\s*[▸▾]\s*$/, ''), c.classList.contains('nav-caption-on2915')]));
+assert.deepEqual(grupoActivo.filter(([, on]) => on).map(([nombre]) => nombre), ['TRABAJO DIARIO'],
+  'en Facturas, el grupo señalado es TRABAJO DIARIO');
 
 /* ── (B3/B4) Facturas en escritorio: cabeceras y píldoras ─── */
 await page.waitForSelector('.grid-table', { timeout: 10000 });
 const cabeceras = await page.evaluate(() =>
   [...document.querySelectorAll('.grid-table th')].map(th => th.textContent.replace(/ [↓↑]$/, '').trim()));
-assert.deepEqual(cabeceras, ['', 'Fecha', 'Emisor → receptor', 'Folio', 'Total', 'Estado SAT', 'Tipo', 'Acción'],
-  'columnas clave primero en Facturas');
+assert.deepEqual(cabeceras, ['', 'Fecha', 'Emisor → receptor', 'Folio', 'Total', 'Estado SAT', 'Acción'],
+  'columnas clave primero en Facturas (RE-BASE 2.9.16: «Tipo» vive en la ficha lateral)');
 const pill = await page.evaluate(() => {
   const p = document.querySelector('.status-pill[data-state="warn"]');
   if (!p) return null;

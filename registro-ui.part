@@ -39,6 +39,10 @@ let registroUltimoLote = null;
    trae los siguientes sin perder filtros (el límite vive
    fuera de pintar() para sobrevivir a sus repintados). */
 let registroLimite299 = 25;
+/* (2.9.16 · P5) Orden de la lista: el de siempre (lo más
+   reciente primero) o su inverso, a elección; se aplica a
+   lo cargado y la línea resumen lo dice. */
+let registroOrden2916 = 'recientes';
 const REGISTRO_ORIGEN = { paco: 'Paco', sistema: 'Sistema', ejecutor: 'Tu equipo' };
 function registroLineaTexto(item) {
   const fecha = typeof fmtFechaHora === 'function' ? fmtFechaHora(item.at)
@@ -82,6 +86,7 @@ function registroScreen() {
     } catch (error) { if (seq === pintarSeq230) body.replaceChildren(n('p', error.message, 'error-text')); return; }
     if (!body.isConnected || seq !== pintarSeq230) return;
     body.replaceChildren();
+    const itemsVista2916 = registroOrden2916 === 'antiguos' ? [...(data.items || [])].reverse() : (data.items || []);
     const filtros = n('div', undefined, 'actions');
     const selRfc = select([['', 'Todos los contribuyentes'], ...people.map(person => [person.id, person.id])],
       registroFiltro.rfc, 'Contribuyente');
@@ -105,7 +110,15 @@ function registroScreen() {
         });
       }, 300);
     };
-    filtros.append(buscarTexto);
+    const selOrden = select([['recientes', 'Orden: más recientes primero'], ['antiguos', 'Orden: más antiguos primero']],
+      registroOrden2916, 'Orden');
+    selOrden.onchange = () => { registroOrden2916 = selOrden.value; pintar(); };
+    /* (2.9.16 · P5) Los dos selectores EXISTÍAN y funcionaban
+       — su cambio viajaba al servidor y el resumen lo decía —
+       pero nunca se montaban en la pantalla: el filtro por
+       contribuyente y por clase era invisible. Ahora van en
+       la franja, con el buscador y el orden. */
+    filtros.append(selRfc, selClase, buscarTexto, selOrden);
     /* Imprimir lo visible (2.0.1 · nº 2): con los filtros en
        curso, en Carta con membrete, como las demás listas. */
     if (typeof imprimirVista201 === 'function') {
@@ -113,8 +126,9 @@ function registroScreen() {
       imprimirBtn.type = 'button';
       imprimirBtn.onclick = () => {
         /* Lo devuelto YA viene filtrado por el servidor
-           (RFC, clase y texto): imprimir usa eso mismo. */
-        const visiblesImp = data.items;
+           (RFC, clase y texto): imprimir usa eso mismo, en
+           el orden que la pantalla enseña. */
+        const visiblesImp = itemsVista2916;
         imprimirVista201('Registro', 'Lo visible con los filtros en curso: ' + number.format(visiblesImp.length) + ' suceso(s).',
           ['Fecha', 'Clase', 'Suceso', 'RFC'],
           visiblesImp.map(item => [fmtFechaHora(item.at), REGISTRO_CLASE[item.clase]?.[1] || 'Acción', item.texto, item.rfc || '']));
@@ -150,7 +164,34 @@ function registroScreen() {
         }, 'Ocultar');
     };
     filtros.append(copiarTodo, borrarVisible);
-    body.append(filtros);
+    /* (2.9.16 · P5) La franja del Registro — filtros, orden y
+       filtros activos con su aspa — va junta y fija arriba al
+       hacer scroll, como la de Facturas. */
+    const franja2916 = n('div', undefined, 'franja2916');
+    franja2916.append(filtros);
+    const activosReg2916 = [];
+    if (registroFiltro.rfc) activosReg2916.push(['Contribuyente: ' + registroFiltro.rfc,
+      () => { registroFiltro.rfc = ''; registroGuardarFiltro1310(); pintar(); }]);
+    if (registroFiltro.clase) activosReg2916.push(['Clase: ' + (REGISTRO_CLASE[registroFiltro.clase]?.[1] || registroFiltro.clase),
+      () => { registroFiltro.clase = ''; registroGuardarFiltro1310(); pintar(); }]);
+    if (registroTexto201) activosReg2916.push(['«' + registroTexto201 + '»',
+      () => { registroTexto201 = ''; pintar(); }]);
+    if (activosReg2916.length) {
+      const chipsReg2916 = n('div', undefined, 'filter-chips');
+      for (const [label, clear] of activosReg2916) {
+        const chip = n('button', label, 'filter-chip');
+        chip.append(icon('close'));
+        chip.type = 'button';
+        chip.onclick = clear;
+        chipsReg2916.append(chip);
+      }
+      chipsReg2916.append(action('Limpiar filtros', () => {
+        registroFiltro = { rfc: '', clase: '' }; registroTexto201 = '';
+        registroGuardarFiltro1310(); pintar();
+      }));
+      franja2916.append(chipsReg2916);
+    }
+    body.append(franja2916);
     if (registroUltimoLote) {
       const tira = n('div', undefined, 'cp-row registro-deshacer');
       tira.append(n('span', 'Ocultaste ' + registroUltimoLote.cuantas + ' entrada(s) del Registro en el último borrado.'));
@@ -172,10 +213,10 @@ function registroScreen() {
       (registroFiltro.rfc ? ' de ' + registroFiltro.rfc : '') +
       (registroFiltro.clase ? ' · ' + (REGISTRO_CLASE[registroFiltro.clase]?.[1] || registroFiltro.clase) : '') +
       (registroTexto201 ? ' · con el texto «' + registroTexto201 + '» en todo el historial' : '') +
-      ' · lo más reciente primero.', 'muted'));
+      (registroOrden2916 === 'antiguos' ? ' · lo más antiguo primero.' : ' · lo más reciente primero.'), 'muted'));
     /* La búsqueda ya la hizo el servidor sobre todo el
        historial (pieza 8): lo que llegó ES lo visible. */
-    const itemsVisibles201 = data.items;
+    const itemsVisibles201 = itemsVista2916;
     if (!itemsVisibles201.length) {
       body.append(empty('Sin sucesos con ese filtro', 'Cambia el contribuyente, la clase o el texto buscado: el registro completo sigue estando, solo está filtrado.'));
       return;
