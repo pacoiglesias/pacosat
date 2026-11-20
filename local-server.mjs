@@ -6165,22 +6165,33 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
 
   /* Solicitudes Metadata (1.6.10): el paquete trae un .txt con una fila
-     por CFDI (columnas separadas por «|», con cabecera). Se guardan los
+     por CFDI (columnas con cabecera). Se guardan los
      registros ligeros y se reconcilian contra lo descargado: lo que el
      SAT conoce y PacoSAT no tiene en XML queda listado como faltante en
      la cobertura, y el estado del registro queda como estado inicial
-     de los CFDI ya importados. Nada de esto envía solicitudes nuevas. */
+     de los CFDI ya importados. Nada de esto envía solicitudes nuevas.
+     Separador (2.9.17): el SAT separa los campos con «~» — el SDK lo
+     exige dos veces: su filtro de contenido pide que el archivo
+     empiece por «Uuid~RfcEmisor~» y su lector parte por /[|~]/ — y el
+     «|» es el formato histórico. Hasta la 2.9.16 aquí se partía SOLO
+     por «|»: con un paquete real la cabecera quedaba en una sola
+     celda, cada fila entera caía en la columna uuid, ninguna pasaba
+     la validación de UUID y el paquete se ingería con 0 registros y
+     sin error — metadata_records quedó vacía en producción y el
+     caminante del portal, que lee esa tabla, nunca pudo arrancar. */
   const METADATA_COLUMNS = ['uuid', 'rfcemisor', 'nombreemisor', 'rfcreceptor', 'nombrereceptor', 'fechaemision',
     'fechacertificacion', 'paccertifico', 'monto', 'efectocomprobante', 'estatus', 'fechacancelacion'];
+  /* Un solo corte para cabecera y celdas: «~» actual o «|» histórico. */
+  const splitMetadataLine = line => line.split(/[|~]/);
   function parseMetadataText(text) {
     const lines = String(text || '').split(/\r?\n/).filter(line => line.trim());
     if (!lines.length) return [];
     let header = null, start = 0;
-    const first = lines[0].split('|').map(value => value.trim().toLowerCase().replace(/[^a-z]/g, ''));
+    const first = splitMetadataLine(lines[0]).map(value => value.trim().toLowerCase().replace(/[^a-z]/g, ''));
     if (first.includes('uuid')) { header = first; start = 1; }
     const records = [];
     for (let i = start; i < lines.length; i++) {
-      const cells = lines[i].split('|').map(value => value.trim());
+      const cells = splitMetadataLine(lines[i]).map(value => value.trim());
       const get = name => {
         const index = header ? header.indexOf(name) : METADATA_COLUMNS.indexOf(name);
         return index >= 0 ? (cells[index] || '') : '';
