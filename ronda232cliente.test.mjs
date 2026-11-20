@@ -223,9 +223,13 @@ FakeElement.prototype.querySelectorAll = function (sel) {
   semilla(ctx);
   const blocks = vm.runInContext('home()', ctx);
   const texto = blocks.map(textoDe).join('\n');
-  const iGestos = texto.indexOf('Lo que te necesita');
+  /* RE-BASE 2.9.16 (Punto 2): los gestos viven dentro de
+     «Tus tareas», el panel que abre Hoy: el marcador de los
+     gestos es ahora su título, y sigue por encima de las 4
+     tarjetas de acción (que bajan con el mando). */
+  const iGestos = texto.indexOf('Tus tareas');
   const iTarjetas = texto.indexOf('Descargar facturas');
-  assert.ok(iGestos >= 0, 'Hoy pinta «Lo que te necesita»');
+  assert.ok(iGestos >= 0, 'Hoy pinta «Tus tareas» (los gestos, dentro)');
   assert.ok(iTarjetas > iGestos, 'M-8: los gestos van POR ENCIMA de las 4 tarjetas de acción');
   assert.equal(contar(texto, 'Última descarga'), 1, 'M-9: «Última descarga» una sola vez (la línea de estado)');
   assert.equal(contar(texto, 'Puerta del SAT'), 1, 'M-9: la puerta queda UNA vez en Hoy (su línea de estado); la de «Tus empresas» sale al pintar');
@@ -246,7 +250,12 @@ FakeElement.prototype.querySelectorAll = function (sel) {
   assert.ok(!homeSrc.includes("panel('Últimos comprobantes')"), 'o-7: fuera «Últimos comprobantes» no montado');
   assert.ok(!homeSrc.includes("panel('Actividad')"), 'o-7: fuera «Actividad» no montada');
   assert.ok(!homeSrc.includes('void secondary'), 'o-7: fuera los void de los bloques muertos');
-  assert.ok(homeSrc.includes('hoyMando201(gestosPanel1311())'), 'o-7/M-8: el mando recibe los gestos');
+  /* RE-BASE 2.9.16 (Punto 2): los gestos ya no cuelgan del
+     mando: «Tus tareas» los pinta como su piso de gestos y
+     el mando baja sin ellos (hoyMando201(null)). Lo que o-7
+     fija — home() sin construcción muerta — se mantiene. */
+  assert.ok(homeSrc.includes('hoyTareas2916()') && homeSrc.includes('hoyMando201(null)'),
+    'o-7/M-8: las tareas mandan en Hoy y el mando baja sin gestos (fundidos en «Tus tareas»)');
   console.log('OK 2.3.2·B3 o-7 — home() sin construcción muerta; la pantalla pintada no cambia.');
 }
 

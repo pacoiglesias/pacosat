@@ -1816,6 +1816,11 @@ function navigate(view) {
     while (sib2915 && !sib2915.classList.contains('nav-caption')) sib2915 = sib2915.previousElementSibling;
     if (sib2915) sib2915.classList.add('nav-caption-on2915');
   }
+  /* (2.9.16 · P1) Si el destino vive en «Más», el grupo se abre
+     solo al navegar a él: nadie aterriza en un destino
+     invisible (el botón de su grupo es su cabecera y se tiñe
+     con la misma regla de arriba). */
+  if (navBtn2915 && navBtn2915.classList.contains('nav-mas-item2916') && typeof navMasAbrir2916 === 'function') navMasAbrir2916();
   render();
 }
 /* Atajo para otras pantallas: ir a la pantalla de descarga del SAT. */
@@ -2326,52 +2331,8 @@ function hoyFiscalTira201() {
   }).catch(() => tira.remove());
   return tira;
 }
-/* ===== «A medias» en Hoy (2.0.1 · nº 16) =====
-   Los trabajos que quedaron a medias (GET /api/a-medias201),
-   como líneas con su botón «Seguir» — el destino que el
-   servidor deja por pieza — dentro del flujo de «Lo que te
-   necesita»: el panel solo aparece si hay algo a medias, así
-   que Hoy no crece cuando no hay nada interrumpido. */
-function aMedias201Panel() {
-  const wrap = panel('A medias', 'Trabajos que quedaron a medias: cada uno sigue donde quedó, con su botón.');
-  const body = n('div');
-  wrap.append(body);
-  wrap.style.display = 'none';
-  if (typeof satToken === 'undefined' || !satToken) return wrap;
-  satApi('a-medias201').then(data => {
-    if (!wrap.isConnected) return;
-    const items = (data?.items || []).filter(item => !scope || !item.rfc || item.rfc === scope);
-    if (!items.length) return;
-    wrap.style.display = '';
-    for (const item of items) {
-      const fila = n('div', undefined, 'gestos-row');
-      const txt = n('div', undefined, 'gestos-txt');
-      txt.append(n('strong', item.texto),
-        n('p', (item.rfc ? item.rfc + ' · ' : '') + (item.at ? 'quedó a medias el ' + fmtFechaHora(item.at) : '')));
-      fila.append(txt);
-      /* «Seguir» tras cancelar (2.3.0 · pieza 6): si el ítem
-         trae el trabajo (jobId), el botón REANUDA de verdad con
-         POST /api/trabajos/seguir y enseña el texto devuelto —
-         también el ok:false con su motivo. Sin trabajo que
-         reanudar, queda el gesto de siempre: ir a su vista. */
-      const jobId230 = item.seguir?.jobId || item.jobId || '';
-      const vista = item.seguir?.vista || '';
-      if (jobId230 && typeof seguirBoton230 === 'function') {
-        fila.append(seguirBoton230(jobId230));
-      } else if (vista) {
-        const seguir = n('button', 'Seguir', 'primary small');
-        seguir.type = 'button';
-        seguir.onclick = () => {
-          if (vista === 'bancos') { dineroTab = 'bancos'; navigate('money'); }
-          else navigate(vista);
-        };
-        fila.append(seguir);
-      }
-      body.append(fila);
-    }
-  }).catch(() => {});
-  return wrap;
-}
+/* «A medias» ya no es función propia: sus filas viven
+   dentro de «Tus tareas» (hoyTareas2916, 2.9.16 · P2). */
 /* ===== Hoy: «Qué cambió desde ayer» (2.3.0 · pieza 10) =====
    Tarjeta compacta alimentada por GET /api/cambios: una línea
    por cambio REAL desde ayer a las 00:00, máximo 5 y el resto
@@ -2529,7 +2490,8 @@ function hoyMando201(gestos232 = null) {
   const perfil = (sd?.profiles || []).find(p => p.rfc === rfc) || null;
   /* Interruptor «Solo lo urgente» (nº 4): en ese modo no se
      pintan ni las líneas de estado ni las tarjetas de acción;
-     quedan los gestos (tras este bloque) y la tira fiscal. */
+     quedan la tira fiscal aquí y, en la pantalla, «Tus
+     tareas» — donde viven los gestos desde la 2.9.16 —. */
   const filaModo = n('div', undefined, 'actions');
   const modoBtn = n('button', hoyUrgente201 ? 'Ver Hoy completo' : 'Solo lo urgente', 'soft small');
   modoBtn.type = 'button';
@@ -3410,24 +3372,111 @@ function atencionHoyFilas2915(salud) {
     return true;
   });
 }
-function hoyAtencion2915() {
-  const filas = atencionHoyFilas2915(typeof focoSalud290 !== 'undefined' ? focoSalud290 : null);
-  if (!filas.length) return null;
-  const cuerpo = n('div');
-  const fresca = Math.max(...filas.map(t => Number(t.frescura) || 0));
-  if (fresca) cuerpo.append(n('p', 'Según Salud · ' + hace2915(fresca) + '.', 'atencion-frescura2915'));
-  for (const t of filas) {
-    const fila = n('div', undefined, 'atencion-fila2915');
-    const gesto = ATENCION_HOY2915[t.id]();
-    fila.append(estadoChip2915(t.estado === 'mal' ? 'atencion' : 'pendiente',
-        t.estado === 'mal' ? 'Requiere atención' : 'Pendiente', t.estado === 'mal'),
-      cell(t.titulo, t.porque || ''),
-      action(gesto.texto, () => focoGesto290(gesto), undefined, 'chev'));
-    cuerpo.append(fila);
+/* (2.9.16 · P2) La franja crece a «Tus tareas»: la lista de
+   pendientes MANDA en Hoy, ordenada por urgencia, y funde
+   tres bloques que antes vivían separados — esta franja de
+   Salud, «Lo que te necesita» (los gestos) y «A medias» —:
+   cada cosa sale una sola vez, con su botón directo, y los
+   indicadores (mando y cifras) bajan a contexto. Pisos:
+   0 = Salud mal («Requiere atención»), 1 = gestos de Paco
+   («Pendiente»), 2 = Salud en vigía («Pendiente»), 3 = a
+   medias («En proceso»). Tope visible: 7; el resto, en un
+   plegable dentro del mismo panel. Sin foto cargada y sin
+   filas, no hay panel (ni hueco); con todo cargado y cero
+   filas, el panel lo dice: «Sin tareas pendientes». */
+let aMediasCache2916 = null, aMediasFoto2916 = 0, aMediasLeyendo2916 = false;
+function aMediasRefrescar2916() {
+  if (aMediasLeyendo2916 || typeof satToken === 'undefined' || !satToken) return;
+  if (Date.now() - aMediasFoto2916 < 60000) return;
+  aMediasLeyendo2916 = true;
+  satApi('a-medias201').then(data => {
+    aMediasCache2916 = Array.isArray(data?.items) ? data.items : [];
+    aMediasFoto2916 = Date.now();
+  }).catch(() => { aMediasFoto2916 = Date.now(); /* sin foto nueva: manda la anterior y no se reintenta en bucle */ })
+    .finally(() => { aMediasLeyendo2916 = false;
+      if (typeof page !== 'undefined' && page === 'home' && typeof render === 'function') render(); });
+}
+function hoyTareas2916() {
+  aMediasRefrescar2916();
+  const filas = [];
+  const tarjetas = atencionHoyFilas2915(typeof focoSalud290 !== 'undefined' ? focoSalud290 : null);
+  for (const t of tarjetas.filter(t => t.estado === 'mal')) filas.push({ piso: 0, tarjeta: t });
+  /* (2.9.16 · P7) Los gestos son de administración: una
+     sesión de solo lectura no los ve (no le corresponden). */
+  const esLectura2916 = typeof guestMode !== 'undefined' && guestMode;
+  if (!esLectura2916 && typeof gestosLista1311 === 'function')
+    for (const g of gestosLista1311()) filas.push({ piso: 1, gesto: g });
+  for (const t of tarjetas.filter(t => t.estado === 'vigilar')) filas.push({ piso: 2, tarjeta: t });
+  if (Array.isArray(aMediasCache2916))
+    for (const item of aMediasCache2916) {
+      if (!item || (scope && item.rfc && item.rfc !== scope)) continue;
+      filas.push({ piso: 3, medias: item });
+    }
+  const cargado2916 = (typeof focoSalud290 !== 'undefined' && focoSalud290 !== null) && aMediasCache2916 !== null;
+  if (!filas.length && !cargado2916) return null;
+  const p = panel('Tus tareas');
+  p.classList.add('atencion2915', 'tareas2916');
+  /* El subtítulo va como nodo: panel() solo pinta el título
+     (el segundo argumento de panel() nunca se pintó, en
+     ninguna pantalla). */
+  if (filas.length)
+    p.append(n('p', 'Lo que te necesita, por orden de urgencia: primero lo que requiere tu atención, luego tus gestos, lo que conviene vigilar y lo que quedó a medias. Los indicadores van debajo, como contexto.', 'muted'));
+  /* El gesto CIEC que llega con los datos del mes se suma a
+     ESTA lista (gestosPintarCiec1311 busca esta marca). */
+  p.dataset.gestos1311 = '1';
+  if (!filas.length) {
+    p.append(n('p', 'Sin tareas pendientes: nada espera tu mano ni tu atención ahora.', 'tareas-vacio2916 today-line'));
+    return p;
   }
-  const p = panel('Requiere tu atención');
+  const fresca = Math.max(0, ...filas.filter(f => f.tarjeta).map(f => Number(f.tarjeta.frescura) || 0));
+  if (fresca) p.append(n('p', 'Según Salud · ' + hace2915(fresca) + '.', 'atencion-frescura2915'));
+  const pintarFila2916 = f => {
+    const fila = n('div', undefined, 'atencion-fila2915 tarea-fila2916');
+    if (f.tarjeta) {
+      const t = f.tarjeta;
+      const gesto = ATENCION_HOY2915[t.id]();
+      fila.append(estadoChip2915(t.estado === 'mal' ? 'atencion' : 'pendiente',
+          t.estado === 'mal' ? 'Requiere atención' : 'Pendiente', t.estado === 'mal'),
+        cell(t.titulo, t.porque || ''),
+        action(gesto.texto, () => focoGesto290(gesto), undefined, 'chev'));
+    } else if (f.gesto) {
+      const b = n('button', f.gesto.boton, 'primary small');
+      b.type = 'button';
+      b.onclick = f.gesto.ir;
+      fila.append(estadoChip2915('pendiente', 'Pendiente'),
+        cell(f.gesto.titulo, f.gesto.detalle), b);
+    } else if (f.medias) {
+      const item = f.medias;
+      fila.append(estadoChip2915('en-proceso', 'En proceso'),
+        cell(item.texto, (item.rfc ? item.rfc + ' · ' : '') + (item.at ? 'quedó a medias el ' + fmtFechaHora(item.at) : '')));
+      /* «Seguir» tras cancelar (2.3.0 · pieza 6): con trabajo
+         (jobId), el botón REANUDA de verdad; sin trabajo, el
+         gesto de siempre: ir a su vista. El mismo criterio
+         que tenía el panel «A medias», sin cambiarlo. */
+      const jobId230 = item.seguir?.jobId || item.jobId || '';
+      const vista = item.seguir?.vista || '';
+      if (jobId230 && typeof seguirBoton230 === 'function') fila.append(seguirBoton230(jobId230));
+      else if (vista) {
+        const seguir = n('button', 'Seguir', 'primary small');
+        seguir.type = 'button';
+        seguir.onclick = () => {
+          if (vista === 'bancos') { dineroTab = 'bancos'; navigate('money'); }
+          else navigate(vista);
+        };
+        fila.append(seguir);
+      }
+    }
+    return fila;
+  };
+  const cuerpo = n('div');
+  for (const f of filas.slice(0, 7)) cuerpo.append(pintarFila2916(f));
   p.append(cuerpo);
-  p.classList.add('atencion2915');
+  const resto2916 = filas.slice(7);
+  if (resto2916.length) {
+    const mas = n('div');
+    for (const f of resto2916) mas.append(pintarFila2916(f));
+    p.append(plegable290('Ver las ' + resto2916.length + ' tareas restantes', mas, 'hoy-tareas2916'));
+  }
   return p;
 }
 (function cablearFoco290() {
@@ -3804,6 +3853,54 @@ function sesionNombrada298() {
 }
 const guestMode = Boolean(document.querySelector('meta[name="pacosat-guest"]') ||
   sessionStorage.getItem('pacosat-guest-token')) && sesionNombrada298()?.rol !== 'administrador';
+/* (2.9.16 · P7) El alcance de la sesión, leído del único
+   sitio que lo declara entero — GET /api/guest/config, el
+   mismo que alimenta la vista de la contadora —: tipo
+   (propietario, administración, solo lectura o invitado),
+   nombre, RFC alcanzables y si es la contadora. Sin segundo
+   sistema de acceso: los roles y los RFC salen de ahí y del
+   login con nombre de la 2.9.8. La lectura se cachea y un
+   fallo no se reintenta en bucle. */
+let sesionAlcanceCache2916 = null, sesionAlcanceLeyendo2916 = false, sesionAlcanceFoto2916 = 0;
+function sesionAlcance2916() {
+  if (sesionAlcanceCache2916) return sesionAlcanceCache2916;
+  if (sesionAlcanceLeyendo2916 || typeof satToken === 'undefined' || !satToken) return null;
+  if (Date.now() - sesionAlcanceFoto2916 < 60000) return null;
+  sesionAlcanceLeyendo2916 = true;
+  satApi('guest/config').then(cfg => {
+    const nom = sesionNombrada298();
+    const su = cfg && cfg.sesionUsuario ? cfg.sesionUsuario : null;
+    sesionAlcanceCache2916 = {
+      tipo: (nom || su) ? ((nom?.rol || su?.rol) === 'administrador' ? 'administrador' : 'lectura')
+        : (typeof guestMode !== 'undefined' && guestMode) ? 'invitado' : 'propietario',
+      nombre: nom?.nombre || su?.nombre || '',
+      rfcs: cfg && Array.isArray(cfg.rfcs) ? cfg.rfcs : null,
+      contadora: Boolean(cfg && cfg.sesionContadora) };
+    sesionAlcanceFoto2916 = Date.now();
+    sesionAlcanceLeyendo2916 = false;
+    pintarSesion2916();
+  }).catch(() => { sesionAlcanceFoto2916 = Date.now(); sesionAlcanceLeyendo2916 = false; });
+  return null;
+}
+/* La línea de sesión de la barra: quién eres y con qué
+   alcance, junto al selector de contribuyente. La sesión
+   del propietario (sin nombre) no enseña línea: es la de
+   siempre y no necesita rótulo. */
+function pintarSesion2916() {
+  const linea = $('sesion-line2916');
+  if (!linea) return;
+  const alcance = sesionAlcance2916();
+  if (!alcance || alcance.tipo === 'propietario') { linea.hidden = true; return; }
+  const partes = [];
+  if (alcance.nombre) partes.push(alcance.nombre);
+  partes.push(alcance.tipo === 'administrador' ? 'Administración'
+    : alcance.tipo === 'lectura' ? 'Solo lectura' : 'Invitado · Solo lectura');
+  if (alcance.contadora) partes.push('contadora');
+  if (Array.isArray(alcance.rfcs) && alcance.rfcs.length)
+    partes.push(alcance.rfcs.length === 1 ? '1 RFC' : alcance.rfcs.length + ' RFC');
+  linea.textContent = 'Sesión: ' + partes.join(' · ');
+  linea.hidden = false;
+}
 let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
 let satError = '', satPolling = false, cloudRevision;
 const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada', covered: 'Cubierta por otra vía', rerouted: 'Re-rutada', uncovered: 'Pendiente nombrada del SAT' };
@@ -4567,8 +4664,19 @@ function render() {
   /* Importar vive en Hoy y en Facturas: fuera de ahí, la cabecera no
      lleva «Abrir XML / Factura PDF» (sistema visual §4). */
   const importingHere = page === 'home' || page === 'invoices';
-  if ($('inspect')) $('inspect').hidden = !importingHere;
-  if ($('pdf-import')) $('pdf-import').hidden = !importingHere;
+  /* (2.9.16 · P7) Una sesión de solo lectura no ve los
+     controles de escritura: importar, la acción principal de
+     la cabecera y «Agregar RFC» son de administración y el
+     servidor los rechazaría para esta sesión — enseñarlos
+     sería enseñar botones que no le corresponden. Todo lo
+     demás (consultar, filtrar, descargar, imprimir) queda
+     como estaba, y cada destino sigue alcanzable. */
+  const soloLectura2916 = typeof guestMode !== 'undefined' && guestMode;
+  if ($('inspect')) $('inspect').hidden = !importingHere || soloLectura2916;
+  if ($('pdf-import')) $('pdf-import').hidden = !importingHere || soloLectura2916;
+  if ($('add')) $('add').hidden = soloLectura2916;
+  pintarSesion2916();
+  $('primary').hidden = soloLectura2916;
   $('primary').replaceChildren(icon(page === 'settings' && ajustesSection === 'respaldos' ? 'lock' : page === 'salidas' && cierreSection === 'diot' ? 'down' : 'up'), n('span', primaryLabel()));
   $('primary').disabled = !ready || importing;
   /* El mapa se resuelve con typeof para las pantallas de las
@@ -5945,16 +6053,13 @@ function home() {
      pintado. Esos datos siguen vivos en sus pantallas (el
      contribuyente y los conteos, en Facturas; la actividad,
      en el Registro). La pantalla pintada no cambia. */
-  /* Hoy manda (2.3.2 · M-8): el mando lleva dentro los
-     gestos, por encima de sus 4 tarjetas de acción. */
-  /* (2.9.15 · B1) Hoy abre con la franja «Requiere tu
-     atención» cuando Salud sabe de algo mal o en vigía que
-     esta pantalla aún no enseña; los indicadores generales
-     (el mando y el día en cifras) van debajo, como siempre. */
+  /* Hoy manda (2.3.2 · M-8; 2.9.16 · P2): las tareas mandan
+     y el mando baja a contexto, ya sin los gestos dentro —
+     los gestos viven en «Tus tareas», con todo lo demás. */
   const blocks = [];
-  const atencion2915 = hoyAtencion2915();
-  if (atencion2915) blocks.push(atencion2915);
-  blocks.push(hoyMando201(gestosPanel1311()));
+  const tareas2916 = hoyTareas2916();
+  if (tareas2916) blocks.push(tareas2916);
+  blocks.push(hoyMando201(null));
   /* (2.9.13 · mejoras 1 y 2) «Tu día en cifras», con el
      anillo de cobertura del año: tras el mando, antes de lo
      demás — Hoy abre con la foto dibujada. */
@@ -5986,9 +6091,9 @@ function home() {
      de las tarjetas (2.3.2 · M-8). La línea de salud también
      sale de Hoy (2.0.1): Salud es entrada propia del menú y
      su detalle vive en su pantalla. */
-  /* «A medias» (nº 16): tras los gestos, en su mismo flujo; el
-     panel solo se enseña si el servidor trae algo a medias. */
-  blocks.push(aMedias201Panel());
+  /* «A medias» (nº 16) ya no es panel propio: sus filas
+     viven dentro de «Tus tareas» (2.9.16 · P2), en su piso
+     «En proceso», con el mismo botón «Seguir» de siempre. */
   /* La foto por RFC y «Qué cambió desde ayer» (2.3.0 · piezas
      10 y 11): tras lo a medias, en el mismo flujo. Ambas nacen
      ocultas y solo aparecen con algo real que decir — Hoy no
@@ -6474,7 +6579,8 @@ function invoiceScreen() {
      UN cálculo para las dos cosas, hecho una vez aquí; la
      tarjeta abre la vista, antes que cualquier otra pieza. */
   const datos240 = facturasDatos240();
-  list.append(facturasPpdTarjeta240(datos240));
+  const tarjetaPpd2916 = facturasPpdTarjeta240(datos240);
+  list.append(tarjetaPpd2916);
   /* Descargar SIN salir de Facturas (1.32.1, F1): el botón vive
      donde el usuario piensa «quiero los CFDI nuevos» — abre la
      hoja de descarga de siempre con el RFC elegido y el mes en
@@ -6733,7 +6839,11 @@ function invoiceScreen() {
     /* (2.9.15 · B3) Columnas clave primero: fecha, contraparte,
        folio, importe y estado; el tipo pasa a detalle
        secundario, tras el estado. */
-    const content = sliced.length ? grid(['', 'Fecha', 'Emisor → receptor', 'Folio', 'Total', 'Estado SAT', 'Tipo', 'Acción'], sliced.map(row => {
+    /* (2.9.16 · P5) La tabla enseña solo las columnas del
+       trabajo diario — fecha, contraparte, folio, total y
+       estado —: el «Tipo» sale de la tabla y vive en la ficha
+       del comprobante, que lo enseña con su rol en grande. */
+    const content = sliced.length ? grid(['', 'Fecha', 'Emisor → receptor', 'Folio', 'Total', 'Estado SAT', 'Acción'], sliced.map(row => {
       const pick = input('checkbox');
       pick.checked = invoiceSelection.has(row.id);
       pick.setAttribute('aria-label', 'Seleccionar el CFDI ' + row.id);
@@ -6784,7 +6894,7 @@ function invoiceScreen() {
         (() => { const totalBtn = n('button', amount(row), 'cell-link cell-link-total');
           totalBtn.type = 'button'; totalBtn.title = 'Abrir el detalle de este comprobante';
           totalBtn.onclick = () => invoiceDetail(row); return totalBtn; })(), estadoStack,
-        cell(KINDS[row.kind], rowRole(row)), invoiceActions(row)];
+        invoiceActions(row)];
     })) : empty('Sin coincidencias', !invoices.some(row => !scope || row.from.rfc === scope || row.to.rfc === scope)
         ? 'Todavía no hay facturas de este contribuyente en PacoSAT. Descárgalas del SAT o importa un lote.'
         : 'Importa un lote o cambia los filtros.',
@@ -6904,7 +7014,21 @@ function invoiceScreen() {
   const applyFilters = action('Aplicar', () => controls.classList.remove('open'), 'filters-apply');
   controls.append(applyFilters);
   const filtersToggle = action('Filtrar', () => controls.classList.toggle('open'), 'filters-toggle');
-  list.append(tabs, filtersToggle, controls, masFiltros, rapidosBar240, chips, result);
+  /* (2.9.16 · P5) La franja de exploración — pestañas,
+     filtros, atajos de un toque y filtros activos — va
+     junta y fija arriba al hacer scroll: explorar la tabla
+     sin volver arriba a buscar el buscador. */
+  const franja2916 = n('div', undefined, 'franja2916');
+  franja2916.append(tabs, filtersToggle, controls, masFiltros, rapidosBar240, chips);
+  list.append(franja2916, result);
+  /* (Corrección 2.9.16 tras la verificación en vivo) La franja
+     nace visible: montada aquí quedaba BAJO la gráfica y los
+     totales y solo aparecía al bajar, aunque fuera pegajosa —
+     el «sticky» solo acompaña cuando se llega a ella —. Se
+     mueve directamente bajo la tarjeta protagonista, por
+     encima de la gráfica y los totales, como en Registro,
+     donde la franja abre la vista tras su protagonista. */
+  tarjetaPpd2916.after(franja2916);
   update();
   /* (2.8.0 · diseño 4) Al pie de Facturas, su conciliación
      XML y PDF (antes en Ajustes › Sistema). */

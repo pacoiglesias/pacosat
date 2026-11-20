@@ -197,7 +197,7 @@ const vista = async ejercicio => {
   const html = readFileSync(join(import.meta.dirname, 'Faro-Fiscal.html'), 'utf8');
   /* Anexo 1.26.0: el sello sube con la Ronda Visual. */
   // 1.30.0: pineo de versión re-apuntado a la vigente, como en cada ronda.
-  assert.ok(html.includes('"version":"2.9.15"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+  assert.ok(html.includes('"version":"2.9.16"'), 'el artefacto se sella con la versión vigente (2.0.1)');
   /* RE-BASE integración 2.4.0 (W6): el mapa de Declaraciones
      viaja en la parte diferida de Declaraciones; su línea
      «X de 12 meses presentados» se busca en artefacto + parte

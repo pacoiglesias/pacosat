@@ -428,7 +428,7 @@ try {
   const banks = readFileSync(join(process.cwd(), 'banks-ui.part'), 'utf8');
   assert.ok(banks.includes('salidas200g/contraparte-zip'), 'Contrapartes trae su «Descargar todo (ZIP)»');
   const html = readFileSync(join(process.cwd(), 'Faro-Fiscal.html'), 'utf8');
-  assert.ok(html.includes('"version":"2.9.15"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
+  assert.ok(html.includes('"version":"2.9.16"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
   console.log('OK 2.0·T7A · cliente — piezas en partes diferidas; versión intacta.');
 }
 /* ===== H-2 (corrección de seguridad 2.0): el candado cubre

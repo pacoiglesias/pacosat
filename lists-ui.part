@@ -433,7 +433,11 @@ function listsScreen() {
   sourcesPanel.append(grid);
   if (data.lastCancelled) sourcesPanel.append(n('p', 'Última cancelación pedida por ti: ' + localDateTime(data.lastCancelled) +
     ' — la actualización se detuvo y se conservó la copia anterior de cada listado.', 'muted'));
-  wrap.append(sourcesPanel);
+  /* (2.9.16 · P4) Las fuentes van plegadas: el veredicto y
+     los golpes mandan en la vista; el detalle de cada
+     listado (su actualización y su carga manual) queda a
+     un toque, sin retirarse. */
+  wrap.append(plegable290('Las fuentes, una a una', sourcesPanel, 'listas-fuentes2916'));
   /* Validador (2.8.0 · diseño 22): ya no es una pantalla
      paralela — vive DENTRO del padrón, como su buscador:
      validar es buscar en el padrón y en los listados, con su
@@ -603,7 +607,9 @@ function listsScreen() {
       n('span', event.label + ' · ' + event.change + (event.detail ? ' · ' + event.detail : '')));
     eventsPanel.append(row);
   }
-  wrap.append(eventsPanel);
+  /* (2.9.16 · P4) El histórico de cambios va plegado tras el
+     padrón: es consulta de archivo, no trabajo del día. */
+  wrap.append(plegable290('Cambios detectados', eventsPanel, 'listas-cambios2916'));
   return [wrap];
 }
 /* Fecha corta de un día ISO («2026-11-03» → «3 nov 2026») sin pasar

@@ -962,7 +962,16 @@ function declaracionesSection() {
        documentos del ejercicio son UNA sola lista: la pinta
        declFoliosPanel con las filas de declLineasVida230 —
        el mismo folio ya no se cuenta tres veces —. */
-    body.append(declFoliosPanel(view, fill), declAniosPanel(view, fill), declComoFunciona());
+    /* (2.9.16 · P4) La recuperación por año completo y la
+       explicación de cómo funciona van plegadas tras el
+       mapa: son lo ocasional. La lista de folios NO se
+       pliega: es el detalle de trabajo de la pantalla (cada
+       fila con su acuse a un toque) y queda a la vista,
+       debajo del mapa, como siempre. */
+    body.append(declFoliosPanel(view, fill));
+    const detalleEj2916 = n('div');
+    detalleEj2916.append(declAniosPanel(view, fill), declComoFunciona());
+    body.append(plegable290('Recuperar por años y cómo funciona', detalleEj2916, 'decl-detalle2916'));
     /* Sin ningún documento recuperado, la invitación de
        siempre cierra la pantalla (la lista única ya enseñó
        los folios que consten sin documento). */

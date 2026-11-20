@@ -255,7 +255,7 @@ const TERCERO = 'XEXX010101000';
      composición nueva, no la vieja. */
   assert.ok(textoHoy.includes('Puerta del SAT') && textoHoy.includes('Última descarga'),
     '2.0.1: Hoy abre con el estado de las piezas, cada uno con su fecha');
-  assert.ok(textoHoy.includes('Lo que te necesita'), '2.0.1: los gestos se llaman «Lo que te necesita»');
+  assert.ok(textoHoy.includes('Tus tareas'), '2.0.1: los gestos se llaman «Lo que te necesita» (RE-BASE 2.9.16: el panel se funde con la franja de atención y con a medias en «Tus tareas», la lista que manda en Hoy; los gestos son su piso de gestos, con el mismo dataset)');
   for (const titulo of ['Descargar facturas', 'Buzón Tributario', 'Declaraciones', 'Documentos'])
     assert.ok(textoHoy.includes(titulo), '2.0.1: la acción grande «' + titulo + '» está en Hoy');
   assert.ok(!textoHoy.includes('Salud del sistema y respaldo'), '2.0.1: la línea de salud salió de Hoy (Salud es menú propio)');

@@ -48,9 +48,15 @@ function bancosScreen() {
     /* (2.8.0 · diseño 9) La conciliación asistida/CSV que
        vivía en Dinero se muda aquí: la conciliación vive
        solo en Bancos y Dinero enlaza. */
+    /* (2.9.16 · P4) La asistida y las reglas de clasificación
+       van plegadas en un grupo: la conciliación del día es
+       el panel de arriba; lo asistido y las reglas quedan a
+       un toque, sin ocupar la vista inicial. */
+    const asistida2916 = n('div');
     if (typeof reconcilePanel === 'function')
-      body.append(reconcilePanel(typeof paidByMap === 'function' ? paidByMap() : new Map()));
-    body.append(bancosReglasPanel240());
+      asistida2916.append(reconcilePanel(typeof paidByMap === 'function' ? paidByMap() : new Map()));
+    asistida2916.append(bancosReglasPanel240());
+    body.append(plegable290('Conciliación asistida y reglas de clasificación', asistida2916, 'bancos-avanzado2916'));
     body.append(bancosSinRastroPanel201());
     body.append(bancosContrapartesPanel200f());
     if (!data.accounts.length) {

@@ -49,7 +49,11 @@ function extraer(desde, hasta, incluirFin = false) {
 }
 const ctx = {};
 vm.createContext(ctx);
-vm.runInContext(extraer('const ATENCION_HOY2915', 'function hoyAtencion2915'), ctx);
+/* RE-BASE 2.9.16 (Punto 2): la franja se funde en «Tus tareas»;
+   su filtro (atencionHoyFilas2915) sigue vivo y es el piso de
+   atención de la lista — la extracción llega hasta la función
+   que la sucedió en el fichero. */
+vm.runInContext(extraer('const ATENCION_HOY2915', 'function hoyTareas2916'), ctx);
 vm.runInContext(extraer('function hace2915', '\n}', true), ctx);
 const { atencionHoyFilas2915, hace2915 } = ctx;
 assert.equal(typeof atencionHoyFilas2915, 'function', 'atencionHoyFilas2915 extraíble');
@@ -93,33 +97,39 @@ for (const css of ['.estado-completado{', '.estado-pendiente{', '.estado-en-proc
     '.estado-atencion{', '.estado-atencion.estado-grave2915{'])
   assert.ok(html.includes(css), 'CSS del sistema de estados: ' + css);
 
-/* ── (B6) Menú agrupado por tarea, con paridad de destinos ── */
-const finNav = layout.indexOf('data-view="settings"');
+/* ── (B6) Menú agrupado por tarea, con paridad de destinos ──
+   RE-BASE 2.9.16 (Punto 1): los grupos son los cuatro que
+   nombró Paco — Trabajo diario, SAT, Expediente y
+   Administración — y los cinco destinos menos frecuentes
+   viven dentro de «Más» (su botón-cabecera abre el grupo en
+   el análisis, como una cabecera más). Los 21 destinos son
+   los de siempre: paridad completa. */
 const segNav = layout.slice(layout.indexOf('<span class="nav-caption">'),
-  layout.indexOf('\n', finNav));
+  layout.indexOf('</nav>', layout.indexOf('<span class="nav-caption">')));
 const captions = [...segNav.matchAll(/<span class="nav-caption">([^<]+)<\/span>/g)].map(m => m[1]);
-assert.deepEqual(captions, ['EXPEDIENTE', 'SAT', 'BANCOS', 'DOCUMENTOS', 'AJUSTES'],
-  'los cinco grupos por tarea, en orden');
+assert.deepEqual(captions, ['TRABAJO DIARIO', 'SAT', 'EXPEDIENTE', 'ADMINISTRACIÓN'],
+  'los cuatro grupos de la 2.9.16, en orden');
 const grupos = {};
 let grupoActual = null;
 for (const linea of segNav.split('\n')) {
   const cap = /<span class="nav-caption">([^<]+)<\/span>/.exec(linea);
   if (cap) { grupoActual = cap[1]; grupos[grupoActual] = []; continue; }
+  if (linea.includes('id="nav-mas-btn2916"')) { grupoActual = 'MÁS'; grupos[grupoActual] = []; continue; }
   const vista = /data-view="([a-z]+)"/.exec(linea);
   if (vista && grupoActual) grupos[grupoActual].push(vista[1]);
 }
 assert.deepEqual(grupos, {
-  EXPEDIENTE: ['home', 'avisos', 'buzon', 'contribuyentes', 'invoices', 'archivo', 'registro'],
-  SAT: ['descargar', 'tributario', 'monitor', 'lists', 'ejecutor'],
-  BANCOS: ['dinero', 'pagos', 'reportes', 'salidas'],
-  DOCUMENTOS: ['docs', 'declaraciones'],
-  AJUSTES: ['salud', 'preguntas', 'settings'] },
+  'TRABAJO DIARIO': ['home', 'avisos', 'invoices', 'descargar', 'tributario'],
+  SAT: ['monitor', 'lists', 'declaraciones'],
+  EXPEDIENTE: ['buzon', 'contribuyentes', 'docs', 'registro'],
+  'ADMINISTRACIÓN': ['dinero', 'pagos', 'salud', 'settings'],
+  'MÁS': ['ejecutor', 'archivo', 'reportes', 'salidas', 'preguntas'] },
   'cada destino en su grupo; los 21 de siempre, ninguno perdido');
 assert.ok(html.includes('nav-caption-on2915'), 'la señal del grupo activo viaja en el artefacto');
 
 /* ── (B3) Facturas: columnas y filtros ─────────────────────── */
-assert.ok(html.includes("grid(['', 'Fecha', 'Emisor → receptor', 'Folio', 'Total', 'Estado SAT', 'Tipo', 'Acción']"),
-  'columnas clave primero en Facturas');
+assert.ok(html.includes("grid(['', 'Fecha', 'Emisor → receptor', 'Folio', 'Total', 'Estado SAT', 'Acción']"),
+  'columnas clave primero en Facturas (RE-BASE 2.9.16: la columna «Tipo» sale de la tabla y vive en la ficha lateral, que lo enseña con su rol)');
 assert.ok(html.includes("classList.add('invoice-filters', 'open')"),
   'los filtros de Facturas nacen abiertos');
 

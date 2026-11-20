@@ -1,5 +1,5 @@
 /* ================================================================
-   Ronda 2.9.15 · GUARDIANA DE SELLOS — una sola versión, en
+   Ronda 2.9.16 · GUARDIANA DE SELLOS — una sola versión, en
    todos los sitios donde la casa la sella.
 
    EL DESAJUSTE QUE GUARDA (verificado al nacer esta suite): el
@@ -7,7 +7,8 @@
    «1.6.8» y package-lock.json en «1.20.0» (raíz y packages[""])
    — tres sellos distintos para el mismo producto, y ninguna
    suite lo cazaba porque cada una miraba solo SU sello. La
-   2.9.15 los unifica y esta guardiana afirma, en cada corrida:
+   2.9.15 los unificó; esta guardiana — la misma de la 2.9.15,
+   renovada con la ronda — afirma, en cada corrida:
 
      package.json.version
        == package-lock.json "version" (raíz)
@@ -78,7 +79,7 @@ test('los seis sellos del árbol dicen la misma versión', () => {
   assert.deepEqual(desajustes, [],
     'sellos desajustados: ' + desajustes.join(' · ') +
     ' (leídos: ' + JSON.stringify(sellos) + ')');
-  console.log('OK 2.9.15-sellos · (1) — los seis sellos coinciden en «' + referencia + '».');
+  console.log('OK 2.9.16-sellos · (1) — los seis sellos coinciden en «' + referencia + '».');
 });
 
 test('la comparación DETECTA un desajuste y lo nombra (temporal, sin tocar el árbol)', () => {
@@ -102,7 +103,7 @@ test('la comparación DETECTA un desajuste y lo nombra (temporal, sin tocar el �
       'el desajuste NOMBRA el sello tocado: ' + desajustes[0]);
     assert.ok(desajustes[0].includes('0.0.0-desajustada'),
       'el desajuste NOMBRA la versión sembrada: ' + desajustes[0]);
-    console.log('OK 2.9.15-sellos · (2) — la guardiana caza el desajuste sembrado y lo nombra: «' +
+    console.log('OK 2.9.16-sellos · (2) — la guardiana caza el desajuste sembrado y lo nombra: «' +
       desajustes[0] + '».');
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -1154,6 +1154,18 @@ function invoiceDetail(row) {
   dialog('Detalle del CFDI', contents);
   $('dialog').classList.add('invoice-dialog');
   $('dialog').classList.add('cfdi-dialog');
+  /* (2.9.16 · P5) El detalle es una ficha lateral: las dos
+     clases anclan el diálogo a la derecha a todo el alto (la
+     CSS vive en polish.part) y la tabla queda al lado. Al
+     cerrarse, las clases se retiran: el diálogo compartido
+     no hereda el ancla ni el ancho a los diálogos siguientes
+     (hasta hoy el ancho de 940 se quedaba puesto). Si el
+     cierre es el de «Revertir pago» — que reabre ESTE detalle
+     en el mismo gesto — el diálogo ya está abierto cuando el
+     evento llega y las clases se quedan: son suyas. */
+  $('dialog').addEventListener('close', () => {
+    if (!$('dialog').open) $('dialog').classList.remove('invoice-dialog', 'cfdi-dialog');
+  }, { once: true });
 }
 /* Ficha básica del CFDI de retenciones (2.4.0 · WC3b, ítem 14):
    el documento vive en Documentos con su clase propia y TODOS sus
