@@ -109,7 +109,11 @@ function swBody240(version) {
     "self.addEventListener('notificationclick', e => { e.notification.close();",
     'e.waitUntil(clients.matchAll({ type: \'window\', includeUncontrolled: true }).then(ws => {',
     'const w = ws.find(x => x.url.includes(self.location.origin));',
-    "if (w) return w.focus(); return clients.openWindow((e.notification.data && e.notification.data.url) || '/'); })); });",
+    /* (3.0 · mejora 27) El toque en el aviso lleva a SU
+       destino (la factura), también con la app ya abierta:
+       antes solo enfocaba la ventana y el enlace se perdía. */
+    "const destino30 = (e.notification.data && e.notification.data.url) || '/';",
+    "if (w) return w.navigate(destino30).then(() => w.focus()).catch(() => w.focus()); return clients.openWindow(destino30); })); });",
     ''
   ].join('\n');
 }
@@ -6098,6 +6102,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         if (cloud) {
           putFile('xml:' + row.id, raw, 'application/xml');
           row.origin = 'descarga';
+          /* (3.0 · mejora 7) La hora de entrada, para la
+             prueba de origen de la ficha. */
+          row.originAt = new Date(now()).toISOString();
           if (!putMetadata('invoices', row).changes) continue;
           monitor.register({ id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
             seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal) ? row.seal : '' });
@@ -6204,17 +6211,54 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return records;
   }
   function patchInitialState(uuid, status) {
-    if (!cloud) return;
+    if (!cloud) return null;
     const row = db.prepare("SELECT value FROM records WHERE store='invoices' AND id=?").get(uuid);
-    if (!row?.value) return;
+    if (!row?.value) return null;
     try {
       const invoice = JSON.parse(row.value);
       const label = status === '0' ? 'Cancelado' : status === '1' ? 'Vigente' : '';
-      if (!label || invoice.initialState === label) return;
+      if (!label || invoice.initialState === label) return null;
       invoice.initialState = label;
       db.prepare("UPDATE records SET value=? WHERE store='invoices' AND id=?").run(JSON.stringify(invoice), uuid);
       storageRevision++;
-    } catch { /* fila ilegible: el estado inicial es informativo, no crítico */ }
+      /* (3.0 · mejora 15) Quien la acaba de ver cancelada lo
+         dice: el aviso push sale de ESTE cambio de estado,
+         una sola vez por factura (la siguiente pasada ya la
+         encuentra «Cancelado» y no repite). */
+      return label === 'Cancelado' ? invoice : null;
+    } catch { return null; }
+  }
+  /* (3.0 · mejoras 15 y 27) El aviso de la cancelada: a
+     diferencia del push crítico genérico — que por doctrina
+     no lleva datos fiscales —, este aviso SÍ nombra la
+     factura (folio e importe): es la orden expresa de la
+     ronda 3.0, porque el aviso sin nombre obligaba a abrir
+     la app a ciegas. Su toque abre la factura misma, con el
+     enlace profundo de la casa (#/facturas?uuid=). */
+  async function pushCancelada30(meta, invoice) {
+    const subs = db.prepare('SELECT * FROM push_subscriptions').all();
+    if (!subs.length) return 0;
+    const folioCrudo = invoice.fiscal?.folio || invoice.folio || '';
+    const serieCruda = invoice.fiscal?.series || invoice.serie || '';
+    const folio = folioCrudo ? ((serieCruda ? serieCruda + '-' : '') + folioCrudo) : 'sin folio';
+    const total = Number(meta.total ?? invoice.total);
+    const importe = Number.isFinite(total)
+      ? new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(total) : '';
+    const payload = { title: 'PacoSAT · Factura cancelada',
+      body: 'El SAT marca cancelada la factura ' + folio + (importe ? ' de ' + importe : '') +
+        ' (' + (meta.direction === 'received' ? 'recibida de ' + meta.emitter : 'emitida a ' + meta.receiver) + '). Toca para verla.',
+      url: '/#/facturas?uuid=' + meta.uuid };
+    let sent = 0;
+    for (const sub of subs) {
+      const subscription = { endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } };
+      try {
+        const result = await pushSender(subscription, payload);
+        if (result?.status === 404 || result?.status === 410)
+          db.prepare('DELETE FROM push_subscriptions WHERE endpoint=?').run(sub.endpoint);
+        else sent++;
+      } catch { /* una suscripción caída no frena a las demás */ }
+    }
+    return sent;
   }
   async function inspectMetadataPackage(job, id, archive) {
     if (packageLookup.get(job.id, id)) return;
@@ -6234,7 +6278,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         upsert.run(record.uuid, job.rfc, job.direction, record.emitter, record.receiver, record.issuedAt,
           record.total, record.status, record.cancelDate, time);
         if (!known) count++;
-        patchInitialState(record.uuid, record.status);
+        const cancelada30 = patchInitialState(record.uuid, record.status);
+        if (cancelada30) void pushCancelada30({ ...record, direction: job.direction }, cancelada30);
       }
       if (cloud) putMetadata('activity', { id: 'satmeta:' + job.id + ':' + id, name: ('SAT Metadatos · ' + job.rfc).slice(0, 180),
         date: new Date(time).toISOString(), added: count, duplicates: found.length - count, review,
@@ -6988,6 +7033,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
        importado; los registros viejos no lo traen y la cobertura
        los cuenta como «sin clasificar», sin inventar su vía. */
     row.origin = origin;
+    /* (3.0 · mejora 7) La hora de entrada, para la prueba de
+       origen de la ficha («Traída por el portal hoy a las…»). */
+    row.originAt = new Date(now()).toISOString();
     putMetadata('invoices', row);
     monitor.register({ id: row.id, emitter: row.from.rfc, receiver: row.to.rfc, total: row.total,
       seal: /^[A-Za-z0-9+/=]{8}$/.test(row.seal) ? row.seal : '' });
@@ -7007,7 +7055,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     let added = 0, duplicates = 0, review = 0;
     const issues = [];
     for (const buffer of buffers) {
-      try { if (importXmlShared(buffer, Parser, peopleIds, addedRows, 'descarga') === 'added') added++; else duplicates++; }
+      try { if (importXmlShared(buffer, Parser, peopleIds, addedRows, 'portal') === 'added') added++; else duplicates++; }
       catch (error) {
         review++;
         if (issues.length < 20) issues.push({ name: 'XML del portal', reason: message(error) });
@@ -7509,7 +7557,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         const cell = recGroups.get(key).byMonth.get(month) ||
           { month, count: 0, descarga: 0, importacion: 0, sinClasificar: 0 };
         cell.count++;
-        if (invoice.origin === 'descarga') cell.descarga++;
+        /* El portal también es descarga del SAT a efectos de
+           cobertura (3.0): su vía propia se distingue en la
+           ficha, no en la cuenta de cómo llegó. */
+        if (invoice.origin === 'descarga' || invoice.origin === 'portal') cell.descarga++;
         else if (invoice.origin === 'importacion') cell.importacion++;
         else cell.sinClasificar++;
         recGroups.get(key).byMonth.set(month, cell);
@@ -15535,6 +15586,280 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     return { pendientes, recuperada: pendientes === 0 && total > 0 };
   }
 
+  /* ===== 3.0 · «Ponerme al día» (Bloque A) =====
+     El botón único del encargo 3.0: una corrida por RFC que
+     orquesta lo que ya existe, en este orden —
+       1 · METADATOS: pide al SAT los metadatos de la ventana
+           reciente (desde la última revisión asentada, con un
+           suelo de 31 días) en ambos sentidos; es la lista de la
+           verdad: qué conoce el SAT y qué falta en XML.
+       2 · PORTAL: lo que falte baja por el caminante del portal
+           (runPortalAttempt297, origen 'aldia'), sin solicitudes.
+       3 · MASIVA: solo lo que el portal no entregó se pide por
+           la vía de siempre (revisionSend200e, trabajos CFDI por
+           los meses tocados): la masiva es el respaldo, no la
+           primera vía.
+     La corrida vive en el estado 'aldia-30' (una por RFC) y la
+     avanza aldiaTick30 dentro del tick general: el cliente solo
+     lanza (POST /api/al-dia/run), sigue (GET /api/al-dia/state)
+     y detiene (POST /api/al-dia/cancel). Si el SAT no responde
+     al pedir los metadatos, la corrida queda «esperando» y el
+     tick la reintenta solo cuando la puerta vuelve (mejoras 3
+     y 14): nadie tiene que volver a pulsar. El veredicto final
+     sale de las fuentes reales: facturas nuevas = las que el
+     expediente ganó durante la corrida; pendientes = los
+     folios que los metadatos conocen y siguen sin XML. */
+  const ALDIA30_KEY = 'aldia-30';
+  const aldiaAll30 = () => { try { return JSON.parse(getState(ALDIA30_KEY) || '{}'); } catch { return {}; } };
+  const aldiaGet30 = rfc => aldiaAll30()[rfc] || null;
+  const aldiaSave30 = (rfc, run) => { const all = aldiaAll30(); all[rfc] = run; setState(ALDIA30_KEY, JSON.stringify(all)); };
+  function aldiaCountInvoices30(rfc) {
+    let n = 0;
+    for (const row of db.prepare("SELECT value FROM records WHERE store='invoices'").all()) {
+      try { const inv = JSON.parse(row.value);
+        if (inv.from?.rfc === rfc || inv.to?.rfc === rfc) n++;
+      } catch { /* fila ilegible: no cuenta */ }
+    }
+    return n;
+  }
+  function aldiaJobsTerminal30(ids) {
+    if (!ids?.length) return true;
+    const marks = ids.map(() => '?').join(',');
+    const row = db.prepare('SELECT COUNT(*) AS n FROM jobs WHERE id IN (' + marks + ") AND status='pending'").get(...ids);
+    return (row?.n || 0) === 0;
+  }
+  /* Envía las solicitudes de metadatos de la ventana en ambos
+     sentidos, con el blindaje de criterios de siempre. Devuelve
+     los ids de trabajo creados (o adoptados si ya vivían). */
+  async function aldiaSendMeta30(profile, connector, time) {
+    const rfc = profile.rfc;
+    const lastRaw = getState('aldia:meta-last:' + rfc) || getState('revision:last:' + rfc);
+    const lastMs = lastRaw ? Date.parse(String(lastRaw).replace(' ', 'T') + '-06:00') : 0;
+    const desdeMs = Math.max(time - 31 * DAY, lastMs && Number.isFinite(lastMs) ? lastMs : 0);
+    const startAt = day(new Date(desdeMs)) + ' ' + clock.format(desdeMs);
+    const endAt = day(new Date(time)) + ' ' + clock.format(time);
+    const ids = [];
+    let error = '';
+    for (const direction of ['received', 'issued']) {
+      const pending = db.prepare("SELECT id FROM jobs WHERE rfc=? AND direction=? AND kind='metadata' AND status='pending' AND startAt=? AND endAt=?")
+        .get(rfc, direction, startAt, endAt);
+      if (pending) { ids.push(pending.id); continue; }
+      let criteria = { rfc, direction, type: 'metadata', emitter: '', receiver: '', startAt, endAt };
+      if (criteriaInfo(criteria).state !== 'disponible') {
+        const free = freeCriteria(criteria);
+        if (!free) continue;
+        criteria = free.criteria;
+      }
+      try {
+        const requestId = await sendSatRequest(
+          () => connector.request({ start: criteria.startAt.slice(0, 10), end: criteria.endAt.slice(0, 10),
+            startTime: criteria.startAt.slice(11), endTime: criteria.endAt.slice(11), direction, type: 'metadata' }),
+          criteria, 'aldia', time);
+        const inserted = db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+          .run(rfc, direction, 'metadata', criteria.startAt.slice(0, 10), criteria.endAt.slice(0, 10),
+            criteria.startAt, criteria.endAt, requestId, 'pending', time + 5 * MIN, time);
+        ids.push(Number(inserted.lastInsertRowid));
+      } catch (e) { if (!error) error = message(e); }
+    }
+    return { ids, error };
+  }
+  async function aldiaStart30(profile, time, motivo = 'manual') {
+    const rfc = profile.rfc;
+    const prev = aldiaGet30(rfc);
+    if (prev?.running) return prev;
+    const run = { running: true, fase: 'metadatos', startedAt: time, motivo,
+      metaJobs: [], masivaJobs: [], portalTotal: 0, portalDesde: 0,
+      baseCount: aldiaCountInvoices30(rfc), nuevas: 0, pendientes: 0,
+      frase: 'Revisando qué conoce el SAT de ' + rfc + '…', deQuien: '', gesto: '',
+      esperandoPuerta: false, ultimoIntento: 0, cancelado: false, fin: null };
+    const active = unlocked.get(rfc);
+    if (!active?.connector) {
+      run.running = false; run.fase = 'fin';
+      run.deQuien = 'tuyo'; run.gesto = 'Desbloquea la e.firma de este RFC y vuelve a pulsar «Ponerme al día».';
+      run.frase = 'No pude empezar: la e.firma de ' + rfc + ' no está desbloqueada.';
+      run.fin = { at: time, nuevas: 0, pendientes: pendingPortalItems297(rfc).length, motivo: 'sin-efirma' };
+      aldiaSave30(rfc, run);
+      return run;
+    }
+    aldiaSave30(rfc, run);
+    const sent = await aldiaSendMeta30(profile, active.connector, time);
+    run.metaJobs = sent.ids;
+    run.ultimoIntento = time;
+    if (sent.error && !sent.ids.length) {
+      run.esperandoPuerta = true; run.fase = 'esperando';
+      run.deQuien = 'del SAT';
+      run.frase = 'El SAT no respondió al pedir la revisión: lo sigo intentando solo y te aviso cuando estés al día.';
+    }
+    aldiaSave30(rfc, run);
+    auditEvent('accion', '«Ponerme al día» (' + motivo + ') · ' + rfc + ': corrida lanzada.', rfc, true, time);
+    return run;
+  }
+  /* Cierre de la corrida: la cuenta sale de las fuentes reales
+     (expediente y metadatos), nunca de un contador propio. */
+  function aldiaFinish30(rfc, run, time, motivoFin) {
+    run.running = false; run.fase = 'fin'; run.esperandoPuerta = false;
+    run.nuevas = Math.max(0, aldiaCountInvoices30(rfc) - (run.baseCount || 0));
+    run.pendientes = pendingPortalItems297(rfc).length;
+    if (run.cancelado) {
+      run.deQuien = ''; run.gesto = '';
+      run.frase = 'Detenido: traje ' + run.nuevas + (run.nuevas === 1 ? ' factura nueva' : ' facturas nuevas') +
+        ' y quedan ' + run.pendientes + ' por bajar. Lo ya pedido al SAT sigue su curso y entra solo.';
+    } else if (run.pendientes === 0) {
+      run.deQuien = ''; run.gesto = '';
+      run.frase = 'Ya estás al día: ' + run.nuevas + (run.nuevas === 1 ? ' factura nueva' : ' facturas nuevas') + ', nada pendiente.';
+    } else {
+      run.deQuien = 'del SAT';
+      run.gesto = 'Nada: lo pedido sigue su curso y entra solo; vuelve a mirar en un rato.';
+      run.frase = 'Traje ' + run.nuevas + (run.nuevas === 1 ? ' factura nueva' : ' facturas nuevas') +
+        ' y quedan ' + run.pendientes + ' pedidas al SAT por la vía de siempre: entran solas cuando el SAT las entregue.';
+    }
+    run.fin = { at: time, nuevas: run.nuevas, pendientes: run.pendientes, motivo: motivoFin };
+    setState('aldia:meta-last:' + rfc, day(new Date(time)) + ' ' + clock.format(time));
+    aldiaSave30(rfc, run);
+    auditEvent('accion', '«Ponerme al día» · ' + rfc + ': ' + run.frase, rfc, true, time);
+    return run;
+  }
+  async function aldiaTick30(time) {
+    for (const profile of db.prepare('SELECT * FROM profiles').all()) {
+      const rfc = profile.rfc;
+      const run = aldiaGet30(rfc);
+      if (!run?.running) continue;
+      try {
+        if (run.cancelado) { aldiaFinish30(rfc, run, time, 'cancelada'); continue; }
+        if (run.fase === 'esperando') {
+          if (time - (run.ultimoIntento || 0) < 5 * MIN) continue;
+          const active = unlocked.get(rfc);
+          if (!active?.connector) continue;
+          run.ultimoIntento = time;
+          const sent = await aldiaSendMeta30(profile, active.connector, time);
+          if (sent.error && !sent.ids.length) { aldiaSave30(rfc, run); continue; }
+          run.metaJobs = sent.ids; run.esperandoPuerta = false; run.fase = 'metadatos';
+          run.deQuien = ''; run.frase = 'El SAT volvió a responder: sigo con tu puesta al día…';
+          aldiaSave30(rfc, run);
+          continue;
+        }
+        if (run.fase === 'metadatos') {
+          if (!aldiaJobsTerminal30(run.metaJobs)) continue;
+          const items = pendingPortalItems297(rfc);
+          if (!items.length) { aldiaFinish30(rfc, run, time, 'sin-pendientes'); continue; }
+          run.portalTotal = items.length;
+          if (satPortalFetch) {
+            run.fase = 'portal';
+            run.frase = 'Trayendo por el portal las ' + items.length + ' que faltan…';
+            aldiaSave30(rfc, run);
+          } else {
+            run.fase = 'masiva-despacho';
+            aldiaSave30(rfc, run);
+          }
+          continue;
+        }
+        if (run.fase === 'portal') {
+          /* Si el disparador automático ya está caminando para
+             este RFC, la corrida espera a esa bajada en vez de
+             lanzar una segunda: el portal no se pisa a sí mismo
+             y el diario (y el cupo) cuentan una sola pasada. */
+          if (portalState297()[rfc]?.progress?.running) continue;
+          if (!run.portalLanzado) {
+            const itemsNow = pendingPortalItems297(rfc);
+            if (!itemsNow.length) { run.fase = 'masiva-despacho'; aldiaSave30(rfc, run); continue; }
+            run.portalLanzado = true; run.portalDesde = time;
+            aldiaSave30(rfc, run);
+            void runPortalAttempt297(rfc, itemsNow.slice(0, 400), time, 'aldia');
+            continue;
+          }
+          run.fase = 'masiva-despacho';
+          aldiaSave30(rfc, run);
+          continue;
+        }
+        if (run.fase === 'masiva-despacho') {
+          const remaining = pendingPortalItems297(rfc);
+          const active = unlocked.get(rfc);
+          run.masivaJobs = [];
+          if (remaining.length && active?.connector) {
+            for (const direction of ['received', 'issued']) {
+              const meses = [...new Set(remaining.filter(item => item.direction === direction)
+                .map(item => String(item.issuedAt || '').slice(0, 7)))].filter(m => /^\d{4}-\d{2}$/.test(m));
+              const ranges = meses.map(mes => {
+                const [y, m] = mes.split('-').map(Number);
+                const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
+                return [mes + '-01 00:00:00', mes + '-' + String(last).padStart(2, '0') + ' 23:59:59'];
+              });
+              if (ranges.length) {
+                const sent = await revisionSend200e(profile, active.connector, direction, ranges, time);
+                run.masivaJobs.push(...sent.jobIds);
+              }
+            }
+          }
+          run.fase = 'masiva';
+          run.frase = remaining.length
+            ? 'Lo que el portal no entregó va pedido al SAT por la vía de siempre…'
+            : run.frase;
+          aldiaSave30(rfc, run);
+          continue;
+        }
+        if (run.fase === 'masiva') {
+          if (!aldiaJobsTerminal30(run.masivaJobs)) continue;
+          aldiaFinish30(rfc, run, time, 'completa');
+          continue;
+        }
+      } catch { /* una corrida rota no tumba el tick: queda asentada y el siguiente tick la retoma */ }
+    }
+  }
+  /* El contador honesto del día (Bloque B): sale del diario de
+     corridas del portal y del libro de trabajos de HOY — las
+     mismas fuentes que el Registro enseña. */
+  function aldiaContadorDia30(rfc, time) {
+    const inicio = new Date(day(new Date(time)) + 'T00:00:00-06:00').getTime();
+    const porPortal = db.prepare('SELECT COALESCE(SUM(bajados),0) AS n FROM portal_runs WHERE rfc=? AND started>=?')
+      .get(rfc, inicio)?.n || 0;
+    const pedidas = db.prepare('SELECT COUNT(*) AS n FROM jobs WHERE rfc=? AND created>=?')
+      .get(rfc, inicio)?.n || 0;
+    const fallidasPortal = db.prepare('SELECT COUNT(*) AS n FROM portal_runs WHERE rfc=? AND started>=? AND ok=0')
+      .get(rfc, inicio)?.n || 0;
+    const fallidasJobs = db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE rfc=? AND created>=? AND status IN ('expired','failed','rejected','exhausted')")
+      .get(rfc, inicio)?.n || 0;
+    return { porPortal: Number(porPortal) || 0, pedidas: Number(pedidas) || 0,
+      fallidas: (Number(fallidasPortal) || 0) + (Number(fallidasJobs) || 0) };
+  }
+  /* El veredicto por RFC (Bloque C): verde SOLO con metadatos
+     frescos y cero pendientes — sin revisión, no hay verde que
+     valga; con trabajos en curso, «en curso», no verde. */
+  function aldiaVeredicto30(rfc, time) {
+    const meta = db.prepare('SELECT COUNT(*) AS n, MAX(seenAt) AS last FROM metadata_records WHERE rfc=?').get(rfc);
+    const pendientes = pendingPortalItems297(rfc).length;
+    const enCurso = db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE rfc=? AND status='pending'").get(rfc)?.n || 0;
+    const run = aldiaGet30(rfc);
+    if (run?.running) return { estado: 'en-curso', pendientes, frase: run.frase || 'Poniéndote al día…' };
+    if (!meta?.n) return { estado: 'sin-revisar', pendientes,
+      frase: 'Aún no hay revisión de metadatos de este RFC: pulsa «Ponerme al día» para saber la verdad.' };
+    if (pendientes > 0) return { estado: 'faltan', pendientes,
+      frase: 'Faltan ' + pendientes + (pendientes === 1 ? ' factura' : ' facturas') + ' por bajar de este RFC.' };
+    if (enCurso > 0) return { estado: 'en-curso', pendientes,
+      frase: 'Hay pedidos al SAT en curso: entran solos cuando el SAT los entregue.' };
+    return { estado: 'al-dia', pendientes: 0, frase: 'Al día: el SAT no conoce ninguna factura que falte en tu expediente.' };
+  }
+  function aldiaView30(rfc, time) {
+    const run = aldiaGet30(rfc);
+    const portal = portalStateView297(rfc, time);
+    let progreso = null;
+    if (run?.running && run.fase === 'portal') {
+      const quedan = pendingPortalItems297(rfc).length;
+      progreso = { van: Math.max(0, (run.portalTotal || 0) - quedan), total: run.portalTotal || 0 };
+    } else if (run?.running && (run.fase === 'masiva' || run.fase === 'masiva-despacho')) {
+      const total = (run.masivaJobs || []).length;
+      const hechas = (run.masivaJobs || []).filter(id =>
+        db.prepare("SELECT status FROM jobs WHERE id=?").get(id)?.status !== 'pending').length;
+      progreso = { van: hechas, total };
+    }
+    return { configuradoPortal: Boolean(satPortalFetch),
+      running: Boolean(run?.running), fase: run?.fase || '', frase: run?.frase || '',
+      deQuien: run?.deQuien || '', gesto: run?.gesto || '', esperandoPuerta: Boolean(run?.esperandoPuerta),
+      progreso, fin: run?.fin || null, startedAt: run?.startedAt || 0,
+      portal: { progress: portal.progress, quota: portal.quota },
+      contadorDia: aldiaContadorDia30(rfc, time),
+      veredicto: aldiaVeredicto30(rfc, time) };
+  }
+
   /* ===== Descarga automática mensual (1.15.0, propuesta P11) =====
      El día fijado (5 por defecto, configurable) PacoSAT baja SOLO
      el mes anterior completo de cada RFC, sin que nadie lo pida:
@@ -18517,6 +18842,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         /* Disparador automático de la bajada por el portal
            (2.9.7): lanza y sigue, sin bloquear el tick. */
         portalAutoTick297(time);
+        /* «Ponerme al día» (3.0 · Bloque A): avanza las corridas
+           vivas y reintenta solo las que esperan a que el SAT
+           vuelva; su guardia es su propio estado. */
+        await aldiaTick30(time);
         /* Modo histórico de huecos (2.4.0 · W2): su propia
            guardia (ventana 02:00–05:00, 1/hora, solo con
            huecos) decide; la cadencia programada no se toca. */
@@ -20804,6 +21133,51 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc), 'Ese RFC no tiene perfil en PacoSAT.', 404);
         portalCancelFlags297.add(rfc);
         return json(res, portalStateView297(rfc));
+      }
+      if (req.method === 'GET' && url.pathname === '/api/al-dia/state') {
+        /* «Ponerme al día» (3.0 · Bloque A): el estado vivo de la
+           corrida, el veredicto por RFC y el contador honesto del
+           día — todo de las fuentes reales. Sin RFC, todos los
+           perfiles. Como la vista del portal, no es lectura de
+           invitado. */
+        const rfc = String(url.searchParams.get('rfc') || '').toUpperCase();
+        if (rfc) {
+          need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+          return json(res, aldiaView30(rfc, now()));
+        }
+        const porRfc = {};
+        for (const p of db.prepare('SELECT rfc FROM profiles ORDER BY rfc').all())
+          porRfc[p.rfc] = aldiaView30(p.rfc, now());
+        return json(res, { porRfc });
+      }
+      if (req.method === 'POST' && url.pathname === '/api/al-dia/run') {
+        /* Lanzar «Ponerme al día»: la corrida va por su cuenta en
+           el servidor (aldiaTick30 la avanza) y esta llamada
+           devuelve su estado al momento. */
+        const x = await body(req);
+        const rfc = String(x.rfc || '').toUpperCase();
+        const profile = db.prepare('SELECT * FROM profiles WHERE rfc=?').get(rfc);
+        need(profile, 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        const prev = aldiaGet30(rfc);
+        need(!prev?.running, 'Ya hay una puesta al día en curso para este RFC: espera a que termine.', 409);
+        await aldiaStart30(profile, now(), 'manual');
+        return json(res, aldiaView30(rfc, now()));
+      }
+      if (req.method === 'POST' && url.pathname === '/api/al-dia/cancel') {
+        /* Detener la puesta al día: la fase del portal recibe su
+           bandera de cancelación y la corrida cierra con su
+           cuenta honesta; lo ya pedido al SAT no se puede
+           retirar y la frase final lo dice. */
+        const x = await body(req);
+        const rfc = String(x.rfc || '').toUpperCase();
+        need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        const run = aldiaGet30(rfc);
+        if (run?.running) {
+          run.cancelado = true;
+          aldiaSave30(rfc, run);
+          portalCancelFlags297.add(rfc);
+        }
+        return json(res, aldiaView30(rfc, now()));
       }
       if (req.method === 'GET' && url.pathname === '/api/cfdi/lectura') {
         /* El Lector (2.9.7 · Pieza B): el desglose completo de UN
