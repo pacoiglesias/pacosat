@@ -505,7 +505,7 @@ class DyPDobleP2 {
 /* ===== Estáticas de la ronda ===== */
 {
   const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '2.9.15', 'la ronda se queda en 2.3.2 (ronda sin montar)');
+  assert.equal(pkg.version, '2.9.16', 'la ronda se queda en 2.3.2 (ronda sin montar)');
   assert.ok(pkg.scripts.test.includes('ronda232paseos.test.mjs'), 'la suite de paseos está en la batería');
   const browser = readFileSync(new URL('./sat-doc-browser.mjs', import.meta.url), 'utf8');
   assert.ok(browser.includes('Verificación de ATERRIZAJE (2.3.2, constructor P'),

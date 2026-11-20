@@ -1011,7 +1011,11 @@ function cuota240DeEstado() {
 }
 function cuotaSemaforo240(vista) {
   const s = String(vista?.semaforo || '');
-  if (s === 'rojo') return { state: 'bad', icono: 'alert', palabra: 'En rojo' };
+  /* (2.9.16 · P6) Cada estado con SU icono, distinguible sin
+     color: rojo = aspa, ámbar = triángulo, verde = marca,
+     sin dato = reloj. Hasta la 2.9.15 rojo y ámbar compartían
+     el triángulo y el semáforo se distinguía solo por color. */
+  if (s === 'rojo') return { state: 'bad', icono: 'close', palabra: 'En rojo' };
   if (s === 'ambar' || s === 'ámbar') return { state: 'warn', icono: 'alert', palabra: 'En ámbar' };
   if (s === 'verde') return { state: 'ok', icono: 'check', palabra: 'En verde' };
   return { state: 'dim', icono: 'clock', palabra: 'Sin dato del servidor' };
@@ -1032,6 +1036,11 @@ function cuotaTarjeta240(cuota, rfcVisible) {
     const head = n('div', undefined, 'panel-head');
     head.append(n('strong', vista.rfc || ''));
     const pill = statusPill(sem.state, sem.palabra, vista.texto || '', null, true);
+    /* (2.9.16 · P6) La píldora trae el icono del semáforo
+       antepuesto: es su único icono (la píldora en sí solo
+       pinta un punto), y desde esta ronda cada estado trae
+       el suyo — aspa, triángulo, marca o reloj —, no el
+       triángulo compartido de antes. */
     pill.prepend(icon(sem.icono));
     head.append(pill);
     bloque.append(head);
