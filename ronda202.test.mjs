@@ -228,9 +228,9 @@ const makeService = (options = {}) => {
 
 /* ---------- Sellos de la versión ---------- */
 {
-  assert.equal(JSON.parse(read('package.json')).version, '2.9.17', 'la versión del paquete es 2.0.2');
-  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '2.9.17'"), 'el ejecutor declara 2.0.2 (solo el sello)');
-  assert.ok(read('Faro-Fiscal.html').includes('"version":"2.9.17"'), 'el artefacto se sella 2.0.2');
-  assert.ok(read('final-ui.part').includes("version: '2.9.17'"), 'la nota de novedades es la de esta versión');
+  assert.equal(JSON.parse(read('package.json')).version, '3.0.0', 'la versión del paquete es 2.0.2');
+  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '3.0.0'"), 'el ejecutor declara 2.0.2 (solo el sello)');
+  assert.ok(read('Faro-Fiscal.html').includes('"version":"3.0.0"'), 'el artefacto se sella 2.0.2');
+  assert.ok(read('final-ui.part').includes("version: '3.0.0'"), 'la nota de novedades es la de esta versión');
   console.log('OK 2.0.2 · sellos — paquete, ejecutor, artefacto y novedades en 2.0.2.');
 }

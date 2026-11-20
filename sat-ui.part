@@ -1217,7 +1217,11 @@ function satDownloadScreen() {
   /* (2.9.12 · Piezas 2 y 3) La pantalla abre con su tarjeta
      protagonista de descarga; la guía, la cola y la cobertura
      siguen enteras tras ella, en su sitio secundario. */
-  const casa280 = [descargarCard2912(), guide, container];
+  /* (3.0 · Bloques A y B) La pantalla abre con «Ponerme al
+     día» y su caminante siempre visible; la tarjeta de
+     periodo y la guía quedan como el camino manual de
+     respaldo, enteras, tras la protagonista. */
+  const casa280 = [aldia30Card(), descargarCard2912(), guide, container];
   /* (2.9.13 · mejoras 10 y 12) El año de un vistazo y el
      historial con su gráfico, entre la tarjeta y la cobertura
      completa: la rejilla dice qué meses tienes por sentido y
@@ -2074,6 +2078,13 @@ async function pollSat() {
   satPolling = true;
   try {
     satData = await satApi('status');
+    if (typeof frescura30Pintar === 'function') frescura30Pintar();
+    /* (3.0 · mejora 26) La copia para el próximo arranque
+       instantáneo; si no cabe, se olvida sin ruido. */
+    try {
+      const copia30 = JSON.stringify(satData);
+      if (copia30.length < 2_000_000) localStorage.setItem('pacosat30-satdata', copia30);
+    } catch { /* sin memoria: el próximo arranque será en frío */ }
     satError = '';
     flushOfflineQueue().catch(() => {});
     if (satData.settings) {

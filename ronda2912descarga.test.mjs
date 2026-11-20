@@ -213,7 +213,12 @@ async function pintarDescargas2912(b, { scopeRfc, perfiles, extra = '' }) {
   const raiz = b.context.document.createElement('div');
   raiz.append(...els);
   await asentar(40);
-  const tarjeta = els[0];
+  /* RE-BASE 3.0 (Bloque B del encargo): la pantalla abre con
+     la tarjeta «Ponerme al día» (els[0]) y la tarjeta del
+     periodo queda como la vía manual, justo debajo. La
+     `tarjeta` de esta batería es la del periodo: se localiza
+     por su dataset, no por posición. */
+  const tarjeta = els.find(el => el.dataset && el.dataset.dl2912 === 'card') || els[0];
   return { raiz, els, tarjeta };
 }
 const enTarjeta = (tarjeta, dataset, valor) =>
@@ -252,7 +257,13 @@ const enTarjeta = (tarjeta, dataset, valor) =>
   const { raiz, els, tarjeta } = await pintarDescargas2912(b, { scopeRfc: OWN,
     perfiles: [{ rfc: OWN, accessMethod: 'efirma', efirmaStored: true, unlocked: true, ciecStored: false }] });
   assert.equal(tarjeta.dataset.dl2912, 'card',
-    'A: la pantalla abre con la tarjeta protagonista (en la 2.9.11 no existe)');
+    'A: la tarjeta del periodo existe (en la 2.9.11 no existe)');
+  /* RE-BASE 3.0: la pantalla abre con «Ponerme al día» y la
+     tarjeta del periodo es la vía manual, debajo. */
+  assert.equal(els[0].dataset.aldia30, 'card',
+    'A: la pantalla abre con la tarjeta «Ponerme al día» (3.0)');
+  assert.ok(els.indexOf(tarjeta) > 0,
+    'A: la tarjeta del periodo va tras la protagonista (vía manual de respaldo)');
   assert.ok(textoDe(tarjeta).includes(OWN),
     'A: la tarjeta abre con el RFC del selector global ya elegido');
   const dStart = enTarjeta(tarjeta, 'dl2912Start', '1');

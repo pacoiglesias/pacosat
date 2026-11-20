@@ -655,6 +655,12 @@ function lectorSeccion297(row) {
   return box;
 }
 function invoiceDetail(row) {
+  /* (3.0 · mejora 23) Al abrir la ficha desde Facturas se
+     guarda la posición de la lista: al cerrarla — aunque
+     una acción dentro repinte — la lista vuelve al mismo
+     sitio, no arriba del todo. */
+  if (typeof page !== 'undefined' && page === 'invoices')
+    window.__scrollFacturas30 = window.scrollY;
   const summary = n('div', undefined, 'invoice-summary');
   const headline = n('div');
   headline.append(n('span', rowRole(row), 'period-chip'), n('h3', amount(row)), n('p', KINDS[row.kind] + ' · ' + dateLabel(row.date)));
@@ -696,6 +702,25 @@ function invoiceDetail(row) {
     }
   }
   summary.append(statusCell(row.id));
+  /* (3.0 · mejora 7) La prueba de origen, en la ficha: cómo
+     y cuándo entró esta factura, en palabras llanas. Los
+     registros viejos no traen la marca y no se inventa:
+     sin marca, la línea no sale. */
+  if (row.origin) {
+    const via30 = { portal: 'Traída por el portal del SAT', descarga: 'Traída por una petición al SAT',
+      importacion: 'Importada a mano desde un archivo' }[row.origin];
+    if (via30) {
+      let cuando30 = '';
+      if (row.originAt) {
+        const hoy30 = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format();
+        const dia30 = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(row.originAt));
+        cuando30 = dia30 === hoy30 ? ' hoy a las ' + localTime(row.originAt) : ' el ' + localDateTime(row.originAt);
+      }
+      const origenEl30 = n('p', via30 + cuando30 + '.', 'muted');
+      origenEl30.dataset.origen30 = row.origin;
+      summary.append(origenEl30);
+    }
+  }
   /* Nota pegada al comprobante (F12, 1.31.0): texto libre de Paco
      sobre ESTE CFDI («esto es la renta de diciembre»). Vive en el
      servidor (tabla cfdi_notas), jamás toca el XML, y viaja en el
@@ -1328,6 +1353,40 @@ function invoiceActions(row) {
   const menuFila = cardMenu1312('Más opciones de esta factura');
   menuFila._setItems1312(itF);
   return menuFila;
+}
+/* (3.0 · mejora 22) Las acciones de un toque de la tarjeta
+   (móvil): en la vista de tarjetas, lo frecuente — Ver,
+   PDF y Enviar — va FUERA del menú ⋯, con los mismos
+   efectos que dentro. El menú sigue entero en su columna:
+   nada se retira, lo diario deja de costar dos toques. */
+function invoiceQuick30(row) {
+  const strip = n('div', undefined, 'rapidas30');
+  strip.dataset.rapidas30 = row.id;
+  const ver = n('button', 'Ver', 'soft small'); ver.type = 'button';
+  ver.onclick = () => invoiceDetail(row);
+  strip.append(ver);
+  if (typeof satToken !== 'undefined' && satToken) {
+    const pdf = n('button', 'PDF', 'soft small'); pdf.type = 'button';
+    pdf.onclick = async () => {
+      try {
+        const data = await satApi('salidas/cfdi', { id: row.id, format: 'pdf', rfc: scope });
+        download(new Blob([decode64(data.content)], { type: data.type || 'application/pdf' }), data.name);
+      } catch (error) { toast(error.message, 'error'); }
+    };
+    strip.append(pdf);
+    if (typeof enviarBoton240 === 'function' && typeof enviarTarjeta240 === 'function' &&
+        (typeof guestMode === 'undefined' || !guestMode)) {
+      const enviar = n('button', 'Enviar', 'soft small'); enviar.type = 'button';
+      enviar.onclick = () => enviarTarjeta240({
+        nombre: 'Comprobante ' + row.id + '.pdf',
+        asunto: 'PacoSAT · Comprobante ' + row.id,
+        correo: null,
+        correoNota: 'El correo de un comprobante vive en su ficha («Reenviar por correo»). Por aquí sale por WhatsApp o Compartir, desde tu aparato.',
+        archivo: () => enviarBlobSalida240('salidas/cfdi', { id: row.id, format: 'pdf', rfc: scope }) });
+      strip.append(enviar);
+    }
+  }
+  return strip;
 }
 async function viewXml(file, name) {
   check(file.size && file.size <= 8 * MB, 'El visor admite XML de hasta 8 MB.');

@@ -839,10 +839,10 @@ server.close();
 /* ===== Estáticas: versión 2.0.1 y cableado de la ronda ===== */
 {
   const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '2.9.17', 'la versión de la ronda es 2.0.1');
+  assert.equal(pkg.version, '3.0.0', 'la versión de la ronda es 2.0.1');
   assert.ok(pkg.scripts.test.includes('ronda201.test.mjs'), 'la suite de la ronda está en la batería');
   const ejecutor = readFileSync(new URL('./ejecutor-local.mjs', import.meta.url), 'utf8');
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '2.9.17'"), 'el ejecutor declara 2.0.1');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '3.0.0'"), 'el ejecutor declara 2.0.1');
   assert.ok(ejecutor.includes('function diagDe(error)'),
     'el ejecutor propaga error.diag con diagDe (verificado, sin tocar su lógica)');
   const browser = readFileSync(new URL('./sat-doc-browser.mjs', import.meta.url), 'utf8');

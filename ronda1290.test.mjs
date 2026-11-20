@@ -387,11 +387,15 @@ const unlock = async (h, rfc) => {
   assert.ok(layout.includes('Centro SAT'), '«SAT» pasa a «Centro SAT» en el menú');
   const bottom = layout.slice(layout.indexOf('bottombar'));
   /* RE-BASE 2.8.0 (diseño 28): la barra es Hoy · Avisos ·
-     Descargar · Buzón del SAT · Más; Dinero vive en «Más». */
-  for (const v of ['home', 'avisos', 'descargar', 'tributario'])
-    assert.ok(bottom.includes('data-view="' + v + '"'), 'barra móvil 2.8.0: ' + v);
+     Descargar · Buzón del SAT · Más; Dinero vive en «Más».
+     RE-BASE 3.0 (mejora 21): la barra es Al día · Hoy ·
+     Descargar · Avisos · Más; el Buzón del SAT conserva su
+     sitio en el menú lateral y en «Más» (paridad). */
+  for (const v of ['home', 'avisos', 'descargar'])
+    assert.ok(bottom.includes('data-view="' + v + '"'), 'barra móvil 3.0: ' + v);
+  assert.ok(bottom.includes('id="aldia30-bar"'), 'barra móvil 3.0: botón «Al día»');
   assert.ok(!bottom.includes('data-view="invoices"') && !bottom.includes('data-view="pagos"') && !bottom.includes('data-view="dinero"'),
-    'la barra móvil no lleva Facturas/Pagos/Dinero: es Hoy · Avisos · Descargar · Buzón del SAT · Más');
+    'la barra móvil no lleva Facturas/Pagos/Dinero: es Al día · Hoy · Descargar · Avisos · Más');
   assert.ok(trib.includes('Papelera') && trib.includes('no se puede borrar'),
     'la papelera enseña su límite honesto en la cara');
   assert.ok(trib.includes('executor/pair') && trib.includes('Ejecutor local del SAT'),
@@ -406,7 +410,7 @@ const unlock = async (h, rfc) => {
     'Totales por años, meses que se entran y suma del detalle que iguala el total');
   assert.ok(ui.includes('fmtFechaHora'), 'un formato humano único de fecha');
   // 1.29.1: el pineo de «versión actual» se re-apunta en cada ronda.
-  assert.equal(JSON.parse(read('package.json')).version, '2.9.17', 'la versión es 2.0.1 (re-basificado en la 2.0.1: motores del Buzón y de Declaraciones reconstruidos contra el mapa real del portal)');
+  assert.equal(JSON.parse(read('package.json')).version, '3.0.0', 'la versión es 2.0.1 (re-basificado en la 2.0.1: motores del Buzón y de Declaraciones reconstruidos contra el mapa real del portal)');
   assert.ok(read('docs/CAPACIDADES.md').includes('1.29.0'), 'CAPACIDADES describe la 1.29.0');
   console.log('OK 1.29.0 · diseño — menú, barra móvil, papelera honesta, pagos y totales navegables.');
 }

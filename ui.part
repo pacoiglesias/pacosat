@@ -3901,7 +3901,23 @@ function pintarSesion2916() {
   linea.textContent = 'Sesión: ' + partes.join(' · ');
   linea.hidden = false;
 }
-let satData = { profiles: [], jobs: [], inbox: [], mail: {} };
+/* (3.0 · mejora 26) Hoy abre al instante con lo último
+   conocido: el último estado del servidor se guarda en el
+   aparato y la primera pintura lo usa tal cual; el sondeo
+   lo refresca en segundos y el sello de frescura dice la
+   hora de los datos en pantalla. Si la copia es ilegible o
+   enorme, se ignora: el arranque de siempre manda. */
+let satData = (() => {
+  const vacio = { profiles: [], jobs: [], inbox: [], mail: {} };
+  try {
+    const copia = localStorage.getItem('pacosat30-satdata');
+    if (copia && copia.length < 2_000_000) {
+      const parsed = JSON.parse(copia);
+      if (parsed && Array.isArray(parsed.profiles)) return parsed;
+    }
+  } catch { /* sin memoria disponible: arranque en frío */ }
+  return vacio;
+})();
 let satError = '', satPolling = false, cloudRevision;
 const satStatus = { pending: 'En espera del SAT', finished: 'Paquetes recibidos', expired: 'Vencida', failed: 'Falló', rejected: 'Rechazada', covered: 'Cubierta por otra vía', rerouted: 'Re-rutada', uncovered: 'Pendiente nombrada del SAT' };
 const directions = { received: 'Recibidos', issued: 'Emitidos', both: 'Emitidos y recibidos' };
@@ -4025,6 +4041,25 @@ function portalMotivo297(state) {
   return state?.progress?.step || state?.runs?.[0]?.error || state?.runs?.[0]?.motivo ||
     state?.runs?.[0]?.step || 'la bajada no terminó';
 }
+/* (3.0 · mejora 8) Todo fallo del caminante se cuenta con
+   el semáforo de la casa: de quién es, qué significa y el
+   único gesto — o «nada: se resuelve solo». El motivo
+   crudo del motor queda tras «Ver detalle», nunca en la
+   superficie. */
+function portalFallaLlana30(state) {
+  const crudo = String(portalMotivo297(state) || '');
+  if (/cupo|quota|2000/i.test(crudo))
+    return { deQuien: 'del SAT', frase: 'Se acabó el cupo del portal por hoy: el SAT solo deja bajar un número de facturas al día.',
+      gesto: 'Nada: mañana el caminante sigue solo con lo que falte.' };
+  if (/puerta|no abre|sesi[oó]n|credencial|e\.firma|certificado/i.test(crudo))
+    return { deQuien: 'del SAT', frase: 'La puerta del SAT no abrió en esta pasada.',
+      gesto: 'Nada: se reintenta solo; si sigue así, «Ponerme al día» lo vuelve a intentar.' };
+  if (/cancel/i.test(crudo))
+    return { deQuien: 'tuyo', frase: 'La bajada se canceló a petición tuya.',
+      gesto: 'Vuelve a pedirla cuando quieras: lo ya traído se queda.' };
+  return { deQuien: 'de PacoSAT', frase: 'La bajada por el portal no terminó.',
+    gesto: 'Pulsa «Ponerme al día» para reintentarlo; lo ya traído se queda.' };
+}
 /* El progreso vivo de una bajada por el portal, en el propio
    sitio que la pidió: sondeo a /api/portal-cfdi/state cada
    portalPollMs297 (2 s en producción), el paso vivo del
@@ -4061,6 +4096,20 @@ function portalProgreso297(box, rfc, alTerminar) {
       cancel.remove();
       const ok = prog.ok !== false && state.runs?.[0]?.ok !== false &&
         state.runs?.[0]?.status !== 'fallida' && state.runs?.[0]?.status !== 'error';
+      /* (3.0 · mejora 8) El fallo se cuenta en llano en el
+         propio sitio de la bajada, con su detalle técnico
+         plegado tras «Ver detalle». */
+      if (!ok && box.isConnected) {
+        const falla = portalFallaLlana30(state);
+        const lineaFalla = n('div', undefined, 'portal-falla30');
+        lineaFalla.dataset.portalFalla30 = '1';
+        lineaFalla.append(n('p', 'Fallo ' + falla.deQuien + ': ' + falla.frase),
+          n('p', 'Gesto: ' + falla.gesto, 'muted'));
+        const detalleTec = n('details');
+        detalleTec.append(n('summary', 'Ver detalle'), n('p', portalMotivo297(state), 'muted'));
+        lineaFalla.append(detalleTec);
+        box.append(lineaFalla);
+      }
       if (typeof alTerminar === 'function') alTerminar(ok, state);
       return;
     }
@@ -4084,6 +4133,123 @@ async function portalLanzar297(box, payload, alTerminar) {
     }
   }
   return portalProgreso297(box, payload.rfc, alTerminar);
+}
+/* ===== 3.0 · «Ponerme al día» (Bloques A y B) =====
+   El botón que lo hace todo: el servidor orquesta revisión
+   de metadatos → caminante del portal → vía masiva solo para
+   lo que el portal no entregue (local-server, aldia*30), y
+   esta tarjeta solo pinta su estado en palabras llanas: el
+   veredicto (nunca verde si no es verdad), la frase viva, el
+   avance con su Detener y — siempre visible — la tarjeta del
+   caminante con la puerta, el cupo y la cuenta honesta del
+   día. La misma tarjeta vive en Hoy y en Descargar. */
+/* (3.0 · mejora 10) El sello de frescura de la cabecera: la
+   hora del último estado que el servidor entregó. Lo pinta
+   cada sondeo con éxito (pollSat) y la tarjeta «Ponerme al
+   día» al refrescar; sin lectura aún, queda vacío — nunca
+   una hora fingida. */
+function frescura30Pintar() {
+  const el = document.getElementById('frescura30');
+  if (!el) return;
+  el.textContent = 'Datos de las ' + new Intl.DateTimeFormat('es-MX',
+    { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Mexico_City' }).format(new Date());
+}
+const aldiaRun30 = rfc => apiJson297('al-dia/run', { rfc });
+const aldiaCancel30 = rfc => apiJson297('al-dia/cancel', { rfc });
+const aldiaState30 = rfc => apiJson297('al-dia/state?rfc=' + encodeURIComponent(rfc));
+function aldiaVeredicto30(v) {
+  if (!v) return { nivel: 'dim', frase: 'Sin revisar todavía' };
+  if (v.estado === 'al-dia') return { nivel: 'ok', frase: 'Al día: nada pendiente' };
+  if (v.estado === 'faltan') return { nivel: 'atencion', frase: 'Faltan ' + v.pendientes + (v.pendientes === 1 ? ' por traer' : ' por traer') };
+  if (v.estado === 'en-curso') return { nivel: 'proceso', frase: 'Poniéndote al día…' };
+  return { nivel: 'dim', frase: 'Sin revisar todavía: pulsa «Ponerme al día»' };
+}
+function aldia30Card(rfcForzado) {
+  const rfc = rfcForzado || (typeof descargaRfc2912 === 'function' ? descargaRfc2912() : (typeof scope !== 'undefined' ? scope : ''));
+  const card = panel('Ponerme al día');
+  card.dataset.aldia30 = 'card';
+  /* (3.0 · mejora 19) Sin RFC dado de alta, la tarjeta
+     enseña el paso que falta con su botón, no un error. */
+  if (!rfc) {
+    const vacio = n('div');
+    vacio.append(n('p', 'Aún no hay un RFC dado de alta: sin él, PacoSAT no puede pedir nada al SAT.'));
+    const irAlta = n('button', 'Dar de alta un RFC', 'primary');
+    irAlta.type = 'button';
+    irAlta.onclick = () => navigate('descargar');
+    vacio.append(irAlta);
+    card.append(vacio);
+    return card;
+  }
+  const body = n('div', undefined, 'aldia30-body');
+  card.append(body);
+  const sema = n('p', '', 'aldia30-sema');
+  const punto = n('span', '', 'aldia30-punto'); punto.dataset.aldia30Punto = '1';
+  const veredictoEl = n('strong', 'Revisando…'); veredictoEl.dataset.aldia30Veredicto = '1';
+  sema.append(punto, veredictoEl);
+  const frase = n('p', '', 'muted'); frase.dataset.aldia30Frase = '1';
+  const barraBox = n('div', undefined, 'aldia30-barra'); barraBox.hidden = true;
+  const barra = n('i'); barraBox.append(barra);
+  const avance = n('p', '', 'muted'); avance.dataset.aldia30Avance = '1'; avance.hidden = true;
+  const acciones = n('div', undefined, 'actions');
+  const go = n('button', 'Ponerme al día', 'primary'); go.type = 'button'; go.dataset.aldia30Go = '1';
+  const detener = n('button', 'Detener', 'soft'); detener.type = 'button'; detener.dataset.aldia30Cancel = '1'; detener.hidden = true;
+  acciones.append(go, detener);
+  /* La tarjeta del caminante, siempre visible (3.0 · B):
+     puerta, cupo del día y la cuenta honesta de hoy — las
+     tres salen del estado real del servidor, no de memoria. */
+  const caminante = n('div', undefined, 'aldia30-caminante');
+  caminante.dataset.aldia30Caminante = '1';
+  caminante.append(n('h3', 'El caminante del portal'));
+  const puertaEl = n('p', '', 'muted'); puertaEl.dataset.aldia30Puerta = '1';
+  const cupoEl = n('p', '', 'muted'); cupoEl.dataset.aldia30Cupo = '1';
+  const hoyEl = n('p', '', 'muted'); hoyEl.dataset.aldia30Hoy = '1';
+  caminante.append(puertaEl, cupoEl, hoyEl);
+  body.append(sema, frase, barraBox, avance, acciones, caminante);
+  let timer = null, corria = false;
+  const pintar = st => {
+    const v = aldiaVeredicto30(st?.veredicto);
+    punto.dataset.nivel = v.nivel;
+    veredictoEl.textContent = v.frase;
+    frase.textContent = st?.run?.frase || '';
+    const corriendo = Boolean(st?.run?.running);
+    go.hidden = corriendo;
+    detener.hidden = !corriendo;
+    if (st?.progreso && st.progreso.total > 0) {
+      barraBox.hidden = false; avance.hidden = false;
+      barra.style.width = Math.min(100, Math.round(100 * st.progreso.van / st.progreso.total)) + '%';
+      avance.textContent = st.progreso.van + ' de ' + st.progreso.total;
+    } else { barraBox.hidden = true; avance.hidden = true; }
+    puertaEl.textContent = st?.configuradoPortal
+      ? (st.puertaOk ? 'La puerta del SAT abre: el caminante puede entrar.' : 'La puerta del SAT no abre ahora: la corrida espera y se reintenta sola.')
+      : 'El caminante aún no está conectado para este RFC.';
+    const q = st?.portal?.quota;
+    cupoEl.textContent = q ? ('Cupo del portal hoy: quedan ' + q.remaining + ' de ' + q.limit + '.') : '';
+    const c = st?.contadorDia;
+    hoyEl.textContent = c ? ('Hoy: ' + c.porPortal + ' por el portal · ' + c.pedidas + ' pedidas al SAT · ' + c.fallidas + ' no llegaron.') : '';
+    if (corria && !corriendo) { corria = false; toast(st?.run?.frase || 'Corrida terminada', 'ok'); if (card.isConnected) render(); }
+    corria = corriendo;
+    if (corriendo && card.isConnected) timer = setTimeout(refrescar, 3000);
+  };
+  const refrescar = async () => {
+    try { pintar(await aldiaState30(rfc)); frescura30Pintar(); }
+    catch { frase.textContent = 'El servicio local no respondió; la corrida sigue en el servidor.'; if (card.isConnected) timer = setTimeout(refrescar, 5000); }
+  };
+  go.onclick = async () => {
+    go.disabled = true;
+    try { await aldiaRun30(rfc); }
+    catch (error) { if (error.status !== 409) { toast(error.message, 'error'); go.disabled = false; return; } }
+    go.disabled = false;
+    refrescar();
+  };
+  detener.onclick = async () => { try { await aldiaCancel30(rfc); } catch { /* el refresco enseña el estado real */ } refrescar(); };
+  /* La primera lectura espera al montaje: la tarjeta se
+     construye antes de entrar en el DOM y un refresco en
+     ese instante se descartaría por «no conectada»,
+     dejando el «Revisando…» para siempre (visto en las
+     capturas de la ronda). El sondeo posterior sí se
+     detiene al desmontar, dentro de pintar. */
+  setTimeout(refrescar, 0);
+  return card;
 }
 /* Descarga de salidas para las partes principales (1.31.0):
    copia del patrón de salidaDescargar de outputs-ui.part, pero
@@ -4736,6 +4902,13 @@ function render() {
      D8: suprimir es visibilidad, no dejar de componer) y decide
      la visibilidad con la página ya pintada. */
   if (typeof paintActivity === 'function') { try { paintActivity(); } catch { /* la franja nunca tumba el pintado */ } }
+  /* (3.0 · mejora 23) La posición guardada al abrir una
+     ficha se restaura una vez pintada la lista. */
+  if (page === 'invoices' && typeof window !== 'undefined' && window.__scrollFacturas30 != null) {
+    const destino30 = window.__scrollFacturas30;
+    window.__scrollFacturas30 = null;
+    requestAnimationFrame(() => window.scrollTo(0, destino30));
+  }
 }
 /* Píldora de estado común (1.6.11): un solo lenguaje de semáforo en
    toda la app. ok = verde, warn = ámbar, bad = rojo, dim = gris (sin
@@ -5968,6 +6141,14 @@ function hoyDiaCifras2913() {
   const mesesMini = [...porMes.keys()].sort().slice(-6);
   const maxMini = Math.max(1, ...mesesMini.map(m => porMes.get(m)));
   const celdaFacturas = n('div', undefined, 'hoy-cifra2913');
+  /* (3.0 · mejora 12) La cifra se toca: abre Facturas con el
+     mes puesto — el número enseña su respaldo. */
+  celdaFacturas.dataset.hoyCifra30 = 'facturas-mes';
+  celdaFacturas.setAttribute('role', 'button'); celdaFacturas.tabIndex = 0;
+  celdaFacturas.title = 'Ver las facturas de este mes';
+  const irFacturasMes = () => { month = mesActual; invoicePage = 0; navigate('invoices'); };
+  celdaFacturas.onclick = irFacturasMes;
+  celdaFacturas.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); irFacturasMes(); } };
   celdaFacturas.append(n('small', 'Facturas de este mes'),
     n('strong', number.format(delMes.length), 'hoy-cifra-num2913'));
   const mini = n('div', undefined, 'graf-barras2913 mini');
@@ -5989,6 +6170,14 @@ function hoyDiaCifras2913() {
      en Hoy es ese, a la vista en el primer pantallazo.) */
   const bh = typeof satData !== 'undefined' && satData ? satData.backupHealth : null;
   const celdaRespaldo = n('div', undefined, 'hoy-cifra2913');
+  /* (3.0 · mejora 12) El respaldo también se toca: abre
+     Salud, donde vive su semáforo y su arreglo. */
+  celdaRespaldo.dataset.hoyCifra30 = 'respaldo';
+  celdaRespaldo.setAttribute('role', 'button'); celdaRespaldo.tabIndex = 0;
+  celdaRespaldo.title = 'Ver el respaldo en Salud';
+  const irRespaldo = () => navigate('salud');
+  celdaRespaldo.onclick = irRespaldo;
+  celdaRespaldo.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); irRespaldo(); } };
   celdaRespaldo.append(n('small', 'Respaldo'),
     statusPill(!bh?.enabled ? 'dim' : bh.failed ? 'bad' : bh.lastOk ? 'ok' : 'warn',
       !bh?.enabled ? 'Sin activar' : bh.failed ? 'El último falló' : bh.lastOk ? 'Al día' : 'Sin constar'),
@@ -6004,6 +6193,14 @@ function hoyDiaCifras2913() {
     const diasTranscurridos = Math.max(1, Math.floor((Date.now() - inicioAnio) / 86400000) + 1);
     const pct = Math.min(100, Math.round(conDescarga.size / diasTranscurridos * 100));
     const celdaAnillo = n('div', undefined, 'hoy-cifra2913 hoy-anillo2913');
+    /* (3.0 · mejora 12) El anillo se toca: abre Descargar,
+       donde vive la cobertura completa con su rejilla. */
+    celdaAnillo.dataset.hoyCifra30 = 'cobertura';
+    celdaAnillo.setAttribute('role', 'button'); celdaAnillo.tabIndex = 0;
+    celdaAnillo.title = 'Ver la cobertura en Descargar';
+    const irCobertura = () => navigate('descargar');
+    celdaAnillo.onclick = irCobertura;
+    celdaAnillo.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); irCobertura(); } };
     celdaAnillo.append(n('small', 'Cobertura de ' + anio));
     const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
@@ -6059,6 +6256,10 @@ function home() {
   const blocks = [];
   const tareas2916 = hoyTareas2916();
   if (tareas2916) blocks.push(tareas2916);
+  /* (3.0 · Bloque A) El botón de la casa, tras las tareas:
+     una pulsación y el servidor corre la puesta al día
+     entera; su tarjeta enseña el veredicto y el avance. */
+  blocks.push(aldia30Card());
   blocks.push(hoyMando201(null));
   /* (2.9.13 · mejoras 1 y 2) «Tu día en cifras», con el
      anillo de cobertura del año: tras el mando, antes de lo
@@ -6905,6 +7106,18 @@ function invoiceScreen() {
     if (content.classList?.contains('table-wrap')) {
       content.classList.add('card-table');
       content.querySelector('table')?.classList.add('grid-table');
+      /* (3.0 · mejora 22) Cada tarjeta lleva sus acciones de
+         un toque (Ver · PDF · Enviar) fuera del menú ⋯. */
+      if (typeof invoiceQuick30 === 'function' && content.querySelectorAll) {
+        content.querySelectorAll('tbody tr').forEach((tr, i) => {
+          const row = sliced[i];
+          if (!row) return;
+          const celda = n('td');
+          celda.dataset.label = 'Acciones';
+          celda.append(invoiceQuick30(row));
+          tr.append(celda);
+        });
+      }
     }
     /* Cabeceras tocables (2.0.1 · nº 26): «Fecha» alterna
        reciente/antiguo y «Total» alterna el orden por importe;

@@ -181,7 +181,10 @@ async function pintarDescargas2912(b, { scopeRfc, perfiles, extra = '' }) {
   const raiz = b.context.document.createElement('div');
   raiz.append(...els);
   await asentar(40);
-  const tarjeta = els[0];
+  /* RE-BASE 3.0 (Bloque B): la pantalla abre con «Ponerme
+     al día» (els[0]); la tarjeta del periodo se localiza por
+     su dataset, no por posición. */
+  const tarjeta = els.find(el => el.dataset && el.dataset.dl2912 === 'card') || els[0];
   return { raiz, els, tarjeta };
 }
 const enTarjeta = (tarjeta, dataset, valor) =>

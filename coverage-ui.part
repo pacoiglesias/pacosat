@@ -109,6 +109,13 @@ function coberturaPaneles280(enCasa280 = false) {
   }
   screens.push(monthlyPanel());
   screens.push(tienesPanel);
+  /* (3.0 · mejora 9) La rejilla de lo que falta por traer:
+     el año en curso por RFC, con los CFDI detectados sin
+     XML contados por mes desde la misma lista que camina
+     el portal. Tocar un mes con faltantes los pide por el
+     portal para ese mes, con su progreso en la tarjeta. */
+  const falta30 = coberturaFalta30();
+  if (falta30) screens.push(falta30);
   /* El libro de solicitudes queda como detalle secundario (C3):
      cuenta lo PEDIDO al SAT, no lo que tienes. */
   const table = panel('Descargas pedidas al SAT · por RFC y sentido');
@@ -179,6 +186,60 @@ function coberturaPaneles280(enCasa280 = false) {
   return screens;
 }
 function coverageScreen() { return coberturaPaneles280(false); }
+/* (3.0 · mejora 9) «Lo que falta por traer»: rejilla del
+   año en curso por RFC con los detectados sin XML de cada
+   mes (la lista real de metadatos sin descargar, la misma
+   que alimenta al caminante). El mes con faltantes es un
+   botón: pide ese mes por el portal y enseña el progreso
+   en la propia tarjeta; el mes completo se dice completo. */
+function coberturaFalta30() {
+  const missing = (typeof satData !== 'undefined' && satData?.metadata?.missing) || [];
+  const anio = String(new Date().getFullYear());
+  /* (3.0 · mejora 19) Sin faltantes, la tarjeta enseña su
+     siguiente paso con botón en vez de no existir: o aún
+     no se ha revisado (a Descargar a ponerse al día) o de
+     verdad no falta nada (y se dice). */
+  if (!missing.length) {
+    const wrapVacio = panel('Lo que falta por traer · ' + anio);
+    wrapVacio.dataset.cobFalta30 = 'vacio';
+    const revisado = (typeof satData !== 'undefined' && satData?.metadata?.records) > 0;
+    wrapVacio.append(empty(revisado ? 'No falta nada por traer' : 'Aún no se ha revisado',
+      revisado ? 'Todos los CFDI que el SAT ha enseñado en sus listados tienen ya su XML guardado.'
+        : 'Cuando PacoSAT revise los listados del SAT, aquí verás mes a mes lo que falte por traer.',
+      action('Ponerme al día', () => navigate('descargar'), 'primary', 'sync')));
+    return wrapVacio;
+  }
+  const MESES30 = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  const wrap = panel('Lo que falta por traer · ' + anio);
+  wrap.dataset.cobFalta30 = '1';
+  wrap.append(n('p', 'CFDI que el SAT ya enseñó en sus listados y aún no tienen su XML guardado. Toca un mes para traer los suyos por el portal.', 'muted'));
+  const rfcs = [...new Set(missing.map(m => m.direction === 'received' ? m.receiver : m.emitter))]
+    .filter(r => !scope || r === scope);
+  for (const rfc of rfcs) {
+    wrap.append(n('h3', rfc));
+    const rejilla = n('div', undefined, 'cob-falta-rejilla30');
+    const progreso = n('div', undefined, 'cob-falta-progreso30');
+    for (let i = 0; i < 12; i++) {
+      const mes = anio + '-' + String(i + 1).padStart(2, '0');
+      const n30 = missing.filter(m => (m.direction === 'received' ? m.receiver : m.emitter) === rfc &&
+        String(m.issuedAt || '').startsWith(mes)).length;
+      const celda = n('button', '', 'cob-falta-mes30');
+      celda.type = 'button';
+      celda.dataset.cobFaltaMes = mes;
+      celda.append(n('span', MESES30[i], 'cob-falta-nombre30'),
+        n('strong', n30 ? ('Faltan ' + n30) : 'Completo', 'cob-falta-cuenta30'));
+      if (!n30) { celda.disabled = true; celda.classList.add('completo'); }
+      else celda.onclick = () => {
+        const ultimo = new Date(Date.UTC(Number(anio), i + 1, 0)).getUTCDate();
+        portalLanzar297(progreso, { rfc, period: { start: mes + '-01', end: mes + '-' + String(ultimo).padStart(2, '0') }, origen: 'manual' },
+          () => { if (wrap.isConnected) render(); });
+      };
+      rejilla.append(celda);
+    }
+    wrap.append(rejilla, progreso);
+  }
+  return wrap;
+}
 /* Descarga automática mensual (1.15.0): su configuración, la
    cuenta de la última corrida y la oferta de recuperación de los
    huecos históricos — aparte de la corrida, un mes y un sentido
