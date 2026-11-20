@@ -921,16 +921,11 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '2.9.16',
+  version: '2.9.17',
   fecha: '20 de noviembre de 2026',
   puntos: [
-    'El menú se ordena en cuatro bloques — Trabajo diario, SAT, Expediente y Administración — y los destinos de menos uso quedan dentro de «Más», a un toque y con su estado recordado. Hoy, Avisos y Facturas abren el primer bloque, y los 21 destinos de siempre siguen todos.',
-    'Hoy abre con «Tus tareas»: tus pendientes juntos y por orden de urgencia — primero lo que requiere tu atención, luego tus gestos, lo que conviene vigilar y lo que quedó a medias —, cada uno con su botón. El mando y las cifras van debajo, como contexto.',
-    'Salud se ordena en tres pisos: primero lo que requiere tu acción, luego lo que conviene vigilar y al final lo que está bien. Cada tarjeta dice su estado, cuándo se comprobó y el siguiente paso.',
-    'Lo avanzado respira: en Salud, Declaraciones, Bancos y Listas negras, las piezas de mantenimiento, históricos y reglas quedan plegadas a un toque. Nada se retira: se pliega.',
-    'En Facturas, la tabla enseña solo las columnas del día — fecha, quién, folio, importe y estado — y el detalle de cada comprobante se abre en una ficha lateral a todo el alto, sin tapar la tabla. El tipo de comprobante vive en su ficha. Buscar, filtrar y ordenar queda en una franja fija arriba, y en el Registro por fin se ven los filtros de contribuyente y de clase que ya funcionaban por dentro, con su orden y sus filtros activos.',
-    'Los estados se distinguen también sin color: cada uno lleva su icono, su palabra y ahora también su propio borde — punteado en Pendiente, el icono girando en En proceso, doble y grueso cuando algo requiere atención de verdad —.',
-    'Si entras con una sesión de solo lectura, la pantalla se ajusta a tu alcance: no se enseñan los botones de escritura que no te corresponden, tus gestos de administración no aparecen en Hoy, y la barra dice quién eres y con qué alcance entras.'
+    'Corrección de fondo en los metadatos del SAT: sus paquetes se leían con un separador que el SAT no usa y entraban vacíos, sin dar ningún error. Ahora se leen tal como el SAT los entrega, y cada paquete deja sus facturas registradas en el expediente.',
+    'Con los metadatos dentro, la cobertura vuelve a decir la verdad completa: qué facturas conoce el SAT de cada RFC y cuáles faltan en XML — la lista de la que parte la bajada rápida desde el portal de consulta.'
   ]
 };
 function novedadesCard1311() {

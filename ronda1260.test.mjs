@@ -54,7 +54,7 @@ const moneyUi = read('money-ui.part');
 const buzonUi = read('buzon-ui.part');
 
 /* Sello y techos */
-assert.ok(html.includes('"version":"2.9.16"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+assert.ok(html.includes('"version":"2.9.17"'), 'el artefacto se sella con la versión vigente (2.0.1)');
 const htmlBytes = statSync(join(ROOT, 'Faro-Fiscal.html')).size;
 /* Techo 598.000 desde la 1.29.0 (ejecutor local, papelera,
    peldaños 1 y 2 y Totales navegable): la página crece a

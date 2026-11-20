@@ -406,7 +406,7 @@ const unlock = async (h, rfc) => {
     'Totales por años, meses que se entran y suma del detalle que iguala el total');
   assert.ok(ui.includes('fmtFechaHora'), 'un formato humano único de fecha');
   // 1.29.1: el pineo de «versión actual» se re-apunta en cada ronda.
-  assert.equal(JSON.parse(read('package.json')).version, '2.9.16', 'la versión es 2.0.1 (re-basificado en la 2.0.1: motores del Buzón y de Declaraciones reconstruidos contra el mapa real del portal)');
+  assert.equal(JSON.parse(read('package.json')).version, '2.9.17', 'la versión es 2.0.1 (re-basificado en la 2.0.1: motores del Buzón y de Declaraciones reconstruidos contra el mapa real del portal)');
   assert.ok(read('docs/CAPACIDADES.md').includes('1.29.0'), 'CAPACIDADES describe la 1.29.0');
   console.log('OK 1.29.0 · diseño — menú, barra móvil, papelera honesta, pagos y totales navegables.');
 }

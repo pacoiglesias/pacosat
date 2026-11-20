@@ -343,7 +343,7 @@ server.close();
    valores y la secuencia legada confinada a la prueba ===== */
 {
   const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
-  assert.equal(pkg.version, '2.9.16', 'la versión de la ronda (re-basificado en la 2.0.1: motores reconstruidos contra el mapa real del portal)');
+  assert.equal(pkg.version, '2.9.17', 'la versión de la ronda (re-basificado en la 2.0.1: motores reconstruidos contra el mapa real del portal)');
   const browser = readFileSync(new URL('./sat-doc-browser.mjs', import.meta.url), 'utf8');
   assert.ok(browser.includes('fillFielForm({ cer, key, password, rfc, step })'),
     'satBrowserLogin pasa el RFC y la traza al relleno');
