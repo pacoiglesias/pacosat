@@ -1,0 +1,65 @@
+EJECUTOR LOCAL DE PACOSAT · 2.4.0
+==================================
+
+Qué es: el programa que, desde TU equipo y tu Chrome, entra al
+portal del SAT con tu e.firma cuando PacoSAT te lo encarga
+(Buzón Tributario y Declaraciones). Tu e.firma y su contraseña
+viven SOLO en este equipo, en la carpeta efirma-local: PacoSAT
+no las conoce ni las recibe nunca.
+
+INSTALACIÓN (una sola vez): doble clic en INSTALAR.bat
+  1. Te pide el código corto que PacoSAT enseña en
+     Buzón Tributario › «Ejecutor local del SAT» › «Código corto
+     para el instalador» (caduca en 10 minutos, un solo uso).
+  2. Te deja elegir tu .cer y tu .key con el selector de
+     archivos y lee el RFC del propio certificado.
+  3. Te pide la contraseña de la e.firma una vez, sin que se vea
+     al teclear, y la guarda solo aquí.
+  4. Deja el programa RESIDENTE en tu equipo (ver abajo).
+  Nada de editar archivos ni de copiar llaves largas a mano.
+  Si lo vuelves a pasar sobre una instalación que ya vive, no
+  repite el emparejamiento ni toca tu e.firma: solo aplica la
+  residencia.
+
+RESIDENTE: NO HAY QUE EJECUTARLO (novedad 2.0.1)
+  Al instalar, el ejecutor queda viviendo en tu equipo:
+  - Arranca solo con Windows, oculto y en segundo plano. Cuando
+    pulses «Consultar el Buzón» o «Bajar declaraciones» en
+    PacoSAT, el trabajo sale porque ya está despierto.
+  - Si algún día está cerrado, los botones de PacoSAT
+    («Ejecutar aquí» / «Abrir ejecutor») lo despiertan al
+    momento: enlazan a pacosat://ejecutar y Windows lo abre.
+  - Junto al reloj puedes tener su icono (bandeja): dice si
+    está en marcha, lo despierta si se duerme y abre PacoSAT
+    con «Abrir PacoSAT».
+  El arranque automático es el comportamiento normal. Si no lo
+  quieres, el instalador te lo explica y te deja rechazarlo:
+  queda el marcador «sin-arranque-automatico» en esta carpeta
+  y se respeta siempre (puedes borrarlo y repasar el instalador
+  para volver atrás).
+
+DÓNDE ESTÁ EL PROGRAMA SE DICE UNA VEZ, AQUÍ
+  Decirle a Windows dónde vive el ejecutor se hace una sola
+  vez, en el instalador y en tu PC. Ni el instalador ni el
+  ejecutor le piden rutas al servidor, y la app no enseña ni
+  pide rutas: el servidor no puede ni debe entrar en tu PC a
+  lanzar programas. Ese límite es el que protege tu e.firma.
+
+ACTUALIZACIONES: si PacoSAT publica una versión nueva del
+ejecutor, el programa se actualiza SOLO al arrancar (la baja de
+tu propio PacoSAT, comprueba su huella y se reinicia): tú no
+haces nada. Al llegar una versión con residencia, la instalación
+que ya vive queda residente sola, sin reinstalar nada.
+
+RESERVA INTERNA: arrancar.bat queda como camino manual de
+reserva, por si un día hace falta arrancarlo a mano y ver su
+ventana. Ya no es el camino del día a día.
+
+Si algún día quieres desvincular este equipo: en PacoSAT, el
+mismo panel del ejecutor tiene «Revocar acceso» — apaga esta
+llave al instante y los trabajos vuelven a la cola. Antes de
+rearmar o actualizar el ejecutor a mano, pasa RESPALDAR.bat:
+guarda token.txt, url.txt y la carpeta efirma-local entera
+fuera de esta carpeta.
+
+Requisito: Node.js 24 o superior (nodejs.org, versión LTS).
