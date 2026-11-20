@@ -17,3 +17,6 @@ pacosat-secrets/
 *.xml
 *.pdf
 *.zip
+# El ejecutor se construye en el runner (construir-bundle.mjs):
+# la fuente vive en ejecutor/ pero su node_modules no se versiona
+ejecutor/node_modules/

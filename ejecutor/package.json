@@ -1,0 +1,14 @@
+{
+  "name": "pacosat-ejecutor-local",
+  "version": "2.4.0",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@nodecfdi/sat-ws-descarga-masiva": "2.0.0",
+    "playwright-core": "^1.64.1"
+  }
+}
