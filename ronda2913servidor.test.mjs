@@ -237,7 +237,7 @@ try {
           '(E) ' + nombre + ': la línea vieja «RFC: ' + OWN + '» no repite el RFC en ningún sitio');
         assert.ok(texto.includes('MANO FIL SA · ' + OWN),
           '(E) ' + nombre + ': el contribuyente sale una vez, con su nombre y su RFC juntos');
-        assert.equal(contar(texto, 'PacoSAT 3.0.0'), 1,
+        assert.equal(contar(texto, 'PacoSAT 3.1.0'), 1,
           '(E) ' + nombre + ': la marca con la versión sale una sola vez (la línea de generado)');
       }
       /* La conciliación viaja por su propia ruta (descarga
@@ -250,7 +250,7 @@ try {
           '(E) conciliación: sin la línea vieja «RFC: …»');
         assert.ok(texto.includes('MANO FIL SA · ' + OWN),
           '(E) conciliación: el contribuyente una vez, nombre y RFC juntos');
-        assert.equal(contar(texto, 'PacoSAT 3.0.0'), 1,
+        assert.equal(contar(texto, 'PacoSAT 3.1.0'), 1,
           '(E) conciliación: la marca con la versión, una sola vez');
       }
       const cp = await pedirPdf({ kind: 'contraparte', rfc: OWN, contraparte: FISICA });
@@ -261,7 +261,7 @@ try {
         '(E) contraparte: las dos partes, una vez cada una, la física en orden natural');
       assert.ok(!cp.includes('RFC: ' + OWN) && !cp.includes('RFC: ' + FISICA),
         '(E) contraparte: ningún «RFC: …» suelto repite lo que la línea de partes ya dice');
-      assert.equal(contar(cp, 'PacoSAT 3.0.0'), 1, '(E) contraparte: la marca, una vez');
+      assert.equal(contar(cp, 'PacoSAT 3.1.0'), 1, '(E) contraparte: la marca, una vez');
       console.log('OK 2.9.13-servidor · (E) — los 7 PDF comparten el encabezado: partes una vez, sin «RFC:» repetido.');
     }
   } finally { h.service.close(); }

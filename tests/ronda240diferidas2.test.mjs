@@ -74,7 +74,7 @@ const PESO_231 = 818135; /* artefacto 2.3.1: la referencia histórica */
    RE-BASE 2.9.8: la carga inicial servida mide 823.899 B (el artefacto, 823.778 B, + los 121 B del sellado al servir que esta suite ya medía en la 2.9.7: 822.280 servidos sobre 822.159 de fichero). El crecimiento es el de la ronda, con la contabilidad fichero a fichero de ronda1110 (usuarios con nombre propio +1.072 B netos en la carga inicial —el panel entero viaja diferido en la parte «usuarios»—, Pieza V +523 B, Pieza R +24 B). El tope acompaña al de la casa: 824.500 B (margen 601 B). */
 /* RE-BASE 3.0: la carga inicial servida mide 881.113 B (el artefacto, 880.992 B, + los 121 B del sellado al servir). El crecimiento es el de la ronda 3.0, con la contabilidad de ronda1110 (+16.778 B sobre los 864.214 B del árbol base 2.9.17: la tarjeta «Ponerme al día» y su caminante, el sello de frescura, la rejilla de meses, la prueba de origen, las acciones rápidas y la barra nueva). El tope acompaña al de la casa: 881.800 B (margen 687 B).
    RE-BASE 2.9.16: la carga inicial servida mide 865.587 B (el artefacto, 865.466 B, + los 121 B del sellado al servir). El crecimiento es el de la ronda, con la contabilidad de ronda1110 (+6.317 B sobre la 2.9.15: «Tus tareas» y el alcance de sesión en ui.part, la piel de estados/pisos/franja/ficha en polish.part, el menú de cuatro bloques en layout.part y las partes diferidas de Salud y Registro). El tope acompaña al de la casa: 866.250 B (margen 663 B). */
-const PESO_TOPE = 881800;
+const PESO_TOPE = 893650; /* RE-BASE 3.1.0: la carga inicial servida mide 892.967 B; el tope acompaña al de la casa (893.650; contabilidad en ronda1110). */
 
 /* ===== (a) build: las dos partes salen del principal ===== */
 {

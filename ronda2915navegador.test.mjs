@@ -160,7 +160,7 @@ const menu = await page.evaluate(() => {
 });
 assert.deepEqual(menu.captions, ['TRABAJO DIARIO', 'SAT', 'EXPEDIENTE', 'ADMINISTRACIÓN', 'MÁS'],
   'el menú enseña los cuatro grupos de la 2.9.16 y el grupo «Más»');
-assert.equal(menu.destinos, 21, 'los 21 destinos de siempre siguen en el menú');
+assert.equal(menu.destinos, 22, 'los 22 destinos siguen en el menú (3.1.0: los 21 de siempre + Administración, visible por orden expresa; ninguno perdido)');
 await page.evaluate(() => navigate('invoices'));
 await espera(600);
 const grupoActivo = await page.evaluate(() =>

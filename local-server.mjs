@@ -34,7 +34,7 @@ import { createSatCiecFetch, createCiecCredentialResolver } from './sat-ciec.mjs
 import { createSatPortalCfdiFetch } from './sat-portal-cfdi.mjs';
 import { composeNewsMail, NEWS_MAIL_LIMIT } from './news-mail.mjs';
 import { mailLayout, mailCard, mailPill, mailButton, deepLink, composeMailPair } from './mail-layout.mjs';
-import { encryptIndexSecrets, decryptIndexSecrets, isEncryptedSecret, decryptSecret } from './secret-box.mjs';
+import { encryptSecret, encryptIndexSecrets, decryptIndexSecrets, isEncryptedSecret, decryptSecret } from './secret-box.mjs';
 import { normalizarBeneficiario, construirPreparacion, preparacionTxt, MANOFIL_SEED, MANOFIL_SEED_RFC } from './pagos.mjs';
 import { generateVapidKeys, sendWebPush } from './push.mjs';
 
@@ -224,6 +224,33 @@ function need(ok, message, status = 400) {
    lo absorbe el busy_timeout en el BEGIN IMMEDIATE. */
 export function esErrorBusy240(error) {
   return Boolean(error) && (error.code === 'SQLITE_BUSY' || /SQLITE_BUSY|database is locked/i.test(String(error.message || error)));
+}
+/* Migración asistida del archivo de arranque (3.1.0): las
+   contraseñas que aún viajen EN CLARO en el config.json de
+   arranque (la de e.firma de cada perfil, la del correo y la del
+   respaldo) se cifran EN EL ARCHIVO la primera vez que el proceso
+   lo lee, con la misma llave de máquina de siempre (enc:v1:).
+   Idempotente: lo ya cifrado no se toca y, si no hay nada que
+   cifrar, el archivo no se reescribe. Devuelve cuántas cifró.
+   Un valor legado en claro sigue funcionando al usarlo, porque
+   decryptSecret lo tolera: la migración es higiene, no candado. */
+export function migrarConfigArranque310(configPath, efirmaDir) {
+  let cfg;
+  try { cfg = JSON.parse(readFileSync(configPath, 'utf8')); } catch { return 0; }
+  /* La llave de máquina vive en el directorio de e.firma: en un
+     primer arranque puede no existir todavía la carpeta. */
+  try { mkdirSync(efirmaDir, { recursive: true, mode: 0o700 }); } catch { /* si no se puede, cifra() fallará y se cuenta 0 */ }
+  let n = 0;
+  const cifra = v => {
+    if (typeof v === 'string' && v && !isEncryptedSecret(v)) { n++; return encryptSecret(efirmaDir, v); }
+    return v;
+  };
+  if (Array.isArray(cfg?.profiles))
+    for (const p of cfg.profiles) if (p && 'password' in p) p.password = cifra(p.password);
+  if (cfg?.mail && 'password' in cfg.mail) cfg.mail.password = cifra(cfg.mail.password);
+  if (cfg?.backup && 'password' in cfg.backup) cfg.backup.password = cifra(cfg.backup.password);
+  if (n) writeFileSync(configPath, JSON.stringify(cfg, null, 2) + '\n', { mode: 0o600 });
+  return n;
 }
 const dormirSync240 = ms => {
   if (!ms || ms <= 0) return;
@@ -2206,7 +2233,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           let causaIgnorado = '';
           if (expires && expires <= now()) { causaIgnorado = 'su certificado caducó el ' + day(expires); certificate.fill(0); privateKey.fill(0); }
           else if (distintoAlmacen) {
-            try { await makeConnector({ rfc: row.rfc, certificate, privateKey, password: row.password }); causaIgnorado = 'es otra e.firma, distinta de la guardada en el almacén'; }
+            try { await makeConnector({ rfc: row.rfc, certificate, privateKey, password: decryptSecret(efirmaBase, String(row.password || '')) }); causaIgnorado = 'es otra e.firma, distinta de la guardada en el almacén'; }
             catch (error) { causaIgnorado = message(error); }
             finally { certificate.fill(0); privateKey.fill(0); }
           }
@@ -2233,7 +2260,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           continue;
         }
         let active;
-        try { active = await makeConnector({ rfc: row.rfc, certificate, privateKey, password: row.password }); }
+        try { active = await makeConnector({ rfc: row.rfc, certificate, privateKey, password: decryptSecret(efirmaBase, String(row.password || '')) }); }
         finally { certificate.fill(0); privateKey.fill(0); }
         db.prepare("INSERT INTO profiles(rfc,minutes,days,direction,nextRun,error) VALUES (?,?,?,?,0,'') ON CONFLICT(rfc) DO UPDATE SET minutes=excluded.minutes,days=excluded.days,direction=excluded.direction,error='' ")
           .run(row.rfc, row.minutes, row.days, row.direction);
@@ -5898,7 +5925,13 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         const missing = db.prepare(`SELECT m.uuid,m.emitter,m.receiver,m.issuedAt,m.total,m.status FROM metadata_records m
           WHERE NOT EXISTS (SELECT 1 FROM discovered d WHERE d.rfc=m.rfc AND d.uuid=m.uuid) ORDER BY m.issuedAt DESC LIMIT 100`).all();
         const lastSeen = db.prepare('SELECT MAX(seenAt) AS last FROM metadata_records').get()?.last || null;
-        return { records: total, missing, lastSeen };
+        /* 3.1.0: el mismo conteo POR RFC dueño, nacido de la
+           tabla — la cabecera de Cobertura enseña el del RFC en
+           pantalla sin restar totales (aislamiento estructural). */
+        const porRfc = {};
+        for (const fila of db.prepare('SELECT rfc, COUNT(*) AS n, MAX(seenAt) AS last FROM metadata_records GROUP BY rfc').all())
+          porRfc[String(fila.rfc || '').toUpperCase()] = { records: fila.n || 0, lastSeen: fila.last || null };
+        return { records: total, missing, lastSeen, porRfc };
       })(),
       /* Actividad de descargas REAL (1.22.0, pieza 2): la tarjeta
          de Hoy leía satData.profiles de la sesión — vacío al
@@ -8711,6 +8744,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       const docsState = satDocsState();
       for (const [rfc, item] of Object.entries(docsState))
         if (item?.progress?.running) running.push({ kind: 'documentos', key: 'documentos:' + rfc,
+          /* 3.1.0: el RFC también como campo, no solo en el texto —
+             quien pinta etiqueta y filtra por él sin parsear. */
+          rfc,
           label: 'Descarga de documento del SAT · ' + rfc, detail: item.progress.step || 'Descargando…',
           done: 0, total: 0, since: item.progress.at || time, state: 'curso',
           canPause: false, canResume: false, canStop: true, stopKind: item.progress.kind || '',
@@ -9250,6 +9286,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
        de por medio, no solo con el nombre del listado. */
     const exposure = new Map();
     const newStat = () => ({ count: 0, cents: 0n, primera: '', ultima: '' });
+    /* 3.1.0: por cada contraparte, con qué RFC PROPIOS se cruza
+       (perfiles ∪ personas dadas de alta). Nace en el mismo bucle
+       de facturas — cada conteo por RFC sale de SU cruce, nunca de
+       restar el total menos otro RFC. */
+    const propiosPorCp = new Map();
+    const ownSet310 = new Set([
+      ...db.prepare('SELECT rfc FROM profiles').all().map(row => String(row.rfc || '').toUpperCase()),
+      ...db.prepare("SELECT value FROM records WHERE store='people'").all()
+        .map(row => { try { return String(JSON.parse(row.value).id || '').toUpperCase(); } catch { return ''; } })]
+      .filter(Boolean));
     try {
       for (const row of db.prepare("SELECT value FROM records WHERE store='invoices'").all()) {
         const invoice = JSON.parse(row.value);
@@ -9259,6 +9305,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            salen ni agregadas en la tarjeta de una contraparte. */
         if (scope && !scope.has(String(invoice?.from?.rfc || '').toUpperCase()) &&
           !scope.has(String(invoice?.to?.rfc || '').toUpperCase())) continue;
+        { const lados = [invoice?.from?.rfc, invoice?.to?.rfc].filter(Boolean).map(s => String(s));
+          const propiosInv = lados.map(s => s.toUpperCase()).filter(s => ownSet310.has(s));
+          if (propiosInv.length) for (const cp of lados) {
+            if (!propiosPorCp.has(cp)) propiosPorCp.set(cp, new Set());
+            for (const propio of propiosInv) propiosPorCp.get(cp).add(propio);
+          } }
         for (const [rfc, role] of [[invoice?.from?.rfc, 'emitter'], [invoice?.to?.rfc, 'receiver']]) {
           if (!rfc) continue;
           if (!exposure.has(rfc)) exposure.set(rfc, { name: '', receivedCents: 0n, receivedCount: 0, issuedCount: 0,
@@ -9338,6 +9390,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         note: reg?.note || '', source: reg ? reg.source : (profileRfcs.has(rfc) ? 'perfil' : 'cfdi'),
         payDay: reg?.payDay ?? null, payTerms: reg?.payTerms ?? null,
         hits, severity, detalle, generico: rfc === 'XAXX010101000' || rfc === 'XEXX010101000',
+        /* 3.1.0: los RFC propios con los que esta contraparte se
+           cruza (con alcance de invitado, solo los de SU alcance). */
+        propios: [...(propiosPorCp.get(rfc) || [])].filter(o => !scope || scope.has(o)),
         exposure: expo ? { receivedCount: expo.receivedCount, issuedCount: expo.issuedCount,
           received: (expo.receivedCents / 100n).toString() + '.' + String(expo.receivedCents % 100n).padStart(2, '0') } : null };
     }).sort((a, b) => (SEVERITY_ORDER[b.severity] - SEVERITY_ORDER[a.severity]) || a.rfc.localeCompare(b.rfc));
@@ -15428,16 +15483,21 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      no constan descargadas (NOT EXISTS en discovered) — la MISMA
      consulta del rescate (/api/rescue), con su ventana opcional.
      issuedAt sale como día (AAAA-MM-DD), que es lo que el motor
-     del portal pide por ítem. */
+     del portal pide por ítem. Desde la 3.1.0 cada ítem lleva
+     además su marca `cancelled`, nacida del estatus del
+     metadato ('0'): es la señal de la pasada de canceladas del
+     caminante, para que también ellas bajen al momento por el
+     portal y no por la vía masiva. */
   function pendingPortalItems297(rfc, { direction = '', startAt = '', endAt = '', orden = 'asc' } = {}) {
     const stampOf = value => String(value || '').replace('T', ' ').slice(0, 19);
-    const rows = db.prepare(`SELECT m.uuid,m.direction,m.issuedAt FROM metadata_records m
+    const rows = db.prepare(`SELECT m.uuid,m.direction,m.issuedAt,m.status FROM metadata_records m
       WHERE m.rfc=? AND NOT EXISTS (SELECT 1 FROM discovered d WHERE d.rfc=m.rfc AND d.uuid=m.uuid)
       ORDER BY m.issuedAt`).all(rfc)
       .filter(row => (!direction || row.direction === direction) &&
         (!startAt || stampOf(row.issuedAt) >= startAt) && (!endAt || stampOf(row.issuedAt) <= endAt));
     if (orden === 'desc') rows.reverse();
-    return rows.map(row => ({ uuid: row.uuid, direction: row.direction, issuedAt: String(row.issuedAt || '').slice(0, 10) }));
+    return rows.map(row => ({ uuid: row.uuid, direction: row.direction, issuedAt: String(row.issuedAt || '').slice(0, 10),
+      cancelled: row.status === '0' }));
   }
   /* El PDF que el portal entregue con un XML se archiva por el
      MISMO camino que el PDF aparejado de la carpeta vigilada
@@ -15595,6 +15655,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            verdad: qué conoce el SAT y qué falta en XML.
        2 · PORTAL: lo que falte baja por el caminante del portal
            (runPortalAttempt297, origen 'aldia'), sin solicitudes.
+           Desde la 3.1.0 el caminante trae también las
+           canceladas (pasadas de estado y de folio con la marca
+           que pendingPortalItems297 saca del metadato), así que
+           la masiva deja de ser la salida normal de una
+           cancelada: queda para lo que el portal de verdad no
+           entregue tras intentarlo por las tres vías.
        3 · MASIVA: solo lo que el portal no entregó se pide por
            la vía de siempre (revisionSend200e, trabajos CFDI por
            los meses tocados): la masiva es el respaldo, no la
@@ -15677,7 +15743,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       run.running = false; run.fase = 'fin';
       run.deQuien = 'tuyo'; run.gesto = 'Desbloquea la e.firma de este RFC y vuelve a pulsar «Ponerme al día».';
       run.frase = 'No pude empezar: la e.firma de ' + rfc + ' no está desbloqueada.';
-      run.fin = { at: time, nuevas: 0, pendientes: pendingPortalItems297(rfc).length, motivo: 'sin-efirma' };
+      run.fin = { at: time, nuevas: 0, pendientes: pendingPortalItems297(rfc).length, motivo: 'sin-efirma',
+        yaEstaban: 0, conError: 0 };
       aldiaSave30(rfc, run);
       return run;
     }
@@ -15713,7 +15780,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       run.frase = 'Traje ' + run.nuevas + (run.nuevas === 1 ? ' factura nueva' : ' facturas nuevas') +
         ' y quedan ' + run.pendientes + ' pedidas al SAT por la vía de siempre: entran solas cuando el SAT las entregue.';
     }
-    run.fin = { at: time, nuevas: run.nuevas, pendientes: run.pendientes, motivo: motivoFin };
+    const resumen310 = aldiaResumenFinal30(rfc, run, time);
+    run.fin = { at: time, nuevas: run.nuevas, pendientes: run.pendientes, motivo: motivoFin,
+      yaEstaban: resumen310.yaEstaban, conError: resumen310.conError };
     setState('aldia:meta-last:' + rfc, day(new Date(time)) + ' ' + clock.format(time));
     aldiaSave30(rfc, run);
     auditEvent('accion', '«Ponerme al día» · ' + rfc + ': ' + run.frase, rfc, true, time);
@@ -15824,12 +15893,69 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   /* El veredicto por RFC (Bloque C): verde SOLO con metadatos
      frescos y cero pendientes — sin revisión, no hay verde que
      valga; con trabajos en curso, «en curso», no verde. */
+  /* 3.1.0: ¿tiene este RFC ALGÚN acceso dado de alta? Conector
+     desbloqueado en memoria, o una entrada en el índice de
+     credenciales (e.firma con sus archivos o contraseña CIEC
+     guardada — las entradas solo nacen al guardar credenciales). */
+  function aldiaTieneAcceso30(rfc) {
+    if (unlocked.get(rfc)?.connector) return true;
+    try { const idx = readEfirmaIndex(); return Boolean(idx && idx[rfc]); }
+    catch { return false; }
+  }
+  /* 3.1.0: el resumen final accionable de la corrida, contado de
+     las fuentes reales en la ventana de ESTA corrida: lo que el
+     portal bajó (portal_runs) más lo que la vía masiva entregó
+     (actividad «sat:», altas + duplicadas). «Ya estaban» = lo que
+     entró pero ya vivía en el expediente; «con error» = pases del
+     portal fallidos + trabajos de la ventana cerrados en error. */
+  function aldiaResumenFinal30(rfc, run, time) {
+    const desde = run?.startedAt || 0;
+    let entradas = 0;
+    try { entradas += Number(db.prepare('SELECT COALESCE(SUM(bajados),0) AS n FROM portal_runs WHERE rfc=? AND started>=?')
+      .get(rfc, desde)?.n) || 0; } catch { /* sin pases del portal */ }
+    try {
+      for (const row of db.prepare("SELECT value FROM records WHERE store='activity'").all()) {
+        let rec; try { rec = JSON.parse(row.value); } catch { continue; }
+        if (!String(rec?.id || '').startsWith('sat:')) continue;
+        if (String(rec?.name || '') !== 'SAT · ' + rfc) continue;
+        const cuando = Date.parse(rec?.date || '') || 0;
+        if (cuando < desde || cuando > time) continue;
+        entradas += (Number(rec.added) || 0) + (Number(rec.duplicates) || 0);
+      }
+    } catch { /* sin actividad registrada */ }
+    let conError = 0;
+    try { conError += Number(db.prepare('SELECT COUNT(*) AS n FROM portal_runs WHERE rfc=? AND started>=? AND ok=0')
+      .get(rfc, desde)?.n) || 0; } catch { /* sin pases del portal */ }
+    try { conError += Number(db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE rfc=? AND created>=? AND status IN ('failed','expired','rejected','exhausted')")
+      .get(rfc, desde)?.n) || 0; } catch { /* sin trabajos */ }
+    const nuevas = Math.max(0, Number(run?.nuevas) || 0);
+    return { yaEstaban: Math.max(0, entradas - nuevas), conError };
+  }
+  /* 3.1.0: ¿es un contribuyente CONOCIDO aunque aún no tenga
+     fila en profiles? Dado de alta en Personas o preparado con
+     /api/profiles/prepare. Para él, «Ponerme al día» resuelve al
+     instante con «Falta dar de alta su acceso» en vez de un 404
+     que la tarjeta no sabía enseñar. */
+  function aldiaConocidoSinPerfil30(rfc) {
+    try { if (pendingProfileRfcs().includes(rfc)) return true; } catch { /* sin pendientes */ }
+    try {
+      for (const row of db.prepare("SELECT value FROM records WHERE store='people'").all()) {
+        try { if (String(JSON.parse(row.value).id || '').toUpperCase() === rfc) return true; } catch { /* fila ilegible */ }
+      }
+    } catch { /* sin personas */ }
+    return false;
+  }
   function aldiaVeredicto30(rfc, time) {
     const meta = db.prepare('SELECT COUNT(*) AS n, MAX(seenAt) AS last FROM metadata_records WHERE rfc=?').get(rfc);
     const pendientes = pendingPortalItems297(rfc).length;
     const enCurso = db.prepare("SELECT COUNT(*) AS n FROM jobs WHERE rfc=? AND status='pending'").get(rfc)?.n || 0;
     const run = aldiaGet30(rfc);
     if (run?.running) return { estado: 'en-curso', pendientes, frase: run.frase || 'Poniéndote al día…' };
+    /* 3.1.0: sin NINGÚN acceso dado de alta, el veredicto es ese
+       y sale al instante — antes la tarjeta se quedaba en
+       «Revisando…» porque la ruta ni siquiera resolvía. */
+    if (!aldiaTieneAcceso30(rfc)) return { estado: 'falta-acceso', pendientes,
+      frase: 'Falta dar de alta su acceso: sin su e.firma o su contraseña CIEC, PacoSAT no puede pedir nada al SAT en su nombre.' };
     if (!meta?.n) return { estado: 'sin-revisar', pendientes,
       frase: 'Aún no hay revisión de metadatos de este RFC: pulsa «Ponerme al día» para saber la verdad.' };
     if (pendientes > 0) return { estado: 'faltan', pendientes,
@@ -15840,7 +15966,14 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
   }
   function aldiaView30(rfc, time) {
     const run = aldiaGet30(rfc);
-    const portal = portalStateView297(rfc, time);
+    /* 3.1.0: las sub-vistas se degradan solas — si el estado del
+       portal o el contador del día fallan para este RFC, la
+       tarjeta enseña el veredicto sin ellos en vez de un 500 que
+       la dejaba en «Revisando…» para siempre. */
+    let portal = { progress: null, quota: null };
+    try { const pv = portalStateView297(rfc, time); portal = { progress: pv.progress, quota: pv.quota }; } catch { /* degradado */ }
+    let contadorDia = null;
+    try { contadorDia = aldiaContadorDia30(rfc, time); } catch { /* degradado */ }
     let progreso = null;
     if (run?.running && run.fase === 'portal') {
       const quedan = pendingPortalItems297(rfc).length;
@@ -15855,8 +15988,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       running: Boolean(run?.running), fase: run?.fase || '', frase: run?.frase || '',
       deQuien: run?.deQuien || '', gesto: run?.gesto || '', esperandoPuerta: Boolean(run?.esperandoPuerta),
       progreso, fin: run?.fin || null, startedAt: run?.startedAt || 0,
-      portal: { progress: portal.progress, quota: portal.quota },
-      contadorDia: aldiaContadorDia30(rfc, time),
+      portal,
+      contadorDia,
       veredicto: aldiaVeredicto30(rfc, time) };
   }
 
@@ -20072,6 +20205,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
               data.metadata.missing = data.metadata.missing.filter(row =>
                 gScope.has(duenos.get(String(row.uuid)) || ''));
             }
+            /* 3.1.0: el mapa por RFC también se acota al alcance
+               del invitado — fuera de él, ni el conteo existe. */
+            if (data.metadata.porRfc && typeof data.metadata.porRfc === 'object')
+              data.metadata.porRfc = Object.fromEntries(Object.entries(data.metadata.porRfc)
+                .filter(([rfc]) => gScope.has(String(rfc).toUpperCase())));
           }
           /* RFC preparados sin credenciales (M-1, 2.3.2): la lista
              de pendientes también se acota al alcance. */
@@ -20449,7 +20587,31 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (req.method === 'GET' && url.pathname === '/api/activity') {
         /* El registro único de trabajos: en curso, pausados, lo
            reciente y la próxima acción automática. Solo lectura. */
-        return json(res, activityOverview(now()));
+        const vista = activityOverview(now());
+        /* 3.1.0: con alcance de invitado, la actividad también se
+           cerca — un trabajo de otro RFC no sale ni agregado (la
+           consola de Administración y Hoy se alimentan de aquí).
+           Pasa lo sin RFC (global por diseño) y lo del alcance;
+           en «recientes», cuyas líneas no llevan campo rfc, una
+           línea que nombra un RFC propio FUERA del alcance es
+           ajena y no pasa. */
+        if (gScope) {
+          const propiosTodos = new Set([
+            ...db.prepare('SELECT rfc FROM profiles').all().map(row => String(row.rfc || '').toUpperCase()),
+            ...db.prepare("SELECT value FROM records WHERE store='people'").all()
+              .map(row => { try { return String(JSON.parse(row.value).id || '').toUpperCase(); } catch { return ''; } })]
+            .filter(Boolean));
+          const pasa = e => !e?.rfc || gScope.has(String(e.rfc).toUpperCase());
+          vista.running = (vista.running || []).filter(pasa);
+          vista.paused = (vista.paused || []).filter(pasa);
+          vista.recent = (vista.recent || []).filter(e => {
+            if (e?.rfc) return gScope.has(String(e.rfc).toUpperCase());
+            const texto = String(e?.name || '') + ' ' + String(e?.event || '');
+            for (const rfc of propiosTodos) if (!gScope.has(rfc) && texto.includes(rfc)) return false;
+            return true;
+          });
+        }
+        return json(res, vista);
       }
       /* «Mientras no estabas» (1.25.0, mejora nº 9): el resumen
          de lo que el sistema hizo desde la última vez que Paco
@@ -21102,9 +21264,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           items = [];
           for (const raw of x.uuids) {
             const uuid = String(raw || '').trim().toUpperCase();
-            const row = db.prepare('SELECT uuid,direction,issuedAt FROM metadata_records WHERE uuid=? AND rfc=?').get(uuid, rfc);
+            const row = db.prepare('SELECT uuid,direction,issuedAt,status FROM metadata_records WHERE uuid=? AND rfc=?').get(uuid, rfc);
             need(row, 'El folio ' + (uuid || '(vacío)') + ' no consta en los metadatos de este RFC: sin su fecha y su sentido no se puede pedir al portal.', 422);
-            items.push({ uuid: row.uuid, direction: row.direction, issuedAt: String(row.issuedAt || '').slice(0, 10) });
+            items.push({ uuid: row.uuid, direction: row.direction, issuedAt: String(row.issuedAt || '').slice(0, 10),
+              cancelled: row.status === '0' });
           }
         } else if (x.period && typeof x.period === 'object') {
           need(['received', 'issued'].includes(x.period.direction), 'Dirección inválida.');
@@ -21142,7 +21305,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
            invitado. */
         const rfc = String(url.searchParams.get('rfc') || '').toUpperCase();
         if (rfc) {
-          need(db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+          const hayPerfil = db.prepare('SELECT 1 FROM profiles WHERE rfc=?').get(rfc);
+          /* 3.1.0: contribuyente conocido sin perfil todavía (alta
+             preparada, sin credenciales): la vista resuelve con el
+             veredicto «falta-acceso» en vez de un 404 mudo. Un RFC
+             que no consta en ningún sitio sigue siendo 404. */
+          need(hayPerfil || aldiaConocidoSinPerfil30(rfc), 'Ese RFC no tiene perfil en PacoSAT.', 404);
           return json(res, aldiaView30(rfc, now()));
         }
         const porRfc = {};
@@ -21157,7 +21325,16 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         const x = await body(req);
         const rfc = String(x.rfc || '').toUpperCase();
         const profile = db.prepare('SELECT * FROM profiles WHERE rfc=?').get(rfc);
-        need(profile, 'Ese RFC no tiene perfil en PacoSAT.', 404);
+        if (!profile) {
+          /* 3.1.0: sin perfil pero conocido → no se lanza nada y
+             la respuesta ES el veredicto «falta-acceso», al
+             instante. Desconocido del todo → 404 como siempre. */
+          need(aldiaConocidoSinPerfil30(rfc), 'Ese RFC no tiene perfil en PacoSAT.', 404);
+          return json(res, aldiaView30(rfc, now()));
+        }
+        /* 3.1.0: con perfil pero SIN ningún acceso dado de alta,
+           tampoco se finge una corrida: el veredicto manda. */
+        if (!aldiaTieneAcceso30(rfc)) return json(res, aldiaView30(rfc, now()));
         const prev = aldiaGet30(rfc);
         need(!prev?.running, 'Ya hay una puesta al día en curso para este RFC: espera a que termine.', 409);
         await aldiaStart30(profile, now(), 'manual');
@@ -24362,7 +24539,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       browser.unref();
     }
     if (process.env.PACOSAT_STARTUP_CONFIG) {
-      try { await service.bootstrap(JSON.parse(readFileSync(process.env.PACOSAT_STARTUP_CONFIG, 'utf8'))); }
+      try {
+        const cfgArranque310 = JSON.parse(readFileSync(process.env.PACOSAT_STARTUP_CONFIG, 'utf8'));
+        /* 3.1.0: antes de usarlo, el archivo de arranque se
+           auto-cifra — ninguna contraseña queda en claro en el
+           config.json vivo tras este arranque. */
+        try { migrarConfigArranque310(process.env.PACOSAT_STARTUP_CONFIG,
+          process.env.PACOSAT_EFIRMA_DIR || join(path, 'efirma')); } catch { /* la migración nunca tumba el arranque */ }
+        await service.bootstrap(cfgArranque310);
+      }
       catch { console.error('PacoSAT: no se pudo leer la configuración de arranque.'); }
     }
     const run = () => service.tick().catch(error => console.error('Error en la cola local: ' + message(error)));

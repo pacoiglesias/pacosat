@@ -35,7 +35,8 @@ async function loadLists() {
      resultado y su fecha en la entrada del menú, para que se
      vean sin entrar. */
   const menuTxt = document.getElementById('lists-menu-estado201');
-  if (menuTxt) menuTxt.textContent = listsResumen201(LISTS_VIEW.data).corto;
+  if (menuTxt) menuTxt.textContent = listsResumen201(LISTS_VIEW.data,
+    typeof scope !== 'undefined' ? scope : '').corto;
   if (page === 'lists') render();
   return LISTS_VIEW.data;
 }
@@ -48,11 +49,16 @@ async function loadLists() {
    presentarla como otra cosa. Sin ninguna descarga, la vista
    dice «Todavía no se ha comprobado» y ofrece el gesto. La
    misma lectura alimenta la línea de Listas en Salud. */
-function listsResumen201(data) {
+function listsResumen201(data, rfcScope) {
   const sources = data?.sources || [];
   const cargadas = sources.filter(source => source.fetched);
   const ultima = cargadas.length ? Math.max(...cargadas.map(source => Number(source.fetched) || 0)) : null;
-  const senaladas = (data?.counterparts || []).filter(cp => (cp.hits || []).length);
+  /* 3.1.0: con RFC en pantalla, las señaladas son las que se
+     cruzan con ESE RFC (el servidor anota en cada contraparte
+     sus RFC propios, «propios») — cada conteo sale de su cruce,
+     nunca de restar el total. Sin ámbito, el resumen de siempre. */
+  const senaladas = (data?.counterparts || []).filter(cp => (cp.hits || []).length)
+    .filter(cp => !rfcScope || (cp.propios || []).includes(rfcScope));
   const propios = (data?.counterparts || []).filter(cp => cp.source === 'perfil' || cp.kind === 'Propio');
   /* Texto llano del resultado con su fecha, para la línea de
      Hoy y la entrada del menú (2.0.1): el mismo resumen, dicho

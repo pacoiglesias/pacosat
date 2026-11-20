@@ -16,6 +16,26 @@
      portal no liste para un UUID pedido va a `notListed` — jamás
      se finge una descarga que el portal no enseñó —.
 
+   3.1.0 — LAS CANCELADAS TAMBIÉN BAJAN AL MOMENTO (orden de
+   Paco, 20 nov 2026: «que el sistema descargue como OneFactura
+   todo al momento, y no pidiendo lotes»). Producción probó con
+   la 3.0.0 que el listado por fecha de arriba NO enseña las
+   canceladas (las 5 recibidas canceladas de Mano Fil del
+   06/11/2026 no salieron; las vigentes del mismo camino sí
+   bajan): la consulta nunca fijaba el estado del comprobante.
+   Dos pasadas nuevas tras las de siempre, con las primitivas
+   OPCIONALES del envoltorio (si la página no las ofrece, la
+   corrida acaba exactamente como la 3.0.0):
+     1 · ESTADO: los ítems que el metadato marca cancelados
+         (estatus «0», que el servidor pasa como `cancelled`) y
+         la búsqueda normal no listó se buscan OTRA VEZ por
+         fecha con el estado en «cancelados»
+         (ciecSetEstadoComprobante).
+     2 · FOLIO: cualquier ítem pedido que siga sin listarse se
+         consulta por su folio fiscal, uno a uno
+         (ciecClickFolioRadio + ciecSetFolio).
+   Lo que ni así salga sigue yendo a `notListed`, sin fingir.
+
    Este caminante SOLO vive en portalcfdi (más el NIDP de cfdiau
    durante el acceso): nunca abre ninguna notificación del Buzón
    ni navega a otra sección del SAT. La suite de la ronda lo
@@ -28,7 +48,11 @@
        -> satPortalFetch(profile, query, hooks)
      profile = { rfc }
      query   = { items: [{ uuid, direction: 'received'|'issued',
-                 issuedAt: 'YYYY-MM-DD' }], maxDownloads }
+                 issuedAt: 'YYYY-MM-DD', cancelled?: true }],
+                 maxDownloads }
+                 (`cancelled` — o `status: '0'` — marca los que el
+                 metadato del SAT trae cancelados: son los de la
+                 pasada de estado de la 3.1.0.)
      hooks   = { step(text, url), isCancelled() }
      Resuelve { files: [{ uuid, name, buffer, pdf? }], found,
        downloaded, notListed: [uuid…], missing: [uuid…],
@@ -64,8 +88,13 @@
    en portalcfdi o si satBrowserLogin necesita otro aterrizaje;
    (3) de dónde sale el token de PDF de una fila (pdfUrl): hoy
    ciecRows no lo expone, así que en vivo el motor bajará XML
-   sin PDF hasta calibrar ese lector. Cada paso que difiera
-   fallará con diagnóstico (captura + HTML), nunca en silencio. */
+   sin PDF hasta calibrar ese lector; (4) — 3.1.0 — los
+   controles del estado del comprobante y del modo folio
+   (ciecSetEstadoComprobante / ciecClickFolioRadio /
+   ciecSetFolio): se buscan de forma tolerante y la primera
+   corrida en vivo contra una cancelada real dice cuál de las
+   dos vías la entrega. Cada paso que difiera fallará con
+   diagnóstico (captura + HTML), nunca en silencio. */
 
 import { CIEC_PORTAL, CIEC_PAGE_LIMIT, CIEC_DAILY_LIMIT, ciecDayList } from './sat-ciec.mjs';
 import { satBrowserLogin, prepareKeyForPortal } from './sat-doc-browser.mjs';
@@ -99,7 +128,12 @@ function normalizeItems(query) {
     seen.add(uuid);
     const direction = raw?.direction === 'issued' ? 'issued' : raw?.direction === 'received' ? 'received' : '';
     const issuedAt = /^\d{4}-\d{2}-\d{2}$/.test(String(raw?.issuedAt || '')) ? String(raw.issuedAt) : '';
-    items.push({ uuid, direction, issuedAt, valid: Boolean(direction && issuedAt) });
+    /* La marca de cancelada (3.1.0): el servidor la pasa como
+       `cancelled` desde el estatus del metadato; se acepta
+       también el estatus crudo ('0') por si un llamador lo trae
+       así. Sin marca, el ítem es de la búsqueda normal. */
+    const cancelled = raw?.cancelled === true || String(raw?.status ?? '') === '0';
+    items.push({ uuid, direction, issuedAt, valid: Boolean(direction && issuedAt), cancelled });
   }
   return items;
 }
@@ -199,72 +233,116 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
         await sessionGuard();
         if (!String(page.url()).includes(name)) await page.goto(CIEC_PORTAL + name + '.aspx');
       };
-      const queryReceivedDay = async (dayIso) => {
+      /* El estado del comprobante (3.1.0): sin estado pedido,
+         la consulta es la de siempre. Con estado, hace falta la
+         primitiva opcional del envoltorio; si la página no la
+         ofrece o no logra fijarlo, la consulta devuelve null —
+         «esta vía no existe aquí» — y la pasada que la pidió se
+         salta sin fingir una búsqueda que no se hizo. */
+      const setEstado = async (estado) => {
+        if (typeof page.ciecSetEstadoComprobante !== 'function') return false;
+        return page.ciecSetEstadoComprobante(estado).catch(() => false);
+      };
+      const queryReceivedDay = async (dayIso, estado = '') => {
         const [day] = ciecDayList(dayIso, dayIso);
         await ensureOn('ConsultaReceptor');
         if (!(await page.ciecClickFechasRadio().catch(() => false)) ||
             !(await page.ciecSetRecibidosDay(day).catch(() => false)))
           throw portalFailure('respuesta-inesperada',
             'La consulta de recibidos del portal no enseñó los controles de fecha esperados. El diario de la corrida guarda la foto de la página para revisarla.');
-        step('Buscando tus facturas recibidas del ' + day.label + '…', '');
+        if (estado && !(await setEstado(estado))) return null;
+        step('Buscando tus facturas ' + (estado === 'cancelado' ? 'canceladas ' : '') +
+          'recibidas del ' + day.label + '…', '');
         await page.ciecSearch();
         if (!(await page.ciecWaitResults(60000).catch(() => false)))
           throw portalFailure('respuesta-inesperada',
             'La búsqueda de recibidos del ' + day.label + ' no terminó en el portal. El diario de la corrida guarda la foto de la página para revisarla.');
         return page.ciecRows();
       };
-      const queryIssuedRange = async (fromIso, toIso) => {
+      const queryIssuedRange = async (fromIso, toIso, estado = '') => {
         await ensureOn('ConsultaEmisor');
         if (!(await page.ciecClickFechasRadio().catch(() => false)) ||
             !(await page.ciecSetEmitidosRange({ from: mxLabel(fromIso), to: mxLabel(toIso) }).catch(() => false)))
           throw portalFailure('respuesta-inesperada',
             'La consulta de emitidos del portal no enseñó los controles de fecha esperados. El diario de la corrida guarda la foto de la página para revisarla.');
-        step('Buscando tus facturas emitidas del ' + mxLabel(fromIso) + ' al ' + mxLabel(toIso) + '…', '');
+        if (estado && !(await setEstado(estado))) return null;
+        step('Buscando tus facturas ' + (estado === 'cancelado' ? 'canceladas ' : '') +
+          'emitidas del ' + mxLabel(fromIso) + ' al ' + mxLabel(toIso) + '…', '');
         await page.ciecSearch();
         if (!(await page.ciecWaitResults(60000).catch(() => false)))
           throw portalFailure('respuesta-inesperada',
             'La búsqueda de emitidos del ' + mxLabel(fromIso) + ' al ' + mxLabel(toIso) + ' no terminó en el portal. El diario de la corrida guarda la foto de la página para revisarla.');
         return page.ciecRows();
       };
+      /* La consulta por folio fiscal (3.1.0): el otro modo del
+         portal — radio de folio + la caja con el UUID — y las
+         filas que devuelva. null si la página no ofrece el modo
+         o la búsqueda no termina: la pasada se corta ahí, sin
+         insistir folio a folio contra un portal que no responde
+         por esta vía. */
+      const queryByFolio = async (item) => {
+        await ensureOn(item.direction === 'issued' ? 'ConsultaEmisor' : 'ConsultaReceptor');
+        if (!(await page.ciecClickFolioRadio().catch(() => false)) ||
+            !(await page.ciecSetFolio(item.uuid).catch(() => false)))
+          return null;
+        step('Buscando el folio ' + item.uuid + ' directamente en el portal…', '');
+        await page.ciecSearch();
+        if (!(await page.ciecWaitResults(60000).catch(() => false))) return null;
+        return page.ciecRows();
+      };
 
-      /* Recibidos: agrupados por día. */
-      const receivedByDay = new Map();
-      for (const item of items.filter(i => i.valid && i.direction === 'received')) {
-        if (!receivedByDay.has(item.issuedAt)) receivedByDay.set(item.issuedAt, []);
-        receivedByDay.get(item.issuedAt).push(item);
-      }
-      for (const [dayIso, dayItems] of [...receivedByDay.entries()].sort()) {
-        if (isCancelled()) { cancelled = true; break; }
-        const wanted = new Set(dayItems.map(i => i.uuid));
-        const truncated = absorb(await queryReceivedDay(dayIso), wanted);
-        for (const item of dayItems) queried.add(item.uuid);
-        if (truncated) {
-          /* Recibidos ya va día a día: no se puede partir más.
-             Lo que no salga en esas 500 filas queda en
-             notListed, con esta nota como explicación. */
-          const note = 'El portal enseñó ' + CIEC_PAGE_LIMIT + ' recibidos el ' +
-            mxLabel(dayIso) + ': puede haber más ese día que el portal no lista de una vez; los pedidos que no salgan quedan en «no listados».';
-          notes.push(note); step('⚠ ' + note, '');
+      /* Las pasadas por fecha, parametrizadas por el estado
+         (3.1.0): sin estado son las consultas de siempre; con
+         'cancelado' son la pasada de canceladas. Devuelven
+         false SOLO cuando la vía del estado no existe en esta
+         página (la consulta devolvió null): la pasada se salta
+         entera, sin repetir en vano la búsqueda normal. */
+      const groupReceivedByDay = (list) => {
+        const byDay = new Map();
+        for (const item of list) {
+          if (!byDay.has(item.issuedAt)) byDay.set(item.issuedAt, []);
+          byDay.get(item.issuedAt).push(item);
         }
-        await sessionGuard();
-      }
-
-      /* Emitidos: ventanas mensuales recortadas a los días con
-         ítems (de su primer día con ítems a su último). */
-      if (!cancelled) {
-        const issuedByMonth = new Map();
-        for (const item of items.filter(i => i.valid && i.direction === 'issued')) {
+        return byDay;
+      };
+      const groupIssuedByMonth = (list) => {
+        const byMonth = new Map();
+        for (const item of list) {
           const month = item.issuedAt.slice(0, 7);
-          if (!issuedByMonth.has(month)) issuedByMonth.set(month, []);
-          issuedByMonth.get(month).push(item);
+          if (!byMonth.has(month)) byMonth.set(month, []);
+          byMonth.get(month).push(item);
         }
-        for (const monthItems of [...issuedByMonth.values()]
-          .sort((a, b) => a[0].issuedAt.localeCompare(b[0].issuedAt))) {
+        return [...byMonth.values()].sort((a, b) => a[0].issuedAt.localeCompare(b[0].issuedAt));
+      };
+      const runReceivedDays = async (byDay, estado = '') => {
+        for (const [dayIso, dayItems] of [...byDay.entries()].sort()) {
+          if (isCancelled()) { cancelled = true; break; }
+          const wanted = new Set(dayItems.map(i => i.uuid));
+          const rowsResult = await queryReceivedDay(dayIso, estado);
+          if (rowsResult === null) return false;
+          const truncated = absorb(rowsResult, wanted);
+          for (const item of dayItems) queried.add(item.uuid);
+          if (truncated) {
+            /* Recibidos ya va día a día: no se puede partir más.
+               Lo que no salga en esas 500 filas queda en
+               notListed, con esta nota como explicación. */
+            const note = 'El portal enseñó ' + CIEC_PAGE_LIMIT + ' recibidos el ' +
+              mxLabel(dayIso) + ': puede haber más ese día que el portal no lista de una vez; los pedidos que no salgan quedan en «no listados».';
+            notes.push(note); step('⚠ ' + note, '');
+          }
+          await sessionGuard();
+        }
+        return true;
+      };
+      const runIssuedWindows = async (monthGroups, estado = '') => {
+        for (const monthItems of monthGroups) {
           if (isCancelled()) { cancelled = true; break; }
           const days = monthItems.map(i => i.issuedAt).sort();
           const from = days[0], to = days[days.length - 1];
           const wanted = new Set(monthItems.map(i => i.uuid));
-          const truncated = absorb(await queryIssuedRange(from, to), wanted);
+          const rowsResult = await queryIssuedRange(from, to, estado);
+          if (rowsResult === null) return false;
+          const truncated = absorb(rowsResult, wanted);
           for (const item of monthItems) queried.add(item.uuid);
           if (truncated) {
             /* Ventana partida por días y reintentada, como pide
@@ -275,7 +353,9 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
             notes.push(note); step('⚠ ' + note, '');
             for (const day of ciecDayList(from, to)) {
               if (isCancelled()) { cancelled = true; break; }
-              const stillTruncated = absorb(await queryIssuedRange(day.iso, day.iso), wanted);
+              const dayRows = await queryIssuedRange(day.iso, day.iso, estado);
+              if (dayRows === null) return false;
+              const stillTruncated = absorb(dayRows, wanted);
               if (stillTruncated) {
                 const dayNote = 'El portal enseñó ' + CIEC_PAGE_LIMIT + ' emitidos también el ' +
                   day.label + ': los pedidos que no salgan quedan en «no listados».';
@@ -285,6 +365,81 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
           }
           await sessionGuard();
           if (cancelled) break;
+        }
+        return true;
+      };
+
+      /* Recibidos: agrupados por día. */
+      await runReceivedDays(groupReceivedByDay(
+        items.filter(i => i.valid && i.direction === 'received')));
+
+      /* Emitidos: ventanas mensuales recortadas a los días con
+         ítems (de su primer día con ítems a su último). */
+      if (!cancelled) {
+        await runIssuedWindows(groupIssuedByMonth(
+          items.filter(i => i.valid && i.direction === 'issued')));
+      }
+
+      /* ---------- Pasada de canceladas (3.1.0) ----------
+         Los ítems que el metadato marca cancelados y la
+         búsqueda normal no listó se buscan otra vez por fecha
+         con el estado en «cancelados», en los dos sentidos y
+         con las mismas agrupaciones. Si la página no ofrece el
+         desplegable de estado, las pasadas devuelven false y
+         esto no deja ni nota: queda la pasada por folio y, en
+         su caso, el cierre honesto de siempre. */
+      if (!cancelled) {
+        const pendientesCancelados = items.filter(i =>
+          i.valid && i.cancelled && !foundRows.has(i.uuid));
+        if (pendientesCancelados.length) {
+          const antes = foundRows.size;
+          await runReceivedDays(groupReceivedByDay(
+            pendientesCancelados.filter(i => i.direction === 'received')), 'cancelado');
+          if (!cancelled) {
+            await runIssuedWindows(groupIssuedByMonth(
+              pendientesCancelados.filter(i => i.direction === 'issued')), 'cancelado');
+          }
+          const traidas = foundRows.size - antes;
+          if (traidas > 0) {
+            const note = traidas + (traidas === 1 ? ' folio no salía' : ' folios no salían') +
+              ' en el listado normal por estar cancelados: ' +
+              (traidas === 1 ? 'salió' : 'salieron') + ' al buscar entre las canceladas del portal.';
+            notes.push(note); step('⚠ ' + note, '');
+          }
+        }
+      }
+
+      /* ---------- Pasada por folio (3.1.0) ----------
+         Todo ítem pedido que siga sin listarse — cancelado o
+         no — se consulta por su folio fiscal, uno a uno, en su
+         página (Receptor o Emisor). Antes se intenta devolver
+         el estado a «todos», para que un filtro quedado de la
+         pasada anterior no esconda un folio vigente. Si la
+         página no ofrece el modo folio, ni se intenta; si una
+         consulta por folio no responde, la pasada se corta
+         (los folios ya se pidieron por fecha: quedan en «no
+         listados», sin fingir). */
+      if (!cancelled) {
+        const pendientes = items.filter(i => i.valid && !foundRows.has(i.uuid));
+        if (pendientes.length &&
+            typeof page.ciecClickFolioRadio === 'function' &&
+            typeof page.ciecSetFolio === 'function') {
+          await setEstado('todos');
+          const antes = foundRows.size;
+          for (const item of pendientes) {
+            if (isCancelled()) { cancelled = true; break; }
+            const rowsResult = await queryByFolio(item);
+            if (rowsResult === null) break;
+            absorb(rowsResult, new Set([item.uuid]));
+            queried.add(item.uuid);
+            await sessionGuard();
+          }
+          const traidas = foundRows.size - antes;
+          if (traidas > 0) {
+            const note = traidas + (traidas === 1 ? ' folio salió' : ' folios salieron') +
+              ' al consultarlos por su folio fiscal en el portal.';
+            notes.push(note); step('⚠ ' + note, '');
+          }
         }
       }
 

@@ -163,8 +163,13 @@ function coberturaPaneles280(enCasa280 = false) {
   const meta = satData.metadata || { records: 0, missing: [], lastSeen: null };
   const missing = (meta.missing || []).filter(row => !scope ||
     row.emitter === scope || row.receiver === scope);
-  metaPanel.append(n('p', meta.records ?
-    number.format(meta.records) + ' registros de metadatos guardados' + (meta.lastSeen ? ' · última lectura ' + localDateTime(meta.lastSeen) : '') +
+  /* 3.1.0: la cabecera cuenta los metadatos DEL RFC EN
+     PANTALLA (el servidor los trae contados por dueño en
+     metadata.porRfc): el total de la casa ya no se presenta
+     como si fuera de este contribuyente. Sin ámbito, el total. */
+  const metaScope310 = scope ? (meta.porRfc?.[scope] || { records: 0, lastSeen: null }) : meta;
+  metaPanel.append(n('p', metaScope310.records ?
+    number.format(metaScope310.records) + ' registros de metadatos guardados' + (metaScope310.lastSeen ? ' · última lectura ' + localDateTime(metaScope310.lastSeen) : '') +
     '. De ellos, ' + missing.length + ' CFDI constan en el SAT y aún no están en el expediente como XML.' :
     'Todavía no hay metadatos: PacoSAT pide una solicitud Metadata al día por RFC, y también puedes pedir un periodo como Metadatos desde la pestaña de descarga de SAT.'));
   if (missing.length) metaPanel.append(grid(['UUID', 'Emisor', 'Receptor', 'Fecha', 'Total', 'Estado en el SAT'],
@@ -183,6 +188,9 @@ function coberturaPaneles280(enCasa280 = false) {
       ...rfcs.map(rfc => coverageHeatmap(rfc, coverage.days[rfc] || { received: [], issued: [] })));
     screens.push(dC);
   }
+  /* 3.1.0: Cobertura abre con su tira de alcance — de quién es
+     este mapa y qué periodo enseña, con su frescura. */
+  screens.unshift(cabeceraAlcance310(scope || '', 'todo el histórico'));
   return screens;
 }
 function coverageScreen() { return coberturaPaneles280(false); }
@@ -202,7 +210,11 @@ function coberturaFalta30() {
   if (!missing.length) {
     const wrapVacio = panel('Lo que falta por traer · ' + anio);
     wrapVacio.dataset.cobFalta30 = 'vacio';
-    const revisado = (typeof satData !== 'undefined' && satData?.metadata?.records) > 0;
+    /* 3.1.0: «revisado» se juzga con los metadatos DEL RFC en
+       pantalla (porRfc), no con el total de la casa. */
+    const revisado = scope
+      ? ((typeof satData !== 'undefined' && satData?.metadata?.porRfc?.[scope]?.records) || 0) > 0
+      : (typeof satData !== 'undefined' && satData?.metadata?.records) > 0;
     wrapVacio.append(empty(revisado ? 'No falta nada por traer' : 'Aún no se ha revisado',
       revisado ? 'Todos los CFDI que el SAT ha enseñado en sus listados tienen ya su XML guardado.'
         : 'Cuando PacoSAT revise los listados del SAT, aquí verás mes a mes lo que falte por traer.',
@@ -310,7 +322,10 @@ function monthlyPanel() {
       };
       body.append(nowBtn);
     }
-    const gaps = (men.gaps || []).filter(gap => gap.month < men.currentMonth);
+    /* 3.1.0: los huecos viejos que se enseñan son los del RFC
+       en pantalla — los de otro RFC no se presentan como suyos. */
+    const gaps = (men.gaps || []).filter(gap => gap.month < men.currentMonth &&
+      (!scope || gap.rfc === scope));
     if (gaps.length) {
       body.append(n('h3', 'Huecos de meses viejos · recuperación aparte'));
       body.append(n('p', 'Meses sin ningún CFDI dentro de tu rango de actividad. Recuperarlos NO forma parte de la corrida mensual: cada botón pide solo ese mes y ese sentido, y lo que ya tengas no se duplica.', 'muted'));

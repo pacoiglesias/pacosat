@@ -99,6 +99,7 @@
     <span class="nav-caption">EXPEDIENTE</span>
     <button data-view="buzon" title="Novedades — Lo nuevo que llegó a tu expediente: CFDI y documentos recientes, leídos y sin leer"><svg><use href="#i-inbox"/></svg> Novedades <span id="buzon-badge" class="news-badge" hidden></span></button>
     <button data-view="contribuyentes" title="Contribuyentes — Todos tus RFC ordenados por urgencia: puerta, última descarga, avisos y vencimientos"><svg><use href="#i-eye"/></svg> Contribuyentes </button>
+    <button data-view="admin" title="Administración — El puesto de triage de todos tus RFC: qué necesita atención, de quién es y dónde se resuelve"><svg><use href="#i-shield"/></svg> Administración <span id="admin-badge310" class="news-badge" hidden></span></button>
     <button data-view="docs" title="Documentos — Tu expediente por RFC: constancia, opinión, declaraciones, acuses y PDF archivados"><svg><use href="#i-folder"/></svg> Documentos </button>
     <button data-view="registro" title="Registro — Todo lo que el sistema hizo, intentó y no pudo, en lenguaje llano"><svg><use href="#i-list"/></svg> Registro </button>
     <span class="nav-caption">ADMINISTRACIÓN</span>
@@ -155,6 +156,7 @@
       <div><div class="eyebrow" id="eyebrow">La mañana</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
       <div class="actions"><button id="inspect"><svg><use href="#i-code"/></svg> Abrir XML </button><button id="pdf-import"><svg><use href="#i-pdf"/></svg> Factura PDF </button><button id="primary" class="primary"><svg><use href="#i-up"/></svg><span>Importar XML / ZIP</span></button></div>
     </header>
+    <div id="rfc-banda310" class="rfc-banda310" aria-hidden="true"></div>
     <p id="status" role="status" hidden></p>
     <section id="activity-dock" class="activity-dock" hidden aria-live="polite">
       <div class="activity-dock-head"><span class="activity-spinner" aria-hidden="true"></span><strong id="activity-label">Trabajando…</strong><span id="activity-count" class="activity-count"></span></div>

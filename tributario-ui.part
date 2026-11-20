@@ -356,9 +356,12 @@ function tributarioScreen() {
     }
     paintTribBadge();
     /* La entrada del menú enseña el mismo estado (2.0.2): se
-       repinta con ESTA vista, sin otra lectura. */
+       repinta con ESTA vista, sin otra lectura. 3.1.0: solo si
+       el RFC de esta vista sigue siendo el de la pantalla — la
+       insignia es del ámbito, no de la última vista abierta. */
     const menuBuzon202 = document.getElementById('buzon-menu-estado202');
-    if (menuBuzon202) menuBuzon202.textContent = buzonMenuTexto202(data);
+    if (menuBuzon202 && (typeof scope === 'undefined' || !scope || scope === rfc))
+      menuBuzon202.textContent = buzonMenuTexto202(data);
     body.replaceChildren();
     const progreso = data.progreso || {};
     const isRunning = running || Boolean(progreso.running);

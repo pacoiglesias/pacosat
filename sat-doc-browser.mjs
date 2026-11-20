@@ -1715,6 +1715,97 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
           return { rows, quota: quotaEl ? String(quotaEl.value || '') : '', noResults: noResVisible };
         }).catch(() => ({ rows: [], quota: '', noResults: false }));
       },
+      /* Estado del comprobante (3.1.0, primitiva OPCIONAL): la
+         consulta por fecha del portal enseña por defecto las
+         vigentes — producción lo probó el 20 nov 2026: las 5
+         canceladas de Mano Fil no salieron en el listado y las
+         vigentes del mismo camino sí bajaron —. Esta primitiva
+         fija el desplegable de estado en la opción pedida
+         ('cancelado' | 'vigente' | 'todos') para que la MISMA
+         búsqueda por fecha enseñe las canceladas. Se busca de
+         forma tolerante, como la puerta de e.firma: un select
+         cuyo id/nombre hable de «estado», o el select cuyas
+         opciones nombren a la vez «vigente» y «cancelado»; la
+         opción se casa por su texto visible (normalizado, sin
+         acentos) y, si no, por su valor. Devuelve true SOLO si
+         la opción quedó fijada; si el portal real no trae ese
+         desplegable, devuelve false sin tocar nada y el motor
+         sigue con la vía del folio o con el cierre honesto de
+         siempre. FRONTERA DE CALIBRACIÓN: el id real del
+         desplegable no está contrastado en vivo; la primera
+         corrida contra una cancelada real lo confirma o lo
+         deja en el diario con su foto. */
+      async ciecSetEstadoComprobante(estado) {
+        return page.evaluate((estado) => {
+          const norm = s => String(s || '').toLowerCase()
+            .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+          const quiere = estado === 'cancelado' ? /cancel/
+            : estado === 'vigente' ? /vigente/ : /todos?/;
+          const selects = [...document.querySelectorAll('select')];
+          const el = selects.find(s => /estado/i.test((s.id || '') + ' ' + (s.getAttribute('name') || ''))) ||
+            selects.find(s => {
+              const textos = [...s.options].map(o => norm(o.textContent)).join(' ');
+              return textos.includes('vigente') && textos.includes('cancelad');
+            });
+          if (!el) return false;
+          const opcion = [...el.options].find(o => quiere.test(norm(o.textContent))) ||
+            [...el.options].find(o => quiere.test(String(o.value || '').toLowerCase()));
+          if (!opcion) return false;
+          el.disabled = false;
+          el.value = opcion.value;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }, estado).catch(() => false);
+      },
+      /* Modo folio fiscal (3.1.0, primitiva OPCIONAL): el otro
+         modo de consulta del portal — en vez del radio de
+         fechas, el radio de folio, y la búsqueda devuelve la
+         fila de ESE comprobante. ciecClickFolioRadio pulsa el
+         radio (localizador por su id ASP.NET y, si no, búsqueda
+         tolerante por id/nombre/etiqueta que hable de «folio»,
+         como ciecClickFechasRadio hace con el de fechas) y
+         ciecSetFolio rellena la caja del folio (su id ASP.NET
+         o cualquier caja de texto cuyo id/nombre hable de
+         «folio»). Ambas devuelven true solo si actuaron: sin
+         esos controles, false y sin tocar nada. FRONTERA DE
+         CALIBRACIÓN: los selectores reales se contrastan en
+         la misma primera corrida en vivo de la ronda. */
+      async ciecClickFolioRadio() {
+        try {
+          await page.locator('#ctl00_MainContent_RdoFolioFiscal').click({ timeout: 10_000 });
+          await page.waitForTimeout(800);
+          return true;
+        } catch {
+          return page.evaluate(() => {
+            const norm = s => String(s || '').toLowerCase()
+              .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+            const radios = [...document.querySelectorAll('input[type="radio"]')];
+            const el = radios.find(r => /folio/i.test((r.id || '') + ' ' + (r.getAttribute('name') || ''))) ||
+              radios.find(r => {
+                const etiqueta = (r.id && document.querySelector('label[for="' + r.id + '"]')) ||
+                  r.closest('label');
+                return etiqueta && /folio/.test(norm(etiqueta.textContent));
+              });
+            if (!el) return false;
+            el.click();
+            return true;
+          }).catch(() => false);
+        }
+      },
+      async ciecSetFolio(uuid) {
+        return page.evaluate((uuid) => {
+          const directo = document.querySelector('#ctl00_MainContent_TxtFolioFiscal');
+          const el = directo || [...document.querySelectorAll('input[type="text"], input:not([type])')]
+            .find(i => /folio/i.test((i.id || '') + ' ' + (i.getAttribute('name') || '')));
+          if (!el) return false;
+          el.disabled = false;
+          el.readOnly = false;
+          el.value = String(uuid || '');
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          return true;
+        }, uuid).catch(() => false);
+      },
       async ciecDownloadXml(url) {
         /* La descarga llega por el evento download del navegador
            (el mismo canal que ya recoge los PDF): se espera el
