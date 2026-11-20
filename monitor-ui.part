@@ -751,6 +751,12 @@ function listaTrabajos299(entries, lista) {
       ? actividadLinea240(entry) : activityDetailText(entry);
     const label = String(entry.label || '').replace(/\s+/g, ' ').trim().replace(/\s*·$/, '');
     body.append(n('strong', label + (detail ? ' · ' : '')), n('small', detail, 'activity-detail'));
+    /* 3.1.0: la lista global de trabajos etiqueta cada entrada
+       con su RFC cuando el rótulo no lo nombra — la cabecera es
+       global por diseño, pero ningún trabajo se presenta como
+       de otro contribuyente. */
+    if (entry.rfc && !label.includes(entry.rfc))
+      body.append(n('span', entry.rfc, 'rfc-tag310'));
     rowEl.append(body);
     const acts = n('div', undefined, 'actions');
     if (entry.canPause) acts.append(activityControlButton(entry, entry.enPausa ? 'Reanudar' : 'Pausar', entry.enPausa ? 'reanudar' : 'pausar'));
@@ -765,6 +771,13 @@ function pintarBarraTrabajos299(entries) {
   if (!btn) return;
   btn.hidden = !entries.length;
   btn.textContent = entries.length === 1 ? '1 trabajo en curso' : entries.length + ' trabajos en curso';
+  /* 3.1.0: con trabajos de más de un RFC, el botón de la cabecera
+     desglosa por RFC — el conteo global se etiqueta, no se
+     disfraza del RFC en pantalla. */
+  { const porRfc310 = new Map();
+    for (const e of entries) if (e.rfc) porRfc310.set(e.rfc, (porRfc310.get(e.rfc) || 0) + 1);
+    if (porRfc310.size > 1)
+      btn.textContent += ' · ' + [...porRfc310.entries()].map(([r, c]) => c + ' de ' + r).join(' · '); }
   btn.setAttribute('aria-expanded', String(barraTrabajosAbierta299 && entries.length > 0));
   btn.onclick = () => {
     barraTrabajosAbierta299 = !barraTrabajosAbierta299;
@@ -951,6 +964,9 @@ function paintActivity() {
     for (const item of view.recent || []) {
       const texto295 = String(item.text || '').trim();
       if (!texto295) continue;
+      /* 3.1.0: una línea reciente que nombra a OTRO RFC propio
+         no se pinta en la actividad del RFC en pantalla. */
+      if (typeof lineaEsDeScope310 === 'function' && !lineaEsDeScope310(texto295)) continue;
       const previo = recientesAgrupados2913.find(g => g.texto === texto295);
       if (previo) { previo.veces++; continue; }
       recientesAgrupados2913.push({ texto: texto295, at: item.at, veces: 1 });

@@ -19,6 +19,10 @@ function saludScreen200d() {
   }
   const head = panel('Centro de salud',
     'Cada pieza del sistema con su semáforo, su porqué y su arreglo cuando lo hay. Nada se repara en silencio: cada gesto queda en el Registro.');
+  /* 3.1.0: Salud abre con su tira de alcance — el RFC en
+     pantalla y «estado actual», con su sello de frescura. */
+  if (typeof cabeceraAlcance310 === 'function')
+    head.append(cabeceraAlcance310(typeof scope !== 'undefined' ? scope : '', 'estado actual'));
   head.append(tabbar([['salud', 'Salud'], ['configurar', 'Configurar']], saludTab200d,
     key => { saludTab200d = key; render(); }));
   const body = n('div');

@@ -88,6 +88,10 @@ const avisosFiltrosGuardados1310 = (() => {
   catch { return {}; }
 })();
 let avisosRfcFiltro = typeof avisosFiltrosGuardados1310.rfc === 'string' ? avisosFiltrosGuardados1310.rfc : '';
+/* 3.1.0: el ámbito al que el filtro de Avisos se sincronizó por
+   última vez — al cambiar el contribuyente global, el filtro
+   vuelve a ser el del seleccionado (el ámbito manda). */
+let avisosFiltroScope310 = '';
 /* Vista de la capa de atención (1.29.2): activas (las de siempre,
    las únicas que cuentan), pospuestas y archivadas. */
 let avisosVista = ['activas', 'pospuestas', 'archivadas'].includes(avisosFiltrosGuardados1310.vista)
@@ -302,6 +306,32 @@ function avisoPill(aviso) {
   if (aviso.severidad === 'baja') return statusPill('dim', 'Menor');
   return statusPill('warn', 'Atención');
 }
+/* 3.1.0: AVISO no es ERROR — la tarjeta lo dice con su palabra
+   y su semáforo: clase «mal» = un error (algo está mal); el
+   resto = un aviso (algo falta o conviene mirar). Y cada
+   pendiente dice DE QUIÉN es la resolución: tu gesto único, o
+   «nada: se resuelve solo» cuando lo lleva el SAT o el sistema. */
+function avisoTipo310(aviso) {
+  return aviso.clase === 'mal'
+    ? { palabra: 'Error', nivel: 'bad' }
+    : { palabra: 'Aviso', nivel: aviso.clase === 'necesita' ? 'warn' : 'dim' };
+}
+function avisoResolucion310(aviso) {
+  /* El dueño nace del gesto que el servidor ya calculó
+     (gesto.de: paco / sat / sistema); sin él, el motor de
+     dueños de la 1.31.0 por clase y tipo. */
+  const de = String(aviso.gesto?.de || '');
+  const dueno = de === 'paco' ? 'tu' : de === 'sat' ? 'sat' : de === 'sistema' ? 'sistema'
+    : avisoDueno1310(aviso);
+  const gesto = aviso.accion || aviso.gesto?.texto || '';
+  if (dueno === 'tu') return 'Tu gesto: ' + (gesto || 'revísalo en su pantalla');
+  if (dueno === 'sat') return gesto
+    ? 'Lo resuelve el SAT: ' + gesto
+    : 'Lo resuelve el SAT: nada por tu parte — se resuelve solo';
+  return gesto
+    ? 'Lo resuelve el sistema: ' + gesto
+    : 'Lo resuelve el sistema: nada por tu parte — se resuelve solo';
+}
 /* Pantalla propia del Centro. */
 function avisosScreen() {
   const wrap = n('div');
@@ -332,6 +362,17 @@ function avisosScreen() {
   /* Regla de contribuyente (1.23.0, D4): Avisos tampoco mezcla
      RFC — sin filtro elegido manda el contribuyente seleccionado
      (scope), y la opción «Todos los RFC» desaparece del filtro. */
+  /* 3.1.0: el ámbito MANDA al entrar — un filtro guardado de
+     otra sesión (u otro RFC) ya no pinta los avisos de MFI con
+     IEAF seleccionado, que fue el hallazgo en vivo de Paco. La
+     sincronía es por cambio de ámbito: el selector propio de
+     la pantalla sigue funcionando durante la visita, y al
+     cambiar el contribuyente global la pantalla vuelve a ser
+     la del seleccionado. */
+  if (scope && avisosFiltroScope310 !== scope) {
+    avisosRfcFiltro = scope;
+    avisosFiltroScope310 = scope;
+  }
   if (!avisosRfcFiltro && scope && rfcsConAvisos.includes(scope)) avisosRfcFiltro = scope;
   if (avisosRfcFiltro && !rfcsConAvisos.includes(avisosRfcFiltro))
     avisosRfcFiltro = rfcsConAvisos.includes(scope) ? scope : (rfcsConAvisos[0] || '');
@@ -751,6 +792,14 @@ function avisoCard(aviso) {
   };
   head.append(check, avisoPill(aviso), avisoDuenoPill1310(aviso), n('strong', aviso.titulo));
   card.append(head);
+  /* 3.1.0: la clase del pendiente en palabras — «Error» o
+     «Aviso» — y de quién es la resolución, con su gesto único
+     o el «se resuelve solo». Una línea, siempre visible. */
+  { const tipo310 = avisoTipo310(aviso);
+    const linea310 = n('p', '', 'aviso-tipo310');
+    linea310.append(statusPill(tipo310.nivel, tipo310.palabra),
+      n('span', ' ' + avisoResolucion310(aviso)));
+    card.append(linea310); }
   if (aviso.detalle) card.append(n('p', aviso.detalle));
   card.append(n('p', avisoMeta(aviso), 'muted'));
   /* Barra de plazo (1.31.2): con nacimiento y vencimiento

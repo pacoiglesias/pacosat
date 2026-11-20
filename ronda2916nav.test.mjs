@@ -34,17 +34,19 @@ const destinos = [...nav.matchAll(/data-view="([a-z]+)"/g)].map(m => m[1]);
 assert.deepEqual(destinos, [
   'home', 'avisos', 'invoices', 'descargar', 'tributario',
   'monitor', 'lists', 'declaraciones',
-  'buzon', 'contribuyentes', 'docs', 'registro',
+  'buzon', 'contribuyentes', 'admin', 'docs', 'registro',
   'dinero', 'pagos', 'salud', 'settings',
   'ejecutor', 'archivo', 'reportes', 'salidas', 'preguntas'],
-  'los 21 destinos, en el orden de los cuatro bloques + Más');
+  'los 22 destinos (3.1.0: + Administración, visible tras Contribuyentes por orden expresa), en el orden de los cuatro bloques + Más');
 
-/* Paridad contra el inventario de la 2.9.15 (como conjunto). */
+/* Paridad contra el inventario de la 2.9.15 (como conjunto):
+   la 3.1.0 solo AÑADE «Administración» — ningún destino de
+   siempre desaparece («nunca menos cosas»). */
 const inventario2915 = ['home', 'avisos', 'buzon', 'contribuyentes', 'invoices', 'archivo', 'registro',
   'descargar', 'tributario', 'monitor', 'lists', 'ejecutor', 'dinero', 'pagos', 'reportes', 'salidas',
   'docs', 'declaraciones', 'salud', 'preguntas', 'settings'];
-assert.deepEqual([...destinos].sort(), [...inventario2915].sort(),
-  'paridad total: el mismo inventario de destinos que en la 2.9.15');
+assert.deepEqual([...destinos].sort(), [...inventario2915, 'admin'].sort(),
+  'paridad total: el inventario de la 2.9.15 más Administración, ni uno menos');
 
 /* ── Las cabeceras, en orden, y el botón de «Más» ─────────── */
 const cabeceras = [...nav.matchAll(/<span class="nav-caption">([^<]+)<\/span>/g)].map(m => m[1]);
@@ -88,4 +90,4 @@ assert.deepEqual([...barra.matchAll(/data-view="([a-z]+)"/g)].map(m => m[1]),
 assert.ok(barra.includes('id="aldia30-bar"'),
   'la barra inferior abre con el botón «Al día» (3.0)');
 
-console.log('ronda2916nav: OK — 21 destinos en 4 bloques + «Más», paridad total, barra inferior de la 3.0 con su botón «Al día».');
+console.log('ronda2916nav: OK — 22 destinos en 4 bloques + «Más» (3.1.0: + Administración), paridad total, barra inferior de la 3.0 con su botón «Al día».');

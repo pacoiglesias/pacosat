@@ -28,7 +28,8 @@ const screens = {
   salidas: ['Cierre y reportes', 'Cierra el mes paso a paso, mira qué vence y prepara lo de tu contadora.', 'Exportación completa'],
   settings: ['Ajustes', 'Contribuyentes y e.firma, correo, respaldos, sin conexión, estado del sistema y acerca de.', 'Guardar ajustes'],
   preguntas: ['Preguntas', 'Pregunta en lenguaje normal y la respuesta sale de tus datos locales, sin enviar nada fuera.', 'Preguntar'],
-  contribuyentes: ['Contribuyentes', 'Todos tus RFC ordenados por urgencia: puerta, última descarga, avisos y vencimientos de cada uno.', 'Ir a Hoy']
+  contribuyentes: ['Contribuyentes', 'Todos tus RFC ordenados por urgencia: puerta, última descarga, avisos y vencimientos de cada uno.', 'Ir a Hoy'],
+  admin: ['Administración', 'El puesto de triage de todos tus RFC: qué necesita atención, de quién es y dónde se resuelve. Solo lectura: tocar un problema te lleva a su pantalla.', 'Ir a Hoy']
 };
 /* Vistas de la 1.10.x → destino nuevo (y su pestaña o sección). */
 const VIEW_ALIASES = {
@@ -1516,6 +1517,13 @@ function pintarHoyVivo240(view, box) {
      siempre. */
   if (vivos.length > 3 && !hoyActividadDesplegada240) {
     let resumenHoy280 = vivos.length + ' trabajos en curso';
+    /* 3.1.0: el resumen global ETIQUETA por RFC — cuántos son de
+       cada uno — para que ningún trabajo se presente como de otro
+       RFC. Solo cuando hay más de un RFC en juego. */
+    const porRfc310 = new Map();
+    for (const e of vivos) if (e.rfc) porRfc310.set(e.rfc, (porRfc310.get(e.rfc) || 0) + 1);
+    if (porRfc310.size > 1)
+      resumenHoy280 += ' · ' + [...porRfc310.entries()].map(([r, c]) => c + ' de ' + r).join(' · ');
     if (vivos.every(e => e.kind === 'masiva' &&
       (e.state === 'esperando' || /esperando al sat/i.test(e.phase || ''))))
       resumenHoy280 += ' · ' + vivos.length + ' solicitudes esperando al SAT';
@@ -1544,6 +1552,11 @@ function pintarHoyVivo240(view, box) {
     const main = n('div', undefined, 'cp-main');
     main.append(n('strong', String(entry.label || 'Trabajo').replace(/\s+/g, ' ').trim()),
       n('span', hoyVivoTexto240(entry), 'muted'));
+    /* 3.1.0: si el rótulo no nombra su RFC, la fila lo enseña
+       como etiqueta visible — un trabajo jamás se presenta como
+       de otro contribuyente. */
+    if (entry.rfc && !String(entry.label || '').includes(entry.rfc))
+      main.append(n('span', entry.rfc, 'rfc-tag310'));
     fila.append(main);
     const acts = n('div', undefined, 'actions');
     if (typeof activityControlButton === 'function') {
@@ -1760,6 +1773,10 @@ async function refresh(skipRender = false) {
      modo invitado, people ya viene filtrado por su alcance en el
      servidor (gScope): el primer perfil es uno de los suyos. */
   if (!people.some(person => person.id === scope)) scope = people[0]?.id || '';
+  /* 3.1.0: el ámbito ya está asentado — desde aquí, lo que se
+     pinte es de ESTE RFC y el selector puede decir la verdad
+     («Sin contribuyente» solo si de verdad no hay ninguno). */
+  ambitoListo310 = true;
   const scopeOptions = () => people.length ?
     people.map(p => new Option(p.name + ' · ' + p.id, p.id)) : [new Option('Sin contribuyentes', '')];
   $('scope').replaceChildren(...scopeOptions());
@@ -1914,13 +1931,36 @@ const RFC_PALETA200B = [
   ['grafito', '#3f5468', 'Grafito'], ['oliva', '#556b1f', 'Oliva'], ['ciruela', '#7a2e5e', 'Ciruela'],
   ['marron', '#7c4a1e', 'Marrón']];
 const rfcPaleta200b = clave => RFC_PALETA200B.find(([k]) => k === clave) || null;
-function rfcColorClave200b(rfc) {
+function rfcColorExpreso200b(rfc) {
   if (!rfc) return '';
   const delEstado = typeof satData !== 'undefined' && satData ? satData.settings?.rfcColors?.[rfc] : '';
   if (delEstado) return delEstado;
   const delPerfil = typeof satData !== 'undefined' && satData ?
     (satData.profiles || []).find(p => p.rfc === rfc)?.color : '';
   return delPerfil || (typeof appSettings !== 'undefined' ? appSettings.rfcColors?.[rfc] : '') || '';
+}
+function rfcColorClave200b(rfc) {
+  if (!rfc) return '';
+  const expreso = rfcColorExpreso200b(rfc);
+  if (expreso) return expreso;
+  /* 3.1.0: asignación automática ESTABLE para los RFC PROPIOS
+     sin color expreso — la identidad visual no puede depender de
+     que alguien haya abierto el selector de colores. Orden
+     alfabético de los propios (personas ∪ perfiles), posición en
+     la paleta saltando las claves ya asignadas a mano a otro RFC:
+     con N contribuyentes, cada uno sale con el suyo y el mismo
+     siempre. Una contraparte NO es propia: su medallón sigue
+     neutro, como manda la 2.0. */
+  const propios = [...new Set([
+    ...(typeof people !== 'undefined' && Array.isArray(people) ? people.map(p => p.id) : []),
+    ...(typeof satData !== 'undefined' && satData ? (satData.profiles || []).map(p => p.rfc) : [])])]
+    .filter(Boolean).map(String).sort();
+  const yo = String(rfc);
+  if (!propios.includes(yo)) return '';
+  const usados = new Set(propios.filter(o => o !== yo).map(o => rfcColorExpreso200b(o)).filter(Boolean));
+  const libres = RFC_PALETA200B.map(([k]) => k).filter(k => !usados.has(k));
+  const idx = propios.indexOf(yo);
+  return libres.length ? libres[idx % libres.length] : RFC_PALETA200B[idx % RFC_PALETA200B.length][0];
 }
 /* Medallón con la inicial: con color asignado, su fondo; sin
    color, el neutro de la casa (sin fondo inline: manda la clase). */
@@ -2664,7 +2704,7 @@ function hoyMando201(gestos232 = null) {
   if (typeof satToken !== 'undefined' && satToken && typeof listsResumen201 === 'function') {
     satApi('lists').then(data => {
       if (!wrap.isConnected) return;
-      const r = listsResumen201(data);
+      const r = listsResumen201(data, scope);
       filaListas.lastChild.textContent = r.texto;
       const menuTxt = document.getElementById('lists-menu-estado201');
       if (menuTxt) menuTxt.textContent = r.corto;
@@ -2978,6 +3018,12 @@ function saludPalabraCorta290(salud) {
   if (/sin datos/.test(p)) return 'sin comprobar';
   return salud.nivel === 'bad' ? 'algo falla' : salud.nivel === 'warn' ? 'a vigilar' : 'sin comprobar';
 }
+/* 3.1.0: el ámbito aún no se ha asentado (la primera lectura
+   del servidor no ha vuelto): el selector enseña «Cargando…» y
+   la franja va neutra — jamás un «Sin contribuyente» falso ni
+   datos de un RFC antes de tiempo. refresh() levanta la marca
+   al normalizar el ámbito. */
+let ambitoListo310 = false;
 function pintarBotonScope200b() {
   const btn = $('scope-menu-btn200b');
   if (!btn || !btn.replaceChildren) return;
@@ -2999,8 +3045,19 @@ function pintarBotonScope200b() {
     n('span', persona.name, 'scope-nombre200b'),
     n('span', '·', 'scope-sep200b'),
     n('span', scope, 'scope-rfc200b'), punto, ...(tramoPalabra290 ? [tramoPalabra290] : []));
+  else if (!ambitoListo310) btn.replaceChildren(
+    n('span', 'Cargando…', 'scope-nombre200b'), punto);
   else btn.replaceChildren(medallon200b(scope, scope),
     n('span', 'Sin contribuyente', 'scope-nombre200b'), punto, ...(tramoPalabra290 ? [tramoPalabra290] : []));
+  /* 3.1.0: la franja de la cabecera lleva el color del RFC en
+     pantalla — en cualquier pantalla se sabe de quién son los
+     datos sin leer la miga. Sin ámbito asentado, neutra. */
+  const banda310 = $('rfc-banda310');
+  if (banda310) {
+    const pal310 = ambitoListo310 && scope ? rfcPaleta200b(rfcColorClave200b(scope)) : null;
+    banda310.style.background = pal310 ? pal310[1] : '';
+    banda310.dataset.rfc = ambitoListo310 ? (scope || '') : '';
+  }
   btn.title = 'Contribuyente: ' + (persona?.name || scope || '—') + ' — ' + salud.porque;
   /* (2.9.13 · mejora 4) El medallón del RFC — su color y su
      inicial, en grande — vive también junto al título de la
@@ -3602,6 +3659,11 @@ function lazyPartForView(view) {
   if (view === 'pagos') return 'pagos';
   if (view === 'registro') return 'registro';
   if (view === 'salud') return 'salud';
+  /* 3.1.0: Administración viaja diferida (parte «admin»): es
+     una consola de visita, no del primer pintado — la carga
+     inicial no crece con ella y la precarga en reposo la deja
+     lista, con su insignia pintada desde la caché del modelo. */
+  if (view === 'admin') return 'admin';
   /* Declaraciones y Vigilancia, diferidas en la 2.4.0 · W6:
      su pantalla no se pinta hasta que su parte llega (la
      puerta de render() enseña el esqueleto mientras tanto). */
@@ -4154,6 +4216,24 @@ function frescura30Pintar() {
   el.textContent = 'Datos de las ' + new Intl.DateTimeFormat('es-MX',
     { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Mexico_City' }).format(new Date());
 }
+/* 3.1.0: la tira de alcance con nombre propio — cada pantalla
+   que enseña datos de un RFC abre diciendo DE QUIÉN son y de
+   QUÉ PERIODO, junto al sello de frescura. Refuerzo directo de
+   la regla de no mezclar: el alcance se lee, no se adivina. */
+function cabeceraAlcance310(rfc, periodo) {
+  const tira = n('div', undefined, 'tira-alcance310');
+  tira.dataset.alcance310 = '1';
+  if (rfc) {
+    const persona = typeof people !== 'undefined' ? people.find(p => p.id === rfc) : null;
+    tira.append(medallon200b(rfc, persona?.name || rfc), n('strong', rfc),
+      n('span', persona?.name || '', 'muted'));
+  } else tira.append(n('strong', 'Todos tus RFC'));
+  if (periodo) tira.append(n('span', ' · ' + periodo, 'muted'));
+  const sello = n('span', 'Datos de las ' + new Intl.DateTimeFormat('es-MX',
+    { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Mexico_City' }).format(new Date()), 'muted frescura310');
+  tira.append(n('span', ' · ', 'muted'), sello);
+  return tira;
+}
 const aldiaRun30 = rfc => apiJson297('al-dia/run', { rfc });
 const aldiaCancel30 = rfc => apiJson297('al-dia/cancel', { rfc });
 const aldiaState30 = rfc => apiJson297('al-dia/state?rfc=' + encodeURIComponent(rfc));
@@ -4162,8 +4242,18 @@ function aldiaVeredicto30(v) {
   if (v.estado === 'al-dia') return { nivel: 'ok', frase: 'Al día: nada pendiente' };
   if (v.estado === 'faltan') return { nivel: 'atencion', frase: 'Faltan ' + v.pendientes + (v.pendientes === 1 ? ' por traer' : ' por traer') };
   if (v.estado === 'en-curso') return { nivel: 'proceso', frase: 'Poniéndote al día…' };
+  /* 3.1.0: sin acceso dado de alta, el veredicto es ESE — en
+     llano y al instante, con su camino en el botón. */
+  if (v.estado === 'falta-acceso') return { nivel: 'atencion', frase: 'Falta dar de alta su acceso' };
   return { nivel: 'dim', frase: 'Sin revisar todavía: pulsa «Ponerme al día»' };
 }
+/* 3.1.0: la etapa de la corrida en palabras — la tarjeta la
+   enseña con el tiempo que la corrida lleva. */
+const ALDIA30_ETAPAS = { metadatos: 'Revisando los metadatos del SAT',
+  portal: 'Trayendo por el portal las que faltan',
+  'masiva-despacho': 'Pidiendo al SAT por la vía de siempre',
+  masiva: 'Esperando la entrega del SAT',
+  esperando: 'Esperando a que el SAT responda', fin: 'Terminada' };
 function aldia30Card(rfcForzado) {
   const rfc = rfcForzado || (typeof descargaRfc2912 === 'function' ? descargaRfc2912() : (typeof scope !== 'undefined' ? scope : ''));
   const card = panel('Ponerme al día');
@@ -4182,11 +4272,24 @@ function aldia30Card(rfcForzado) {
   }
   const body = n('div', undefined, 'aldia30-body');
   card.append(body);
+  /* 3.1.0: la tarjeta NOMBRA su RFC — medallón con su color y
+     su inicial, el RFC y el nombre — en la primera línea: una
+     tarjeta de «Ponerme al día» jamás se confunde con la de
+     otro contribuyente. */
+  const rfcLinea310 = n('div', undefined, 'aldia30-rfc310');
+  rfcLinea310.dataset.aldia30Rfc = rfc;
+  { const persona310 = typeof people !== 'undefined' ? people.find(p => p.id === rfc) : null;
+    rfcLinea310.append(medallon200b(rfc, persona310?.name || rfc),
+      n('strong', rfc), n('span', persona310?.name || '', 'muted')); }
   const sema = n('p', '', 'aldia30-sema');
   const punto = n('span', '', 'aldia30-punto'); punto.dataset.aldia30Punto = '1';
   const veredictoEl = n('strong', 'Revisando…'); veredictoEl.dataset.aldia30Veredicto = '1';
   sema.append(punto, veredictoEl);
   const frase = n('p', '', 'muted'); frase.dataset.aldia30Frase = '1';
+  /* 3.1.0: la etapa en curso con su tiempo, y el resumen final
+     accionable (nuevas / ya estaban / pendientes / con error). */
+  const etapa310 = n('p', '', 'muted'); etapa310.dataset.aldia30Etapa = '1'; etapa310.hidden = true;
+  const resumen310 = n('div', undefined, 'aldia30-resumen310'); resumen310.dataset.aldia30Resumen = '1'; resumen310.hidden = true;
   const barraBox = n('div', undefined, 'aldia30-barra'); barraBox.hidden = true;
   const barra = n('i'); barraBox.append(barra);
   const avance = n('p', '', 'muted'); avance.dataset.aldia30Avance = '1'; avance.hidden = true;
@@ -4204,37 +4307,90 @@ function aldia30Card(rfcForzado) {
   const cupoEl = n('p', '', 'muted'); cupoEl.dataset.aldia30Cupo = '1';
   const hoyEl = n('p', '', 'muted'); hoyEl.dataset.aldia30Hoy = '1';
   caminante.append(puertaEl, cupoEl, hoyEl);
-  body.append(sema, frase, barraBox, avance, acciones, caminante);
-  let timer = null, corria = false;
+  body.append(rfcLinea310, sema, frase, etapa310, barraBox, avance, resumen310, acciones, caminante);
+  let timer = null, corria = false, modoAlta310 = false;
+  const pintarResumen310 = fin => {
+    resumen310.replaceChildren();
+    if (!fin) { resumen310.hidden = true; return; }
+    const grupos = [
+      ['nuevas', fin.nuevas || 0, 'facturas', 'Ver en Facturas'],
+      ['ya estaban', fin.yaEstaban || 0, 'facturas', 'Ver en Facturas'],
+      ['pendientes', fin.pendientes || 0, 'descargar', 'Ver en Descargar'],
+      ['con error', fin.conError || 0, 'registro', 'Ver en el Registro']];
+    const linea = n('p', '', 'aldia30-resumen-linea310');
+    linea.textContent = grupos.map(([et, c]) => c + ' ' + et).join(' · ');
+    resumen310.append(linea);
+    const acts = n('div', undefined, 'actions');
+    for (const [, cuenta, destino, etiqueta] of grupos) {
+      if (!cuenta) continue;
+      const b = n('button', etiqueta, 'soft small'); b.type = 'button';
+      b.dataset.aldia30Ir = destino;
+      b.onclick = () => {
+        if (destino === 'facturas') navigate('invoices');
+        else if (destino === 'descargar') navigate('descargar');
+        else navigate('registro');
+      };
+      acts.append(b);
+    }
+    if (acts.childNodes.length) resumen310.append(acts);
+    resumen310.hidden = false;
+  };
   const pintar = st => {
     const v = aldiaVeredicto30(st?.veredicto);
     punto.dataset.nivel = v.nivel;
     veredictoEl.textContent = v.frase;
-    frase.textContent = st?.run?.frase || '';
-    const corriendo = Boolean(st?.run?.running);
+    /* La vista del servidor es PLANA (frase/running/progreso
+       cuelgan del estado, no de un «run» interior): la tarjeta
+       lee la forma real — antes la frase de la corrida y su
+       estado de marcha se leían de un objeto que no existía. */
+    frase.textContent = st?.frase || st?.veredicto?.frase || '';
+    const corriendo = Boolean(st?.running);
+    modoAlta310 = st?.veredicto?.estado === 'falta-acceso';
+    go.textContent = modoAlta310 ? 'Dar de alta el acceso' : 'Ponerme al día';
     go.hidden = corriendo;
     detener.hidden = !corriendo;
+    if (corriendo) {
+      etapa310.hidden = false;
+      etapa310.textContent = 'Etapa: ' + (ALDIA30_ETAPAS[st?.fase] || 'Trabajando') +
+        (st?.startedAt ? ' · ' + fmtElapsed1312(st.startedAt) : '');
+    } else etapa310.hidden = true;
+    pintarResumen310(!corriendo && st?.fin ? st.fin : null);
     if (st?.progreso && st.progreso.total > 0) {
       barraBox.hidden = false; avance.hidden = false;
       barra.style.width = Math.min(100, Math.round(100 * st.progreso.van / st.progreso.total)) + '%';
       avance.textContent = st.progreso.van + ' de ' + st.progreso.total;
     } else { barraBox.hidden = true; avance.hidden = true; }
+    const puerta310 = typeof satData !== 'undefined' && satData ? satData.puerta?.[rfc] : null;
     puertaEl.textContent = st?.configuradoPortal
-      ? (st.puertaOk ? 'La puerta del SAT abre: el caminante puede entrar.' : 'La puerta del SAT no abre ahora: la corrida espera y se reintenta sola.')
+      ? (puerta310?.ok ? 'La puerta del SAT abre: el caminante puede entrar.' : 'La puerta del SAT no abre ahora: la corrida espera y se reintenta sola.')
       : 'El caminante aún no está conectado para este RFC.';
     const q = st?.portal?.quota;
     cupoEl.textContent = q ? ('Cupo del portal hoy: quedan ' + q.remaining + ' de ' + q.limit + '.') : '';
     const c = st?.contadorDia;
     hoyEl.textContent = c ? ('Hoy: ' + c.porPortal + ' por el portal · ' + c.pedidas + ' pedidas al SAT · ' + c.fallidas + ' no llegaron.') : '';
-    if (corria && !corriendo) { corria = false; toast(st?.run?.frase || 'Corrida terminada', 'ok'); if (card.isConnected) render(); }
+    if (corria && !corriendo) { corria = false; toast(st?.frase || 'Corrida terminada', 'ok'); if (card.isConnected) render(); }
     corria = corriendo;
     if (corriendo && card.isConnected) timer = setTimeout(refrescar, 3000);
   };
   const refrescar = async () => {
     try { pintar(await aldiaState30(rfc)); frescura30Pintar(); }
-    catch { frase.textContent = 'El servicio local no respondió; la corrida sigue en el servidor.'; if (card.isConnected) timer = setTimeout(refrescar, 5000); }
+    catch (error) {
+      /* 3.1.0: un 404 es definitivo (ese RFC no consta): se
+         enseña en llano y NO se reintenta en bucle. Lo demás
+         sigue siendo «la corrida sigue en el servidor». */
+      if (error?.status === 404) {
+        veredictoEl.textContent = 'Ese RFC no consta en PacoSAT';
+        frase.textContent = error.message || 'Ese RFC no tiene perfil en PacoSAT.';
+        return;
+      }
+      frase.textContent = 'El servicio local no respondió; la corrida sigue en el servidor.';
+      if (card.isConnected) timer = setTimeout(refrescar, 5000);
+    }
   };
   go.onclick = async () => {
+    /* 3.1.0: sin acceso, el botón ES el alta — abre el diálogo
+       de alta de ESTE RFC con las dos formas (e.firma o CIEC). */
+    if (modoAlta310) { altaRfcDialog2912(rfc); return; }
     go.disabled = true;
     try { await aldiaRun30(rfc); }
     catch (error) { if (error.status !== 409) { toast(error.message, 'error'); go.disabled = false; return; } }
@@ -4611,6 +4767,15 @@ function unlockDialog(rfc) {
   if (typeof ensureLazyPart === 'function')
     return ensureLazyPart('descargas').then(ok => { if (ok && unlockDialog !== yo) return unlockDialog(rfc); });
 }
+/* 3.1.0: el alta de un RFC también tiene su lanzador — la
+   tarjeta «Ponerme al día» vive en la parte principal (Hoy) y
+   su botón «Dar de alta el acceso» no puede depender de que la
+   parte de Descargas ya hubiera llegado. */
+function altaRfcDialog2912(rfc) {
+  const yo = altaRfcDialog2912;
+  if (typeof ensureLazyPart === 'function')
+    return ensureLazyPart('descargas').then(ok => { if (ok && altaRfcDialog2912 !== yo) return altaRfcDialog2912(rfc); });
+}
 /* ===== Puente de la parte diferida Buzón (2.9.0 · Bloque D) =====
    El Buzón del SAT (tributario-ui.part) y Recibidos
    (buzon-ui.part) viajan diferidos en la parte 'buzon'
@@ -4743,10 +4908,15 @@ async function pintarBuzonMenu202() {
   const el = document.getElementById('buzon-menu-estado202');
   if (!el) return;
   if (typeof satToken === 'undefined' || !satToken || !scope) { el.textContent = ''; return; }
+  /* 3.1.0: el ámbito se captura al pedir — si cambió mientras
+     la respuesta volvía, esa respuesta ya es de OTRO RFC y no
+     se pinta (la insignia del Buzón no cambiaba con el RFC
+     porque una respuesta tardía pisaba la del nuevo ámbito). */
+  const ambitoAlPedir = scope;
   try {
-    const data = await satApi('tributario?rfc=' + encodeURIComponent(scope));
-    if (el.isConnected) el.textContent = buzonMenuTexto202(data);
-  } catch { if (el.isConnected) el.textContent = ''; }
+    const data = await satApi('tributario?rfc=' + encodeURIComponent(ambitoAlPedir));
+    if (el.isConnected && scope === ambitoAlPedir) el.textContent = buzonMenuTexto202(data);
+  } catch { if (el.isConnected && scope === ambitoAlPedir) el.textContent = ''; }
 }
 /* Paseo en casa (2.8.0): la sede que el estado sirve
    (satData.paseo, de /api/status). En sede NAS los paseos de
@@ -4820,6 +4990,7 @@ function render() {
     invoices: 'Expediente', docs: 'Expediente', declaraciones: 'Expediente', tributario: 'Expediente', archivo: 'Expediente',
     dinero: 'Dinero y cierre', pagos: 'Dinero y cierre', reportes: 'Dinero y cierre', salidas: 'Dinero y cierre',
     descargar: 'El SAT', sat: 'El SAT', monitor: 'El SAT', coverage: 'El SAT', lists: 'El SAT', ejecutor: 'El SAT',
+    admin: 'Sistema',
     registro: 'Sistema', salud: 'Sistema', preguntas: 'Sistema', settings: 'Sistema' })[page] || 'La mañana';
   /* Contadores fuera de la cabecera (1.32.1, G3): «N CFDI ·
      N PDF · N RFC» se repetía en TODAS las pantallas y en Hoy
@@ -4851,6 +5022,7 @@ function render() {
      pantalla; la puerta de arriba garantiza que, cuando la
      vista es la suya, la función ya existe. */
   const content = ({ home, contribuyentes: contribuyentesScreen200b, avisos: avisosScreen, buzon: buzonScreen, tributario: tributarioScreen, invoices: invoiceScreen, docs: docsView, dinero: dineroView,
+    admin: typeof administracionScreen310 === 'function' ? administracionScreen310 : null,
     declaraciones: declaracionesScreen,
     lists: typeof listsScreen === 'function' ? listsScreen : null,
     reportes: typeof reportesScreen201 === 'function' ? reportesScreen201 : null,
@@ -4886,6 +5058,9 @@ function render() {
   /* El botón del selector global refleja el ámbito y su
      salud en cada pintado (2.0 · pieza 8). */
   try { pintarBotonScope200b(); } catch { /* selector decorativo */ }
+  /* 3.1.0: la insignia de Administración enseña el conteo de
+     problemas del alcance (del último modelo calculado). */
+  try { if (typeof pintarAdminBadge310 === 'function') pintarAdminBadge310(); } catch { /* insignia decorativa */ }
   /* El foco del sistema, siempre visible en la cabecera (2.9.0). */
   try { pintarFoco290(); } catch { /* foco decorativo */ }
   /* Los estados del Buzón y de Declaraciones en el menú (2.0.2):
@@ -5749,8 +5924,11 @@ function cierreMesPanel240() {
   if (typeof satToken !== 'undefined' && satToken && typeof listsResumen201 === 'function') {
     satApi('lists').then(data => {
       if (wrap.isConnected === false) return;
-      const r = listsResumen201(data);
       for (const b of bloques) {
+        /* 3.1.0: el resumen de listas de cada bloque es el de SU
+           RFC (cada bloque es un contribuyente): su fila y su
+           veredicto cuentan solo sus señaladas. */
+        const r = listsResumen201(data, b.rfc);
         if (r.ultima) b.filaListas.pintar('ok', 'Revisadas', 'Última comprobación el ' + fmtFechaHora(r.ultima) + '.');
         else b.filaListas.pintar('warn', 'Sin comprobar', 'Todavía no se han comprobado.');
         b.veredicto.textContent = cierreVeredicto240(b.nombre, b.datos, r);
@@ -6017,11 +6195,30 @@ if (typeof document !== 'undefined' && typeof window !== 'undefined' && !window.
    enseña su estado al terminar en su propia línea. Un bloque
    sin nada lo dice en una línea: la tarjeta nunca sale vacía
    ni con propuestas huecas. */
-function hoyPropuestasPendientes297() {
+/* 3.1.0: los RFC propios (personas ∪ perfiles) — la base del
+   aislamiento estructural en el cliente: una línea o un dato
+   que nombra a OTRO propio no es del RFC en pantalla. */
+function rfcsPropios310() {
+  return [...new Set([
+    ...(typeof people !== 'undefined' && Array.isArray(people) ? people.map(p => p.id) : []),
+    ...(typeof satData !== 'undefined' && satData ? (satData.profiles || []).map(p => p.rfc) : [])])]
+    .filter(Boolean).map(String);
+}
+function lineaEsDeScope310(texto) {
+  if (!scope) return true;
+  const t = String(texto || '');
+  for (const rfc of rfcsPropios310())
+    if (rfc !== scope && t.includes(rfc)) return false;
+  return true;
+}
+function hoyPropuestasPendientes297(rfcForzado) {
   const sd = typeof satData !== 'undefined' && satData ? satData : null;
   const missing = sd?.metadata?.missing || [];
-  if (!scope) return missing.length;
-  return missing.filter(row => row.emitter === scope || row.receiver === scope).length;
+  /* 3.1.0: cuenta las del RFC QUE SE LANZA (el de la tarjeta),
+     no las del ámbito a medias: contar y lanzar el mismo RFC. */
+  const cual = rfcForzado || scope;
+  if (!cual) return missing.length;
+  return missing.filter(row => row.emitter === cual || row.receiver === cual).length;
 }
 function hoyProactivo297Panel() {
   const wrap = panel('Esto pasó · Esto falta · Esto te propongo');
@@ -6032,7 +6229,9 @@ function hoyProactivo297Panel() {
   paso.dataset.hoy297Bloque = 'paso';
   paso.append(n('h3', 'Esto pasó'));
   const pasoBody = n('div');
-  const ultimos = (typeof activity !== 'undefined' && Array.isArray(activity) ? activity : []).slice(0, 3);
+  const ultimos = (typeof activity !== 'undefined' && Array.isArray(activity) ? activity : [])
+    .filter(entry => lineaEsDeScope310(String(entry?.name || '') + ' ' + String(entry?.event || '')))
+    .slice(0, 3);
   if (ultimos.length) for (const entry of ultimos)
     pasoBody.append(n('p', String(entry.event || entry.name || 'Actividad registrada') +
       (entry.date ? ' · ' + localDateTime(entry.date) : '')));
@@ -6044,6 +6243,11 @@ function hoyProactivo297Panel() {
       if (!wrap.isConnected) return;
       const { visibles, total } = typeof cambiosLineas230 === 'function'
         ? cambiosLineas230(data) : { visibles: [], total: 0 };
+      /* 3.1.0: con CERO cambios del ámbito NO se reemplaza
+         nada: las líneas de actividad que quedan ya nacieron
+         filtradas por el ámbito al pintarse (las que nombran a
+         otro RFC propio ni se pintan), así que lo que se ve es
+         del RFC en pantalla lo traiga quien lo traiga. */
       if (!total) return;
       pasoBody.replaceChildren(...visibles.map(linea => n('p', linea.texto)));
     }).catch(() => { /* sin lectura de cambios: queda la actividad */ });
@@ -6084,10 +6288,10 @@ function hoyProactivo297Panel() {
   };
   const invitada = typeof guestMode !== 'undefined' && guestMode;
   if (!invitada && rfc) {
-    const pendientes297 = hoyPropuestasPendientes297();
+    const pendientes297 = hoyPropuestasPendientes297(rfc);
     if (pendientes297 > 0) propuesta(
       'Bajar ahora las ' + pendientes297 + ' facturas nuevas detectadas',
-      'Son los CFDI que el SAT conoce por metadatos y aún no están en tu expediente como XML.',
+      'Son los CFDI de ' + rfc + ' que el SAT conoce por metadatos y aún no están en tu expediente como XML.',
       (btn, estado, fila) => {
         btn.disabled = true;
         const prog = n('div');
@@ -6254,6 +6458,10 @@ function home() {
      y el mando baja a contexto, ya sin los gestos dentro —
      los gestos viven en «Tus tareas», con todo lo demás. */
   const blocks = [];
+  /* 3.1.0: Hoy abre con su tira de alcance — el RFC en pantalla
+     y el día que enseña, con su sello de frescura. */
+  blocks.push(cabeceraAlcance310(scope, 'hoy · ' + new Intl.DateTimeFormat('es-MX',
+    { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'America/Mexico_City' }).format(new Date())));
   const tareas2916 = hoyTareas2916();
   if (tareas2916) blocks.push(tareas2916);
   /* (3.0 · Bloque A) El botón de la casa, tras las tareas:

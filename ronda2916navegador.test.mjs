@@ -464,7 +464,7 @@ assert.equal(perfilFoto.inspectHidden, true, 'importar no se enseña en solo lec
 assert.ok(perfilFoto.linea.includes('Lectora Prueba'), 'la línea de sesión nombra a la usuaria');
 assert.equal(perfilFoto.tipo, 'lectura', 'el alcance leído es «lectura»');
 assert.deepEqual(perfilFoto.rfcs, [OWN], 'su alcance es el RFC dado de alta');
-assert.equal(perfilFoto.destinos, 21, 'los 21 destinos siguen en su menú: consultar no pierde pantallas');
+assert.equal(perfilFoto.destinos, 22, 'los 22 destinos siguen en su menú (3.1.0: + Administración): consultar no pierde pantallas');
 assert.equal(perfilFoto.gestosEnTareas, 0, 'sus tareas no traen gestos de administración');
 console.log('2916nav P7 perfil: ok');
 

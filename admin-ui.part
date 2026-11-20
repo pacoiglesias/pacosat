@@ -1,0 +1,282 @@
+/* ===== Administración (3.1.0) =====
+   La consola global permitida — la única pantalla que mira a
+   TODOS los RFC a la vez, y lo hace AGREGANDO, nunca mezclando:
+   cada problema nace de SU RFC (o del sistema), lleva su
+   medallón y su semáforo, y tocarlo cambia el contexto a ese
+   RFC y abre la pantalla donde se resuelve. Solo lectura: aquí
+   no se resuelve nada, y ningún problema se «descarta» — deja
+   de salir cuando se resuelve en su origen.
+
+   Fuentes (los mismos motores por RFC de siempre, ya cercados
+   en el servidor al alcance del usuario conectado: un usuario
+   con alcance a un solo RFC no ve ni el conteo de los demás):
+   avisos por RFC, perfiles (sin credenciales, e.firma por
+   caducar), trabajos detenidos o en error, solicitudes
+   vencidas, huecos de cobertura, listas negras (propios),
+   estados de cuenta faltantes en la ventana de días 1–10 y,
+   en «Del sistema», el respaldo y el portal del SAT.
+
+   Orden de la pantalla: protagonista con el veredicto →
+   franja «Urgentes» con SOLO los rojos (cada uno con el
+   medallón de su RFC) → bloques por RFC con el resto → bloque
+   «Del sistema» → los RFC sin problemas, resumidos en UNA
+   línea desplegable. Sello propio: «Revisado a las HH:MM». */
+let adminModelo310Cache = null;
+let adminListas310Cache = null;
+
+const ADMIN310_DUENO = { tu: 'Tuyo', sat: 'Del SAT', sistema: 'Del sistema' };
+const adminDueno310 = aviso => {
+  const de = String(aviso?.gesto?.de || '');
+  if (de === 'paco') return 'tu';
+  if (de === 'sat') return 'sat';
+  if (de === 'sistema') return 'sistema';
+  return typeof avisoDueno1310 === 'function' ? avisoDueno1310(aviso) : 'sistema';
+};
+
+function adminRecolectar310({ lists = null, actividad = null } = {}) {
+  const sd = typeof satData !== 'undefined' && satData ? satData : {};
+  const ahora = Date.now();
+  const porRfc = new Map();
+  const sistema = [];
+  const add = (rfc, fila) => {
+    if (!porRfc.has(rfc)) porRfc.set(rfc, []);
+    porRfc.get(rfc).push(fila);
+  };
+  const gente = [...new Set([
+    ...(typeof people !== 'undefined' && Array.isArray(people) ? people.map(p => p.id) : []),
+    ...(sd.profiles || []).map(p => p.rfc),
+    ...(typeof avisosCache !== 'undefined' && avisosCache ? Object.keys(avisosCache.porRfc || {}) : [])])]
+    .filter(Boolean).map(String);
+  /* 1 · Avisos por RFC — el motor de avisos, tal cual. Los que
+     no son de ningún RFC (rfc vacío) son del sistema. */
+  for (const aviso of (typeof avisosCache !== 'undefined' && avisosCache ? avisosCache.avisos || [] : [])) {
+    const fila = { rfc: aviso.rfc || null,
+      nivel: (aviso.clase === 'mal' || aviso.severidad === 'alta') ? 'bad' : 'warn',
+      texto: aviso.titulo || 'Aviso', deQuien: adminDueno310(aviso),
+      desde: aviso.creado || 0, destino: 'avisos' };
+    if (aviso.rfc) add(String(aviso.rfc), fila); else sistema.push(fila);
+  }
+  /* 2 · Perfiles: sin credenciales (el caso del RFC personal
+     recién dado de alta) y e.firma por caducar (30 y 7 días). */
+  for (const p of sd.profiles || []) {
+    if (!p.rfc) continue;
+    if (p.pending || (!p.efirmaStored && !p.ciecStored))
+      add(p.rfc, { rfc: p.rfc, nivel: 'warn', destino: 'descargar', deQuien: 'tu', desde: 0,
+        texto: 'Contribuyente dado de alta sin credenciales: falta dar de alta su e.firma o su contraseña CIEC' });
+    if (p.certExpires) {
+      const dias = Math.ceil((p.certExpires - ahora) / 86400000);
+      if (dias <= 7) add(p.rfc, { rfc: p.rfc, nivel: 'bad', destino: 'descargar', deQuien: 'tu', desde: 0,
+        texto: dias < 0 ? 'La e.firma está vencida' : 'La e.firma vence en ' + dias + (dias === 1 ? ' día' : ' días') });
+      else if (dias <= 30) add(p.rfc, { rfc: p.rfc, nivel: 'warn', destino: 'descargar', deQuien: 'tu', desde: 0,
+        texto: 'La e.firma vence en ' + dias + ' días' });
+    }
+  }
+  /* 3 · Trabajos detenidos (la actividad viva del servidor). */
+  for (const e of (actividad?.paused || []))
+    if (e.rfc) add(String(e.rfc), { rfc: String(e.rfc), nivel: 'warn', destino: 'registro',
+      deQuien: 'sistema', desde: e.since || 0,
+      texto: 'Trabajo detenido: ' + String(e.label || 'trabajo en curso') });
+  /* 4 · Solicitudes vencidas sin respuesta y trabajos en error
+     (la foto de trabajos del estado, solo la semana reciente:
+     un fallo viejo ya resuelto no es un problema de hoy). */
+  for (const j of sd.jobs || []) {
+    if (!j.rfc || !(j.created > ahora - 7 * 86400000)) continue;
+    if (j.status === 'expired')
+      add(j.rfc, { rfc: j.rfc, nivel: 'warn', destino: 'descargar', deQuien: 'sat',
+        desde: j.created || 0, texto: 'Una solicitud al SAT venció sin respuesta' });
+    else if (j.status === 'failed' || j.status === 'rejected' || j.status === 'exhausted')
+      add(j.rfc, { rfc: j.rfc, nivel: 'bad', destino: 'registro', deQuien: 'sistema',
+        desde: j.created || 0, texto: 'Un trabajo terminó con error' });
+  }
+  /* 5 · Huecos de cobertura: un renglón por RFC, con su cuenta
+     dicha como cuenta. */
+  const gapsPorRfc = new Map();
+  for (const g of sd.coverage?.gaps || [])
+    if (g.rfc) gapsPorRfc.set(g.rfc, (gapsPorRfc.get(g.rfc) || 0) + 1);
+  for (const [rfc, cuenta] of gapsPorRfc)
+    add(rfc, { rfc, nivel: 'warn', destino: 'descargar', deQuien: 'sistema', desde: 0,
+      texto: 'Tiene ' + cuenta + (cuenta === 1 ? ' hueco' : ' huecos') + ' de cobertura por recuperar' });
+  /* 6 · Listas negras: las contrapartes señaladas, por los RFC
+     propios con los que se cruzan («propios» del servidor). */
+  if (lists) for (const cp of lists.counterparts || []) {
+    if (!(cp.hits || []).length) continue;
+    for (const rfc of cp.propios || [])
+      add(String(rfc), { rfc: String(rfc), nivel: cp.severity === 'bad' ? 'bad' : 'warn',
+        destino: 'lists', deQuien: 'tu', desde: 0,
+        texto: 'Listas negras: una contraparte señalada (' + cp.rfc + ')' });
+  }
+  /* 7 · Estados de cuenta faltantes — solo en su ventana de
+     recordatorio (días 1–10), cuenta por cuenta ya agrupados
+     por su RFC dueño. */
+  const ep = sd.estadosPendientes;
+  if (ep?.enVentana && Array.isArray(ep.faltantes)) {
+    const porDueno = new Map();
+    for (const f of ep.faltantes) if (f.rfc) porDueno.set(f.rfc, (porDueno.get(f.rfc) || 0) + 1);
+    for (const [rfc, cuenta] of porDueno)
+      add(rfc, { rfc, nivel: 'warn', destino: 'bancos', deQuien: 'tu', desde: 0,
+        texto: 'Falta el estado de cuenta de ' + ep.mesAnterior + ' (' + cuenta +
+          (cuenta === 1 ? ' cuenta' : ' cuentas') + ')' });
+  }
+  /* 8 · Del sistema: el respaldo y el portal del SAT. */
+  const bh = sd.backupHealth;
+  if (bh?.enabled && bh.failed)
+    sistema.push({ rfc: null, nivel: 'bad', destino: 'respaldo', deQuien: 'sistema', desde: 0,
+      texto: 'El respaldo falló' + (bh.error ? ': ' + bh.error : '') });
+  else if (bh?.enabled && bh.stale)
+    sistema.push({ rfc: null, nivel: 'warn', destino: 'respaldo', deQuien: 'sistema', desde: 0,
+      texto: 'El respaldo lleva ' + (bh.daysSince ?? 'varios') + ' días sin completarse' });
+  const portalCaido = Object.values(sd.puerta || {}).some(pu =>
+    pu?.probada && pu.ok === false && /portal|sat|red|timeout|conex/i.test(String(pu.errorKind || '')));
+  if (portalCaido)
+    sistema.push({ rfc: null, nivel: 'bad', destino: 'salud', deQuien: 'sat', desde: 0,
+      texto: 'El portal del SAT no responde' });
+  /* Modelo: bloques con problemas (los rojos viven en la
+     franja), limpios al final, conteos dichos como conteos. */
+  const bloques = [], limpios = [], urgentes = [];
+  let total = sistema.length;
+  for (const rfc of gente) {
+    const filas = porRfc.get(rfc) || [];
+    if (!filas.length) { limpios.push(rfc); continue; }
+    total += filas.length;
+    for (const fila of filas) if (fila.nivel === 'bad') urgentes.push(fila);
+    bloques.push({ rfc, filas: filas.filter(f => f.nivel !== 'bad'),
+      rojos: filas.filter(f => f.nivel === 'bad').length });
+  }
+  bloques.sort((a, b) => (b.rojos - a.rojos) || (b.filas.length - a.filas.length));
+  return { bloques, limpios, sistema, urgentes,
+    rfcsConProblemas: bloques.length, totalProblemas: total };
+}
+
+function adminFilaEl310(fila, conMedallon = false) {
+  const el = n('div', undefined, 'admin-fila310');
+  el.dataset.adminFila310 = '1';
+  const persona = fila.rfc && typeof people !== 'undefined'
+    ? people.find(p => p.id === fila.rfc) : null;
+  if (conMedallon && fila.rfc) el.append(medallon200b(fila.rfc, persona?.name || fila.rfc));
+  el.append(statusPill(fila.nivel === 'bad' ? 'bad' : 'warn', fila.nivel === 'bad' ? 'Urgente' : 'Atención'),
+    n('span', fila.texto, 'admin-texto310'),
+    n('span', ADMIN310_DUENO[fila.deQuien] || 'Del sistema', 'admin-dueno310'));
+  if (fila.desde) el.append(n('span', 'desde ' + haceText(fila.desde), 'muted'));
+  el.onclick = () => adminIr310(fila.rfc, fila.destino);
+  return el;
+}
+
+function adminPintar310(wrap, modelo) {
+  wrap.replaceChildren();
+  const hora = new Intl.DateTimeFormat('es-MX',
+    { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/Mexico_City' }).format(new Date());
+  /* (a) La protagonista: el veredicto cruzado en palabras. */
+  const prot = panel('Administración');
+  prot.dataset.adminProtagonista310 = '1';
+  const hayAlgo = modelo.rfcsConProblemas > 0 || modelo.sistema.length > 0;
+  prot.append(n('p', !hayAlgo
+    ? 'Todo en orden: ningún RFC tiene problemas'
+    : modelo.rfcsConProblemas + (modelo.rfcsConProblemas === 1 ? ' RFC necesita' : ' RFC necesitan') + ' algo' +
+      (modelo.urgentes.length ? ' · ' + modelo.urgentes.length + (modelo.urgentes.length === 1 ? ' urgente' : ' urgentes') : '') +
+      (modelo.sistema.length ? ' · ' + modelo.sistema.length + ' del sistema' : ''), 'today-line'));
+  const sello = n('p', 'Revisado a las ' + hora, 'muted');
+  sello.dataset.adminFrescura310 = '1';
+  prot.append(sello);
+  wrap.append(prot);
+  if (!hayAlgo) {
+    const vacio = panel('Sin problemas');
+    vacio.dataset.adminVacio310 = '1';
+    vacio.append(empty('Ningún RFC tiene problemas', 'Todo está en orden: esta es la buena noticia, no un hueco.'));
+    wrap.append(vacio);
+    return;
+  }
+  /* (b) La franja de urgentes: SOLO los rojos, primero, cada
+     uno con el medallón de SU RFC. */
+  if (modelo.urgentes.length) {
+    const franja = panel('Urgentes');
+    franja.dataset.adminUrgentes310 = '1';
+    for (const fila of modelo.urgentes) franja.append(adminFilaEl310(fila, true));
+    wrap.append(franja);
+  }
+  /* (c) Bloques por RFC con el resto de sus problemas. */
+  for (const bloque of modelo.bloques) {
+    if (!bloque.filas.length) continue;
+    const persona = typeof people !== 'undefined' ? people.find(p => p.id === bloque.rfc) : null;
+    const box = panel('');
+    box.dataset.adminBloque310 = bloque.rfc;
+    const head = n('div', undefined, 'admin-bloque-head310');
+    head.append(medallon200b(bloque.rfc, persona?.name || bloque.rfc),
+      n('strong', persona?.name || bloque.rfc), n('span', bloque.rfc, 'muted'));
+    box.append(head);
+    for (const fila of bloque.filas) box.append(adminFilaEl310(fila));
+    wrap.append(box);
+  }
+  /* (d) Lo que no es de ningún RFC. */
+  if (modelo.sistema.length) {
+    const box = panel('Del sistema');
+    box.dataset.adminBloque310 = 'sistema';
+    for (const fila of modelo.sistema) box.append(adminFilaEl310(fila));
+    wrap.append(box);
+  }
+  /* (e) Los limpios, resumidos en UNA línea desplegable —
+     con 30 RFC no pueden ser 27 renglones de ruido. */
+  if (modelo.limpios.length) {
+    const det = n('details', undefined, 'admin-limpios310');
+    det.dataset.adminLimpios310 = '1';
+    det.append(n('summary', modelo.limpios.length +
+      (modelo.limpios.length === 1 ? ' RFC sin problemas' : ' RFC sin problemas')));
+    for (const rfc of modelo.limpios) {
+      const persona = typeof people !== 'undefined' ? people.find(p => p.id === rfc) : null;
+      const linea = n('p', '', 'admin-limpio-linea310');
+      linea.append(medallon200b(rfc, persona?.name || rfc),
+        n('span', (persona?.name || rfc) + ' · Sin problemas'));
+      det.append(linea);
+    }
+    wrap.append(det);
+  }
+}
+
+function pintarAdminBadge310() {
+  const badge = document.getElementById('admin-badge310');
+  if (!badge) return;
+  const modelo = adminModelo310Cache;
+  const total = modelo ? modelo.totalProblemas : 0;
+  badge.hidden = !total;
+  badge.textContent = total ? String(total) : '';
+  badge.dataset.urgente = modelo && modelo.urgentes.length ? '1' : '';
+  badge.classList.toggle('admin-badge-urgente310', Boolean(modelo && modelo.urgentes.length));
+}
+
+/* Tocar un problema: cambia el contexto a SU RFC y abre la
+   pantalla donde se resuelve. La consola no opera datos. */
+function adminIr310(rfc, destino) {
+  if (rfc && typeof people !== 'undefined' && people.some(p => p.id === rfc)) {
+    scope = rfc;
+    const sel = $('scope'); if (sel) sel.value = rfc;
+    const selTop = $('scope-top'); if (selTop) selTop.value = rfc;
+    try { pintarBotonScope200b(); } catch { /* el selector se repinta en render */ }
+  }
+  if (destino === 'bancos') { dineroTab = 'bancos'; navigate('dinero'); return; }
+  if (destino === 'respaldo') { ajustesSection = 'respaldos'; navigate('settings'); return; }
+  if (destino === 'lists') { navigate('lists'); return; }
+  navigate(destino || 'avisos');
+}
+
+function administracionScreen310() {
+  const wrap = n('div');
+  wrap.dataset.admin310 = '1';
+  /* Al instante desde el último modelo (como Hoy sirve su
+     caché): la reevaluación llega sola y repinta en el sitio. */
+  if (adminModelo310Cache) adminPintar310(wrap, adminModelo310Cache);
+  else wrap.append(panel('Administración', 'Leyendo los problemas de todos tus RFC…'));
+  (async () => {
+    try { if (typeof refreshAvisos === 'function') await refreshAvisos(true); }
+    catch { /* sin avisos frescos: manda el caché */ }
+    let lists = adminListas310Cache;
+    try { lists = await satApi('lists'); adminListas310Cache = lists; }
+    catch { /* sin listas esta vez: esa fuente no aporta */ }
+    let actividad = null;
+    try { actividad = await satApi('activity'); }
+    catch { /* sin actividad: esa fuente no aporta */ }
+    const modelo = adminRecolectar310({ lists, actividad });
+    adminModelo310Cache = modelo;
+    if (wrap.isConnected !== false) adminPintar310(wrap, modelo);
+    pintarAdminBadge310();
+  })();
+  return [wrap];
+}

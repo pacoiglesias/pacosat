@@ -44,9 +44,9 @@ const corpus = html + '\n' + read('lazy.json');
 /* ===== 1 · Versión y sellos ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '3.0.0', 'la ronda es la 2.0.1');
-  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '3.0.0'"), 'el ejecutor declara 2.0.1 (solo el sello)');
-  assert.ok(html.includes('"version":"3.0.0"'), 'el artefacto se sella 2.0.1');
+  assert.equal(pkg.version, '3.1.0', 'la ronda es la 2.0.1');
+  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '3.1.0'"), 'el ejecutor declara 2.0.1 (solo el sello)');
+  assert.ok(html.includes('"version":"3.1.0"'), 'el artefacto se sella 2.0.1');
   console.log('OK 1.32.2 · versión y sellos.');
 }
 
@@ -109,7 +109,7 @@ const corpus = html + '\n' + read('lazy.json');
      sitio es Ajustes › Acerca de, junto a la versión. */
   assert.ok(!html.includes('blocks.splice(1, 0, novedades1311)'), 'las novedades ya no entran en Hoy (2.0 tanda 2)');
   assert.ok(html.includes('novedades200b'), 'las novedades viven en Ajustes › Acerca de (capacidadesScreen)');
-  assert.ok(html.includes("version: '3.0.0'"), 'la nota de novedades es la de esta versión');
+  assert.ok(html.includes("version: '3.1.0'"), 'la nota de novedades es la de esta versión');
   console.log('OK 1.32.2 · D4 — Hoy abre con el día.');
 }
 

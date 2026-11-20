@@ -459,9 +459,11 @@ function satCardGrid() {
   const acciones = {
     descargar: () => downloadSheet(rfc),
     'ir-descarga': () => { satTab = 'descargar'; render(); },
-    ciec: () => { satTab = 'descargar'; render();
-      setTimeout(() => document.querySelector('#ciec-live')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
-      announce('Descarga con CIEC de ' + rfc + ': elige el rango en su tarjeta y escribe el captcha cuando el portal lo enseñe.'); },
+    /* 3.1.0: el botón «activar contraseña» ABRE el diálogo de la
+       CIEC de ESTE RFC — antes cambiaba de pestaña y hacía scroll
+       a un panel que para un RFC sin perfil ni siquiera existía:
+       el clic moría sin abrir nada (el defecto en vivo de Paco). */
+    ciec: () => { ciecDialog(rfc); },
     emparejar: () => { satTab = 'ejecutor'; render();
       setTimeout(() => document.querySelector('.executor-pair')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80); },
     pedir: async (clave) => {
@@ -597,11 +599,73 @@ function descargaModo2912(rfc) {
   if (perfil.efirmaStored) return { modo: 'falta-firma', perfil };
   return { modo: 'falta-alta', perfil };
 }
-function altaRfcDialog2912() {
-  dialog('Dar de alta un RFC', [
-    n('p', 'Elige cómo entra este RFC al SAT: con su e.firma (recomendado: la descarga va sola) o con su contraseña CIEC (la descarga pide tu captcha).'),
-    action('Con e.firma', () => { document.querySelector('dialog')?.close(); efirmaDialog(); }, 'primary', 'key'),
-    action('Con contraseña (CIEC)', () => { document.querySelector('dialog')?.close(); ciecDialog(); }, undefined, 'key')]);
+function altaRfcDialog2912(rfcForzado) {
+  /* 3.1.0: el alta es UN paso con las DOS formas dentro — antes
+     era un selector que cerraba y abría otro diálogo, y para
+     una persona física sin e.firma el camino CIEC quedaba
+     escondido en otra pestaña (el alta del RFC personal de
+     Paco se quedó atascada justo ahí). Mismos endpoints y
+     mismos payloads que efirmaDialog/ciecDialog, que siguen
+     vivos para sus demás entradas. */
+  const person = selectPerson();
+  if (rfcForzado && people.some(row => row.id === rfcForzado)) person.value = rfcForzado;
+  const defaults = (satData.profiles || []).find(row => row.rfc === person.value) || {};
+  const interval = select([['60','Cada hora'],['120','Cada 2 horas'],['240','Cada 4 horas'],['360','Cada 6 horas'],['720','Cada 12 horas'],['1440','Cada día']], String(defaults.minutes || 360));
+  const days = input('number', { min: 1, max: 31, value: defaults.days || 7, required: true });
+  const direction = select(Object.entries(directions), defaults.direction || 'received');
+  const certificate = input('file', { accept: '.cer' });
+  const key = input('file', { accept: '.key' });
+  const efirmaPassword = input('password', { maxLength: 256, autocomplete: 'off' });
+  const ciecPassword = input('password', { maxLength: 256, autocomplete: 'off' });
+  let metodo = defaults.accessMethod === 'ciec' ? 'ciec' : 'efirma';
+  const btnEfirma = n('button', 'Con e.firma', 'soft'); btnEfirma.type = 'button';
+  btnEfirma.dataset.alta310Metodo = 'efirma';
+  const btnCiec = n('button', 'Con contraseña (CIEC)', 'soft'); btnCiec.type = 'button';
+  btnCiec.dataset.alta310Metodo = 'ciec';
+  const efirmaBox = n('div', undefined, 'alta310-forma');
+  efirmaBox.append(field('Certificado .cer', certificate), field('Llave privada .key', key),
+    field('Contraseña de la e.firma', efirmaPassword));
+  const ciecBox = n('div', undefined, 'alta310-forma');
+  ciecBox.append(n('p', 'Para un RFC sin e.firma: PacoSAT entra al portal con el RFC y esta contraseña; al descargar pedirá tu captcha, que escribes tú. La contraseña se guarda solo en la carpeta protegida del servidor.'),
+    field('Contraseña CIEC del SAT', ciecPassword));
+  const pintarMetodo = () => {
+    efirmaBox.hidden = metodo !== 'efirma';
+    ciecBox.hidden = metodo !== 'ciec';
+    btnEfirma.classList.toggle('primary', metodo === 'efirma');
+    btnCiec.classList.toggle('primary', metodo === 'ciec');
+  };
+  btnEfirma.onclick = () => { metodo = 'efirma'; pintarMetodo(); };
+  btnCiec.onclick = () => { metodo = 'ciec'; pintarMetodo(); };
+  pintarMetodo();
+  const toggle = n('div', undefined, 'actions alta310-toggle');
+  toggle.append(btnEfirma, btnCiec);
+  dialog(rfcForzado ? 'Dar de alta el acceso' : 'Dar de alta un RFC', [
+    n('p', 'Elige cómo entra este RFC al SAT y completa SU forma aquí mismo, en este paso: con su e.firma (la descarga va sola) o con su contraseña CIEC (la descarga pide tu captcha).'),
+    field('Contribuyente', person), toggle, efirmaBox, ciecBox,
+    field('Qué revisar', direction), field('Frecuencia', interval), field('Días de búsqueda', days)
+  ], async () => {
+    if (metodo === 'ciec') {
+      check(ciecPassword.value, 'Escribe la contraseña CIEC del SAT.');
+      satData = await satApi('ciec', { rfc: person.value, minutes: Number(interval.value), days: Number(days.value),
+        direction: direction.value, ciec: ciecPassword.value });
+      ciecPassword.value = '';
+      fillSat();
+      announce('Acceso CIEC guardado para ' + person.value + ': su método queda «ciec» y ya puede descargar.');
+      soundCue('success');
+      return;
+    }
+    const fileData = async file => {
+      check(file && file.size <= 32 * KB, 'Selecciona un archivo de e.firma válido.');
+      return encode64(bytes(await file.arrayBuffer()));
+    };
+    satData = await satApi('efirma', { rfc: person.value, minutes: Number(interval.value), days: Number(days.value),
+      direction: direction.value, certificate: await fileData(certificate.files[0]), key: await fileData(key.files[0]),
+      password: efirmaPassword.value });
+    efirmaPassword.value = '';
+    fillSat();
+    announce('e.firma guardada y activa para ' + person.value + '.');
+    soundCue('success');
+  }, 'Guardar el acceso');
 }
 function descargarCard2912() {
   const rfc = descargaRfc2912();
@@ -628,7 +692,7 @@ function descargarCard2912() {
     if (modo === 'falta-alta') {
       falta.append(n('p', 'Falta dar de alta el acceso de este RFC: sin su e.firma o su contraseña CIEC, PacoSAT no puede pedir nada al SAT en su nombre.'));
       ir.textContent = 'Dar de alta el acceso';
-      ir.onclick = () => altaRfcDialog2912();
+      ir.onclick = () => altaRfcDialog2912(rfc);
     } else if (modo === 'falta-ciec') {
       falta.append(n('p', 'Falta guardar la contraseña CIEC de este RFC: con ella, la descarga va desde esta misma tarjeta, con tu captcha.'));
       ir.textContent = 'Guardar la contraseña CIEC';

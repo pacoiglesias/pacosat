@@ -121,10 +121,10 @@ for (const linea of segNav.split('\n')) {
 assert.deepEqual(grupos, {
   'TRABAJO DIARIO': ['home', 'avisos', 'invoices', 'descargar', 'tributario'],
   SAT: ['monitor', 'lists', 'declaraciones'],
-  EXPEDIENTE: ['buzon', 'contribuyentes', 'docs', 'registro'],
+  EXPEDIENTE: ['buzon', 'contribuyentes', 'admin', 'docs', 'registro'],
   'ADMINISTRACIÓN': ['dinero', 'pagos', 'salud', 'settings'],
   'MÁS': ['ejecutor', 'archivo', 'reportes', 'salidas', 'preguntas'] },
-  'cada destino en su grupo; los 21 de siempre, ninguno perdido');
+  'cada destino en su grupo; los 21 de siempre + Administración (3.1.0), ninguno perdido');
 assert.ok(html.includes('nav-caption-on2915'), 'la señal del grupo activo viaja en el artefacto');
 
 /* ── (B3) Facturas: columnas y filtros ─────────────────────── */

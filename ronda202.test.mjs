@@ -63,11 +63,14 @@ const read = name => readFileSync(join(ROOT, name), 'utf8');
      bloque SAT y Novedades (buzon) abriendo Expediente —,
      que es lo que esta aserción nació para fijar. La lista
      exacta se re-pina con la misma fuerza. */
+  /* RE-BASE 3.1.0 (orden expresa): «Administración» entra
+     tras Contribuyentes como destino propio y visible; la
+     lista exacta se re-pina con la misma fuerza. */
   assert.deepEqual(views, ['home', 'avisos', 'invoices', 'descargar', 'tributario',
-    'monitor', 'lists', 'declaraciones', 'buzon', 'contribuyentes', 'docs',
+    'monitor', 'lists', 'declaraciones', 'buzon', 'contribuyentes', 'admin', 'docs',
     'registro', 'dinero', 'pagos', 'salud', 'settings', 'ejecutor', 'archivo',
     'reportes', 'salidas', 'preguntas'],
-    'el menú trae Buzón y Declaraciones como entradas propias (2.0.2; barra de 21 destinos reagrupados en la 2.9.16: Trabajo diario, SAT, Expediente, Administración y «Más»)');
+    'el menú trae Buzón y Declaraciones como entradas propias (2.0.2; barra de 22 destinos —3.1.0: + Administración— reagrupados en la 2.9.16: Trabajo diario, SAT, Expediente, Administración y «Más»)');
   /* RE-BASE 2.8.0 (diseño 19): «Buzón» pasa a llamarse «Buzón
      del SAT» — «Recibidos» (hoy «Novedades») y «Buzón» se
      pisaban — y su title dice la misma verdad con las palabras
@@ -139,8 +142,14 @@ const read = name => readFileSync(join(ROOT, name), 'utf8');
     'Declaraciones: la última bajada buena, con su fecha');
   assert.equal(ctx.declMenuTexto202([{ started: ts, ok: false }]), 'Último intento: 16 nov · no se pudo',
     'Declaraciones: una corrida fallida no se disfraza de bajada');
-  /* Las fuentes son las de siempre: sin endpoints nuevos. */
-  assert.ok(trib.includes("satApi('tributario?rfc=' + encodeURIComponent(scope))"),
+  /* Las fuentes son las de siempre: sin endpoints nuevos.
+     RE-BASE 3.1.0: el pintado del Buzón captura el ámbito al
+     pedir (ambitoAlPedir) y solo pinta si sigue siendo el de la
+     pantalla — la misma vista de siempre, con la guarda de
+     carrera que la ronda ordena (la insignia no cambiaba con
+     el RFC porque una respuesta tardía pisaba la del nuevo). */
+  assert.ok(trib.includes("satApi('tributario?rfc=' + encodeURIComponent(ambitoAlPedir))") &&
+    trib.includes('const ambitoAlPedir = scope;'),
     'el estado del Buzón se lee de la misma vista que su pantalla');
   assert.ok(decl.includes("satApi('declaraciones/runs?rfc=' + encodeURIComponent(scope))"),
     'el estado de Declaraciones se lee del mismo diario que su pantalla');
@@ -228,9 +237,9 @@ const makeService = (options = {}) => {
 
 /* ---------- Sellos de la versión ---------- */
 {
-  assert.equal(JSON.parse(read('package.json')).version, '3.0.0', 'la versión del paquete es 2.0.2');
-  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '3.0.0'"), 'el ejecutor declara 2.0.2 (solo el sello)');
-  assert.ok(read('Faro-Fiscal.html').includes('"version":"3.0.0"'), 'el artefacto se sella 2.0.2');
-  assert.ok(read('final-ui.part').includes("version: '3.0.0'"), 'la nota de novedades es la de esta versión');
+  assert.equal(JSON.parse(read('package.json')).version, '3.1.0', 'la versión del paquete es 2.0.2');
+  assert.ok(read('ejecutor-local.mjs').includes("EJECUTOR_VERSION = '3.1.0'"), 'el ejecutor declara 2.0.2 (solo el sello)');
+  assert.ok(read('Faro-Fiscal.html').includes('"version":"3.1.0"'), 'el artefacto se sella 2.0.2');
+  assert.ok(read('final-ui.part').includes("version: '3.1.0'"), 'la nota de novedades es la de esta versión');
   console.log('OK 2.0.2 · sellos — paquete, ejecutor, artefacto y novedades en 2.0.2.');
 }
