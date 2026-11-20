@@ -86,7 +86,7 @@ import { createSatTribFetch } from './sat-tributario.mjs';
 import { SAT_EXECUTOR_PROTOCOL_VERSION } from './sat-executor.mjs';
 import { asegurarResidencia, estadoResidencia } from './registro-windows.mjs';
 
-export const EJECUTOR_VERSION = '2.9.17';
+export const EJECUTOR_VERSION = '3.0.0';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const URL_BASE = String(process.env.PACOSAT_URL || '').replace(/\/$/, '');

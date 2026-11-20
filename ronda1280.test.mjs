@@ -551,7 +551,7 @@ const falloNavegacion = marcador => async () => {
   assert.ok(caps.includes('MENÚ DE 13 DESTINOS'), 'P8/D3: el menú dice sus 13 destinos reales');
   assert.ok(caps.includes('SEMANAL'), 'P8/D4: el buzón automático consta con su cadencia semanal real');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"2.9.17"'), 'el artefacto se sella con la versión vigente (2.0.1)');
+  assert.ok(html.includes('"version":"3.0.0"'), 'el artefacto se sella con la versión vigente (2.0.1)');
   console.log('OK 1.28.0 · P8 — CAPACIDADES veraz: e.firma viva, versión al pie, 13 destinos y cadencia semanal; copias idénticas.');
 }
 

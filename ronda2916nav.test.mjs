@@ -77,11 +77,15 @@ assert.ok(html.includes('.sidebar nav.nav-mas-cerrado2916 .nav-mas-item2916{disp
 assert.ok(html.includes('body.barra-plegada .sidebar nav.nav-mas-cerrado2916 .nav-mas-item2916{display:flex}'),
   'en la barra plegada a iconos, los destinos de «Más» se enseñan como los demás');
 
-/* ── La barra inferior móvil no cambia (paridad) ─────────── */
+/* ── La barra inferior móvil (RE-BASE 3.0, mejora 21: la
+   barra pasa a Al día · Hoy · Descargar · Avisos · Más; el
+   Buzón conserva su sitio en el menú lateral y en «Más») ── */
 const barraIni = layout.indexOf('<nav class="bottombar"');
 const barra = layout.slice(barraIni, layout.indexOf('</nav>', barraIni));
 assert.deepEqual([...barra.matchAll(/data-view="([a-z]+)"/g)].map(m => m[1]),
-  ['home', 'avisos', 'descargar', 'tributario'],
-  'la barra inferior conserva Hoy, Avisos, Descargar y Buzón, y su «Más»');
+  ['home', 'descargar', 'avisos'],
+  'la barra inferior de la 3.0: Hoy, Descargar y Avisos (el Buzón vive en el menú y en «Más»)');
+assert.ok(barra.includes('id="aldia30-bar"'),
+  'la barra inferior abre con el botón «Al día» (3.0)');
 
-console.log('ronda2916nav: OK — 21 destinos en 4 bloques + «Más», paridad total, barra inferior intacta.');
+console.log('ronda2916nav: OK — 21 destinos en 4 bloques + «Más», paridad total, barra inferior de la 3.0 con su botón «Al día».');

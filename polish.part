@@ -793,6 +793,38 @@ button.status-pill{min-height:44px}
 .facturas-totales2913 .graf-cifra2913{display:grid;gap:2px}
 .facturas-totales2913 .graf-cifra2913 strong{font-size:19px;font-variant-numeric:tabular-nums lining-nums}
 .dl2913-pasos{display:flex;gap:8px;flex-wrap:wrap;padding:2px 0}
+/* 3.0 · «Ponerme al día»: semáforo con su punto, barra de
+   avance y la tarjeta del caminante siempre visible. */
+.aldia30-sema{display:flex;align-items:center;gap:9px;font-size:16px}
+.aldia30-punto{width:13px;height:13px;border-radius:50%;background:var(--muted);flex:none}
+.aldia30-punto[data-nivel="ok"]{background:var(--ok)}
+.aldia30-punto[data-nivel="atencion"]{background:var(--warn)}
+.aldia30-punto[data-nivel="proceso"]{background:var(--accent)}
+.aldia30-barra{height:8px;border-radius:99px;background:var(--line);overflow:hidden;margin:6px 0}
+.aldia30-barra i{display:block;height:100%;background:var(--accent);border-radius:99px;transition:width .4s}
+.aldia30-caminante{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}
+.aldia30-caminante h3{font-size:13px;margin:0 0 6px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+.aldia30-caminante p{margin:2px 0}
+/* 3.0 · frescura en cabecera y la rejilla de lo que falta. */
+.frescura30{color:var(--muted);font-size:12px;white-space:nowrap}
+.cob-falta-rejilla30{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;padding:4px 0}
+.cob-falta-mes30{display:grid;gap:2px;justify-items:start;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink);cursor:pointer;min-height:52px;text-align:left}
+.cob-falta-mes30 .cob-falta-nombre30{font-size:12px;color:var(--muted)}
+.cob-falta-mes30 .cob-falta-cuenta30{font-size:14px}
+.cob-falta-mes30.completo{opacity:.55;cursor:default}
+.hoy-cifra2913[role="button"]{cursor:pointer}
+.hoy-cifra2913[role="button"]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+/* 3.0 · Móvil: la franja de un toque de las tarjetas de
+   Facturas y la pasada de tamaño de dedo. */
+.rapidas30{display:flex;gap:8px;flex-wrap:wrap}
+.rapidas30 button{min-height:44px;padding:8px 14px}
+.aldia30-body [data-aldia30-go]{min-height:48px}
+@media (pointer:coarse){
+  .bottombar button{min-height:52px}
+  .filter-chip{min-height:44px;padding:10px 14px}
+  .cob-falta-mes30{min-height:56px}
+  .dl2913-paso{min-height:44px}
+}
 .dl2913-paso{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid var(--line);border-radius:999px;color:var(--muted);font-weight:600}
 .dl2913-paso .dl2913-paso-num{display:grid;place-items:center;width:19px;height:19px;border-radius:50%;background:var(--line);color:var(--ink);font-size:12px}
 .dl2913-paso.activo{color:var(--ink);border-color:var(--accent)}

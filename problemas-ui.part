@@ -248,6 +248,25 @@ function commandCenter() {
   if (typeof satToken !== 'undefined' && satToken) satApi('status').then(d => {
     const p = d?.estadosPendientes;
     if (!p?.faltantes?.length || !pendRow200h.isConnected) return;
+    /* (3.0 · mejora 16) En la ventana del 1 al 10, el
+       recordatorio va CUENTA POR CUENTA, cada una con su
+       botón de subir o fotografiar (Bancos abre el selector
+       con cámara). Fuera de la ventana queda la fila resumen
+       de siempre: nada desaparece. */
+    if (p.enVentana) {
+      const caja30 = n('div'); caja30.dataset.estados30 = '1';
+      for (const f of p.faltantes) {
+        const row = n('div', undefined, 'cp-row');
+        row.append(statusPill('warn', 'Falta el estado de ' + p.mesAnterior),
+          n('span', (f.banco || '') + ' ' + (f.nombre || '') + (f.last4 ? ' ···' + f.last4 : '')));
+        const subir = n('button', 'Subir o fotografiar', 'primary small');
+        subir.dataset.estadoCuenta30 = f.accountId || '';
+        subir.onclick = () => navigate('bancos');
+        row.append(subir); caja30.append(row);
+      }
+      pendRow200h.replaceChildren(caja30);
+      return;
+    }
     const row = n('div', undefined, 'cp-row');
     row.append(statusPill('warn', 'Falta el estado de ' + p.mesAnterior),
       n('span', p.faltantes.map(f => (f.banco || '') + ' ' + (f.nombre || '') + (f.last4 ? ' ···' + f.last4 : '')).join(' · ')));

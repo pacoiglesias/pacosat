@@ -921,11 +921,13 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '2.9.17',
+  version: '3.0.0',
   fecha: '20 de noviembre de 2026',
   puntos: [
-    'Corrección de fondo en los metadatos del SAT: sus paquetes se leían con un separador que el SAT no usa y entraban vacíos, sin dar ningún error. Ahora se leen tal como el SAT los entrega, y cada paquete deja sus facturas registradas en el expediente.',
-    'Con los metadatos dentro, la cobertura vuelve a decir la verdad completa: qué facturas conoce el SAT de cada RFC y cuáles faltan en XML — la lista de la que parte la bajada rápida desde el portal de consulta.'
+    '«Ponerme al día»: un solo botón en Hoy y en Descargar que lo hace todo — revisa los metadatos, baja por el portal lo que falte y pide por la vía del SAT solo lo que el portal no pueda — y al terminar dice en palabras llanas si ya estás al día o qué falta.',
+    'Descargar ya no pregunta el cómo: la tarjeta del caminante vive siempre a la vista con la puerta del SAT, el cupo del día y lo traído hoy, y la cobertura se ve como una rejilla del año que se toca mes a mes.',
+    'En el iPhone, la barra inferior lleva las acciones del día al alcance del pulgar, las facturas se bajan y se envían a un toque desde su tarjeta, y Hoy abre al instante con lo último conocido.',
+    'Aviso al iPhone cuando el SAT cancela una factura, con su folio y su importe; tocarlo abre esa factura. Y cada factura enseña su prueba de origen: por qué vía entró y cuándo.'
   ]
 };
 function novedadesCard1311() {
@@ -1330,4 +1332,21 @@ function navMasAbrir2916() { navMasFijar2916(true, false); }
   try { abierto = localStorage.getItem('pacosat-nav-mas2916') === 'abierto'; } catch { /* sin memoria: plegado */ }
   navMasFijar2916(abierto, false);
   btn.addEventListener('click', () => navMasFijar2916(btn.getAttribute('aria-expanded') !== 'true'));
+})();
+/* (3.0 · mejora 21) El botón «Al día» de la barra de
+   pulgar: lanza la puesta al día del RFC en ámbito y lleva
+   a Descargar, donde su tarjeta enseña el avance. Sin RFC
+   en ámbito, lleva a Descargar, donde la tarjeta enseña el
+   paso que falta. */
+(function aldiaBarCableado30() {
+  const btn = document.getElementById('aldia30-bar');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const rfcBar30 = typeof scope !== 'undefined' ? scope : '';
+    if (rfcBar30) {
+      try { await aldiaRun30(rfcBar30); toast('Poniéndote al día…', 'ok'); }
+      catch (error) { if (error.status !== 409) toast(error.message, 'error'); }
+    }
+    navigate('descargar');
+  });
 })();

@@ -45,8 +45,12 @@ const ui = read('ui.part');
   assert.ok(!layout.includes('id="side-search"'), 'el espejo lateral del buscador sale del menú (diseño 11)');
   assert.ok(!layout.includes('id="sound-toggle"'), 'el altavoz sale de la cabecera: vive en Ajustes › General (diseño 27)');
   const bottom = layout.slice(layout.indexOf('bottombar'), layout.indexOf('bottombar') + 1400);
-  for (const view of ['home', 'avisos', 'descargar', 'tributario'])
-    assert.ok(bottom.includes('data-view="' + view + '"'), 'barra inferior 2.8.0: ' + view);
+  /* RE-BASE 3.0 (mejora 21): la barra inferior es Al día ·
+     Hoy · Descargar · Avisos · Más; el Buzón del SAT
+     conserva su sitio en el menú lateral y en «Más». */
+  for (const view of ['home', 'avisos', 'descargar'])
+    assert.ok(bottom.includes('data-view="' + view + '"'), 'barra inferior 3.0: ' + view);
+  assert.ok(bottom.includes('id="aldia30-bar"'), 'barra inferior 3.0: botón «Al día»');
   assert.ok(!bottom.includes('data-view="dinero"'), 'Dinero no ocupa la barra inferior: vive en «Más» (diseño 28)');
   assert.ok(layout.includes('> Novedades <'), 'el buzón de comprobantes se llama «Novedades» (diseño 19)');
   assert.ok(layout.includes('> Buzón del SAT <'), 'el Buzón Tributario se llama «Buzón del SAT» (diseño 19)');
