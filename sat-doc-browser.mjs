@@ -1676,7 +1676,17 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
       async ciecWaitResults(ms) {
         /* La búsqueda es un postback parcial: networkidle no
            basta. Se espera a que el indicador de progreso se
-           oculte Y haya filas o el panel de «sin resultados». */
+           oculte Y haya filas o el panel de «sin resultados».
+           3.1.1: también cuentan como RESULTADOS las filas de
+           la forma CANCELADA (verificado en vivo el 20 nov
+           2026, fixture pagina-fallo-310.html): el portal lista
+           las canceladas SIN input.ListaFolios y sin descarga
+           de XML — cada fila trae solo el span del acuse
+           (BtnRecuperaAcuseFinal, onclick a
+           AcuseSolicitudCancelacion.aspx) y el UUID en un span
+           de texto —. Sin este reconocimiento la espera expiraba
+           a los 60 s, el caminante lanzaba «no terminó» y la
+           corrida abortaba antes de la pasada por folio. */
         const end = Date.now() + Math.max(0, ms);
         while (Date.now() < end) {
           const done = await page.evaluate(() => {
@@ -1684,7 +1694,11 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
               getComputedStyle(el).visibility !== 'hidden';
             const progress = document.querySelector('#ctl00_MainContent_UpdateProgress1');
             const rows = document.querySelectorAll('input.ListaFolios').length;
-            return !visible(progress) && (rows > 0 || visible(document.querySelector('#ctl00_MainContent_PnlNoResultados')));
+            const acuseRows = document.querySelectorAll(
+              'span[id="BtnRecuperaAcuseFinal"], span[name="BtnRecuperaAcuse"], ' +
+              'span[onclick*="AcuseSolicitudCancelacion"]').length;
+            return !visible(progress) && (rows > 0 || acuseRows > 0 ||
+              visible(document.querySelector('#ctl00_MainContent_PnlNoResultados')));
           }).catch(() => false);
           if (done) return true;
           await page.waitForTimeout(700);
@@ -1707,6 +1721,34 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
               if (link) url = link.href;
             }
             rows.push({ uuid, url });
+          }
+          /* Filas-acuse (3.1.1, la forma cancelada de arriba):
+             por cada span del acuse se sube por sus <tr>
+             ancestros hasta el que enseña el UUID en texto (la
+             fila exterior de la rejilla; el <tr> interior de las
+             acciones no lo trae) y se devuelve la fila como
+             { uuid, url: '', acuseUrl } — sin URL de XML, porque
+             el portal no la ofrece para una recibida cancelada,
+             y con la URL absoluta del acuse, que es lo único
+             descargable de esa fila. Una fila que ya salió por
+             ListaFolios no se duplica. */
+          const vistos = new Set(rows.map(row => row.uuid));
+          const uuidRe = /[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/;
+          for (const span of document.querySelectorAll(
+            'span[id="BtnRecuperaAcuseFinal"], span[name="BtnRecuperaAcuse"], ' +
+            'span[onclick*="AcuseSolicitudCancelacion"]')) {
+            const acuseMatch = (span.getAttribute('onclick') || '')
+              .match(/AcuseSolicitudCancelacion\.aspx\?Datos=[^'")\s]+/);
+            if (!acuseMatch) continue;
+            let uuid = '';
+            for (let node = span.parentElement; node && !uuid; node = node.parentElement) {
+              if (node.tagName !== 'TR') continue;
+              const encontrado = (node.textContent || '').match(uuidRe);
+              if (encontrado) uuid = encontrado[0].toUpperCase();
+            }
+            if (!uuid || vistos.has(uuid)) continue;
+            vistos.add(uuid);
+            rows.push({ uuid, url: '', acuseUrl: new URL(acuseMatch[0], location.href).href });
           }
           const quotaEl = document.querySelector('[id$="hfDescarga"]');
           const noRes = document.querySelector('#ctl00_MainContent_PnlNoResultados');
@@ -1871,6 +1913,34 @@ export function createPlaywrightDriverFactory({ executablePath = '/usr/bin/chrom
          ese lector es la calibración pendiente y esta primitiva
          queda sin uso hasta entonces, sin romper nada). */
       async ciecDownloadPdf(url) {
+        const before = pdfBodies.length;
+        const pending = page.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
+        await page.goto(url, { waitUntil: 'commit', timeout: 30_000 }).catch(() => {});
+        const download = await pending;
+        if (!download) return null;
+        const end = Date.now() + 15_000;
+        while (Date.now() < end) {
+          if (pdfBodies.length > before) {
+            const [body] = pdfBodies.splice(before, 1);
+            return isPdfBuffer(body) ? body : null;
+          }
+          await page.waitForTimeout(300);
+        }
+        return null;
+      },
+      /* Acuse de cancelación de una fila (3.1.1): el acuse es lo
+         ÚNICO que el portal ofrece de una recibida cancelada
+         (su URL AcuseSolicitudCancelacion.aspx?Datos=… viaja en
+         la fila que ciecRows devuelve como acuseUrl). Se baja
+         por el MISMO mecanismo que los RecuperaCfdi: la sesión
+         ya autenticada del navegador, el evento download y la
+         pila de cuerpos, con la misma guarda de ciecDownloadPdf
+         — el cuerpo solo vale si ES un PDF —. Si el portal
+         entrega otra cosa o no entrega, devuelve null y el
+         caminante lo cuenta con honestidad, sin inventar el
+         acuse. Navega fuera de la rejilla, como ciecDownloadXml:
+         quien lo llama ya terminó de leer esa página. */
+      async ciecDownloadAcuse(url) {
         const before = pdfBodies.length;
         const pending = page.waitForEvent('download', { timeout: 30_000 }).catch(() => null);
         await page.goto(url, { waitUntil: 'commit', timeout: 30_000 }).catch(() => {});

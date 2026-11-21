@@ -1498,7 +1498,10 @@ function fillSat(target = $('sat-live')) {
   /* (2.9.9 · D3) La lista de solicitudes corta en 25 y «Ver
      más» trae las siguientes, sin salir de la pantalla. */
   if (jobs.length) queue.append(grid(['RFC', 'Periodo', 'Estado', 'Acción'], jobs.slice(0, satJobsLimite299).map(row => [
-    cell(row.rfc, directions[row.direction] + (row.kind === 'metadata' ? ' · Solo el listado' : '')), dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
+    cell(row.rfc, directions[row.direction] + (row.kind === 'metadata' ? ' · Solo el listado' : row.kind === 'folios' ? ' · Por folio' : '')),
+    /* (3.1.1) Una solicitud por folio no tiene periodo: su
+       «periodo» es el propio folio pedido. */
+    row.kind === 'folios' ? 'Folio ' + (row.folio || '') : dateLabel(row.periodStart) + ' – ' + dateLabel(row.periodEnd),
     cell(satStatus[row.status] || row.status, [row.error || (row.status === 'pending' ? 'Próxima consulta ' + localDateTime(row.due) : ''),
       criteriaNotes[row.criteriaState] || ''].filter(Boolean).join(' · ')),
     row.status === 'pending' ? action('Reintentar consulta', async () => { satData = await satApi('retry', { id: row.id }); fillSat(); announce('Consulta programada para el siguiente ciclo del servicio.'); }) : n('span', 'Creada ' + localDateTime(row.created))

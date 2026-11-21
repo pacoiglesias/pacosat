@@ -90,6 +90,55 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
       ensure(REQUEST_ID.test(id), 'El SAT no devolvió un identificador válido.');
       return id;
     },
+    /* Solicitud por FOLIO (3.1.1, parte B): la otra puerta del
+       servicio de descarga masiva. Contrato verificado contra el
+       código del SDK instalado (2.0.0), no contra su documentación:
+       - Service.query() despacha a queryFolio() cuando la
+         QueryParameters lleva UUID: construye la operación SOAP
+         «SolicitaDescargaFolio» con SOLO dos atributos —
+         RfcSolicitante (el RFC de la e.firma) y Folio (UN UUID) —,
+         firmada por el mismo FielRequestBuilder de siempre. No
+         existe operación con una lista de folios: cada UUID es
+         una solicitud propia, con su requestId propio, y el resto
+         del ciclo (verify → paquetes → download) es el genérico
+         por requestId, así que advanceSatJob sirve tal cual.
+       - QueryValidator.validateFolio RECHAZA la consulta por UUID
+         si lleva filtro de RFC (RfcMatches), complemento, estado
+         de documento (DocumentStatus) o tipo de documento
+         (DocumentType). Por eso esta vía NO pasa por el camino de
+         request(): ni periodo, ni DownloadType/RequestType a la
+         carta y — ojo — ni el DocumentStatus('active') que
+         request() añade para recibidos+cfdi. La QueryParameters
+         nace de create() con sus valores por defecto (que el
+         validador de folios acepta: estado y tipo «undefined»,
+         sin RFC de filtro) y solo se le fija el UUID.
+       - Uuid.create() del SDK exige el formato UUID y lo pasa a
+         minúsculas; si el texto no es un UUID válido, lanza. Se
+         traduce ese lanzamiento al mensaje de la casa.
+       Para qué existe esta vía: el SAT no entrega XML de recibidos
+       CANCELADOS por la vía de fechas (arriba, hallazgo #5), y la
+       solicitud por folio es la que puede traer el XML de una
+       cancelada concreta cuyo UUID ya se conoce por los metadatos.
+       `direction` se acepta SOLO como dato de contexto del
+       llamador (el servidor lo guarda en el trabajo para clasificar
+       la ingesta del paquete, como hace con cualquier solicitud);
+       NO entra en la QueryParameters: la operación por folio no
+       lleva sentido y meterlo exigiría filtros que el validador
+       prohíbe. */
+    async requestFolio({ folio, direction } = {}) {
+      ensure(direction === undefined || direction === 'received' || direction === 'issued', 'Dirección inválida.');
+      ensure(typeof folio === 'string' && folio.trim() !== '', 'Folio inválido.');
+      let uuid;
+      try { uuid = sdk.Uuid.create(folio.trim()); }
+      catch { throw new Error('Folio inválido: se espera un UUID con guiones (36 caracteres).'); }
+      const query = sdk.QueryParameters.create().withUuid(uuid);
+      const errors = query.validate();
+      ensure(!errors.length, errors.join(' · '));
+      const result = accepted(await service.query(query), 'El SAT rechazó la solicitud por folio');
+      const id = result.getRequestId();
+      ensure(REQUEST_ID.test(id), 'El SAT no devolvió un identificador válido.');
+      return id;
+    },
     async check(id) {
       ensure(REQUEST_ID.test(id), 'Identificador de solicitud inválido.');
       const result = accepted(await service.verify(id), 'El SAT no pudo verificar la solicitud');
@@ -123,6 +172,10 @@ export function createSatConnector(sdk, { rfc, certificate, privateKey, password
 
 // The caller persists requestId and imported package IDs. Failed imports are
 // left pending so that the next scheduled execution can retry safely.
+// Sirve igual para trabajos nacidos de requestFolio (3.1.1): tras la
+// solicitud, todo el ciclo cuelga del requestId genérico (verify →
+// paquetes → download) y este avance no mira ni el periodo ni el
+// criterio de origen; lo prueba ronda311folios.test.mjs.
 export async function advanceSatJob(connector, job, save, importPackage, hooks = {}) {
   if (job.status !== 'pending') return job;
   const result = await connector.check(job.requestId);

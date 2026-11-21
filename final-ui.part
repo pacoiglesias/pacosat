@@ -921,17 +921,12 @@ function gestosPintarCiec1311(monthly) {
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
 const NOVEDADES_1311 = {
-  version: '3.1.0',
+  version: '3.1.1',
   fecha: '20 de noviembre de 2026',
   puntos: [
-    'Las facturas canceladas también bajan al momento: «Ponerme al día» las trae por el portal como las demás — las busca entre las canceladas y por su folio fiscal — y solo pide por la vía lenta del SAT lo que el portal de verdad no entregue tras intentarlo.',
-    'Cada RFC, solo lo suyo: Avisos, la actividad y las propuestas de Hoy, la cobertura, los trabajos y las insignias del menú enseñan únicamente los datos del contribuyente seleccionado — o los etiquetan con su RFC cuando la vista es de todos. Nada de un RFC se presenta ya como de otro, tengas 2 o 30 contribuyentes.',
-    'Nueva pantalla «Administración»: el puesto de triage de todos tus RFC. Abre con el veredicto («N RFC necesitan algo · M urgentes»), enseña primero solo los problemas rojos con el medallón de su RFC, agrupa el resto por contribuyente con su semáforo y de quién es la resolución, y resume los que están bien en una sola línea. Tocar un problema te lleva a su RFC y a la pantalla donde se resuelve. Si entras con un usuario de alcance limitado, la consola solo enseña los RFC autorizados.',
-    'Identidad visual por RFC en todas las pantallas: cada contribuyente tiene su color de la paleta sobria — asignado automáticamente si no tenía — con su medallón en el selector y en la cabecera, y una franja en su color bajo la cabecera. Sin leer nada, se sabe de quién son los datos.',
-    'El alta de un RFC es un solo paso con las dos formas: e.firma (.cer y .key) o contraseña CIEC, en la misma ventana. Y el botón «activar contraseña» de los avisos ya abre directamente el diálogo de la CIEC de ese RFC, también si aún no tenía perfil.',
-    '«Ponerme al día» con más control: la tarjeta nombra su RFC, enseña la etapa en curso y cuánto lleva la corrida, y al terminar deja un resumen accionable — nuevas, ya estaban, pendientes y con error — cada grupo con su botón a su lista. Si un RFC aún no tiene acceso dado de alta, el veredicto lo dice al instante: «Falta dar de alta su acceso», con el botón que abre el alta.',
-    'Los avisos distinguen «Error» de «Aviso» y cada pendiente dice de quién es la resolución — tuyo, del SAT o del sistema — con su gesto único o «se resuelve solo». Cobertura, Salud y el Resumen nombran en su cabecera el RFC y el periodo que enseñan, junto a la hora de los datos.',
-    'Seguridad: la contraseña de e.firma del archivo de arranque ya no queda en claro — se usa descifrada solo en memoria y el propio archivo se cifra solo en el primer arranque con esta versión, igual que ya pasaba con el correo y el respaldo.'
+    'Las canceladas, con su papel: cuando el portal lista una factura cancelada, ahora se reconoce tal como es — el portal no ofrece su XML en ese listado, solo el acuse de cancelación — y PacoSAT baja ese acuse y lo guarda en Documentos como «Acuse de cancelación», enlazado a su factura. La corrida ya no se corta ahí: sigue con la búsqueda por folio y su resumen dice la verdad, cuántas listó el portal y de cuántas bajó el acuse.',
+    'Nueva vía para traer el XML de una cancelada: la petición por folios. En «Metadatos del SAT · CFDI sin descargar» (en Descargar), el botón «Pedir por folios» pide al SAT, folio a folio, los XML que faltan del RFC en pantalla — también los de facturas canceladas, que la petición por fechas no entrega —. Cada petición queda en la cola de solicitudes como «Por folio» y el XML entra solo cuando el SAT lo entrega, como cualquier descarga.',
+    'Lo de siempre, sin cambios: tus RFC siguen sin mezclarse, la pantalla de Administración y «Ponerme al día» quedan como estaban — esta versión solo calibra el portal y abre la vía por folios.'
   ]
 };
 function novedadesCard1311() {

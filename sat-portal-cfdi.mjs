@@ -36,6 +36,35 @@
          (ciecClickFolioRadio + ciecSetFolio).
    Lo que ni así salga sigue yendo a `notListed`, sin fingir.
 
+   3.1.1 — LA FORMA CANCELADA DEL PORTAL, CALIBRADA EN VIVO
+   (20 nov 2026, fixture real fixtures/pagina-fallo-310.html):
+   la pasada por estado SÍ fijó «Cancelado» y el portal SÍ
+   listó las 5 canceladas recibidas de Mano Fil del 06/11/2026
+   — pero esa rejilla no trae input.ListaFolios ni descarga de
+   XML: cada fila trae solo el span del acuse final
+   (BtnRecuperaAcuseFinal → AcuseSolicitudCancelacion.aspx) y
+   el UUID en un span de texto. Verdad del portal: para una
+   recibida cancelada NO se ofrece el XML; solo el acuse. La
+   3.1.0 moría ahí: ciecWaitResults no reconocía esa rejilla,
+   la búsqueda «no terminaba» a los 60 s y la corrida abortaba
+   sin correr la pasada por folio. Desde la 3.1.1:
+     - ciecWaitResults/ciecRows (sat-doc-browser.mjs) reconocen
+       esa forma y devuelven filas-acuse { uuid, url: '',
+       acuseUrl }.
+     - Una fila-acuse cuenta como ENCONTRADA/LISTADA (no como
+       «no listada» ni como descarga fallida): el ítem va a
+       `listedOnly`, la corrida CONTINÚA — la pasada por folio
+       también se intenta para esos ítems, por si por esa vía
+       el portal sí enseñara el XML — y el veredicto final lo
+       nombra con honestidad: el portal las lista pero no
+       ofrece su XML; solo el acuse.
+     - El acuse SÍ se baja (PDF, por el mismo canal de
+       descargas de la sesión: ciecDownloadAcuse o, en su
+       defecto, ciecDownloadPdf) y viaja en `acuses` del
+       resultado, distinguible de los XML de `files`.
+   Solo un fallo duro del portal (acceso, controles que no
+   aparecen, una búsqueda que de verdad no responde) aborta.
+
    Este caminante SOLO vive en portalcfdi (más el NIDP de cfdiau
    durante el acceso): nunca abre ninguna notificación del Buzón
    ni navega a otra sección del SAT. La suite de la ronda lo
@@ -54,9 +83,13 @@
                  metadato del SAT trae cancelados: son los de la
                  pasada de estado de la 3.1.0.)
      hooks   = { step(text, url), isCancelled() }
-     Resuelve { files: [{ uuid, name, buffer, pdf? }], found,
+     Resuelve { files: [{ uuid, name, buffer, pdf? }],
+       acuses: [{ uuid, buffer }], found,
        downloaded, notListed: [uuid…], missing: [uuid…],
-       complete, notes: [], quotaUsed }
+       listedOnly: [uuid…], complete, notes: [], quotaUsed }
+       (`acuses`/`listedOnly` — 3.1.1 —: los acuses de
+       cancelación bajados y los folios que el portal listó
+       solo con acuse, sin ofrecer su XML por esta vía.)
      En fallo duro (acceso/portal) lanza Error con .code y .diag
      ({ url, screenshot, html } de page.diagnostics()), como
      sat-ciec.
@@ -154,6 +187,8 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
 
     const notes = [];
     const files = [];
+    const acuses = []; /* 3.1.1: [{ uuid, buffer }] — el PDF del acuse de cancelación */
+    const listedOnly = []; /* 3.1.1: [uuid…] listados solo con acuse, sin XML ofrecido */
     const foundRows = new Map(); /* uuid -> fila del portal */
     const queried = new Set(); /* uuid cuya consulta sí corrió */
     let quota = '';
@@ -224,7 +259,20 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
         if (rowsResult?.quota) quota = rowsResult.quota;
         for (const row of rowsResult?.rows || []) {
           const uuid = String(row?.uuid || '').trim().toUpperCase();
-          if (uuid && wanted.has(uuid) && !foundRows.has(uuid)) foundRows.set(uuid, row);
+          if (!uuid || !wanted.has(uuid)) continue;
+          const previa = foundRows.get(uuid);
+          if (!previa) { foundRows.set(uuid, row); continue; }
+          /* Mejora de una fila ya vista (3.1.1): si la fila
+             guardada era de acuse (sin URL de XML) y esta pasada
+             trae la descarga, la fila buena la sustituye
+             conservando el acuse; y si la guardada no traía
+             acuse y esta sí, el acuse se le suma. Sin esto, una
+             cancelada listada primero por su acuse jamás podría
+             «subir» a descargable en la pasada por folio. */
+          if (!previa.url && row.url)
+            foundRows.set(uuid, { ...row, acuseUrl: row.acuseUrl || previa.acuseUrl || '' });
+          else if (!previa.acuseUrl && row.acuseUrl)
+            foundRows.set(uuid, { ...previa, acuseUrl: row.acuseUrl });
         }
         return (rowsResult?.rows || []).length >= CIEC_PAGE_LIMIT;
       };
@@ -389,8 +437,12 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
          esto no deja ni nota: queda la pasada por folio y, en
          su caso, el cierre honesto de siempre. */
       if (!cancelled) {
+        /* «Sin descargar todavía» (3.1.1): un ítem cuya única
+           fila es de acuse tampoco tiene aún su XML, así que la
+           pasada de estado también lo reintenta — su absorb
+           puede mejorar la fila si esta vía sí lo descarga —. */
         const pendientesCancelados = items.filter(i =>
-          i.valid && i.cancelled && !foundRows.has(i.uuid));
+          i.valid && i.cancelled && !foundRows.get(i.uuid)?.url);
         if (pendientesCancelados.length) {
           const antes = foundRows.size;
           await runReceivedDays(groupReceivedByDay(
@@ -418,14 +470,21 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
          página no ofrece el modo folio, ni se intenta; si una
          consulta por folio no responde, la pasada se corta
          (los folios ya se pidieron por fecha: quedan en «no
-         listados», sin fingir). */
+         listados», sin fingir).
+         3.1.1: la pasada cubre TAMBIÉN los ítems cuya única
+         fila es de acuse (listados sin XML): la consulta por
+         folio tolera esa misma forma — si devuelve otra fila
+         de acuse, la fila queda como estaba y el ítem acaba en
+         «listados, solo acuse»; si por esta vía el portal sí
+         enseñara la descarga, absorb mejora la fila y el XML
+         baja como los demás —. */
       if (!cancelled) {
-        const pendientes = items.filter(i => i.valid && !foundRows.has(i.uuid));
+        const pendientes = items.filter(i => i.valid && !foundRows.get(i.uuid)?.url);
         if (pendientes.length &&
             typeof page.ciecClickFolioRadio === 'function' &&
             typeof page.ciecSetFolio === 'function') {
           await setEstado('todos');
-          const antes = foundRows.size;
+          const descargablesAntes = [...foundRows.values()].filter(row => row.url).length;
           for (const item of pendientes) {
             if (isCancelled()) { cancelled = true; break; }
             const rowsResult = await queryByFolio(item);
@@ -434,7 +493,7 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
             queried.add(item.uuid);
             await sessionGuard();
           }
-          const traidas = foundRows.size - antes;
+          const traidas = [...foundRows.values()].filter(row => row.url).length - descargablesAntes;
           if (traidas > 0) {
             const note = traidas + (traidas === 1 ? ' folio salió' : ' folios salieron') +
               ' al consultarlos por su folio fiscal en el portal.';
@@ -489,6 +548,30 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
             }
             break;
           }
+          const row = foundRows.get(item.uuid);
+          if (!row.url) {
+            /* Fila-acuse (3.1.1): el portal listó el folio pero
+               no ofrece su XML por esta vía — verdad del portal
+               para una recibida cancelada —. NO es una descarga
+               fallida (no suma a los fallos ni va a «pendientes»
+               como error) ni consume cupo de XML: el ítem va a
+               `listedOnly`, se baja su acuse si la fila lo trae
+               (el PDF viaja en `acuses`, distinguible de los
+               XML) y la corrida sigue con el siguiente. El
+               veredicto honesto agregado sale tras el bucle. */
+            listedOnly.push(item.uuid);
+            if (row.acuseUrl) {
+              await sessionGuard();
+              const bajarAcuse = typeof page.ciecDownloadAcuse === 'function'
+                ? page.ciecDownloadAcuse.bind(page)
+                : typeof page.ciecDownloadPdf === 'function'
+                  ? page.ciecDownloadPdf.bind(page) : null;
+              const acuseBuffer = bajarAcuse
+                ? await bajarAcuse(row.acuseUrl).catch(() => null) : null;
+              if (looksLikePdf(acuseBuffer)) acuses.push({ uuid: item.uuid, buffer: acuseBuffer });
+            }
+            continue;
+          }
           if (quotaUsed >= maxDownloads) {
             if (!ceilingNoted) {
               ceilingNoted = true;
@@ -500,8 +583,7 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
             continue;
           }
           await sessionGuard();
-          const row = foundRows.get(item.uuid);
-          const buffer = row.url ? await page.ciecDownloadXml(row.url).catch(() => null) : null;
+          const buffer = await page.ciecDownloadXml(row.url).catch(() => null);
           if (!looksLikeXml(buffer)) {
             failures++;
             missing.push(item.uuid);
@@ -533,14 +615,31 @@ export function createSatPortalCfdiFetch({ resolveCredentials, launchDriver, now
           if (files.length % 25 === 0)
             step('Descargando tus facturas (' + files.length + ' de ' + foundRows.size + ')…', '');
         }
+        /* El veredicto honesto de las listadas-solo-acuse
+           (3.1.1): una sola nota agregada que las nombra por lo
+           que son — el portal las lista pero no ofrece su XML
+           por esta vía; solo el acuse — y dice cuántos acuses
+           bajaron de verdad. Sin esta nota, el «encontró N y
+           bajó M» de abajo sonaría a fallo de descarga. */
+        if (listedOnly.length) {
+          const note = 'El portal lista ' + listedOnly.length +
+            (listedOnly.length === 1 ? ' factura cancelada' : ' facturas canceladas') +
+            ' pero no ofrece su XML por esta vía; solo el acuse de cancelación' +
+            (acuses.length
+              ? ': se bajó el acuse de ' + acuses.length + '.'
+              : ': no se pudo bajar su acuse.');
+          notes.push(note); step('⚠ ' + note, '');
+        }
       }
 
       const complete = !cancelled && files.length === items.length &&
         notListed.length === 0 && missing.length === 0;
       step('El portal encontró ' + foundRows.size + ' de ' + items.length +
-        ' facturas pedidas y bajó ' + files.length + '.', '');
-      return { files, found: foundRows.size, downloaded: files.length,
-        notListed, missing, complete, notes, quotaUsed };
+        ' facturas pedidas y bajó ' + files.length +
+        (acuses.length ? ' y el acuse de ' + acuses.length +
+          (acuses.length === 1 ? ' cancelada' : ' canceladas') : '') + '.', '');
+      return { files, acuses, found: foundRows.size, downloaded: files.length,
+        notListed, missing, listedOnly, complete, notes, quotaUsed };
     } catch (error) {
       if (error && typeof error === 'object' && !error.diag && page &&
           typeof page.diagnostics === 'function') {
