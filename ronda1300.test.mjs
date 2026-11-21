@@ -92,12 +92,12 @@ const unlock = async (h, rfc) => {
 /* ===== 5 · ESTÁTICAS ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '3.1.0', 'la versión de la ola es 2.0.1 (re-basificado: la 2.0.1 —motores contra el mapa real— sustituye a la 2.0.0 como versión a montar)');
+  assert.equal(pkg.version, '3.1.1', 'la versión de la ola es 2.0.1 (re-basificado: la 2.0.1 —motores contra el mapa real— sustituye a la 2.0.0 como versión a montar)');
   const ejecutor = read('ejecutor-local.mjs');
   /* Re-baseline 1.31.2 (bis): el sello del ejecutor sube con
      el paquete por la coherencia de la casa (ronda1310); en la
      1.31.2 es su ÚNICO cambio y su bundle se regenera por él. */
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '3.1.0'"), 'el ejecutor declara su versión (sello 2.0.1)');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '3.1.1'"), 'el ejecutor declara su versión (sello 2.0.1)');
   assert.ok(ejecutor.includes('sesionViva'), 'el ejecutor pasa la sesión viva a los motores');
   assert.ok(ejecutor.includes('puerta-probar'), 'el ejecutor sabe probar la puerta');
   assert.ok(ejecutor.includes('portal-rechaza') && ejecutor.includes('REINTENTO_PORTAL_MS'),

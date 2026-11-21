@@ -1976,6 +1976,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     /* 1.6.10: tipo de solicitud (cfdi | metadata) y pausa por perfil
        (modo descanso: interruptor y «hasta» programado). */
     if (!jobColumns.includes('kind')) db.exec("ALTER TABLE jobs ADD COLUMN kind TEXT NOT NULL DEFAULT 'cfdi'");
+    /* (3.1.1) El folio de las solicitudes por folio concreto
+       (kind='folios', SolicitaDescargaFolio): una fila por UUID
+       pedido, con su folio guardado para la guardia de «ya en
+       curso», el parte al terminar y la etiqueta de la cola. */
+    if (!jobColumns.includes('folio')) db.exec("ALTER TABLE jobs ADD COLUMN folio TEXT NOT NULL DEFAULT ''");
     /* 1.18.0 (Ronda Facilidad): «dejar de insistir» por solicitud —
        pausa con nombre propio de una descarga masiva ya entregada
        al SAT: la solicitud sigue siendo del SAT, pero PacoSAT no
@@ -5908,7 +5913,7 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         const almacenVivo = Boolean(perfil) && existsSync(efirmaPath(fallo.rfc, '.cer'));
         const vigente = !perfil?.certExpires || perfil.certExpires > now();
         return { fallo, apuntaVieja: Boolean(fallo.distinto && almacenVivo && vigente) }; })(),
-      jobs: db.prepare('SELECT id,rfc,direction,kind,periodStart,periodEnd,startAt,endAt,status,due,created,error,checks,note,satCode,coveredBy,reroutedTo,rerouteOf FROM jobs ORDER BY id DESC LIMIT 35').all()
+      jobs: db.prepare('SELECT id,rfc,direction,kind,periodStart,periodEnd,startAt,endAt,folio,status,due,created,error,checks,note,satCode,coveredBy,reroutedTo,rerouteOf FROM jobs ORDER BY id DESC LIMIT 35').all()
         .map(row => { const info = criteriaInfo(criteriaFromJob(row));
           const view = { ...row, criteriaState: info.state, criteriaCount: info.count };
           /* C2 (2.9.7): el dato del rescate por el portal para los
@@ -7414,7 +7419,12 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
             return false;
           } });
         db.prepare('UPDATE jobs SET error=? WHERE id=?').run('', job.id);
-        if (advanced?.satCode === 5002) learnCriteria5002(job, time);
+        /* (3.1.1) Un 5002 en un trabajo por folio NO quema
+           periodo alguno: el libro de criterios no tiene
+           dimensión de folio y criteriaFromJob fabricaría un
+           criterio de fechas que nadie pidió. El código queda
+           persistido en el propio trabajo (satCode) y nada más. */
+        if (advanced?.satCode === 5002 && job.kind !== 'folios') learnCriteria5002(job, time);
       } catch (error) { db.prepare('UPDATE jobs SET error=? WHERE id=?').run(message(error), job.id); }
       const after = db.prepare('SELECT status,error FROM jobs WHERE id=?').get(job.id);
       /* R3 (1.22.0): al terminar, la solicitud DECLARA en su
@@ -15532,6 +15542,53 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     if (paired) storageRevision++;
     return paired;
   }
+  /* Los acuses de cancelación que el portal entrega (3.1.1):
+     el encaje MÁS SIMPLE que ya existe, el mismo de
+     pairPortalPdfs297 — fichero en la tienda 'files' bajo un id
+     propio y su documento en la tienda 'documents' enlazado por
+     uuid — con DOS diferencias que manda la forma del acuse:
+       1 · No exige que el CFDI esté en el expediente: la
+          cancelada que el portal lista solo con acuse es, por
+          definición, una cuyo XML puede no constar todavía (es
+          el caso real del 06/11/2026); pairPortalPdfs297 salta
+          sin factura guardada y aquí eso dejaría el acuse sin
+          archivar justo cuando más falta hace. El RFC del
+          documento es el de la corrida, que es el contribuyente
+          de la sesión del portal.
+       2 · La clase es «Acuse de cancelación», no «Factura PDF»:
+          no es la representación impresa del comprobante, es el
+          acuse del estatus final de su cancelación, y se nombra
+          como lo que es.
+     El enlace al registro de ese UUID es el campo uuid del
+     documento — el mismo enlace que «Factura PDF» usa contra
+     la factura (doc.uuid === invoice.id) y que la línea de
+     tiempo del comprobante ya lee por uuid —. Si ese UUID ya
+     tiene su acuse archivado para este RFC, no se duplica.
+     Devuelve cuántos acuses quedaron guardados. */
+  function savePortalAcuses297(acuses, rfc, items, time) {
+    const list = (acuses || []).filter(acuse => acuse?.buffer &&
+      Buffer.isBuffer(acuse.buffer) && acuse.buffer.length > 5 &&
+      acuse.buffer.subarray(0, 5).toString('latin1') === '%PDF-');
+    if (!list.length || !rfc) return 0;
+    const docs = db.prepare("SELECT value FROM records WHERE store='documents'").all()
+      .map(row => { try { return JSON.parse(row.value); } catch { return null; } }).filter(Boolean);
+    const fechaDe = new Map((items || []).map(item =>
+      [String(item?.uuid || '').toUpperCase(), String(item?.issuedAt || '').slice(0, 10)]));
+    let saved = 0;
+    for (const acuse of list) {
+      const uuid = String(acuse.uuid || '').toUpperCase();
+      if (!uuid) continue;
+      if (docs.some(doc => doc.kind === 'Acuse de cancelación' && doc.uuid === uuid && doc.rfc === rfc)) continue;
+      const id = 'acuse:' + randomUUID();
+      putFile(id, acuse.buffer, 'application/pdf');
+      putMetadata('documents', { id, rfc, kind: 'Acuse de cancelación',
+        date: fechaDe.get(uuid) || '', period: '',
+        name: (uuid + '-acuse-cancelacion.pdf').slice(0, 180), uuid });
+      saved++;
+    }
+    if (saved) storageRevision++;
+    return saved;
+  }
   async function runPortalAttempt297(rfc, items, time, origen = 'manual') {
     const steps = [];
     const pushStep = (at, text, url) => {
@@ -15575,12 +15632,30 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           remember.run(rfc, uuid);
       }
       pairPortalPdfs297(result.files, now());
+      /* Los acuses de las canceladas listadas solo con acuse
+         (3.1.1): se archivan enlazados a su UUID y la corrida
+         los reporta en su diario y en su resumen — «se bajó el
+         acuse de N canceladas» —, para que el veredicto de la
+         corrida nombre también lo que el portal sí entregó de
+         esas facturas. */
+      const acusesGuardados = savePortalAcuses297(result.acuses, rfc, items, now());
+      if (acusesGuardados) pushStep(now(), 'Se bajó el acuse de ' + acusesGuardados +
+        (acusesGuardados === 1 ? ' cancelada' : ' canceladas') +
+        ': quedó archivado en el expediente, enlazado a su folio.', '');
       portalQuotaAdd297(rfc, result.quotaUsed || 0, now());
-      const cancelada = (result.notes || []).some(note => /cancelad/i.test(note));
+      /* «Cancelada» en el resumen es SOLO la corrida detenida
+         por el usuario (la nota «Corrida cancelada…» del
+         caminante): desde la 3.1.0/3.1.1 las notas honestas de
+         las pasadas hablan de facturas «canceladas» y un
+         /cancelad/ a secas rotulaba como detenida una corrida
+         que terminó bien trayendo canceladas y sus acuses. */
+      const cancelada = (result.notes || []).some(note => /corrida cancelada/i.test(note));
       const summary = (cancelada ? 'Bajada por el portal cancelada: ' : 'Bajada por el portal terminada: ') +
         ingested.added + ' facturas nuevas en tu expediente' +
         (ingested.duplicates ? ' · ' + ingested.duplicates + ' ya estaban' : '') +
         (ingested.review ? ' · ' + ingested.review + ' por revisar' : '') +
+        (acusesGuardados ? ' · Se bajó el acuse de ' + acusesGuardados +
+          (acusesGuardados === 1 ? ' cancelada' : ' canceladas') + '.' : '') +
         (result.complete ? '' : ' · El portal no entregó todo lo pedido: mira el diario de la corrida.');
       finishProgress(true, summary);
       savePortalRun297(rfc, time, now(), true, '', steps, null,
@@ -23769,6 +23844,61 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         const x = await body(req);
         const active = unlocked.get(x.rfc);
         need(active, 'Desbloquea la e.firma de este RFC.');
+        /* (3.1.1) Solicitudes por FOLIO concreto
+           (SolicitaDescargaFolio): la vía que trae el XML de un
+           CFDI cancelado, que ni la petición por fechas (el SAT
+           no entrega cancelados recibidos en XML por periodo) ni
+           el listado del portal ofrecen. Una solicitud por folio
+           (el servicio no admite listas), con el mismo ciclo de
+           trabajos de siempre: la fila nace pendiente y
+           verifyJobs la avanza por su requestId. NO pasa por el
+           libro de criterios anti-5002: su clave no tiene
+           dimensión de folio y un criterio de periodo sintético
+           contaminaría el libro y quemaría periodos no pedidos;
+           su guardia es propia — lo ya en el expediente no se
+           pide y lo ya en curso no se duplica —. El sentido de
+           cada folio sale de sus metadatos guardados (la ingesta
+           exige que el sentido case con el comprobante); sin
+           metadatos, recibidos, que es el caso de uso. */
+        if (x.type === 'folios') {
+          need(Array.isArray(x.folios) && x.folios.length > 0, 'Faltan los folios a pedir.');
+          need(x.folios.length <= 100, 'Pide como máximo 100 folios por vez.');
+          need(!busy, 'PacoSAT está procesando otra solicitud. Intenta en unos segundos.', 409);
+          busy = true;
+          try {
+            const resultado311 = { pedidas: [], yaEstaban: [], enCurso: [], errores: [] };
+            const vistos311 = new Set();
+            for (const crudo311 of x.folios) {
+              const folio311 = String(crudo311 || '').trim().toUpperCase();
+              if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/.test(folio311)) {
+                resultado311.errores.push({ folio: String(crudo311 || ''), error: 'Folio inválido: se espera un UUID con guiones (36 caracteres).' });
+                continue;
+              }
+              if (vistos311.has(folio311)) continue;
+              vistos311.add(folio311);
+              if (db.prepare("SELECT 1 FROM records WHERE store='invoices' AND id=?").get(folio311)) {
+                resultado311.yaEstaban.push(folio311);
+                continue;
+              }
+              if (db.prepare("SELECT 1 FROM jobs WHERE rfc=? AND kind='folios' AND folio=? AND status='pending'").get(x.rfc, folio311)) {
+                resultado311.enCurso.push(folio311);
+                continue;
+              }
+              const meta311 = db.prepare('SELECT direction, issuedAt FROM metadata_records WHERE uuid=? AND rfc=?').get(folio311, x.rfc);
+              const direction311 = meta311?.direction === 'issued' ? 'issued' : 'received';
+              const fecha311 = String(meta311?.issuedAt || '').slice(0, 10);
+              try {
+                const requestId311 = await active.connector.requestFolio({ folio: folio311, direction: direction311 });
+                db.prepare('INSERT INTO jobs(rfc,direction,kind,periodStart,periodEnd,startAt,endAt,folio,requestId,status,due,created) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+                  .run(x.rfc, direction311, 'folios', fecha311, fecha311, '', '', folio311, requestId311, 'pending', now() + 5 * MIN, now());
+                resultado311.pedidas.push({ folio: folio311, requestId: requestId311 });
+              } catch (error) {
+                resultado311.errores.push({ folio: folio311, error: message(error) });
+              }
+            }
+            return json(res, { ok: true, ...resultado311 });
+          } finally { busy = false; }
+        }
         need(validDate(x.start) && validDate(x.end) && x.start <= x.end && x.end <= day(now()), 'Selecciona un periodo válido hasta hoy.');
         need(Date.parse(x.end) - Date.parse(x.start) <= 92 * DAY, 'Selecciona un periodo de hasta 93 días.');
         need(['received', 'issued'].includes(x.direction), 'Dirección inválida.');

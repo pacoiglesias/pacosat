@@ -75,7 +75,7 @@ function makeHarness(options = {}) {
 /* ===== 1 · ESTÁTICAS ===== */
 {
   const pkg = JSON.parse(read('package.json'));
-  assert.equal(pkg.version, '3.1.0', 'la versión de la pasada es 2.0.1 (re-basificado: la 2.0.1 —motores contra el mapa real— sustituye a la 2.0.0)');
+  assert.equal(pkg.version, '3.1.1', 'la versión de la pasada es 2.0.1 (re-basificado: la 2.0.1 —motores contra el mapa real— sustituye a la 2.0.0)');
   assert.equal(pkg.license, 'UNLICENSED', 'el paquete declara UNLICENSED (orden del 22:24)');
   assert.equal(pkg.private, true, 'el paquete es privado');
   const licencia = read('LICENSE');
@@ -88,10 +88,10 @@ function makeHarness(options = {}) {
      (ronda1310) obliga al ejecutor a declarar la versión del
      paquete; en la 1.31.2 su ÚNICO cambio es ese sello — su
      lógica queda intacta y su bundle se regenera solo por él. */
-  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '3.1.0'"), 'el ejecutor declara 2.0.1 (solo el sello)');
+  assert.ok(ejecutor.includes("EJECUTOR_VERSION = '3.1.1'"), 'el ejecutor declara 2.0.1 (solo el sello)');
   assert.ok(ejecutor.includes('activos > 0'), 'el ejecutor trae el sondeo adaptativo');
   const html = read('Faro-Fiscal.html');
-  assert.ok(html.includes('"version":"3.1.0"'), 'el artefacto se sella con 2.0.1');
+  assert.ok(html.includes('"version":"3.1.1"'), 'el artefacto se sella con 2.0.1');
   const polish = read('polish.part');
   assert.ok(!polish.includes('tiene-foco.tramite-card{opacity'), 'ninguna tarjeta se atenúa ya (fuera el lavado)');
   assert.ok(!polish.includes('.tramite-foco{opacity'), 'el foco viejo con opacidad no existe');

@@ -175,6 +175,48 @@ function coberturaPaneles280(enCasa280 = false) {
   if (missing.length) metaPanel.append(grid(['UUID', 'Emisor', 'Receptor', 'Fecha', 'Total', 'Estado en el SAT'],
     missing.slice(0, 100).map(row => [row.uuid, row.emitter, row.receiver, (row.issuedAt || '').slice(0, 10),
       row.total ? '$' + row.total : '—', row.status === '0' ? 'Cancelado' : 'Vigente'])));
+  /* (3.1.1) «Pedir por folios»: la vía de descarga masiva por
+     folio concreto (SolicitaDescargaFolio) — la única que trae
+     el XML de un CFDI cancelado, que ni el listado del portal
+     ni la petición por fechas entregan. La acción vive aquí,
+     junto a la lista de los que faltan, y pide los del RFC EN
+     PANTALLA (con ámbito global no se ofrece: cada petición
+     nace de un contribuyente concreto). El servidor trocea el
+     lote y responde folio a folio; lo pedido entra solo cuando
+     el SAT lo entrega, como cualquier descarga. */
+  if (missing.length && scope) {
+    const foliosFila311 = n('div', undefined, 'actions');
+    const pedirFolios311 = action('Pedir por folios los ' + missing.length + ' que faltan', async () => {
+      pedirFolios311.disabled = true;
+      const uuids311 = [...new Set(missing.map(row => String(row.uuid || '').toUpperCase()).filter(Boolean))];
+      let pedidas = 0, yaEstaban = 0, enCurso = 0, errores = 0;
+      try {
+        for (let i = 0; i < uuids311.length; i += 100) {
+          const lote = uuids311.slice(i, i + 100);
+          const res = await satApi('request', { rfc: scope, type: 'folios', folios: lote });
+          pedidas += (res?.pedidas || []).length;
+          yaEstaban += (res?.yaEstaban || []).length;
+          enCurso += (res?.enCurso || []).length;
+          errores += (res?.errores || []).length;
+        }
+        resultadoFolios311.textContent = 'Petición por folios enviada: ' + pedidas + ' folio(s) pedidos al SAT' +
+          (yaEstaban ? ' · ' + yaEstaban + ' ya estaban en el expediente' : '') +
+          (enCurso ? ' · ' + enCurso + ' ya tenían una petición en curso' : '') +
+          (errores ? ' · ' + errores + ' no se pudieron pedir (mira el Registro)' : '') +
+          '. Irán entrando solos cuando el SAT los entregue.';
+        resultadoFolios311.className = errores ? 'error-text' : 'ok-text';
+      } catch (error) {
+        resultadoFolios311.textContent = 'No se pudo enviar la petición por folios: ' + (error?.message || error);
+        resultadoFolios311.className = 'error-text';
+        pedirFolios311.disabled = false;
+      }
+    }, 'soft', 'down');
+    pedirFolios311.dataset.pedirFolios311 = '1';
+    const resultadoFolios311 = n('p', '', 'muted');
+    resultadoFolios311.dataset.pedirFoliosResultado311 = '1';
+    foliosFila311.append(pedirFolios311);
+    metaPanel.append(foliosFila311, resultadoFolios311);
+  }
   screens.push(metaPanel);
   const rfcs = [...new Set([...visible.map(group => group.rfc), ...Object.keys(coverage.days)])].filter(rfc => !scope || rfc === scope).sort();
   /* (2.9.9 · D4c) El mapa de calor de 365 días — que mide
