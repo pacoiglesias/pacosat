@@ -161,6 +161,47 @@ function adminFilaEl310(fila, conMedallon = false) {
   return el;
 }
 
+/* (3.2.0 · pieza 18) Mapa de medallones: una celda por RFC con
+   su medallón .medallon320 (color estable 0–7 por huella del
+   propio RFC), su nombre y su semáforo con forma (✕/!/✓).
+   Tocar una celda hace lo que hoy hace tocar el problema más
+   grave de ese RFC: adminIr310 a su destino de resolución; un
+   RFC limpio cambia el contexto y abre sus Avisos. Se SUMA a
+   la consola: la franja de urgentes, los bloques y los limpios
+   quedan intactos debajo. */
+function adminMapa320(modelo) {
+  const urgentesPorRfc = new Map();
+  for (const f of modelo.urgentes) if (f.rfc && !urgentesPorRfc.has(f.rfc)) urgentesPorRfc.set(f.rfc, f);
+  const celda = (rfc, nivel, destino) => {
+    const persona = typeof people !== 'undefined' ? people.find(p => p.id === rfc) : null;
+    const nombre = persona?.name || rfc;
+    const b = n('button', undefined, 'admin-celda320');
+    b.type = 'button';
+    b.dataset.mapaRfc320 = rfc;
+    const med = n('span', String(nombre).trim().charAt(0).toUpperCase() || '?', 'medallon320');
+    let huella = 0;
+    for (const c of String(rfc)) huella = (huella * 31 + c.charCodeAt(0)) >>> 0;
+    med.dataset.color = String(huella % 8);
+    med.title = nombre + ' · ' + rfc;
+    b.append(med, n('span', nombre, 'admin-celda-nombre320'),
+      statusPill(nivel, (nivel === 'bad' ? '✕ Urgente' : nivel === 'warn' ? '! Atención' : '✓ En orden'),
+        undefined, undefined, true),
+      n('span', rfc, 'muted'));
+    b.onclick = () => adminIr310(rfc, destino);
+    return b;
+  };
+  const grid = n('div', undefined, 'admin-mapa320');
+  for (const bloque of modelo.bloques)
+    grid.append(celda(bloque.rfc, bloque.rojos ? 'bad' : 'warn',
+      (urgentesPorRfc.get(bloque.rfc) || bloque.filas[0] || {}).destino || 'avisos'));
+  for (const rfc of modelo.limpios) grid.append(celda(rfc, 'ok', 'avisos'));
+  if (!grid.childNodes.length) return null;
+  const box = panel('Mapa de contribuyentes');
+  box.dataset.adminMapa320 = '1';
+  box.append(grid);
+  return box;
+}
+
 function adminPintar310(wrap, modelo) {
   wrap.replaceChildren();
   const hora = new Intl.DateTimeFormat('es-MX',
@@ -174,14 +215,22 @@ function adminPintar310(wrap, modelo) {
     : modelo.rfcsConProblemas + (modelo.rfcsConProblemas === 1 ? ' RFC necesita' : ' RFC necesitan') + ' algo' +
       (modelo.urgentes.length ? ' · ' + modelo.urgentes.length + (modelo.urgentes.length === 1 ? ' urgente' : ' urgentes') : '') +
       (modelo.sistema.length ? ' · ' + modelo.sistema.length + ' del sistema' : ''), 'today-line'));
-  const sello = n('p', 'Revisado a las ' + hora, 'muted');
+  /* (3.2.0 · pieza 38) El sello de siempre, con la clase de
+     frescura del contrato: misma hora, mismo texto. */
+  const sello = n('p', 'Revisado a las ' + hora, 'muted frescura320');
   sello.dataset.adminFrescura310 = '1';
   prot.append(sello);
   wrap.append(prot);
+  /* (3.2.0 · pieza 18) El mapa de medallones, tras la
+     protagonista y antes de la franja de urgentes. */
+  const mapa320 = adminMapa320(modelo);
+  if (mapa320) wrap.append(mapa320);
   if (!hayAlgo) {
     const vacio = panel('Sin problemas');
     vacio.dataset.adminVacio310 = '1';
     vacio.append(empty('Ningún RFC tiene problemas', 'Todo está en orden: esta es la buena noticia, no un hueco.'));
+    /* (3.2.0 · pieza 6) El vacío, con su clase diseñada. */
+    vacio.querySelector('.empty')?.classList.add('vacio320');
     wrap.append(vacio);
     return;
   }

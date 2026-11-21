@@ -64,7 +64,7 @@ const ui = read('ui.part');
   assert.ok(ui.includes('function cierreResumen280()'), 'Hoy cierra el mes con una línea-resumen (diseño 15)');
   assert.equal(ui.split('atajosTarjeta240()').length - 1, 1, 'atajosTarjeta240 queda definida pero ya no se monta en Hoy (diseño 14)');
   assert.equal(ui.split('versionPanel240()').length - 1, 1, 'versionPanel240 queda definido pero ya no se monta en Hoy (diseño 13)');
-  assert.ok(read('final-ui.part').includes('const NOVEDADES_1311'), 'las novedades viven en su mecanismo (Acerca de), no pintadas en Hoy (diseño 13)');
+  assert.ok(read('final-ui.part').includes('const NOVEDADES_320'), 'las novedades viven en su mecanismo (Acerca de), no pintadas en Hoy (diseño 13)');
   console.log('OK 2.8.0 diseño · (3) Hoy: sin atajos ni versión pintados; cierre en una línea.');
 }
 

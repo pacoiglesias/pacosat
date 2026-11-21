@@ -189,7 +189,12 @@ const prefSet = (key, value) => { try { localStorage.setItem(key, value); } catc
 const themeIsDark = () => document.documentElement.dataset.theme === 'dark' ||
   (!document.documentElement.dataset.theme && typeof matchMedia !== 'undefined' && matchMedia('(prefers-color-scheme: dark)').matches);
 function applyTheme() {
-  const saved = prefGet('pacosat-theme');
+  /* (3.2.0 · pieza 4) La preferencia nueva manda: 'pacosat-tema'
+     guarda 'oscuro'/'claro' y se traduce al data-theme de
+     siempre ('dark'/'light'); la clave vieja queda como respaldo
+     para no perder el tema de quien ya lo tenía elegido. */
+  const nuevo320 = prefGet('pacosat-tema');
+  const saved = nuevo320 === 'oscuro' ? 'dark' : nuevo320 === 'claro' ? 'light' : prefGet('pacosat-theme');
   if (saved === 'dark' || saved === 'light') document.documentElement.dataset.theme = saved;
   else delete document.documentElement.dataset.theme;
   const button = $('theme-toggle');
@@ -235,8 +240,17 @@ function soundCue(kind) {
   else if (kind === 'alert') { tone(880, 0, 0.12); tone(880, 0.18, 0.12); }
   else tone(740, 0, 0.11);
 }
+/* (3.2.0 · pieza 33) Letra grande: su preferencia vive en
+   'pacosat-letra' ('grande') y se refleja en data-letra del
+   <html>; el script temprano de layout.part la aplica antes
+   del primer pintado y esta función la reaplica al arrancar. */
+function aplicarLetra320() {
+  if (prefGet('pacosat-letra') === 'grande') document.documentElement.dataset.letra = 'grande';
+  else delete document.documentElement.dataset.letra;
+}
 function initPrefs() {
   applyTheme();
+  aplicarLetra320();
   const soundButton = $('sound-toggle');
   if (soundButton) {
     const paint = () => { soundButton.replaceChildren(icon(soundOn ? 'volume' : 'mute')); soundButton.setAttribute('aria-pressed', String(soundOn)); };
@@ -244,7 +258,9 @@ function initPrefs() {
     soundButton.onclick = () => { soundOn = !soundOn; prefSet('pacosat-sound', soundOn ? 'on' : 'off'); paint(); if (soundOn) soundCue('notice'); };
   }
   const themeButton = $('theme-toggle');
-  if (themeButton) themeButton.onclick = () => { prefSet('pacosat-theme', themeIsDark() ? 'light' : 'dark'); applyTheme(); };
+  if (themeButton) themeButton.onclick = () => { const oscuro320 = !themeIsDark();
+    prefSet('pacosat-theme', oscuro320 ? 'dark' : 'light');
+    prefSet('pacosat-tema', oscuro320 ? 'oscuro' : 'claro'); applyTheme(); };
   /* Ayuda en la barra superior (2.0 · tanda 4, 20#20): el botón
      de ayuda abre el cajón de la pantalla actual; Preguntas sigue
      a un toque desde dentro del cajón. */
@@ -1075,7 +1091,10 @@ function cell(title, note) {
   return wrap;
 }
 function empty(title, message, button) {
-  const el = n('div', undefined, 'empty');
+  /* (3.2.0 · pieza 6) Todo estado vacío de la casa lleva además
+     la ropa diseñada de la ronda (.vacio320): misma frase y
+     misma acción de siempre, con su forma cuidada. */
+  const el = n('div', undefined, 'empty vacio320');
   el.append(n('h3', title), n('p', message));
   if (button) el.append(button);
   return el;
@@ -3041,10 +3060,12 @@ function pintarBotonScope200b() {
   /* Nombre y RFC en tramos propios (2.3.2 · M-10): en móvil el
      CSS enseña solo medallón + RFC y el nombre cede; el nombre
      COMPLETO queda siempre en el title del botón. */
-  if (persona) btn.replaceChildren(medallon200b(scope, persona.name),
+  if (persona) { btn.replaceChildren(medallon200b(scope, persona.name),
     n('span', persona.name, 'scope-nombre200b'),
     n('span', '·', 'scope-sep200b'),
     n('span', scope, 'scope-rfc200b'), punto, ...(tramoPalabra290 ? [tramoPalabra290] : []));
+    /* (3.2.0 · pieza 43) Su logotipo, si lo tiene, en el medallón. */
+    if (typeof logo320Pintar === 'function') logo320Pintar(btn.querySelector('.rfc-medallon200b'), scope); }
   else if (!ambitoListo310) btn.replaceChildren(
     n('span', 'Cargando…', 'scope-nombre200b'), punto);
   else btn.replaceChildren(medallon200b(scope, scope),
@@ -3078,6 +3099,14 @@ function pintarScopeMenu200b(filtro = '') {
   const menu = $('scope-menu200b');
   if (!menu) return;
   menu.replaceChildren();
+  /* (3.2.0 · pieza 19) El seleccionado abre el menú con su
+     medallón GRANDE y su nombre: de quién es la pantalla se
+     lee de un vistazo antes de cambiar a nadie. */
+  { const sel320 = people.find(p => p.id === scope);
+    if (sel320) { const cab320 = n('div', undefined, 'scope-menu-cab320');
+      cab320.append(medallon320(sel320.id, sel320.name, true),
+        n('span', sel320.name + ' · ' + sel320.id));
+      menu.append(cab320); } }
   if (people.length >= 5) {
     const buscar = input('search', { placeholder: 'Buscar por nombre o RFC…', 'aria-label': 'Buscar contribuyente' });
     buscar.value = filtro;
@@ -3700,7 +3729,9 @@ function paintLazyState(name) {
      «cargando» queda como palabra visible junto a la silueta. */
   const note = n('p', 'Cargando esta pantalla…', 'today-line');
   wrap.setAttribute('aria-busy', 'true');
-  wrap.append(esqueletoPantalla240(2), note);
+  /* (3.2.0 · pieza 5) El esqueleto de la ronda acompaña al de
+     siempre en Descargar y en toda pantalla diferida. */
+  wrap.append(esqueletoPantalla240(2), esqueleto320(), note);
   body.replaceChildren(wrap);
   ensureLazyPart(name).then(ok => {
     if (lazyPartForView(page) !== name) return;
@@ -4295,6 +4326,15 @@ function aldia30Card(rfcForzado) {
   const avance = n('p', '', 'muted'); avance.dataset.aldia30Avance = '1'; avance.hidden = true;
   const acciones = n('div', undefined, 'actions');
   const go = n('button', 'Ponerme al día', 'primary'); go.type = 'button'; go.dataset.aldia30Go = '1';
+  /* (3.2.0 · pieza 30) En móvil, la acción protagonista queda
+     fija al alcance del pulgar. */
+  go.classList.add('accion-fija320');
+  /* (3.2.0 · pieza 40) Las tres fases como segmentos que se
+     rellenan, con el nombre de la fase viva en grande. */
+  const fases320 = n('div', undefined, 'fases320'); fases320.dataset.fases320 = '1';
+  const faseViva320 = n('strong', '', 'fase-viva320'); faseViva320.dataset.faseViva320 = '1'; faseViva320.hidden = true;
+  /* (3.2.0 · pieza 38) Su sello de frescura. */
+  const frescura320El = frescura320Crear(0);
   const detener = n('button', 'Detener', 'soft'); detener.type = 'button'; detener.dataset.aldia30Cancel = '1'; detener.hidden = true;
   acciones.append(go, detener);
   /* La tarjeta del caminante, siempre visible (3.0 · B):
@@ -4307,7 +4347,7 @@ function aldia30Card(rfcForzado) {
   const cupoEl = n('p', '', 'muted'); cupoEl.dataset.aldia30Cupo = '1';
   const hoyEl = n('p', '', 'muted'); hoyEl.dataset.aldia30Hoy = '1';
   caminante.append(puertaEl, cupoEl, hoyEl);
-  body.append(rfcLinea310, sema, frase, etapa310, barraBox, avance, resumen310, acciones, caminante);
+  body.append(rfcLinea310, sema, frase, fases320, faseViva320, etapa310, barraBox, avance, resumen310, acciones, caminante, frescura320El);
   let timer = null, corria = false, modoAlta310 = false;
   const pintarResumen310 = fin => {
     resumen310.replaceChildren();
@@ -4345,6 +4385,17 @@ function aldia30Card(rfcForzado) {
        estado de marcha se leían de un objeto que no existía. */
     frase.textContent = st?.frase || st?.veredicto?.frase || '';
     const corriendo = Boolean(st?.running);
+    /* (3.2.0 · piezas 20, 38 y 40) La corrida viva alimenta la
+       barra global; las fases se rellenan hasta la viva y el
+       nombre de la fase en curso va en grande; la frescura se
+       sella con la hora de esta lectura. */
+    corrida320Viva = corriendo ? { rfc, fase: st?.fase || '', progreso: st?.progreso || null } : null;
+    /* El relleno de las fases lo pinta la parte visual con el
+       mismo estado; aquí solo se le pasa. */
+    if (window.__pacosatVisual320?.fasesPintar) window.__pacosatVisual320.fasesPintar(st, fases320, faseViva320, corriendo);
+    else decorar320('fasesPintar', st, fases320, faseViva320, corriendo);
+    frescura320El.dataset.at = String(Date.now());
+    frescura320El.textContent = hace2915(Date.now());
     modoAlta310 = st?.veredicto?.estado === 'falta-acceso';
     go.textContent = modoAlta310 ? 'Dar de alta el acceso' : 'Ponerme al día';
     go.hidden = corriendo;
@@ -5742,11 +5793,11 @@ function todayPanel() {
      obligaciones del mes, no las vigencias de certificados
      y documentos — esta tarjeta no la duplica.
    · (30) «Qué cambió en esta versión»: el panel lee del
-     bloque de novedades de la casa, NOVEDADES_1311 (en
+     bloque de novedades de la casa, NOVEDADES_320 (en
      final-ui.part), y solo se pinta si ese bloque es el de
      la versión que corre el artefacto (PACOSAT_META) — el
      mecanismo es este; al sellar la 2.4.0, el coordinador
-     actualiza NOVEDADES_1311 (version + puntos) y el panel
+     actualiza NOVEDADES_320 (version + puntos) y el panel
      enseñará la lista llana de la 2.4.0 sin tocar este código.
    · (22) Atajos de teclado: «?» abre la tarjeta, h/f/d/o
      navegan, b enfoca el buscador, Esc cierra paneles. Los
@@ -6049,10 +6100,10 @@ function vencPanel240() {
   return wrap;
 }
 /* (30) El bloque de novedades DE LA VERSIÓN EN CURSO: el
-   mecanismo lee NOVEDADES_1311 y solo enseña si es el de
+   mecanismo lee NOVEDADES_320 y solo enseña si es el de
    la versión del artefacto — nunca una nota vieja. */
 function versionDatos240() {
-  const bloque = typeof NOVEDADES_1311 !== 'undefined' ? NOVEDADES_1311 : null;
+  const bloque = typeof NOVEDADES_320 !== 'undefined' ? NOVEDADES_320 : null;
   const version = typeof PACOSAT_META !== 'undefined' ? PACOSAT_META.version : '';
   if (!bloque || !version || bloque.version !== version || !Array.isArray(bloque.puntos)) return null;
   return { version, puntos: bloque.puntos };
@@ -6445,7 +6496,9 @@ function home() {
     const skel = esqueletoPantalla240(3);
     skel.setAttribute('aria-busy', 'true');
     skel.setAttribute('aria-label', 'Cargando el resumen fiscal');
-    return [skel];
+    /* (3.2.0 · pieza 5) El esqueleto con la ropa de la ronda
+       acompaña al de siempre mientras Hoy carga. */
+    return [skel, esqueleto320()];
   }
   /* Construcción no montada, fuera (2.3.2 · o-7): home()
      componía el héroe, las métricas, «Últimos comprobantes»,
@@ -6468,6 +6521,9 @@ function home() {
      una pulsación y el servidor corre la puesta al día
      entera; su tarjeta enseña el veredicto y el avance. */
   blocks.push(aldia30Card());
+  /* (3.2.0 · pieza 12) La tendencia de los últimos 6 meses del
+     RFC en pantalla, calculada en el servidor. */
+  blocks.push(tendencia320Card());
   blocks.push(hoyMando201(null));
   /* (2.9.13 · mejoras 1 y 2) «Tu día en cifras», con el
      anillo de cobertura del año: tras el mando, antes de lo
@@ -6767,7 +6823,7 @@ function facturasPpdTarjeta240(datos) {
     const main = n('button', undefined, 'cmd-main');
     main.type = 'button';
     main.title = 'Abrir el detalle de esta factura';
-    main.onclick = () => invoiceDetail(row);
+    main.onclick = () => { invoiceDetail(row); detalleFactura320(row); };
     const textos = n('span', undefined, 'cmd-texts');
     textos.append(n('strong', (row.from.name || row.from.rfc) + ' · Folio ' + facturasFolio240(row), 'cmd-title'),
       n('span', dateLabel(row.date) + ' · importe $' + amount(row) + ' · saldo $' + centsLabel(item.saldo), 'cmd-last'),
@@ -6997,6 +7053,8 @@ function invoiceScreen() {
      firmante activo, la hoja lo dice con su gesto (B3). */
   const descargarSat = n('button', 'Descargar del SAT', 'primary');
   descargarSat.type = 'button';
+  /* (3.2.0 · pieza 30) La acción primaria de Facturas, fija en móvil. */
+  descargarSat.classList.add('accion-fija320');
   descargarSat.onclick = () => {
     if (!scope) { toast('Elige arriba el contribuyente del que quieres descargar.', 'error'); return; }
     if (typeof downloadSheet === 'function') {
@@ -7177,7 +7235,9 @@ function invoiceScreen() {
   rapidosBar240.style.overflowX = 'auto';
   rapidosBar240.style.gap = '7px';
   for (const def of FACTURAS_RAPIDOS240) {
-    const chip = n('button', def.etiqueta + ' · ' + number.format(datos240.conteos[def.clave]), 'filter-chip');
+    /* (3.2.0 · pieza 26) Los filtros rápidos como pastillas
+       visibles con su cuenta, la del mismo cálculo de siempre. */
+    const chip = n('button', def.etiqueta + ' · ' + number.format(datos240.conteos[def.clave]), 'filter-chip pill320');
     chip.type = 'button';
     chip.dataset.rapido240 = def.clave;
     chip.setAttribute('aria-pressed', String(invoiceRapido240 === def.clave));
@@ -7299,10 +7359,12 @@ function invoiceScreen() {
           if (!folioTxt) return etiqueta290('dim', '—', 'Este comprobante no trae folio en su XML');
           const folioBtn = n('button', folioTxt, 'cell-link');
           folioBtn.type = 'button'; folioBtn.title = 'Abrir el detalle de este comprobante';
-          folioBtn.onclick = () => invoiceDetail(row); return folioBtn; })(),
+          /* (3.2.0 · piezas 15, 34 y 35) El detalle se abre sin
+             salir de la lista y gana su papel y su vida. */
+          folioBtn.onclick = () => { invoiceDetail(row); detalleFactura320(row); }; return folioBtn; })(),
         (() => { const totalBtn = n('button', amount(row), 'cell-link cell-link-total');
           totalBtn.type = 'button'; totalBtn.title = 'Abrir el detalle de este comprobante';
-          totalBtn.onclick = () => invoiceDetail(row); return totalBtn; })(), estadoStack,
+          totalBtn.onclick = () => { invoiceDetail(row); detalleFactura320(row); }; return totalBtn; })(), estadoStack,
         invoiceActions(row)];
     })) : empty('Sin coincidencias', !invoices.some(row => !scope || row.from.rfc === scope || row.to.rfc === scope)
         ? 'Todavía no hay facturas de este contribuyente en PacoSAT. Descárgalas del SAT o importa un lote.'
@@ -7326,6 +7388,10 @@ function invoiceScreen() {
           tr.append(celda);
         });
       }
+      /* (3.2.0 · pieza 14) La banda de la cancelada y su
+         «Ver acuse» los pinta la parte visual sobre esta
+         misma tabla, con las filas visibles. */
+      decorar320('facturasDecorar', content, sliced);
     }
     /* Cabeceras tocables (2.0.1 · nº 26): «Fecha» alterna
        reciente/antiguo y «Total» alterna el orden por importe;
@@ -7459,6 +7525,13 @@ function documentScreen() {
   const list = panel(docsGrupoDecl201 ? 'El resto del expediente' : 'Documentos del expediente');
   const filters = n('div', undefined, 'filters');
   const choice = select([['', 'Todos los documentos'], ...DOCUMENTS.map(x => [x, x])], docFilter, 'Tipo de documento');
+  /* (3.2.0 · pieza 1) La clase «Acuse de cancelación» entra en
+     el filtro con su nombre propio, como la Constancia y la
+     Opinión tienen el suyo. */
+  if (!Array.from(choice.options || []).some(o => o.value === 'Acuse de cancelación')) {
+    choice.append(new Option('Acuse de cancelación', 'Acuse de cancelación'));
+    if (docFilter === 'Acuse de cancelación') choice.value = docFilter;
+  }
   choice.onchange = () => { docFilter = choice.value; docPage = 0; render(); };
   /* Buscador y paginación como en Facturas (UX-16): con cientos de PDF
      ya no toca hacer scroll infinito. */
@@ -7490,7 +7563,7 @@ function documentScreen() {
          ejercicio. Sin grupo (modo local), la lista los enseña
          como siempre. Con filtro de clase a mano, manda el
          filtro, igual que con constancia y opinión. */
-      (docFilter || !docsGrupoDecl201 || !(doc.kind || '').startsWith('Declaración') && !(doc.kind || '').startsWith('Acuse')) &&
+      (docFilter || !docsGrupoDecl201 || !(doc.kind || '').startsWith('Declaración') && (!(doc.kind || '').startsWith('Acuse') || doc.kind === 'Acuse de cancelación')) &&
         (!needle || (doc.name + ' ' + (doc.uuid || '')).toLocaleLowerCase('es-MX').includes(needle)));
       imprimirVista201('Documentos del expediente', number.format(filas.length) + ' documento(s) con los filtros en pantalla.',
         ['Documento', 'RFC', 'Fecha', 'Periodo'],
@@ -7509,7 +7582,7 @@ function documentScreen() {
          versiones — y Expedientes lista el resto de papeles. Con
          un filtro de clase elegido a mano, el filtro manda. */
       (docFilter || (doc.kind !== 'Constancia / CIF' && doc.kind !== 'Opinión de cumplimiento')) &&
-      (docFilter || !docsGrupoDecl201 || !(doc.kind || '').startsWith('Declaración') && !(doc.kind || '').startsWith('Acuse')) &&
+      (docFilter || !docsGrupoDecl201 || !(doc.kind || '').startsWith('Declaración') && (!(doc.kind || '').startsWith('Acuse') || doc.kind === 'Acuse de cancelación')) &&
       (!needle || (doc.name + ' ' + (doc.uuid || '')).toLocaleLowerCase('es-MX').includes(needle)));
     docPage = Math.min(docPage, Math.max(0, Math.ceil(rows.length / 35) - 1));
     const sliced = rows.slice(docPage * 35, (docPage + 1) * 35);
@@ -7561,22 +7634,11 @@ function documentScreen() {
        primera página UNA vez y la cachea; aquí se cuelga la
        imagen solo donde el listado la confirma — si un PDF no
        se puede renderizar, queda el texto de siempre. */
-    if (typeof satToken !== 'undefined' && satToken && sliced.length) {
-      satApi('miniaturas200g' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(d => {
-        if (!result.isConnected || !d?.documentos) return;
-        const oks = new Set(d.documentos.filter(x => x.estado === 'ok').map(x => x.id));
-        for (const celda of result.querySelectorAll('[data-doc200g]')) {
-          const id = celda.dataset.doc200g;
-          if (!oks.has(id)) continue;
-          fetch('/api/miniatura200g?id=' + encodeURIComponent(id), { headers: { 'X-PacoSAT-Token': satToken } })
-            .then(r => r.ok ? r.blob() : null).then(blob => {
-              if (!blob || !celda.isConnected) return;
-              const img = n('img'); img.alt = 'Primera página'; img.width = 54;
-              img.src = URL.createObjectURL(blob); celda.prepend(img);
-            }).catch(() => {});
-        }
-      }).catch(() => {});
-    }
+    /* (3.2.0 · piezas 1, 16 y 17) La presentación del acuse,
+       las miniaturas perezosas de TODOS los PDF y la línea de
+       vida de cada documento los pinta la parte visual sobre
+       esta misma tabla. */
+    if (sliced.length) decorar320('docsDecorar', result, sliced);
     const foot = n('div', undefined, 'table-foot');
     foot.append(n('span', number.format(rows.length) + ' documentos'));
     if (rows.length > 35) {
@@ -8402,7 +8464,9 @@ function contribuyentesSection() {
     const profile = profiles.find(row => row.rfc === person.id);
     const acts = n('div', undefined, 'actions');
     acts.append(action('Facturas', () => { scope = person.id; $('scope').value = scope; invoicePage = 0; navigate('invoices'); }),
-      action('Renombrar', () => renamePerson(person)));
+      action('Renombrar', () => renamePerson(person)),
+      /* (3.2.0 · pieza 43) El logotipo de este RFC. */
+      action('Logotipo', () => logo320Dialog(person)));
     return [person.name, person.id,
       profile ? (profile.unlocked ? 'Autorizada' : 'Sin autorizar') : 'Sin perfil en el servidor',
       acts];
@@ -8471,6 +8535,120 @@ function otroRfcAltaCard() {
   wrap.append(body);
   return wrap;
 }
+/* ===== 3.2.0 · Frente visual principal =====
+   Puentes y piezas ligeras de la ronda. El render pesado
+   (tendencia de Hoy, la factura-papel y su línea de vida, el
+   panel de apariencia, el diálogo del logotipo y la paleta
+   ⌘K) vive en la parte perezosa visual320 y se expone en
+   window.__pacosatVisual320 / __pacosatCmdk320: aquí solo
+   quedan los gestos y los puentes que los traen. Ninguna
+   cifra se calcula aquí que el servidor ya dé. */
+function hash320(t) { let h = 0; const s = String(t || '');
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h % 8; }
+/* (3.2.0 · pieza 37) Medallón de contraparte: inicial y color
+   estable — la misma empresa, el mismo color siempre. */
+function medallonCp320(nombre, rfc) {
+  const el = n('span', undefined, 'medallon-cp320');
+  el.dataset.color = String(hash320(rfc || nombre || ''));
+  el.textContent = String(nombre || rfc || '?').trim().charAt(0).toUpperCase() || '?';
+  el.setAttribute('aria-hidden', 'true'); el.title = nombre || rfc || '';
+  return el;
+}
+/* (3.2.0 · piezas 19 y 43) Medallón del RFC en su ropa nueva,
+   con el color de la paleta cerrada del selector. */
+function medallon320(rfc, nombre, grande = false) {
+  const el = n('span', undefined, 'medallon320' + (grande ? ' medallon320-grande' : ''));
+  const idx = RFC_PALETA200B.findIndex(([k]) => k === rfcColorClave200b(rfc));
+  el.dataset.color = String(idx >= 0 ? idx % 8 : hash320(rfc || nombre || ''));
+  el.textContent = String(nombre || rfc || '?').trim().charAt(0).toUpperCase() || '?';
+  el.setAttribute('aria-hidden', 'true'); el.title = nombre || rfc || '';
+  if (typeof logo320Pintar === 'function') logo320Pintar(el, rfc);
+  return el;
+}
+/* (3.2.0 · pieza 43) Puente del logotipo: el pintado vive en
+   la parte visual (su caché también); sin ella, la inicial. */
+function logo320Pintar(el, rfc) {
+  if (!el || !rfc) return;
+  if (window.__pacosatVisual320?.logoPintar) window.__pacosatVisual320.logoPintar(el, rfc);
+  else decorar320('logoPintar', el, rfc);
+}
+/* Puente único a la parte visual: trae visual320 y le pasa
+   el gesto; si la parte no llega, el gesto no dibuja nada. */
+function decorar320(hook, ...args) {
+  ensureLazyPart('visual320').then(ok => { if (ok) window.__pacosatVisual320?.[hook]?.(...args); });
+}
+function logo320Dialog(person) { decorar320('logo', person); }
+/* (3.2.0 · pieza 38) Frescura: «actualizado hace X» desde la
+   hora real de la última carga; el vigía la refresca. */
+function frescura320Crear(at) {
+  const el = n('span', '', 'frescura320');
+  if (at) { el.dataset.at = String(at); el.textContent = hace2915(at); }
+  return el;
+}
+/* (3.2.0 · pieza 5) Esqueleto con la ropa de la ronda. */
+function esqueleto320() {
+  const skel = n('div', undefined, 'skel320');
+  skel.setAttribute('aria-hidden', 'true'); skel.dataset.esqueleto320 = '1';
+  for (let i = 0; i < 3; i++) skel.append(n('div', undefined, 'skel320-bloque'));
+  return skel;
+}
+/* (3.2.0 · pieza 28) Puente de la barra de deshacer: la
+   barra vive en layout y la rellena la parte visual; sin
+   ella, el deshacer de siempre. */
+function deshacer320(mensaje, fnDeshacer) {
+  if (window.__pacosatVisual320?.deshacer) window.__pacosatVisual320.deshacer(mensaje, fnDeshacer);
+  else decorar320('deshacer', mensaje, fnDeshacer);
+}
+/* (3.2.0 · piezas 20 y 41) Vigía de la cabecera: su pintado
+   (barra global, banda de puerta, frescura y membrete de
+   impresión) vive en la parte visual; aquí queda el estado
+   de la corrida viva que la tarjeta de Descargar le deja y
+   el arranque del sondeo ligero. */
+let corrida320Viva = null, vigia320Listo = false;
+function vigia320Arrancar() { if (vigia320Listo) return; vigia320Listo = true;
+  setInterval(() => { window.__pacosatVisual320?.vigia?.(); }, 1500);
+  decorar320('vigia'); }
+/* (3.2.0 · pieza 12) Puente de la tendencia de Hoy: la tarjeta
+   nace oculta y la parte visual la rellena con los 6 meses que
+   el servidor calcula; sin respuesta, no se dibuja nada. */
+function tendencia320Card() {
+  const wrap = panel('Tendencia · últimos 6 meses');
+  wrap.dataset.tendencia320 = '1'; wrap.hidden = true;
+  if (typeof satToken === 'undefined' || !satToken || !scope) return wrap;
+  decorar320('tendencia', wrap, scope);
+  return wrap;
+}
+/* (3.2.0 · piezas 15, 34 y 35) Puente del detalle: tras abrir
+   la factura con el visor de siempre (el diálogo ES la vista
+   previa y la lista conserva su sitio), la parte visual le
+   añade la clase previa320, la factura-papel y su línea de
+   vida dentro del mismo diálogo. */
+function detalleFactura320(row) { decorar320('papelVida', row); }
+/* (3.2.0 · piezas 4 y 33) Puente de apariencia: su panel vive
+   en la parte visual y se monta en su hueco al llegar. */
+function apariencia320Mount() {
+  const mount = n('div');
+  decorar320('aparienciaEn', mount);
+  return mount;
+}
+/* (3.2.0 · pieza 39) Puente de la paleta ⌘K: atajo y botón de
+   la cabecera traen la parte visual y le piden que abra; si
+   la parte no llega, el buscador de siempre recibe el foco. */
+function abrirCmdk320() {
+  if (window.__pacosatCmdk320?.abrir) { window.__pacosatCmdk320.abrir(); return; }
+  ensureLazyPart('visual320').then(ok => {
+    if (ok && window.__pacosatCmdk320?.abrir) window.__pacosatCmdk320.abrir();
+    else $('global-search')?.focus();
+  });
+}
+document.addEventListener('keydown', event => {
+  if ((event.ctrlKey || event.metaKey) && String(event.key || '').toLowerCase() === 'k') {
+    event.preventDefault(); event.stopImmediatePropagation(); abrirCmdk320();
+  }
+}, true);
+{ const btnCmdk320 = document.getElementById('cmdk-btn320');
+  if (btnCmdk320) btnCmdk320.addEventListener('click', abrirCmdk320); }
+vigia320Arrancar();
 function ajustesView() {
   /* (2.8.0 · diseño 29) Dos grupos visibles en vez de ocho
      pestañas planas: «Del día a día» (lo que se toca) y
@@ -8483,7 +8661,9 @@ function ajustesView() {
     grupoTitulo280('Sistema'),
     tabbar([['sistema', 'Estado del sistema'], ['sinconexion', 'Sin conexión'], ['api', 'API'], ['acerca', 'Acerca de']],
       ajustesSection, key => { ajustesSection = key; render(); })];
-  if (ajustesSection === 'general') parts.push(...settingsScreen());
+  if (ajustesSection === 'general') { parts.push(...settingsScreen());
+    /* (3.2.0 · piezas 4 y 33) Apariencia: tema oscuro y letra grande. */
+    parts.push(apariencia320Mount()); }
   else if (ajustesSection === 'contribuyentes') parts.push(...contribuyentesSection());
   else if (ajustesSection === 'correo') {
     const asNodes = value => Array.isArray(value) ? value : [value];

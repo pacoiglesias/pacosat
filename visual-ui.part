@@ -1,0 +1,420 @@
+/* ===== Parte diferida «visual320» (3.2.0 · ronda visual) =====
+   Piezas pesadas de la ronda visual que NO pagan la carga inicial:
+   la paleta de comandos ⌘K (pieza 39) y demás superficies que se
+   abren bajo demanda. El puente en ui.part la trae con
+   ensureLazyPart('visual320') la primera vez que se pulsa ⌘K (o
+   Ctrl+K) y esta parte registra su abridor en
+   window.__pacosatCmdk320. Todo resultado va etiquetado con el
+   RFC dueño y cercado al alcance del usuario conectado: la
+   búsqueda la resuelve el servidor (/api/buscar200h y su cerca),
+   aquí solo se pinta lo que el servidor ya filtró. */
+
+/* (3.2.0) El CSS de estas superficies viaja con la parte que
+   las pinta: la paleta, el papel y las líneas de vida solo
+   existen cuando esta parte se ha cargado. */
+{ const st320 = document.createElement('style'); st320.dataset.visual320 = '1';
+  st320.textContent = '.cmdk320-fondo{position:fixed;inset:0;background:rgba(10,18,30,.45);z-index:90;display:flex;align-items:flex-start;justify-content:center;padding:10vh 12px 12px}' +
+  '.cmdk320{background:#fff;color:#14202e;border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.35);width:min(620px,100%);padding:12px}' +
+  'html[data-theme="dark"] .cmdk320{background:#101c2c;color:#e8eef5}' +
+  '.cmdk320 input[type="search"]{width:100%;font-size:17px;padding:10px 12px;border-radius:10px;border:1px solid #9db2c6;background:transparent;color:inherit}' +
+  '.cmdk320-lista{margin-top:10px;max-height:50vh;overflow:auto}' +
+  '.cmdk320-item{display:flex;gap:10px;align-items:center;width:100%;text-align:left;padding:9px 10px;border:0;border-radius:10px;background:transparent;color:inherit;cursor:pointer;font:inherit}' +
+  '.cmdk320-item[aria-selected="true"]{background:rgba(23,92,158,.16)}' +
+  '.cmdk320-item small{display:block;opacity:.75}' +
+  '.papel320{border:1px solid #c9d4e0;border-radius:10px;padding:16px;background:#fff;color:#14202e;margin-top:12px}' +
+  'html[data-theme="dark"] .papel320{background:#0d1826;color:#e8eef5}' +
+  '.papel320-cabeza{border-bottom:2px solid currentColor;padding-bottom:8px;margin-bottom:10px}' +
+  '.papel320-total{font-size:22px;font-weight:700;text-align:right}' +
+  '.vida320{list-style:none;margin:8px 0;padding:0;display:flex;flex-wrap:wrap;gap:8px}' +
+  '.vida320 li{border:1px solid #c9d4e0;border-radius:10px;padding:7px 10px}' +
+  '.vida320 li strong{display:block}.vida320 li span{opacity:.8;font-size:.92em}' +
+  '.tendencia320-linea{width:100%;height:64px}.doc-acuse320-etq{font-weight:700}';
+  document.head.append(st320); }
+
+/* ===== Paleta de comandos ⌘K (3.2.0 · pieza 39) =====
+   Busca en todo PacoSAT con el alcance del RFC EN PANTALLA:
+   la petición lleva ese RFC y se pinta SOLO lo que el
+   servidor devuelve para él — ningún resultado de otro RFC
+   se compone aquí. Cada resultado lleva el medallón de su
+   RFC, su tipo y su importe cuando el texto del servidor lo
+   trae. Enter o clic navega con los abridores de siempre;
+   Esc cierra; las flechas mueven la selección. */
+function cmdk320Abrir() {
+  if (document.querySelector('.cmdk320-fondo')) return;
+  const fondo = n('div', undefined, 'cmdk320-fondo');
+  const caja = n('div', undefined, 'cmdk320');
+  caja.setAttribute('role', 'dialog'); caja.setAttribute('aria-label', 'Buscar en todo PacoSAT');
+  const entrada = input('search', { placeholder: 'Buscar facturas, documentos, avisos…', 'aria-label': 'Buscar en todo PacoSAT' });
+  const lista = n('div', undefined, 'cmdk320-lista');
+  const nota = n('p', 'Resultados de ' + (scope || 'tu RFC en pantalla') + ' solamente.', 'muted');
+  caja.append(entrada, lista, nota);
+  fondo.append(caja);
+  document.body.append(fondo);
+  entrada.focus();
+  let items = [], elegido = 0, temporizador = null;
+  const cerrar = () => fondo.remove();
+  fondo.addEventListener('click', e => { if (e.target === fondo) cerrar(); });
+  const pintar = () => {
+    lista.replaceChildren();
+    items.forEach((item, i) => {
+      const b = n('button', undefined, 'cmdk320-item'); b.type = 'button';
+      b.setAttribute('aria-selected', String(i === elegido));
+      const textos = n('span');
+      textos.append(n('strong', item.tipo), n('small', item.texto));
+      b.append(medallon320(item.rfc, item.rfc), textos);
+      b.onclick = () => { cerrar(); item.ir(); };
+      b.onmouseenter = () => { elegido = i; pintar(); };
+      lista.append(b);
+    });
+    if (!items.length && entrada.value.trim().length >= 2)
+      lista.append(n('p', 'Sin resultados para esa búsqueda en este RFC.', 'muted'));
+  };
+  const buscar = async () => {
+    const q = entrada.value.trim();
+    items = []; elegido = 0;
+    if (q.length < 2) { pintar(); return; }
+    try {
+      const data = await satApi('buscar200h?q=' + encodeURIComponent(q) +
+        (scope ? '&rfc=' + encodeURIComponent(scope) : ''));
+      const tipos = { cfdi: 'Factura', documentos: 'Documento', avisos: 'Aviso', registro: 'Registro' };
+      for (const grupo of data?.porRfc || []) {
+        for (const [clave, listaGrupo] of Object.entries(grupo.grupos || {})) {
+          for (const r of listaGrupo || []) {
+            items.push({ rfc: grupo.rfc, tipo: tipos[clave] || clave, texto: r.texto || r.uuid || '',
+              ir: () => {
+                if (r.destino?.uuid) { const inv = invoices.find(x => x.id === r.destino.uuid);
+                  if (inv) { navigate('invoices'); invoiceDetail(inv);
+                    window.__pacosatVisual320?.papelVida(inv); return; } }
+                if (clave === 'avisos' && r.id != null && typeof irDestino200b === 'function') { irDestino200b('avisos', 'aviso-' + r.id); return; }
+                navigate(r.destino?.vista || 'home');
+              } });
+          }
+        }
+      }
+    } catch { items = []; }
+    pintar();
+  };
+  entrada.addEventListener('input', () => { clearTimeout(temporizador); temporizador = setTimeout(buscar, 220); });
+  entrada.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { e.preventDefault(); cerrar(); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); elegido = Math.min(items.length - 1, elegido + 1); pintar(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); elegido = Math.max(0, elegido - 1); pintar(); }
+    else if (e.key === 'Enter') { e.preventDefault(); const item = items[elegido]; if (item) { cerrar(); item.ir(); } }
+  });
+}
+window.__pacosatCmdk320 = { abrir: cmdk320Abrir };
+
+/* ===== Superficies visuales bajo demanda (3.2.0) ===== */
+function vida320Visual(pasos) {
+  const lista = n('ol', undefined, 'vida320');
+  for (const paso of pasos || []) {
+    if (!paso) continue;
+    const li = n('li');
+    li.append(n('strong', paso.etiqueta), n('span', paso.detalle || ''));
+    if (paso.accion) { const b = n('button', paso.accionTexto || 'Ver', 'soft small');
+      b.type = 'button'; b.onclick = paso.accion; li.append(b); }
+    lista.append(li);
+  }
+  return lista;
+}
+window.__pacosatVisual320 = {
+  /* (3.2.0 · pieza 12) La tendencia de Hoy: los últimos 6
+     meses que el SERVIDOR calcula para el RFC pedido
+     (emitidas y recibidas por mes). Sin respuesta o sin
+     meses, la tarjeta no se dibuja: nada se inventa. */
+  tendencia(wrap, rfc) {
+    if (!wrap || !rfc) return;
+    satApi('tendencia320?rfc=' + encodeURIComponent(rfc)).then(data => {
+      const meses = Array.isArray(data) ? data : (data?.meses || []);
+      if (!wrap.isConnected || !meses.length) return;
+      const max = Math.max(1, ...meses.map(m => Math.max(Number(m.emitidas) || 0, Number(m.recibidas) || 0)));
+      const puntos = clave => meses.map((m, i) =>
+        (8 + i * (184 / Math.max(1, meses.length - 1))).toFixed(1) + ',' +
+        (56 - (Number(m[clave]) || 0) / max * 48).toFixed(1)).join(' ');
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 200 64'); svg.setAttribute('class', 'tendencia320-linea');
+      svg.setAttribute('role', 'img');
+      svg.setAttribute('aria-label', 'Tendencia de facturas emitidas y recibidas de los últimos 6 meses');
+      for (const [clave, punteada] of [['emitidas', false], ['recibidas', true]]) {
+        const linea = document.createElementNS(NS, 'polyline');
+        linea.setAttribute('points', puntos(clave));
+        linea.setAttribute('fill', 'none'); linea.setAttribute('stroke', 'currentColor');
+        linea.setAttribute('stroke-width', punteada ? '1.4' : '2');
+        if (punteada) linea.setAttribute('stroke-dasharray', '4 3');
+        svg.append(linea);
+      }
+      const ir = n('button', undefined, 'soft small'); ir.type = 'button';
+      ir.append(svg, n('span', 'Ver en Facturas'));
+      ir.onclick = () => navigate('invoices');
+      wrap.append(ir, n('p', 'Línea llena: emitidas · línea punteada: recibidas. ' +
+        meses.map(m => m.mes).join(' · ') + '.', 'muted'), frescura320Crear(Date.now()));
+      wrap.hidden = false;
+    }).catch(() => { /* sin ruta todavía: la tarjeta no se dibuja */ });
+  },
+  /* (3.2.0 · piezas 15, 34 y 35) El detalle de la factura —
+     el diálogo de siempre — gana la clase de la vista previa
+     y dos piezas: la factura como papel (membrete del emisor,
+     conceptos que la fila trae y totales del mismo desglose
+     que el detalle enseña) y su línea de vida (emitida →
+     traída → pagada con su REP tocable → cancelada con su
+     acuse tocable). Solo se dibuja lo que consta. */
+  papelVida(row) {
+    const dlg = document.querySelector('dialog');
+    if (!dlg || !row) return;
+    dlg.classList.add('previa320');
+    const fields = dlg.querySelector('#fields') || dlg;
+    if (fields.querySelector('[data-papel320]')) return;
+    const papel = n('div', undefined, 'papel320');
+    papel.dataset.papel320 = '1';
+    const cabeza = n('div', undefined, 'papel320-cabeza');
+    cabeza.append(n('strong', row.from.name || row.from.rfc), n('span', ' · ' + row.from.rfc),
+      n('p', (KINDS[row.kind] || '') + ' · ' + dateLabel(row.date) +
+        (row.fiscal?.folio ? ' · Folio ' + ((row.fiscal.serie ? row.fiscal.serie + '-' : '') + row.fiscal.folio) : '')));
+    papel.append(cabeza);
+    for (const concepto of row.concepts || []) papel.append(n('p', String(concepto)));
+    const base = typeof invoiceIvaBaseCents === 'function' ? invoiceIvaBaseCents(row) : null;
+    const iva = typeof invoiceIvaCents === 'function' ? invoiceIvaCents(row) : null;
+    if (base !== null && iva !== null)
+      papel.append(n('p', 'Subtotal $' + centsLabel(base) + ' · IVA $' + centsLabel(iva)));
+    papel.append(n('p', '$' + amount(row), 'papel320-total'));
+    fields.append(papel);
+    const pasos = [{ etiqueta: 'Emitida', detalle: dateLabel(row.date) }];
+    if (row.origin) {
+      const via = { portal: 'por el portal del SAT', descarga: 'por una petición al SAT',
+        importacion: 'importada a mano' }[row.origin];
+      if (via) pasos.push({ etiqueta: 'Traída', detalle: via + (row.originAt ? ' · ' + localDateTime(row.originAt) : '') });
+    }
+    const rep = (invoices || []).find(r => r.kind === 'P' && (r.fiscal?.payments?.pagos || [])
+      .some(pago => (pago.documentos || []).some(d => d.idDocumento === row.id)));
+    if (rep) pasos.push({ etiqueta: 'Pagada con su REP', detalle: dateLabel(rep.date),
+      accionTexto: 'Ver el REP', accion: () => { dlg.close(); invoiceDetail(rep);
+        window.__pacosatVisual320?.papelVida(rep); } });
+    if (typeof invoiceStateOf === 'function' && invoiceStateOf(row) === 'Cancelado') {
+      const acuse = (documents || []).find(d => d.kind === 'Acuse de cancelación' && d.uuid === row.id);
+      pasos.push({ etiqueta: 'Cancelada', detalle: acuse ? 'con su acuse archivado' : 'según la vigilancia del SAT',
+        ...(acuse ? { accionTexto: 'Ver acuse', accion: () => { dlg.close(); viewDocOnline(acuse); } } : {}) });
+    }
+    const vida = vida320Visual(pasos);
+    vida.dataset.vidaFactura320 = '1';
+    fields.append(vida);
+  },
+  /* (3.2.0 · piezas 4 y 33) Apariencia: tema oscuro y letra
+     grande, guardados al momento en este navegador. */
+  apariencia() {
+    const wrap = panel('Apariencia');
+    const body = n('div', undefined, 'portal');
+    const oscuro = input('checkbox', { checked: themeIsDark(), id: 'tema-oscuro320' });
+    oscuro.onchange = () => { prefSet('pacosat-tema', oscuro.checked ? 'oscuro' : 'claro');
+      prefSet('pacosat-theme', oscuro.checked ? 'dark' : 'light'); applyTheme();
+      toast(oscuro.checked ? 'Tema oscuro activado.' : 'Tema claro activado.', 'ok'); };
+    const grande = input('checkbox', { checked: prefGet('pacosat-letra') === 'grande', id: 'letra-grande320' });
+    grande.onchange = () => { prefSet('pacosat-letra', grande.checked ? 'grande' : '');
+      aplicarLetra320(); toast(grande.checked ? 'Letra grande activada.' : 'Letra normal activada.', 'ok'); };
+    body.append(field('Tema oscuro', oscuro),
+      n('p', 'La misma paleta sobria de siempre, en oscuro. Se guarda en este navegador y se aplica al arrancar.', 'muted'),
+      field('Letra grande', grande),
+      n('p', 'Para enseñar un saldo sin menús ni ruido: la letra de la app crece en todo el sistema.', 'muted'));
+    wrap.append(body);
+    return wrap;
+  },
+  /* (3.2.0 · pieza 43) Subir el logotipo de un contribuyente:
+     la imagen se lee en el navegador y se guarda por la ruta
+     del servidor; la frase dice dónde se enseñará. */
+  logo(person) {
+    const file = input('file', { accept: 'image/png,image/jpeg,image/webp' });
+    dialog('Logotipo de ' + person.name,
+      [n('p', 'El logotipo se enseña en el medallón de este RFC en toda la app. Sin logotipo, el medallón sigue con su inicial y su color.'),
+       field('Imagen del logotipo', file)], async () => {
+        check(file.files?.[0], 'Elige primero la imagen del logotipo.');
+        const dataUrl = await new Promise((res, rej) => { const r = new FileReader();
+          r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file.files[0]); });
+        await satApi('logo320', { rfc: person.id, dataUrl });
+        logo320Cache.delete(person.id);
+        toast('Logotipo guardado para ' + person.id + ': ya se enseña en su medallón.', 'ok');
+        render();
+      }, 'Guardar logotipo');
+  }
+};
+
+/* ===== Decoradores de las pantallas principales (3.2.0) =====
+   Viven aquí para no pesar en la carga inicial; las pantallas
+   los llaman por el puente decorar320 de ui.part y pintan
+   sobre el DOM que ellas ya construyeron. */
+Object.assign(window.__pacosatVisual320, {
+  aparienciaEn(mount) { if (mount?.isConnected) mount.append(window.__pacosatVisual320.apariencia()); },
+  /* (3.2.0 · pieza 40) Las tres fases de «Ponerme al día» se
+     rellenan según la fase del estado que la tarjeta ya
+     sondea; el nombre de la fase viva va en grande. */
+  fasesPintar(st, fasesEl, vivaEl, corriendo) {
+    if (!fasesEl) return;
+    if (!fasesEl.children.length)
+      for (const nombreFase of ['Metadatos', 'Portal', 'Masiva'])
+        fasesEl.append(n('span', nombreFase, 'fase320'));
+    const orden = ['metadatos', 'portal', 'masiva'];
+    const clave = st?.fase === 'masiva-despacho' || st?.fase === 'esperando' ? 'masiva' : (st?.fase || '');
+    const idx = orden.indexOf(clave);
+    [...fasesEl.children].forEach((seg, i) => {
+      seg.classList.toggle('llena', Boolean(corriendo) && idx > i);
+      seg.classList.toggle('viva', Boolean(corriendo) && idx === i);
+    });
+    if (vivaEl) { vivaEl.hidden = !(corriendo && idx >= 0);
+      if (corriendo && idx >= 0) vivaEl.textContent = ['Metadatos', 'Portal', 'Masiva'][idx]; }
+  },
+  /* (3.2.0 · pieza 14) La fila de la cancelada: su banda
+     lateral propia y, si su acuse consta en el expediente
+     (el documento «Acuse de cancelación» con su uuid), el
+     botón «Ver acuse» que lo abre en el visor de siempre. */
+  facturasDecorar(content, filas) {
+    if (!content?.querySelectorAll || !Array.isArray(filas)) return;
+    content.querySelectorAll('tbody tr').forEach((tr, i) => {
+      const row = filas[i];
+      if (!row) return;
+      /* (3.2.0 · pieza 37) La contraparte con su medallón en
+         su celda de siempre: la otra parte de la factura
+         respecto al RFC en pantalla. */
+      const cp = row.from.rfc === scope ? row.to : row.from;
+      const celdaCp = tr.children?.[2];
+      if (celdaCp && !celdaCp.dataset.medallon320) { celdaCp.dataset.medallon320 = '1';
+        celdaCp.prepend(medallonCp320(cp.name, cp.rfc)); }
+      if (typeof invoiceStateOf !== 'function' || invoiceStateOf(row) !== 'Cancelado') return;
+      tr.classList.add('fila-cancelada320');
+      const acuse = (documents || []).find(d => d.kind === 'Acuse de cancelación' && d.uuid === row.id);
+      if (!acuse) return;
+      const celda = n('td'); celda.dataset.label = 'Acuse';
+      const ver = n('button', 'Ver acuse', 'soft small'); ver.type = 'button';
+      ver.onclick = () => viewDocOnline(acuse);
+      celda.append(ver); tr.append(celda);
+    });
+  },
+  /* (3.2.0 · piezas 1, 16 y 17) Sobre la tabla de Documentos:
+     el acuse de cancelación con su icono, su etiqueta y su
+     color propios (como la Constancia y la Opinión); la
+     línea de vida de cada documento — cuándo llegó y por
+     qué vía cuando consta, con el enlace a su factura si
+     lleva uuid y esta consta —; y la miniatura real de la
+     primera página de TODOS los PDF del expediente (los
+     acuses también), pedida solo al hacerse visible. */
+  docsDecorar(result, docsVisibles) {
+    if (!result?.querySelectorAll || !Array.isArray(docsVisibles)) return;
+    const porId = new Map(docsVisibles.map(d => [d.id, d]));
+    for (const celda of result.querySelectorAll('[data-doc200g]')) {
+      const doc = porId.get(celda.dataset.doc200g);
+      if (!doc || celda.dataset.decorado320) continue;
+      celda.dataset.decorado320 = '1';
+      if (doc.kind === 'Acuse de cancelación') {
+        celda.classList.add('doc-acuse320');
+        const etq = n('span', 'Acuse de cancelación', 'pill320 doc-acuse320-etq');
+        etq.prepend(icon('acuse'));
+        celda.prepend(etq);
+      }
+      const pasos = ['Llegó el ' + dateLabel(doc.date)];
+      if (doc.origin === 'portal' || doc.kind === 'Acuse de cancelación') pasos.push('por el portal del SAT');
+      else if (doc.origin === 'importacion') pasos.push('importado a mano');
+      else if (doc.origin === 'descarga') pasos.push('por una petición al SAT');
+      celda.append(n('span', pasos.join(' · '), 'vida320 vida320-texto'));
+      if (doc.uuid) {
+        const factura = (invoices || []).find(r => r.id === doc.uuid);
+        if (factura) { const ir = n('button', 'Ver su factura', 'soft small'); ir.type = 'button';
+          ir.onclick = () => { invoiceDetail(factura); window.__pacosatVisual320.papelVida(factura); };
+          celda.append(ir); }
+      }
+    }
+    if (typeof satToken === 'undefined' || !satToken || !docsVisibles.length) return;
+    satApi('miniaturas200g' + (scope ? '?rfc=' + encodeURIComponent(scope) : '')).then(d => {
+      if (!result.isConnected || !d?.documentos) return;
+      const oks = new Set(d.documentos.filter(x => x.estado === 'ok').map(x => x.id));
+      const cargar = celda => {
+        const id = celda.dataset.doc200g;
+        if (!oks.has(id)) return;
+        fetch('/api/miniatura200g?id=' + encodeURIComponent(id), { headers: { 'X-PacoSAT-Token': satToken } })
+          .then(r => r.ok ? r.blob() : null).then(blob => {
+            if (!blob || !celda.isConnected) return;
+            const img = n('img'); img.alt = 'Primera página'; img.width = 54;
+            img.src = URL.createObjectURL(blob); celda.prepend(img);
+          }).catch(() => {});
+      };
+      const celdas = [...result.querySelectorAll('[data-doc200g]')];
+      if (typeof IntersectionObserver === 'function') {
+        const obs = new IntersectionObserver(entradas => {
+          for (const e of entradas) if (e.isIntersecting) { obs.unobserve(e.target); cargar(e.target); }
+        }, { rootMargin: '120px' });
+        for (const celda of celdas) obs.observe(celda);
+      } else for (const celda of celdas) cargar(celda);
+    }).catch(() => {});
+  }
+});
+
+/* ===== Vigía, deshacer y logotipo (3.2.0) ===== */
+const logo320Cache = new Map();
+let deshacer320Timer = null;
+Object.assign(window.__pacosatVisual320, {
+  /* (3.2.0 · pieza 43) El logotipo del RFC, si el servidor lo
+     tiene: se pide una vez por RFC (la caché guarda también
+     el «no hay») y sustituye a la inicial del medallón. */
+  logoPintar(el, rfc) {
+    if (!rfc || typeof satToken === 'undefined' || !satToken || !el) return;
+    if (!logo320Cache.has(rfc)) logo320Cache.set(rfc,
+      fetch('/api/logo320?rfc=' + encodeURIComponent(rfc), { headers: { 'X-PacoSAT-Token': satToken } })
+        .then(r => r.ok ? r.blob() : null).catch(() => null));
+    logo320Cache.get(rfc).then(blob => {
+      if (!blob || !el.isConnected) return;
+      const img = n('img'); img.alt = ''; img.src = URL.createObjectURL(blob);
+      el.replaceChildren(img);
+    }).catch(() => {});
+  },
+  /* (3.2.0 · pieza 28) La barra de deshacer inferior: mensaje
+     y «Deshacer» durante 10 segundos; una sola a la vez. */
+  deshacer(mensaje, fnDeshacer) {
+    const bar = $('deshacer320');
+    if (!bar) { toastUndo(mensaje, fnDeshacer); return; }
+    clearTimeout(deshacer320Timer);
+    bar.replaceChildren(n('span', mensaje));
+    const b = n('button', 'Deshacer', 'soft small'); b.type = 'button';
+    b.onclick = async () => { clearTimeout(deshacer320Timer); bar.hidden = true;
+      try { await fnDeshacer(); } catch (error) { toast(error.message, 'error'); } };
+    bar.append(b); bar.hidden = false;
+    deshacer320Timer = setTimeout(() => { bar.hidden = true; }, 10000);
+  },
+  /* (3.2.0 · piezas 20, 38 y 41) El vigía de la cabecera:
+     barra de progreso global durante cualquier corrida viva
+     (la actividad de siempre o la puesta al día que su
+     tarjeta anuncia en corrida320Viva), con su Detener de la
+     cancelación existente; banda de la puerta cerrada del
+     RFC en pantalla con la hora de su última prueba real;
+     frescura al día y el membrete de impresión. Sin corrida
+     o con la puerta abierta, no se ve nada. */
+  vigia() {
+    try {
+      const barra = $('barra320');
+      if (barra) {
+        const act = typeof activityState !== 'undefined' ? activityState : null;
+        const viva = typeof corrida320Viva !== 'undefined' && corrida320Viva && corrida320Viva.rfc === scope ? corrida320Viva : null;
+        if (act || viva) {
+          barra.replaceChildren();
+          const pct = act && act.total ? Math.round(act.done * 100 / act.total)
+            : viva?.progreso?.total ? Math.round(viva.progreso.van * 100 / viva.progreso.total) : null;
+          barra.append(n('span', (act ? act.label : 'Poniéndote al día…') + (pct !== null ? ' · ' + pct + '%' : '')));
+          if (viva) { const det = n('button', 'Detener', 'soft small'); det.type = 'button';
+            det.onclick = async () => { try { await aldiaCancel30(viva.rfc); } catch { /* lo dice el sondeo */ } };
+            barra.append(det); }
+          barra.hidden = false;
+        } else barra.hidden = true;
+      }
+      const banda = $('banda-puerta320');
+      if (banda) {
+        const puerta = typeof satData !== 'undefined' && satData && scope ? satData.puerta?.[scope] : null;
+        if (puerta && puerta.probada && puerta.ok === false) {
+          banda.textContent = 'La puerta del SAT de ' + scope + ' está cerrada ahora (última prueba: ' +
+            fmtFechaHora(puerta.probada) + '). Las descargas se reintentan solas; lo ya guardado sigue aquí.';
+          banda.hidden = false;
+        } else banda.hidden = true;
+      }
+      for (const el of document.querySelectorAll('.frescura320[data-at]')) {
+        const at = Number(el.dataset.at); if (at) el.textContent = hace2915(at);
+      }
+      const ci = $('cabecera-impresion320');
+      if (ci) ci.textContent = (appSettings.installName || 'PacoSAT') + (scope ? ' · ' + scope : '');
+    } catch { /* el vigía nunca tumba la pantalla */ }
+  }
+});

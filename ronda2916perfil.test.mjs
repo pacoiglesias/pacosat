@@ -52,7 +52,7 @@ assert.ok(ui.includes("'Solo lectura' : 'Invitado · Solo lectura'"),
   '…o Solo lectura, sea con nombre o invitado');
 assert.ok(ui.includes("if (!alcance || alcance.tipo === 'propietario') { linea.hidden = true; return; }"),
   'la sesión del propietario no enseña rótulo');
-assert.ok(html.includes('.sesion-line2916{font-size:12px'), 'la línea tiene su estilo en la voz baja de la barra');
+assert.ok(html.includes('.sesion-line2916{font-size:var(--fs-s)'), 'la línea tiene su estilo en la voz baja de la barra');
 
 /* ── Los controles que no corresponden, fuera ────────────── */
 assert.ok(ui.includes("if ($('inspect')) $('inspect').hidden = !importingHere || soloLectura2916;"),

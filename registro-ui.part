@@ -218,7 +218,10 @@ function registroScreen() {
        historial (pieza 8): lo que llegó ES lo visible. */
     const itemsVisibles201 = itemsVista2916;
     if (!itemsVisibles201.length) {
-      body.append(empty('Sin sucesos con ese filtro', 'Cambia el contribuyente, la clase o el texto buscado: el registro completo sigue estando, solo está filtrado.'));
+      /* (3.2.0 · pieza 6) El vacío filtrado, con su clase. */
+      const vacioReg320 = empty('Sin sucesos con ese filtro', 'Cambia el contribuyente, la clase o el texto buscado: el registro completo sigue estando, solo está filtrado.');
+      vacioReg320.classList.add('vacio320');
+      body.append(vacioReg320);
       return;
     }
     /* Gramática visual del Registro (1.29.0, peldaño 1):
@@ -226,7 +229,11 @@ function registroScreen() {
        único de la casa y el fallo con su traza abrible DENTRO
        de la fila — pasos, error literal y la página guardada
        del momento, para corregir desde el propio log. */
-    const list = n('div', undefined, 'activity-list reg-timeline');
+    /* (3.2.0 · pieza 24) La lista como línea de tiempo
+       .vida320: su CSS fija el encabezado de día al hacer
+       scroll y dibuja el raíl; los iconos por tipo van en
+       cada fila (abajo). */
+    const list = n('div', undefined, 'activity-list reg-timeline vida320');
     let diaActual = '';
     /* Ráfagas agrupadas (2.9.0 · Bloque C): entradas idénticas
        consecutivas (mismo texto, clase y RFC) se enseñan UNA
@@ -254,17 +261,21 @@ function registroScreen() {
         { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).toLocaleLowerCase('es-MX');
       if (dia !== diaActual) {
         diaActual = dia;
-        list.append(n('h3', dia, 'reg-dia'));
+        list.append(n('h3', dia, 'reg-dia vida-dia320'));
       }
       const [nivel, etiqueta] = REGISTRO_CLASE[item.clase] || ['dim', 'Acción'];
       const row = n('div', undefined, 'activity-item' + (item.clase === 'fallo' ? ' reg-fallo' : ''));
       const linea = n('div', undefined, 'reg-linea');
       /* (2.9.13 · mejora 22) Cada suceso con el ICONO de su
          tipo en la línea de tiempo: conexión, acción o fallo
-         se distinguen de un vistazo, antes de leer. */
-      const icono2913 = n('span', undefined, 'reg-icono2913');
+         se distinguen de un vistazo, antes de leer.
+         (3.2.0 · pieza 24) El icono pasa a glifo sobrio con
+         forma, no solo color: ✕ el fallo, ✓ la conexión y
+         → la acción — el tipo REAL del evento (item.clase,
+         el mismo que filtra la pantalla). */
+      const icono2913 = n('span', undefined, 'reg-icono2913 vida-icono320');
       icono2913.dataset.clase = item.clase || 'accion';
-      icono2913.append(icon(item.clase === 'fallo' ? 'alert' : item.clase === 'conexion' ? 'sync' : 'arrow'));
+      icono2913.textContent = item.clase === 'fallo' ? '✕' : item.clase === 'conexion' ? '✓' : '→';
       linea.append(icono2913, statusPill(nivel, etiqueta),
         n('span', typeof fmtFechaHora === 'function' ? fmtFechaHora(item.at) : '', 'sat-step-time'),
         n('span', item.texto +

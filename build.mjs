@@ -233,7 +233,7 @@ const MAIN_PARTS = ['data.part','ui.part','pdf-cloud-ui.part','operations.part',
    Buzón»); las pantallas (buzonScreen, tributarioScreen) y el
    diálogo de reenvío (forwardDialog) tienen allí su lanzador
    que se auto-carga, como Declaraciones y Descargas. */
-const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part', registro: 'registro-ui.part', salud: 'salud-ui.part', declaraciones: 'declaraciones-ui.part', descargas: 'sat-ui.part', monitor: 'monitor-ui.part', dinero: 'money-ui.part', buzon: ['buzon-ui.part', 'tributario-ui.part'], usuarios: 'usuarios-ui.part', admin: 'admin-ui.part' };
+const LAZY_PARTS = { salidas: 'outputs-ui.part', pagos: 'pagos-ui.part', bancos: 'banks-ui.part', registro: 'registro-ui.part', salud: 'salud-ui.part', declaraciones: 'declaraciones-ui.part', descargas: 'sat-ui.part', monitor: 'monitor-ui.part', dinero: 'money-ui.part', buzon: ['buzon-ui.part', 'tributario-ui.part'], usuarios: 'usuarios-ui.part', admin: 'admin-ui.part', visual320: 'visual-ui.part' };
 const lazyScripts = {};
 for (const [name, file] of Object.entries(LAZY_PARTS))
   lazyScripts[name] = stripJsComments((Array.isArray(file) ? file : [file]).map(read).join('\n'));

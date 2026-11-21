@@ -792,6 +792,21 @@ function avisoCard(aviso) {
   };
   head.append(check, avisoPill(aviso), avisoDuenoPill1310(aviso), n('strong', aviso.titulo));
   card.append(head);
+  /* (3.2.0 · piezas 21 y 37) El importe del aviso, en grande
+     — es el dato del propio aviso — y su contraparte con
+     medallón de color estable cuando consta. En móvil, la
+     tarjeta se archiva deslizando hacia la izquierda, con el
+     mismo archivar de siempre y su deshacer. */
+  if (aviso.contraparte || aviso.nombre)
+    card.append(medallonCp320(aviso.nombre || aviso.contraparte, aviso.contraparte));
+  if (aviso.importe) card.append(n('p', '$' + money(aviso.importe), 'aviso-importe320'));
+  { let toqueX320 = null;
+    card.addEventListener('touchstart', e => { toqueX320 = e.changedTouches?.[0]?.clientX ?? null; }, { passive: true });
+    card.addEventListener('touchend', e => {
+      const x320 = e.changedTouches?.[0]?.clientX ?? null;
+      if (toqueX320 !== null && x320 !== null && toqueX320 - x320 > 80) avisoArchivar(aviso);
+      toqueX320 = null;
+    }, { passive: true }); }
   /* 3.1.0: la clase del pendiente en palabras — «Error» o
      «Aviso» — y de quién es la resolución, con su gesto único
      o el «se resuelve solo». Una línea, siempre visible. */
@@ -895,7 +910,14 @@ async function avisoArchivar(aviso) {
   };
   const texto = 'Aviso archivado: «' + aviso.titulo + '». El hecho que lo respalda sigue en su pantalla.';
   try {
-    if (typeof conDeshacer1310 === 'function')
+    /* (3.2.0 · pieza 28) La confirmación con deshacer vive en
+       la barra inferior de la ronda (.deshacer320), 10
+       segundos, llamando a la restauración de siempre; sin
+       ella, el camino de la 1.31.0 queda intacto. */
+    if (typeof deshacer320 === 'function') {
+      await aplicar('archivar');
+      deshacer320('Aviso archivado', () => aplicar('restaurar'));
+    } else if (typeof conDeshacer1310 === 'function')
       await conDeshacer1310(texto, () => aplicar('archivar'), () => aplicar('restaurar'));
     else {
       await aplicar('archivar');
