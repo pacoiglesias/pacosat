@@ -7,6 +7,13 @@
 const BANK_QUICK = [['BBVA', 'Cuenta Maestra Pyme', 'cuenta'], ['BBVA', 'Fondo', 'fondo'],
   ['BBVA', 'Tarjeta de crédito', 'tarjeta'],
   ['Santander', 'Cuenta de cheques', 'cuenta'], ['Santander', 'FONSER1', 'fondo'], ['Konfio', 'Cuenta', 'cuenta']];
+/* (3.2.0 · pieza 42) El calendario de plazos NO vive aquí:
+   vive en el Buzón Tributario (tribCalendario320 en
+   tributario-ui.part) porque desde allí se alcanzan los DOS
+   datos — los plazos del Buzón y satData.estadosPendientes,
+   que es el dato de esta pantalla (los estados del mes
+   anterior que faltan, en su ventana de días 1–10) —. Aquí
+   no se pinta una segunda copia del calendario. */
 function bancosScreen() {
   const wrap = n('div');
   if (!satToken) {
@@ -261,7 +268,7 @@ async function bancosSaldoVivo1310(box, account, panelEl) {
     const movs = todos.filter(mv => mv.accountId === account.id)
       .slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
     if (!movs.length) {
-      box.append(n('p', 'Saldo vivo: aún no hay movimientos leídos de esta cuenta.', 'muted'));
+      box.append(n('p', 'Saldo vivo: aún no hay movimientos leídos de esta cuenta.', 'muted vacio320'));
       return;
     }
     const centsDe = mv => mv.amountCents !== undefined ? Number(mv.amountCents) : Number(moneyCents(mv.amount || '0'));
@@ -424,7 +431,7 @@ function bancosSinRastroPanel201() {
         }
       }
       if (!total) out.append(n('p', 'Sin facturas sin rastro en ' + mesTexto200f(mes.value) +
-        ': toda factura del periodo tiene su movimiento, o no hay facturas del periodo en las cuentas.', 'muted'));
+        ': toda factura del periodo tiene su movimiento, o no hay facturas del periodo en las cuentas.', 'muted vacio320'));
     } catch (error) { out.replaceChildren(n('p', 'No se pudo leer: ' + error.message, 'error-text')); }
   };
   panelEl.append(fieldWrap('Periodo', mes), cargar, out);
@@ -649,7 +656,7 @@ function bancosContrapartesPanel200f() {
       const data = await satApi('banks/contrapartes?rfc=' + encodeURIComponent(rfcSel.value) +
         '&periodo=' + encodeURIComponent(perSel.value));
       out.replaceChildren();
-      if (!data.contrapartes.length) out.append(n('p', 'Sin operaciones con contrapartes en este periodo.', 'muted'));
+      if (!data.contrapartes.length) out.append(n('p', 'Sin operaciones con contrapartes en este periodo.', 'muted vacio320'));
       for (const cp of data.contrapartes) {
         const row = n('div', undefined, 'cp-row');
         row.append(statusPill('dim', '$' + cp.total),
@@ -712,7 +719,7 @@ function bancosReglasPanel240() {
       /* Los sin factura, con su categoría y la regla que la puso. */
       const sinFactura = (datosMovs.movements || []).filter(mv => mv.sinFactura);
       box.append(n('h3', 'Movimientos sin factura (' + sinFactura.length + ')'));
-      if (!sinFactura.length) box.append(n('p', 'No hay movimientos marcados sin factura todavía.', 'muted'));
+      if (!sinFactura.length) box.append(n('p', 'No hay movimientos marcados sin factura todavía.', 'muted vacio320'));
       for (const mv of sinFactura.slice(0, 30)) {
         const row = n('div', undefined, 'cp-row');
         row.append(statusPill(mv.categoria ? 'ok' : 'dim', mv.categoria || 'Sin categoría'),
@@ -723,7 +730,7 @@ function bancosReglasPanel240() {
       if (sinFactura.length > 30) box.append(n('p', '…y ' + (sinFactura.length - 30) + ' más (se enseñan los 30 primeros).', 'muted'));
       /* Las reglas, con crear / editar / quitar. */
       box.append(n('h3', 'Tus reglas'));
-      if (!reglas.length) box.append(n('p', 'Todavía no tienes reglas: sin regla no se inventa ninguna categoría.', 'muted'));
+      if (!reglas.length) box.append(n('p', 'Todavía no tienes reglas: sin regla no se inventa ninguna categoría.', 'muted vacio320'));
       for (const regla of reglas) {
         const row = n('div', undefined, 'cp-row');
         row.append(statusPill('dim', regla.categoria),

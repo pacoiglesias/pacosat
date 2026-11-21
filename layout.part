@@ -1,6 +1,15 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"><title>PacoSAT</title><link rel="manifest" href="/manifest.webmanifest"><link rel="apple-touch-icon" href="/apple-touch-icon.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="PacoSAT"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230e2a47'/%3E%3Cg transform='translate(8 8) scale(2)' fill='none' stroke='%23f4b942' stroke-width='1.65' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 2.6v1.5M11 4.1h2l.9 4.3M10.1 8.4 11 4.1M6.9 6.2 3.8 4.6M17.1 6.2l3.1-1.6M8.6 20.6 10.1 8.4h3.8l1.5 12.2M10.4 14.6h3.2M6.4 20.6h11.2'/%3E%3C/g%3E%3C/svg%3E"><meta name="theme-color" id="theme-color-meta" content="#0e2a47">
-<style>/*STYLES*/</style></head>
+<script data-320-tema>/* (3.2.0 · piezas 4/33) Tema oscuro y letra grande, aplicados
+   en <html> antes del primer pintado desde su preferencia. */
+try{var d320=document.documentElement;if(localStorage.getItem('pacosat-tema')==='oscuro')d320.dataset.theme='dark';if(localStorage.getItem('pacosat-letra')==='grande')d320.dataset.letra='grande';}catch(e){}</script>
+<style>/*STYLES*/</style>
+<style data-320>/* (3.2.0) CSS propio mínimo del frente principal; el de la
+   paleta, el papel y las líneas de vida viaja con la parte
+   perezosa visual320, que es quien los pinta. */
+.fila-cancelada320 td:first-child{box-shadow:inset 4px 0 0 #b3261e}
+.aviso-importe320{font-size:23px;font-weight:700;margin:2px 0}
+</style></head>
 <body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 <symbol id="i-logo" viewBox="0 0 24 24"><path d="M12 2.6v1.5M11 4.1h2l.9 4.3M10.1 8.4 11 4.1M6.9 6.2 3.8 4.6M17.1 6.2l3.1-1.6M8.6 20.6 10.1 8.4h3.8l1.5 12.2M10.4 14.6h3.2M6.4 20.6h11.2"/></symbol>
@@ -51,6 +60,10 @@
 <symbol id="i-share" viewBox="0 0 24 24"><circle cx="6" cy="12" r="2.6"/><circle cx="17.5" cy="5.5" r="2.6"/><circle cx="17.5" cy="18.5" r="2.6"/><path d="m8.3 10.8 6.9-4m-6.9 6.4 6.9 4"/></symbol>
 <symbol id="i-send" viewBox="0 0 24 24"><path d="M20.5 3.5 10 14M20.5 3.5 14 20.5l-4-6.5-6.5-4z"/></symbol>
 <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/></symbol>
+<!-- (3.2.0 · pieza 9) Del mismo juego de trazo: el acuse de
+     cancelación (documento con su equis), hermano de la
+     constancia y la opinión. -->
+<symbol id="i-acuse" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zm8 0v5h4"/><path d="m9.2 12.2 5.6 5.6m0-5.6-5.6 5.6"/></symbol>
 </svg>
 <div class="frame">
 <aside class="sidebar">
@@ -141,7 +154,7 @@
 </aside>
 <div id="offline-banner" class="offline-banner" hidden></div>
 <main>
-  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span id="crumb-rfc2913" class="crumb-rfc2913" aria-label="Contribuyente en pantalla"></span><span class="top-side"><!-- Selector global (2.0 · tanda 2, pieza 8): desplegable propio con medallón de color, buscador (desde 5 RFC) y punto de salud por contribuyente; el <select> espejo queda oculto y sigue siendo el valor que el resto del código sincroniza. --><button id="scope-menu-btn200b" class="scope-menu-btn200b" type="button" aria-haspopup="true" aria-expanded="false" title="Cambiar de contribuyente">Contribuyente </button><select id="scope-top" class="scope-top" aria-label="Contribuyente" title="Contribuyente" hidden></select><div id="scope-menu200b" class="scope-menu200b" hidden></div><!-- El foco del sistema (2.9.0): semáforo grande y siempre visible junto al selector, con su palabra al lado; su panel lista lo vigilado con su arreglo. --><button id="foco-btn290" class="foco-btn290" type="button" aria-haspopup="true" aria-expanded="false" title="El foco del sistema"><span class="foco-luz290" data-nivel="dim"></span><span class="foco-palabra290">Sin comprobar todavía</span></button><div id="foco-menu290" class="scope-menu200b foco-menu290" hidden></div><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, RFC o una función…" aria-label="Buscador global: CFDI, documentos y funciones" title="Buscador global (Ctrl+K): también encuentra funciones por su nombre"></span><span id="counters" class="header-counters"></span><span id="frescura30" class="frescura30" title="La hora a la que el servidor entregó los datos que estás viendo; se refresca solo con cada sondeo"></span><span class="top-tools"><button id="search-toggle200b" class="icon-button search-toggle200b" type="button" aria-label="Buscar" title="Buscar"><svg><use href="#i-search"/></svg></button><button id="ask-button" class="icon-button" type="button" aria-label="Ayuda de esta pantalla" title="Ayuda"><svg><use href="#i-help"/></svg></button><!-- (2.8.0 · diseño 27) El interruptor de sonidos sale de la cabecera: es un ajuste de una vez al año y vive en Ajustes › General. La cabecera se queda con buscar, ayuda y tema. --><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
+  <header class="top"><span>PacoSAT <span class="slash">/</span> <strong id="crumb">Resumen</strong></span><span id="crumb-rfc2913" class="crumb-rfc2913" aria-label="Contribuyente en pantalla"></span><span class="top-side"><!-- Selector global (2.0 · tanda 2, pieza 8): desplegable propio con medallón de color, buscador (desde 5 RFC) y punto de salud por contribuyente; el <select> espejo queda oculto y sigue siendo el valor que el resto del código sincroniza. --><button id="scope-menu-btn200b" class="scope-menu-btn200b" type="button" aria-haspopup="true" aria-expanded="false" title="Cambiar de contribuyente">Contribuyente </button><select id="scope-top" class="scope-top" aria-label="Contribuyente" title="Contribuyente" hidden></select><div id="scope-menu200b" class="scope-menu200b" hidden></div><!-- El foco del sistema (2.9.0): semáforo grande y siempre visible junto al selector, con su palabra al lado; su panel lista lo vigilado con su arreglo. --><button id="foco-btn290" class="foco-btn290" type="button" aria-haspopup="true" aria-expanded="false" title="El foco del sistema"><span class="foco-luz290" data-nivel="dim"></span><span class="foco-palabra290">Sin comprobar todavía</span></button><div id="foco-menu290" class="scope-menu200b foco-menu290" hidden></div><span class="top-search"><input id="global-search" type="search" placeholder="Buscar UUID, RFC o una función…" aria-label="Buscador global: CFDI, documentos y funciones" title="Buscador global (Ctrl+K): también encuentra funciones por su nombre"></span><span id="counters" class="header-counters"></span><span id="frescura30" class="frescura30" title="La hora a la que el servidor entregó los datos que estás viendo; se refresca solo con cada sondeo"></span><span class="top-tools"><button id="cmdk-btn320" class="icon-button" type="button" aria-label="Buscar en todo PacoSAT" title="Buscar en todo PacoSAT (Ctrl+K)"><svg><use href="#i-search"/></svg></button><button id="search-toggle200b" class="icon-button search-toggle200b" type="button" aria-label="Buscar" title="Buscar"><svg><use href="#i-search"/></svg></button><button id="ask-button" class="icon-button" type="button" aria-label="Ayuda de esta pantalla" title="Ayuda"><svg><use href="#i-help"/></svg></button><!-- (2.8.0 · diseño 27) El interruptor de sonidos sale de la cabecera: es un ajuste de una vez al año y vive en Ajustes › General. La cabecera se queda con buscar, ayuda y tema. --><button id="theme-toggle" class="icon-button" type="button" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro u oscuro"><svg><use href="#i-moon"/></svg></button></span><span class="badge"><span class="dot"></span> <span id="mode">Modo local</span></span></span></header>
   <!-- Sugerencia de FUNCIÓN del buscador global (2.4.0 · W4d):
        cuando lo tecleado casa con una función del catálogo del
        cliente (ui.part), esta franja la nombra como FUNCIÓN —
@@ -151,6 +164,9 @@
     <div class="activity-result-head"><strong id="funcion-sugerida240-titulo">Función</strong><button type="button" id="funcion-sugerida240-ir" class="primary small">Ir a la función </button></div>
     <div id="funcion-sugerida240-texto"></div>
   </section>
+  <!-- (3.2.0 · piezas 20 y 41) Barra global y banda de puerta. -->
+  <div id="barra320" class="barra320" hidden></div>
+  <div id="banda-puerta320" class="banda-puerta320" hidden></div>
   <div class="page">
     <header class="heading">
       <div><div class="eyebrow" id="eyebrow">La mañana</div><h1 id="title">Resumen fiscal</h1><p id="subtitle">Facturas y documentos de tus contribuyentes en un solo lugar.</p></div>
@@ -190,6 +206,8 @@
 </nav>
 </div>
 <section id="print-report" aria-hidden="true"></section>
+<!-- (3.2.0) Membrete de impresión fuera de .frame. -->
+<div id="cabecera-impresion320" class="cabecera-impresion320" aria-hidden="true"></div>
 <!-- Pantalla de entrada diseñada (1.26.0): la cara del login
      propio. Vive oculta; la enseña maybeShowEntry() cuando el
      login propio está configurado y no hay sesión suya activa.
@@ -227,6 +245,8 @@
 <!-- Avisos flotantes (1.26.0): las confirmaciones se ven donde
      está el dedo; la barra #status sigue siendo el registro. -->
 <div id="toasts" class="toasts" aria-live="polite"></div>
+<!-- (3.2.0 · pieza 28) Barra de deshacer inferior. -->
+<div id="deshacer320" class="deshacer320" hidden></div>
 <input id="incoming" type="file" accept=".xml,.zip" multiple hidden>
 <input id="inspectFile" type="file" accept=".xml,text/xml,application/xml" hidden>
 <input id="invoice-pdf" type="file" accept=".pdf,application/pdf" hidden>

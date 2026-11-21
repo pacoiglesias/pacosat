@@ -489,7 +489,7 @@ const PDF_POS_CAD = Buffer.from('%PDF-1.4 Opinión de cumplimiento POSITIVA vige
 {
   const html = readFileSync(join(process.cwd(), 'Faro-Fiscal.html'), 'utf8');
   assert.ok(html.includes('Ponte al día'), 'el artefacto trae el botón «Ponte al día» de Hoy');
-  assert.ok(html.includes('"version":"3.1.1"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
+  assert.ok(html.includes('"version":"3.2.0"'), 'la versión es la vigente 2.0.1 (las tandas no la tocaron; la subió la ronda 2.0.1 de motores)');
   const saludPart = readFileSync(join(process.cwd(), 'salud-ui.part'), 'utf8');
   for (const texto of ['revisionPanel200e', 'Pedir ese tramo otra vez', 'ponteAlDia200e',
     'Revisión programada de facturas nuevas'])

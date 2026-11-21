@@ -195,7 +195,57 @@ function saludBitacora240() {
 }
 /* (2.9.9 · D3) Tarjetas de salud por página: 10 y «Ver más». */
 let saludLimite299 = 10;
+/* (3.2.0 · piezas 23 y 38) Los pisos, como tarjetas
+   protagonistas AL ABRIR la pantalla: la cuenta de cada piso
+   con la MISMA regla de reparto de los pisos de abajo (mal →
+   tu acción; bien → bien; el resto → a vigilar) — un solo
+   cálculo, el de las tarjetas que el servidor ya compuso — y
+   la «última comprobación» EN GRANDE: la frescura más reciente
+   entre las tarjetas que traen una (tarjeta.frescura, la hora
+   de su última comprobación real); sin ninguna, se dice «sin
+   comprobar todavía», no se inventa una hora. El sello
+   .frescura320 enseña la hora de carga de ESTA vista (data.at,
+   la hora del servidor al componerla). Tocar un piso baja a
+   su sección, que se pinta debajo como siempre. */
+function saludPisosProt320(data) {
+  const tarjetas = data.tarjetas || [];
+  const cuentas = { mal: 0, vigilar: 0, bien: 0 };
+  for (const t of tarjetas)
+    cuentas[t.estado === 'mal' ? 'mal' : t.estado === 'bien' ? 'bien' : 'vigilar']++;
+  const frescuras = tarjetas.map(t => Number(t.frescura) || 0).filter(Boolean);
+  const strip = n('div', undefined, 'salud-pisos320');
+  strip.dataset.saludPisos320 = '1';
+  const hace320 = ts => typeof haceText === 'function' ? haceText(ts) : '';
+  const grande = n('p', frescuras.length
+    ? 'Última comprobación: ' + hace320(Math.max(...frescuras))
+    : 'Sin comprobación todavía', 'salud-ultima320');
+  if (data.at) {
+    const sello = n('span', ' · actualizado ' + hace320(Number(data.at)), 'frescura320');
+    sello.dataset.frescura320 = 'salud';
+    grande.append(sello);
+  }
+  strip.append(grande);
+  const fila = n('div', undefined, 'salud-pisos-fila320');
+  for (const [clave, titulo, nivel] of [['mal', 'Requiere tu acción', 'bad'],
+      ['vigilar', 'A vigilar', 'warn'], ['bien', 'Todo bien', 'ok']]) {
+    const card = n('button', undefined, 'salud-piso-card320');
+    card.type = 'button';
+    card.dataset.pisoCard320 = clave;
+    card.append(statusPill(nivel,
+      cuentas[clave] + (cuentas[clave] === 1 ? ' pieza' : ' piezas'), undefined, undefined, true),
+      n('strong', titulo));
+    card.onclick = () => document.querySelector('[data-piso2916="' + clave + '"]')
+      ?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    fila.append(card);
+  }
+  strip.append(fila);
+  return strip;
+}
 function saludTarjetasPintar200d(body, data) {
+  /* (3.2.0 · pieza 23) Primero los pisos protagonistas; el
+     veredicto, la bitácora, los pisos y los paneles de siempre
+     bajan debajo, intactos. */
+  body.append(saludPisosProt320(data));
   /* Rediseño 2.4.0 (WC4a): primero el veredicto protagonista
      y la bitácora con su exportación a la vista; debajo, la
      rejilla de tarjetas de siempre y los paneles de siempre —
@@ -500,7 +550,7 @@ function saludTarjetasPintar200d(body, data) {
       const rejilla = n('div', undefined, 'salud-grid200d');
       for (const card of visibles) rejilla.append(card);
       seccion.append(rejilla);
-    } else seccion.append(n('p', 'Nada requiere tu acción ahora.', 'muted salud-piso-calma2916'));
+    } else seccion.append(n('p', 'Nada requiere tu acción ahora.', 'muted salud-piso-calma2916 vacio320'));
     body.append(seccion);
   }
   /* (2.9.9 · D3) «Ver más» tarjetas, sin perder la pantalla. */
@@ -674,7 +724,7 @@ function saludDeshacerPanel201() {
     const acciones = (data?.acciones || []).filter(a => !a.deshecha);
     body.replaceChildren();
     if (!acciones.length) {
-      body.append(n('p', 'Nada que deshacer todavía: aquí aparecerán los archiveros, las importaciones de estados y los cierres de ejercicio desde la 2.0.1.', 'muted'));
+      body.append(n('p', 'Nada que deshacer todavía: aquí aparecerán los archiveros, las importaciones de estados y los cierres de ejercicio desde la 2.0.1.', 'muted vacio320'));
       return;
     }
     for (const accion of acciones) {
@@ -734,7 +784,7 @@ function saludDuplicadosPanel201() {
       body.append(n('p', 'Conocido · Nómina agrupada · ' + (g.fecha || '') + ' · $' + (g.importe || '') + ' × ' +
         number.format(g.cantidad || 0) + ' — ' + (g.detalle || 'Serie periódica de nómina: no es un duplicado.'), 'muted'));
     if (!sospechosos.length && !resueltos.length)
-      body.append(n('p', 'Sin duplicados sospechosos: ningún importe+fecha se repite con folios distintos, ni hay un folio en dos RFC.', 'muted'));
+      body.append(n('p', 'Sin duplicados sospechosos: ningún importe+fecha se repite con folios distintos, ni hay un folio en dos RFC.', 'muted vacio320'));
     /* Cada grupo por revisar, con su patrón en llano y TU
        veredicto como acción: «Son el mismo» / «Son distintos»
        lo deja revisado (sin tocar ningún comprobante) y sale

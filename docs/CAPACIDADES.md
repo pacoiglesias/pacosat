@@ -2,7 +2,7 @@
 
 **Versión del software que describe este documento: 2.4.0**
 
-**Última modificación: 17 nov 2026**
+**Última modificación: 21 nov 2026**
 
 Estados: ✅ incluido y verificado · 🔄 en construcción (cadena de rondas en marcha) · 📋 planificado en la cadena.
 Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del repositorio (la FUENTE del listado: la app lo muestra dentro, en la pantalla «Qué incluye PacoSAT», generada desde él en cada build) y `~/workspace/pacosat-capacidades.md` (copia de trabajo). Al tocar una, se toca la otra en el mismo cambio. Se actualiza en cada ronda y cada despliegue, junto con el sello de versión.
@@ -357,6 +357,16 @@ Este documento vive en dos copias idénticas: `docs/CAPACIDADES.md` del reposito
 - ✅ Documentos que se buscan por dentro: el texto de los PDF archivados se indexa y se busca («buscar dentro»), con miniaturas que se invalidan cuando el papel cambia; el CFDI de retenciones es documento propio con su cruce contra lo retenido en los CFDI del periodo; cada CFDI enseña su comparador XML↔PDF y su integridad (estructura, huella y estatus; el sello criptográfico del emisor no se verifica y la ficha lo dice).
 - ✅ Sistema: /healthz sin sesión para la portada de acceso (que enseña la marca del faro y el estado real), reintento con espera ante SQLITE_BUSY, modo histórico de huecos en la madrugada (apagado por defecto), resumen semanal por correo con los datos dentro, prueba de restauración automática mensual, y la app instalable en el móvil (PWA) con sus iconos del faro.
 - ✅ Rendimiento: la carga inicial baja de 818.135 B (2.3.1) a 797.312 B con cuatro pantallas más viajando diferidas (Declaraciones, Vigilancia, Descargas y Dinero; nueve partes en total), sin perder ninguna función: lo que el primer pintado necesita de ellas vive en puentes o se auto-carga.
+
+## 25. Ronda 3.2.0 — la ronda visual (21 nov 2026)
+- ✅ Modo oscuro completo con la misma paleta sobria y el mismo acento, y modo de letra grande para enseñar un saldo sin menús ni ruido; ambos se eligen en Ajustes y se recuerdan en el equipo.
+- ✅ Buscador universal con ⌘K (o Ctrl+K): facturas, documentos y avisos del RFC en pantalla, cada resultado con el medallón de su RFC, su tipo y su importe; la cerca de alcance la pone el servidor.
+- ✅ Facturas que se abren como papel (membrete, conceptos y totales), con su línea de vida tocable — emitida, traída, pagada con su REP, cancelada con su acuse a un toque —, medallón de contraparte con color estable y filtros en pastillas con su cuenta.
+- ✅ Documentos con trato completo: el acuse de cancelación con su icono, su etiqueta y su color; miniatura real de la primera página de cada PDF; y la línea de vida de cada documento (cuándo llegó, por qué vía y a qué factura enlaza).
+- ✅ Cobertura como mapa de calor por mes y anillo de traído frente a pendiente por año; Hoy con la tendencia de los últimos seis meses calculada en el servidor; semáforos con forma (✓, !, ✕) además de color; cifras tabulares alineadas en todas las tablas.
+- ✅ Mientras algo corre, una barra fina bajo la cabecera enseña el avance con su «Detener», «Ponerme al día» enseña sus tres fases como segmentos que se rellenan, y si la puerta del SAT está cerrada una banda lo dice con su hora.
+- ✅ Salud abre con tarjetas protagonistas y su última comprobación en grande; el Registro es una línea de tiempo por días; Administración enseña el mapa de medallones de los RFC; archivar un aviso se deshace durante diez segundos y en el móvil se archiva deslizando.
+- ✅ Impresión limpia de cualquier pantalla (membrete, fecha y RFC en grande), el PDF y el Excel con la misma identidad de la app, y el logotipo de cada empresa en su medallón de RFC.
 
 ## Fuera de alcance (decidido por Paco)
 - Timbrar CFDI (se timbra en Más Facturas). Buzón tributario con CIEC. Opinión del IMSS (solo SAT).

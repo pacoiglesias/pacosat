@@ -27,8 +27,8 @@ function capacidadesScreen() {
   /* «Esto es lo nuevo» vive AQUÍ (2.0 · tanda 2, M5): junto a
      la versión, en Ajustes › Acerca de — salió de Hoy, que se
      queda con el día. La tarjeta es la de siempre
-     (novedadesCard1311): sale tras un montaje hasta cerrarla. */
-  const novedades200b = typeof novedadesCard1311 === 'function' ? novedadesCard1311() : null;
+     (novedadesCard320): sale tras un montaje hasta cerrarla. */
+  const novedades200b = typeof novedadesCard320 === 'function' ? novedadesCard320() : null;
   if (novedades200b) wrap.append(novedades200b);
   /* (2.9.13 · mejora 29) La guía con CAPTURAS de la propia
      app: cada hueco lleva el nombre exacto de su captura

@@ -280,6 +280,11 @@ function coberturaFalta30() {
       const celda = n('button', '', 'cob-falta-mes30');
       celda.type = 'button';
       celda.dataset.cobFaltaMes = mes;
+      /* (3.2.0 · pieza 11) La rejilla como mapa de calor: cada
+         mes lleva su nivel según cuántos faltan (0 = ninguno);
+         el mes sigue siendo el mismo botón de siempre. */
+      celda.classList.add('calor320');
+      celda.dataset.nivel = String(n30 === 0 ? 0 : n30 === 1 ? 1 : n30 <= 4 ? 2 : n30 <= 9 ? 3 : 4);
       celda.append(n('span', MESES30[i], 'cob-falta-nombre30'),
         n('strong', n30 ? ('Faltan ' + n30) : 'Completo', 'cob-falta-cuenta30'));
       if (!n30) { celda.disabled = true; celda.classList.add('completo'); }
@@ -292,6 +297,8 @@ function coberturaFalta30() {
     }
     wrap.append(rejilla, progreso);
   }
+  /* (3.2.0 · pieza 11) La leyenda del calor, en llano. */
+  wrap.append(n('p', 'El color marca cuántos faltan ese mes: sin color, ninguno; cuanto más intenso, más CFDI faltan por traer.', 'muted'));
   return wrap;
 }
 /* Descarga automática mensual (1.15.0): su configuración, la

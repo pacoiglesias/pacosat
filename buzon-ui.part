@@ -163,6 +163,22 @@ function buzonTrabajoFijado240(rfc) {
     });
   return card;
 }
+/* (3.2.0 · pieza 22 — investigación del modelo, con su
+   veredicto) La cuenta atrás de plazos NO se dibuja en
+   Recibidos porque aquí no consta ningún plazo: cada elemento
+   de GET /api/buzon?rfc= trae { kind ('cfdi' o documento),
+   key, titulo, detalle, importe, at (cuándo llegó), read,
+   uuid y fileId en su caso, sinArchivo } — sin fecha límite,
+   sin plazo y sin ninguna regla del código que asocie un
+   plazo a su tipo. Inventarlo está prohibido. Los plazos del
+   Buzón viven en el Buzón Tributario (tributario-ui.part,
+   misma parte diferida): cada notificación sin abrir trae
+   plazo { limite, tenida, efectos } calculado en el servidor
+   por la regla escrita de buzonPlazo (arts. 134-I y 135 del
+   CFF) y allí SÍ se dibuja su cuenta atrás sin abrirla
+   (pastilla .pill320 de la pieza 22, junto a su barra de
+   siempre). Lo que Recibidos dibuja de cada elemento es su
+   fecha de llegada, en su línea meta, como hasta ahora. */
 function buzonScreen() {
   const wrap = n('div');
   if (typeof satToken === 'undefined' || !satToken) {
@@ -178,7 +194,10 @@ function buzonScreen() {
   if (fijado240) wrap.append(fijado240);
   wrap.append(head);
   if (!scope) {
-    body.append(empty('Elige un contribuyente', 'Recibidos va por RFC: elige arriba el contribuyente del que quieres ver lo que llegó.'));
+    /* (3.2.0 · pieza 6) Vacío diseñado también sin RFC. */
+    const vacioSinRfc320 = empty('Elige un contribuyente', 'Recibidos va por RFC: elige arriba el contribuyente del que quieres ver lo que llegó.');
+    vacioSinRfc320.classList.add('vacio320');
+    body.append(vacioSinRfc320);
     return [wrap];
   }
   const rfc = scope;
@@ -255,10 +274,13 @@ function buzonScreen() {
     }
     if (!items.length) {
       /* El vacío enseña el gesto (1.32.1, A4): lo que llena
-         esta bandeja se descarga del SAT. */
-      body.append(empty('Recibidos vacío', 'Cuando llegue un CFDI o un documento nuevo de este RFC, aparecerá aquí. Lo que lo trae es la descarga del SAT.',
+         esta bandeja se descarga del SAT.
+         (3.2.0 · pieza 6) Con su clase de vacío diseñada. */
+      const vacioRec320 = empty('Recibidos vacío', 'Cuando llegue un CFDI o un documento nuevo de este RFC, aparecerá aquí. Lo que lo trae es la descarga del SAT.',
         typeof downloadSheet === 'function'
-          ? action('Descargar del SAT', () => downloadSheet(rfc), 'primary', 'down') : undefined));
+          ? action('Descargar del SAT', () => downloadSheet(rfc), 'primary', 'down') : undefined);
+      vacioRec320.classList.add('vacio320');
+      body.append(vacioRec320);
       return;
     }
     for (const item of items) {

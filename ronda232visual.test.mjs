@@ -135,7 +135,7 @@ assert.ok(lazy.partes.salud.source.includes("tarjeta.datos.huellaOk === true ? '
 
 /* 10 · m-25 Registro: la cabecera de día sin capitalización CSS
     y la fecha formateada ya en minúsculas. */
-assert.ok(css.includes('.reg-dia{margin:16px 0 6px;font-size:13px;color:var(--muted)}'),
+assert.ok(css.includes('.reg-dia{margin:16px 0 6px;font-size:var(--fs-m);color:var(--muted)}'),
   'm-25: .reg-dia ya no capitaliza la fecha');
 assert.ok(lazy.partes.registro.source.includes("toLocaleLowerCase('es-MX')"),
   'm-25: la fecha del Registro se formatea en minúsculas');

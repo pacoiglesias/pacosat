@@ -920,33 +920,35 @@ function gestosPintarCiec1311(monthly) {
    versión: la marca es la propia versión, en la memoria del
    equipo. Si la versión de la app no es la de la nota, la
    tarjeta no existe (nada de notas viejas recicladas). */
-const NOVEDADES_1311 = {
-  version: '3.1.1',
-  fecha: '20 de noviembre de 2026',
+const NOVEDADES_320 = {
+  version: '3.2.0',
+  fecha: '21 de noviembre de 2026',
   puntos: [
-    'Las canceladas, con su papel: cuando el portal lista una factura cancelada, ahora se reconoce tal como es — el portal no ofrece su XML en ese listado, solo el acuse de cancelación — y PacoSAT baja ese acuse y lo guarda en Documentos como «Acuse de cancelación», enlazado a su factura. La corrida ya no se corta ahí: sigue con la búsqueda por folio y su resumen dice la verdad, cuántas listó el portal y de cuántas bajó el acuse.',
-    'Nueva vía para traer el XML de una cancelada: la petición por folios. En «Metadatos del SAT · CFDI sin descargar» (en Descargar), el botón «Pedir por folios» pide al SAT, folio a folio, los XML que faltan del RFC en pantalla — también los de facturas canceladas, que la petición por fechas no entrega —. Cada petición queda en la cola de solicitudes como «Por folio» y el XML entra solo cuando el SAT lo entrega, como cualquier descarga.',
-    'Lo de siempre, sin cambios: tus RFC siguen sin mezclarse, la pantalla de Administración y «Ponerme al día» quedan como estaban — esta versión solo calibra el portal y abre la vía por folios.'
+    'La ronda visual: todo PacoSAT se ve mejor y se lee mejor. Modo oscuro completo (en Ajustes), letra grande para enseñar un saldo sin ruido, y los semáforos ahora también tienen forma — marca de bien, de aviso y de error —, no solo color.',
+    'Busca todo con ⌘K (o Ctrl+K): facturas, documentos y avisos del RFC en pantalla, cada resultado con su RFC, su tipo y su importe. Nada de otros RFC se cuela en la búsqueda.',
+    'Facturas con vida propia: cada una se abre como una factura de papel, con su línea de vida (emitida, traída, pagada con su REP, cancelada con su acuse a un toque), su contraparte con medallón y los filtros con su cuenta. En Documentos, el acuse de cancelación ya tiene su nombre y su color, todos los PDF enseñan su primera página en miniatura y cada documento cuenta cuándo llegó y por qué vía.',
+    'Lo que falta por traer ahora es un mapa de calor por mes, Cobertura enseña su anillo de traído frente a pendiente y Hoy trae la tendencia de los últimos seis meses. Mientras algo corre, una barra fina bajo la cabecera enseña el avance con su «Detener», y si la puerta del SAT está cerrada, una banda lo dice con su hora.',
+    'Salud abre con sus tarjetas protagonistas y su última comprobación en grande, el Registro es una línea de tiempo por días, Administración enseña el mapa de medallones de tus RFC, y archivar un aviso se puede deshacer durante diez segundos (en el móvil, deslizando). Imprimir cualquier pantalla sale limpio, con membrete, y cada empresa puede llevar su logotipo en su medallón.'
   ]
 };
-function novedadesCard1311() {
-  if (typeof PACOSAT_META === 'undefined' || PACOSAT_META.version !== NOVEDADES_1311.version) return null;
+function novedadesCard320() {
+  if (typeof PACOSAT_META === 'undefined' || PACOSAT_META.version !== NOVEDADES_320.version) return null;
   let vista = '';
   try { vista = localStorage.getItem('pacosat-novedades-vista') || ''; } catch { /* sin memoria local: se enseña */ }
-  if (vista === NOVEDADES_1311.version) return null;
+  if (vista === NOVEDADES_320.version) return null;
   /* (2.9.13 · mejora 30) La nota es una TARJETA DE VERSIÓN:
      su versión y su fecha en la cabecera, sus puntos dentro. */
-  const card = panel('Esto es lo nuevo', 'PacoSAT ' + NOVEDADES_1311.version +
-    (NOVEDADES_1311.fecha ? ' · ' + NOVEDADES_1311.fecha : '') + ', en palabras llanas.');
+  const card = panel('Esto es lo nuevo', 'PacoSAT ' + NOVEDADES_320.version +
+    (NOVEDADES_320.fecha ? ' · ' + NOVEDADES_320.fecha : '') + ', en palabras llanas.');
   card.classList.add('novedades-card2913');
-  card.dataset.version2913 = NOVEDADES_1311.version;
+  card.dataset.version2913 = NOVEDADES_320.version;
   const lista = n('ul', undefined, 'novedades-list');
-  for (const punto of NOVEDADES_1311.puntos) lista.append(n('li', punto));
+  for (const punto of NOVEDADES_320.puntos) lista.append(n('li', punto));
   const acts = n('div', undefined, 'actions');
   const cerrar = n('button', 'Entendido', 'primary small');
   cerrar.type = 'button';
   cerrar.onclick = () => {
-    try { localStorage.setItem('pacosat-novedades-vista', NOVEDADES_1311.version); } catch { /* sin memoria: se volverá a enseñar */ }
+    try { localStorage.setItem('pacosat-novedades-vista', NOVEDADES_320.version); } catch { /* sin memoria: se volverá a enseñar */ }
     card.remove();
   };
   acts.append(cerrar);

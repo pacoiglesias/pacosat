@@ -311,6 +311,87 @@ function executorPanel() {
   })();
   return wrap;
 }
+/* (3.2.0 · pieza 42) Calendario de plazos del mes en curso
+   (.cal320), con SOLO fechas que constan:
+   (a) Buzón Tributario — por cada notificación viva sin abrir
+   de ESTA vista, su plazo.tenida si cae en el mes en curso.
+   El plazo lo calcula el servidor con la regla escrita de
+   buzonPlazo (arts. 134-I y 135 del CFF); el color es la
+   distancia a hoy con los umbrales de la pieza 22: rojo con
+   1 día o menos (o ya vencida), ámbar con 3 o menos, verde
+   más lejos.
+   (b) Bancos — SOLO en la ventana de recordatorio (días
+   1–10): el dato es satData.estadosPendientes, el mismo que
+   alimentan Hoy y Administración, ya cercado por el
+   servidor. El día de HOY se marca ámbar (rojo el día 10,
+   último de la ventana) si falta algún estado del mes
+   anterior de este RFC o sin dueño; verde si no falta
+   ninguno. Fuera de la ventana, de Bancos no se marca nada.
+   Cada marca nombra su origen en su título y en la leyenda
+   de debajo del mes: nada se pinta sin decir de dónde sale. */
+function tribCalendario320(data, rfc) {
+  const MESES320 = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
+    'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const mesLargo320 = key => {
+    const m = /^(\d{4})-(\d{2})$/.exec(String(key || ''));
+    return m ? MESES320[Number(m[2]) - 1] + ' de ' + m[1] : String(key || '');
+  };
+  const ahora = new Date();
+  const anio = ahora.getFullYear(), mes = ahora.getMonth(), hoyDia = ahora.getDate();
+  const hoyMed = new Date(anio, mes, hoyDia, 12).getTime();
+  const marcas = new Map();
+  const marcar = (dia, nivel, texto) => {
+    const prev = marcas.get(dia);
+    if (!prev) { marcas.set(dia, { nivel, textos: [texto] }); return; }
+    prev.textos.push(texto);
+    if (nivel === 'bad' || (nivel === 'warn' && prev.nivel === 'ok')) prev.nivel = nivel;
+  };
+  for (const item of data.notificaciones || []) {
+    if (item.abierta || item.archivada || !item.plazo?.tenida) continue;
+    const [ty, tm, td] = String(item.plazo.tenida).slice(0, 10).split('-').map(Number);
+    if (ty !== anio || tm !== mes + 1) continue;
+    const fin = Date.parse(String(item.plazo.tenida) + 'T12:00:00');
+    const quedan = Number.isFinite(fin) ? Math.round((fin - hoyMed) / 86400000) : null;
+    marcar(td, quedan !== null && quedan <= 1 ? 'bad' : quedan !== null && quedan <= 3 ? 'warn' : 'ok',
+      'Buzón Tributario: «' + (item.asunto || 'Notificación del SAT') + '» se tiene por notificada el ' +
+        declFechaLarga(item.plazo.tenida) + ' aunque nadie la abra (último día para abrirla: ' +
+        declFechaLarga(item.plazo.limite) + ').');
+  }
+  const ep = typeof satData !== 'undefined' && satData ? satData.estadosPendientes : null;
+  if (ep?.enVentana && ep.mesAnterior) {
+    const faltan = (ep.faltantes || []).filter(f => !f.rfc || f.rfc === rfc);
+    if (faltan.length)
+      marcar(hoyDia, hoyDia >= 10 ? 'bad' : 'warn',
+        'Bancos: falta el estado de ' + mesLargo320(ep.mesAnterior) + ' de ' +
+          faltan.map(f => f.banco + ' · ' + f.nombre).join('; ') + ' — súbelo en Bancos.');
+    else marcar(hoyDia, 'ok',
+      'Bancos: los estados de ' + mesLargo320(ep.mesAnterior) + ' de este RFC ya constan.');
+  }
+  if (!marcas.size) return null;
+  const box = panel('Calendario de plazos · ' + MESES320[mes] + ' de ' + anio);
+  box.dataset.calendario320 = '1';
+  const cal = n('div', undefined, 'cal320');
+  for (const ini of ['L', 'M', 'X', 'J', 'V', 'S', 'D']) cal.append(n('span', ini, 'cal-cab320'));
+  const primero = (new Date(anio, mes, 1).getDay() + 6) % 7;
+  for (let i = 0; i < primero; i++) cal.append(n('span', '', 'dia cal-vacio320'));
+  const diasMes = new Date(anio, mes + 1, 0).getDate();
+  for (let d = 1; d <= diasMes; d++) {
+    const celda = n('span', String(d), 'dia');
+    const marca = marcas.get(d);
+    if (marca) {
+      celda.classList.add(marca.nivel === 'bad' ? 'con-rojo' : marca.nivel === 'warn' ? 'con-ambar' : 'con-verde');
+      celda.title = marca.textos.join(' ');
+    }
+    if (d === hoyDia) celda.classList.add('cal-hoy320');
+    cal.append(celda);
+  }
+  box.append(cal);
+  const leyenda = n('div', undefined, 'cal-leyenda320');
+  for (const [dia, marca] of [...marcas.entries()].sort((a, b) => a[0] - b[0]))
+    for (const texto of marca.textos) leyenda.append(n('p', dia + ' · ' + texto, 'muted'));
+  box.append(leyenda);
+  return box;
+}
 function tributarioScreen() {
   const wrap = n('div');
   if (typeof satToken === 'undefined' || !satToken) {
@@ -336,7 +417,10 @@ function tributarioScreen() {
      entera sobre el Buzón en cada visita. */
   wrap.append(executorStatusLine());
   if (!scope) {
-    body.append(empty('Elige un contribuyente', 'El Buzón Tributario es por RFC: elige arriba el contribuyente cuyas notificaciones quieres consultar.'));
+    /* (3.2.0 · pieza 6) El vacío sin RFC, con su clase. */
+    const vacioTrib320 = empty('Elige un contribuyente', 'El Buzón Tributario es por RFC: elige arriba el contribuyente cuyas notificaciones quieres consultar.');
+    vacioTrib320.classList.add('vacio320');
+    body.append(vacioTrib320);
     return [wrap];
   }
   const rfc = scope;
@@ -444,6 +528,10 @@ function tributarioScreen() {
       body.append(n('p', 'Comunicados: ' + (data.comunicadosNoLeidos === 0 ? 'ninguno sin leer' :
         number.format(data.comunicadosNoLeidos) + ' sin leer') +
         ' (contados en la consulta del ' + buzonCuando(data.comunicadosFecha) + ', sin abrir ninguno).', 'today-line'));
+    /* (3.2.0 · pieza 42) El calendario de plazos del mes en
+       curso, tras el resumen y antes de las bandejas. */
+    const cal320 = tribCalendario320(data, rfc);
+    if (cal320) body.append(cal320);
     /* Buzón completo, la lista (2.9.4): las secciones que la
        última consulta buena LISTÓ — «Mis comunicados» con
        cada mensaje (su asunto, su fecha y su folio, sin
@@ -793,6 +881,22 @@ function tributarioScreen() {
         barra.append(relleno);
         main.append(barra, n('small', 'Se tiene por notificada el ' + declFechaLarga(item.plazo.tenida) + cuentaAtras +
           ' aunque nadie la abra · último día para abrirla: ' + declFechaLarga(item.plazo.limite) + '.', 'muted'));
+        /* (3.2.0 · pieza 22) La cuenta atrás de ESTE plazo,
+           como pastilla .pill320 con forma y color, dibujada
+           SIN abrir el aviso: sale del mismo plazo.tenida que
+           la fila ya trae del servidor (la regla escrita de
+           buzonPlazo) y de los mismos días que la barra —
+           un solo cálculo — con sus umbrales: rojo con 1 día
+           o menos o ya vencida, ámbar con 3 o menos. */
+        if (diasQuedan !== null) {
+          const pastilla320 = n('span', diasQuedan < 0
+            ? 'Se tuvo por notificada hace ' + Math.abs(diasQuedan) + (diasQuedan === -1 ? ' día' : ' días')
+            : diasQuedan === 0 ? 'Hoy se tiene por notificada'
+            : diasQuedan === 1 ? 'Queda 1 día para que se tenga por notificada'
+            : 'Quedan ' + diasQuedan + ' días para que se tenga por notificada', 'pill320');
+          pastilla320.dataset.nivel = diasQuedan <= 1 ? 'bad' : diasQuedan <= 3 ? 'warn' : 'ok';
+          main.append(pastilla320);
+        }
       }
       row.append(main);
       /* Archivar es LOCAL (1.29.0): no toca el SAT ni abre nada;
@@ -932,6 +1036,10 @@ function tributarioScreen() {
         ? plegable290('Diario de consultas', diarioContenido290, 'buzon-diario')
         : diarioContenido290);
     }
+    /* (3.2.0 · pieza 6) Todos los vacíos pintados en esta
+       vista (bandeja, comunicados, documentos, papelera),
+       con su clase de vacío diseñada. */
+    body.querySelectorAll('.empty').forEach(el => el.classList.add('vacio320'));
   };
   const refresh = async () => {
     const data = await satApi('tributario?rfc=' + encodeURIComponent(rfc) +

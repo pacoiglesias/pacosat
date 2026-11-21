@@ -1715,6 +1715,24 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
      PNG y JPEG por sus bytes de firma; el SVG por su estructura y sin
      scripts, controladores de eventos ni objetos externos. */
   const LOGO_MAX = 200 * 1024;
+  /* Logotipo por contribuyente (3.2.0 · pieza 43): la misma
+     validación por magia que el logo de la instalación, con el
+     WebP que el medallón admite (RIFF/WEBP) y el mismo tope de
+     200 KB. El SVG no entra aquí: el medallón sirve la imagen
+     tal cual y un vector con referencias no es una foto. */
+  const LOGO320_MAX = 200 * 1024;
+  function logo320Problema(mime, bytes) {
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(mime)) return 'Formato no admitido: usa PNG, JPG o WebP.';
+    if (!bytes.length || bytes.length > LOGO320_MAX) return 'La imagen debe pesar entre 1 byte y 200 KB.';
+    if (mime === 'image/png' && !(bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47))
+      return 'El archivo no es un PNG válido.';
+    if (mime === 'image/jpeg' && !(bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff))
+      return 'El archivo no es un JPEG válido.';
+    if (mime === 'image/webp' && !(bytes.subarray(0, 4).toString('latin1') === 'RIFF' &&
+      bytes.subarray(8, 12).toString('latin1') === 'WEBP'))
+      return 'El archivo no es un WebP válido.';
+    return '';
+  }
   function validateLogo(mime, bytes) {
     if (!['image/png', 'image/jpeg', 'image/svg+xml'].includes(mime)) return 'Formato no admitido: usa PNG, JPG o SVG.';
     if (!bytes.length || bytes.length > LOGO_MAX) return 'La imagen debe pesar entre 1 byte y 200 KB.';
@@ -9744,7 +9762,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         { title: 'IVA trasladado', type: 'money', width: 15 }, { title: 'IVA acreditable', type: 'money', width: 15 },
         { title: 'UUID', width: 38 }, { title: 'Folio', width: 14 }],
         rows, totals: { label: 'Total (debe = haber)' } },
-      { name: 'Notas', columns: [{ title: 'Nota para el contador', width: 110 }], rows: notasFinal.map(t => [t]) }] });
+      { name: 'Notas', columns: [{ title: 'Nota para el contador', width: 110 }], rows: notasFinal.map(t => [t]) },
+      /* (3.2.0 · pieza 32) Hoja «Resumen» de identidad AL FINAL:
+         «Pólizas» sigue siendo la primera hoja, como siempre —
+         la identidad se suma sin mover la cara del libro. */
+      salidaResumen320('Pólizas' + (month ? ' · ' + salidaMesPalabras2913(month) : ''), rfc)] });
     return { buffer, filename: 'polizas-' + rfc + (month ? '-' + month : '') + '.xlsx',
       filas: rows.length, debe: moneyText(totalDebe), haber: moneyText(totalHaber), notas: notasFinal };
   }
@@ -10474,6 +10496,17 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const yo = salidaParte2913(perfil?.name, rfc);
     return cp ? yo + ' — frente a — ' + salidaParte2913(cp.nombre, cp.rfc) : yo;
   };
+  /* (3.2.0 · pieza 32) Hoja «Resumen» de identidad para los Excel
+     que aún no la traían (Complementos, Listados y Pólizas abrían
+     directos en los datos): la misma plantilla de membrete de los
+     demás reportes — Reporte, Contribuyente con su RFC y Generado
+     con la marca y la versión — antepuesta sin tocar ni una cifra
+     ni una fila de las hojas de datos. */
+  const salidaResumen320 = (titulo, rfc) => ({ name: 'Resumen',
+    columns: [{ title: 'Concepto', width: 26 }, { title: 'Valor', width: 62 }], rows: [
+      ['Reporte', titulo],
+      ...(rfc ? [['Contribuyente', salidaPartes2913(rfc)]] : []),
+      ['Generado', salidaGenerado()]] });
   const salidaMesPalabras2913 = monthKey => {
     const m = /^(\d{4})-(\d{2})$/.exec(String(monthKey || ''));
     return m ? SALIDA_MESES[Number(m[2]) - 1] + ' de ' + m[1] : String(monthKey || '');
@@ -10852,9 +10885,15 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
     const partes = await salidaCfdiSecciones293(invoice, rfc);
     if (!partes) return null;
     const { full, sections } = partes;
+    /* (3.2.0 · pieza 32) Identidad en la salida: el RFC del
+       contribuyente viaja como dato del documento — el constructor
+       lo pinta en grande bajo el membrete y en el pie de cada
+       hoja; sin él, la portada lo buscaba en el título/subtítulo
+       (nombres, sin RFC) y la línea no salía. Ni una cifra ni la
+       estructura de datos cambian: es solo el membrete. */
     return buildPdf({ title: `Comprobante ${folioLabel(invoice)}`,
       subtitle: `${full.emisor?.nombre || invoice.from?.name || ''} > ${full.receptor?.nombre || invoice.to?.name || ''}`,
-      generated: salidaGenerado(), sections });
+      rfc, generated: salidaGenerado(), sections });
   }
   /* El documento combinado de la selección (2.9.3 · F3): UN
      PDF con la representación de cada comprobante elegido,
@@ -10881,7 +10920,8 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       lines: excluidos.map(invoice => '· ' + folioLabel(invoice) + ' (' + invoice.id + '): su XML no consta guardado o no se pudo leer, y sin XML no hay representación fiel que imprimir.') });
     return { incluidos, buffer: buildPdf({ title: 'Comprobantes seleccionados (' + incluidos + ')',
       subtitle: 'Un solo documento con la representación de cada comprobante de la selección, listo para imprimir.',
-      generated: salidaGenerado(), sections }) };
+      /* (3.2.0 · pieza 32) El mismo membrete con RFC que el PDF individual. */
+      rfc, generated: salidaGenerado(), sections }) };
   }
   function salidaZipPaquete({ rfc, monthKey = '', year = '', ids = null, conCierre = false }) {
     const balances = salidaMapaSaldos();
@@ -11076,7 +11116,9 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
           aCentavos(doc.impSaldoAnt), aCentavos(doc.impPagado), aCentavos(doc.impSaldoInsoluto),
           doc.idDocumento || '', invoice.id]);
     }
-    return buildXlsx({ sheets: [{ name: 'Complementos de pago', columns, rows, totals: { label: 'Total' } }] });
+    /* (3.2.0 · pieza 32) Abre con su hoja «Resumen» de identidad, como los demás Excel. */
+    return buildXlsx({ sheets: [salidaResumen320('Complementos de pago', rfc),
+      { name: 'Complementos de pago', columns, rows, totals: { label: 'Total' } }] });
   }
   function salidaXlsxListados() {
     const view = listsOverview();
@@ -11092,7 +11134,11 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
         Number(centsOf(cp.exposure?.received || '0')), Number(centsOf(cp.exposure?.issued || '0')),
         cp.exposure?.receivedCount || 0, cp.exposure?.issuedCount || 0,
         cp.detalle?.saldoPorCobrar ? Number(centsOf(typeof cp.detalle.saldoPorCobrar === 'object' ? (cp.detalle.saldoPorCobrar.total || '0') : cp.detalle.saldoPorCobrar)) : null]);
-    return buildXlsx({ sheets: [{ name: 'Contrapartes en listados', columns, rows, totals: { label: 'Total exposición' } }] });
+    /* (3.2.0 · pieza 32) Abre con su hoja «Resumen» de identidad
+       (este Excel es de la instalación, sin un único RFC: la hoja
+       lleva el reporte y el generado con la marca, sin contribuyente). */
+    return buildXlsx({ sheets: [salidaResumen320('Contrapartes en listados oficiales', ''),
+      { name: 'Contrapartes en listados', columns, rows, totals: { label: 'Total exposición' } }] });
   }
   function salidaXlsxPagos(rfc, preparationId) {
     const row = preparationId
@@ -11110,7 +11156,10 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       rows: [['Preparación del mes', prep.month || ''], ['Descripción del grupo', prep.group?.descripcion || ''],
         ['Cuenta de retiro', prep.group?.cuentaRetiro || ''], ['Fecha de cargo', prep.group?.fechaCargo || ''],
         ['Fecha de abono', prep.group?.fechaAbono || ''], ['Operaciones', String(prep.operaciones || 0)],
-        ['Total preparado', salidaPesos(prep.totalCents || 0)]] }];
+        ['Total preparado', salidaPesos(prep.totalCents || 0)],
+        /* (3.2.0 · pieza 32) La identidad que a este Resumen le
+           faltaba: contribuyente con su RFC y generado con la marca. */
+        ['Contribuyente', salidaPartes2913(rfc)], ['Generado', salidaGenerado()]] }];
     for (const [key, name] of [['bbva', 'Grupo BBVA'], ['interbancario', 'Grupo interbancario'], ['speiIndividual', 'SPEI individual']])
       if (prep[key]?.lines?.length) sheets.push({ name, columns, rows: prep[key].lines.map(fila), totals: { label: 'Total ' + name } });
     return buildXlsx({ sheets });
@@ -12942,7 +12991,13 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
        alcance; lista de miniaturas y búsqueda: filtradas a
        sus RFC). Generar el paquete sigue siendo POST: del
        titular, como toda acción. */
-    '/api/miniatura200g', '/api/miniaturas200g', '/api/buscar-contenido240', '/api/paquete-banco240'];
+    '/api/miniatura200g', '/api/miniaturas200g', '/api/buscar-contenido240', '/api/paquete-banco240',
+    /* Ronda visual (3.2.0 · piezas 12 y 43): la tendencia de Hoy y
+       el logotipo de cada contribuyente son LECTURAS dentro del
+       alcance — cada ruta lo comprueba dentro, como la miniatura:
+       la tendencia resuelve el ámbito del invitado (403 fuera) y
+       el logotipo solo se sirve si el RFC es de su alcance. */
+    '/api/tendencia320', '/api/logo320'];
   function selfTest() {
     const checks = [];
     try { db.prepare('SELECT 1').get(); checks.push({ id: 'db', label: 'Base de datos local', state: 'ok', detail: 'Responde y guarda los datos.' }); }
@@ -17353,31 +17408,47 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       if (!casa(inv.id, inv.fiscal?.folio, inv.fiscal?.series, inv.from?.rfc, inv.from?.name,
         inv.to?.rfc, inv.to?.name, inv.total)) continue;
       const rfc = duenio200h(inv); if (soloRfc && rfc !== soloRfc) continue;
+      /* (3.2.0 · pieza 39-servidor) Cada resultado viaja también
+         ESTRUCTURADO — rfc dueño, tipo e importe como datos, no
+         solo dentro del texto — para la paleta ⌘K (medallón de
+         RFC, tipo e importe sin parsear la frase). Aditivo: el
+         texto y el destino no cambian. El importe va en el
+         formato de cifras de la casa (moneyText, como /api/v1). */
       grupo(rfc).cfdi.push({ uuid: inv.id, texto: (inv.from?.name || inv.from?.rfc || '') + ' → ' +
         (inv.to?.name || inv.to?.rfc || '') + ' · ' + String(inv.date || '').slice(0, 10) + ' · $' +
-        moneyShow(centsOf(inv.total)), destino: { vista: 'invoices', uuid: inv.id } });
+        moneyShow(centsOf(inv.total)), destino: { vista: 'invoices', uuid: inv.id },
+        rfc, tipo: 'cfdi', importe: inv.total ? moneyText(centsOf(inv.total)) : null });
     }
     try { for (const d of db.prepare('SELECT * FROM sat_documents ORDER BY created DESC LIMIT 500').all()) {
       if (!casa(d.kind, d.rfc, d.id)) continue; if (soloRfc && d.rfc !== soloRfc) continue;
       grupo(d.rfc).documentos.push({ id: d.id, texto: d.kind + ' · ' + d.rfc,
-        destino: { vista: 'docs' } });
+        destino: { vista: 'docs' },
+        /* (3.2.0 · pieza 39-servidor) rfc/tipo/importe estructurados. */
+        rfc: d.rfc || '', tipo: 'documento', importe: null });
     } } catch {}
     try { for (const d of db.prepare('SELECT * FROM declaraciones ORDER BY created DESC LIMIT 500').all()) {
       if (!casa(d.tipo, d.clase, d.periodo, d.operacion, d.rfc)) continue;
       if (soloRfc && d.rfc !== soloRfc) continue;
       grupo(d.rfc).documentos.push({ id: d.id, texto: 'Declaración ' + (d.periodo || d.ejercicio) +
-        ' · operación ' + (d.operacion || '—'), destino: { vista: 'docs' } });
+        ' · operación ' + (d.operacion || '—'), destino: { vista: 'docs' },
+        /* (3.2.0 · pieza 39-servidor) rfc/tipo/importe estructurados. */
+        rfc: d.rfc || '', tipo: 'documento', importe: null });
     } } catch {}
     try { for (const a of db.prepare("SELECT * FROM avisos WHERE estado NOT IN ('solventado','descartado') ORDER BY creado DESC LIMIT 500").all()) {
       if (!casa(a.titulo, a.detalle, a.contraparte, a.nombre, a.importe, a.rfc)) continue;
       if (soloRfc && a.rfc && a.rfc !== soloRfc) continue;
       grupo(a.rfc).avisos.push({ id: a.id, texto: a.titulo + (a.importe ? ' · $' + importeShow(a.importe) : ''),
-        destino: { vista: 'avisos', id: a.id } });
+        destino: { vista: 'avisos', id: a.id },
+        /* (3.2.0 · pieza 39-servidor) rfc/tipo/importe estructurados:
+           el importe del aviso ya vive como moneyText en su fila. */
+        rfc: a.rfc || '', tipo: 'aviso', importe: a.importe ? moneyText(centsOf(a.importe)) : null });
     } } catch {}
     try { for (const e of db.prepare('SELECT * FROM audit_events ORDER BY at DESC LIMIT 500').all()) {
       if (!casa(e.texto, e.rfc, e.clase)) continue; if (soloRfc && e.rfc && e.rfc !== soloRfc) continue;
       grupo(e.rfc).registro.push({ id: e.id, texto: String(e.texto || '').slice(0, 160),
-        fecha: fechaHoraCasa(Number(e.at) || 0), destino: { vista: 'registro' } });
+        fecha: fechaHoraCasa(Number(e.at) || 0), destino: { vista: 'registro' },
+        /* (3.2.0 · pieza 39-servidor) rfc/tipo/importe estructurados. */
+        rfc: e.rfc || '', tipo: 'registro', importe: null });
     } } catch {}
     return { porRfc: [...porRfc.values()].map(g => ({ rfc: g.rfc,
       grupos: Object.fromEntries(Object.entries(g.grupos).map(([k, v]) => [k, v.slice(0, 12)])) }))
@@ -17515,6 +17586,26 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       meses.push({ mes: mk, nombre: MESES_N200h[i - 1], entradas: moneyText(entradas), salidas: moneyText(salidas),
         movimientos: delMes.length, destino: { vista: 'bancos', month: mk } }); }
     return { rfc: rfc || '', year, fuente: 'Movimientos bancarios registrados en Bancos (estados aplicados).', meses };
+  }
+  /* (3.2.0 · pieza 12-datos) Tendencia de Hoy: los últimos 6 meses
+     — el en curso y los 5 anteriores, en orden — del CÁLCULO
+     ÚNICO: sale de apiTotales, la misma agregación mensual de la
+     pantalla Totales (CFDI de ingreso en MXN; las canceladas, los
+     complementos y la nómina quedan fuera, como allí). Los meses
+     sin comprobantes viajan con ceros y su importe en el formato
+     de cifras de la casa ('0.00'): la mini-gráfica no se inventa
+     huecos ni cifras. */
+  function tendencia320(rfc, time) {
+    const ahora = new Date(time);
+    const claves = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth() - i, 1));
+      claves.push(d.toISOString().slice(0, 7));
+    }
+    const porMes = new Map((apiTotales(rfc, claves[0], claves[5]).meses || []).map(m => [m.mes, m]));
+    return { rfc, meses: claves.map(mes => { const g = porMes.get(mes);
+      return { mes, emitidas: g?.emitidas || 0, recibidas: g?.recibidas || 0,
+        montoEmitidas: g?.emitidasImporte || '0.00', montoRecibidas: g?.recibidasImporte || '0.00' }; }) };
   }
   /* (18) Franja de la semana fiscal: vencimientos del calendario
      existente + pagos registrados (movimientos) de la semana. */
@@ -18219,6 +18310,64 @@ export function createPacoSATService({ dbFile, html, origin, proxyKey = '', make
       }
       const todos = url.searchParams.get('todos') === '1';
       return J(buscar200h(String(url.searchParams.get('q') || ''), todos ? '' : (rfc || '')));
+    }
+    if (req.method === 'GET' && P === '/api/tendencia320') {
+      /* (3.2.0 · pieza 12-datos) La tendencia de Hoy, cercada como
+         totales200h: el ámbito del invitado manda (un RFC ajeno
+         explícito es 403 y sin RFC se resuelve al único de su
+         alcance); el administrador pide el RFC que quiere ver. */
+      const ambito = ambitoInvitado(String(url.searchParams.get('rfc') || '').toUpperCase());
+      if (ambito.error) return J({ error: 'Fuera de tu alcance.' }, 403);
+      need(ambito.rfc, 'Falta el RFC de la tendencia.', 400);
+      return J(tendencia320(ambito.rfc, now()));
+    }
+    if (req.method === 'GET' && P === '/api/logo320') {
+      /* (3.2.0 · pieza 43) El logotipo del contribuyente, servido
+         con su tipo tal como se guardó en la tienda de ficheros
+         (patrón de la miniatura: fuera del alcance del invitado
+         no se sirve; sin logotipo, 404 en llano). */
+      const rfc = String(url.searchParams.get('rfc') || '').toUpperCase();
+      if (guest) need(scopeSet().has(rfc), 'Fuera de tu alcance.', 403);
+      const rec = readFileRecord('logo320:' + rfc);
+      need(rec?.buffer, 'Este contribuyente no tiene logotipo.', 404);
+      res.writeHead(200, { 'Content-Type': rec.mime || 'application/octet-stream' });
+      res.end(rec.buffer); return true;
+    }
+    if (req.method === 'POST' && P === '/api/logo320') {
+      /* (3.2.0 · pieza 43) Subir el logotipo de UN contribuyente:
+         solo quien escribe (el invitado es de solo lectura, como
+         en el paquete para el banco) y solo de un RFC del
+         expediente. Viaja como data URL y se guarda como fichero
+         ('logo320:<RFC>'), sustituyendo el anterior si lo había. */
+      need(!guest, 'El acceso de invitado es de solo lectura.', 403);
+      const x = await body(req, 320 * 1024);
+      const rfc = String(x.rfc || '').toUpperCase();
+      need(salidaPerfil(rfc), 'Ese RFC no está en el expediente.', 404);
+      const m = /^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=\s]+)$/.exec(String(x.dataUrl || ''));
+      need(m, 'La imagen debe llegar como data URL PNG, JPG o WebP.', 400);
+      const bytes = Buffer.from(m[2].replace(/\s/g, ''), 'base64');
+      const problema = logo320Problema(m[1], bytes);
+      need(!problema, problema, 400);
+      db.prepare("DELETE FROM records WHERE store='files' AND id=?").run('logo320:' + rfc);
+      putFile('logo320:' + rfc, bytes, m[1]);
+      auditEvent('accion', 'Logotipo de ' + rfc + ' guardado (' + m[1] + ', ' + bytes.length + ' bytes).', rfc, 1, now());
+      return J({ ok: true, rfc, mime: m[1], bytes: bytes.length });
+    }
+    if (req.method === 'POST' && P === '/api/avisos320/restaurar') {
+      /* (3.2.0 · pieza 28-servidor) Deshacer el archivado de UN
+         aviso para la barra «Deshacer»: la inversa YA existía como
+         POST /api/notices/atencion { id, accion: 'restaurar' }
+         (1.29.2) — esta es su forma corta con el mismo gesto, la
+         misma bitácora y la misma respuesta (el resumen entero de
+         Avisos). Solo quien escribe: el invitado no llega. */
+      need(!guest, 'El acceso de invitado es de solo lectura.', 403);
+      const x = await body(req);
+      const aviso = db.prepare("SELECT * FROM avisos WHERE id=? AND estado NOT IN ('solventado','descartado')").get(Number(x.id));
+      need(aviso, 'Ese aviso ya no está abierto.');
+      db.prepare("UPDATE avisos SET atencion='activa',pospuesta_hasta=NULL,actualizado=? WHERE id=?").run(now(), aviso.id);
+      avisoLog(aviso.id, 'restaurada', 'Restaurada por ti: vuelve a la vista activa.', now());
+      auditEvent('accion', 'Aviso restaurado a la vista activa: ' + aviso.titulo, aviso.rfc || '', 1);
+      return J({ ok: true, ...avisosOverview() });
     }
     if (req.method === 'GET' && P === '/api/vida200h') {
       const vida = vidaCfdi200h(String(url.searchParams.get('uuid') || ''));
